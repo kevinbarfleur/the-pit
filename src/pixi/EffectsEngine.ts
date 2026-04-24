@@ -131,14 +131,11 @@ const ORBIT_POOL_SIZE = 48
 interface DripState {
   cells: number[]
   cellCount: number
-  // Drain phase — body-wide translation and velocity when falling off
-  bodyOffset: number
-  bodyVelocity: number
-  bodyAlpha: number
-  // Random detach threshold per cell (refreshed after each pinch)
+  // Random detach threshold offset per cell (refreshed after each pinch)
   detachMargin: number[]
-  // Throttle for random flow injection
+  // Throttle accumulators
   flowAcc: number
+  drainAcc: number
   graphic: Graphics
 }
 
@@ -424,11 +421,9 @@ export class EffectsEngine {
     effect.drip = {
       cells: new Array(cellCount).fill(0),
       cellCount,
-      bodyOffset: 0,
-      bodyVelocity: 0,
-      bodyAlpha: 1,
       detachMargin: new Array(cellCount).fill(0).map(() => Math.random() * 3),
       flowAcc: 0,
+      drainAcc: 0,
       graphic,
     }
   }
@@ -531,12 +526,20 @@ export class EffectsEngine {
         this.detach(effect.id)
         continue
       }
-      // refresh rect each frame (cheap enough for current scale)
+      // refresh rect each frame (cheap enough for current scale; also
+      // lets attached effects follow the host element during scroll/resize)
       effect.lastRect = effect.el.getBoundingClientRect()
+      const rect = effect.lastRect
+
+      // drip-pool must tick regardless of enabled state: the simulation has a
+      // drain phase that runs when enabled=false, and the body has to follow
+      // the button across scrolls even while draining.
+      if (effect.kind === 'drip-pool') {
+        this.tickDripPool(effect, rect, dt)
+        continue
+      }
 
       if (!effect.enabled) continue
-
-      const rect = effect.lastRect
 
       switch (effect.kind) {
         case 'sparkle': {
@@ -575,10 +578,6 @@ export class EffectsEngine {
           // orbit logic handled in tickOrbits via lastRect
           break
         }
-        case 'drip-pool': {
-          this.tickDripPool(effect, rect, dt)
-          break
-        }
       }
     }
   }
@@ -588,115 +587,138 @@ export class EffectsEngine {
     if (!s) return
     const color = effect.config.color
 
-    const hasBody = s.cells.some((c) => c > 0.1)
+    // Edge taper — the leftmost and rightmost cells can hold less liquid,
+    // which breaks the rectangular profile at the button's side edges.
+    const taper = 4
+    const maxCenter = 14
+    const cellMax = (i: number): number => {
+      if (i < taper) return 2 + i * 3
+      if (i >= s.cellCount - taper) return 2 + (s.cellCount - 1 - i) * 3
+      return maxCenter
+    }
+
+    // Lateral diffusion always runs — gives surface-tension smoothing whether
+    // the body is filling or draining. Kept low so bumps remain visible.
+    const k = 0.1
+    const next = s.cells.slice()
+    for (let i = 0; i < s.cellCount; i++) {
+      const left = i > 0 ? s.cells[i - 1] : s.cells[i]
+      const right = i < s.cellCount - 1 ? s.cells[i + 1] : s.cells[i]
+      next[i] = s.cells[i] + k * (left + right - 2 * s.cells[i])
+    }
+    s.cells = next
 
     if (effect.enabled) {
-      // If we were mid-drain and hover resumed, let the already-falling body
-      // finish falling (as particles) and reset the field to a fresh state.
-      if (s.bodyOffset > 0.5) {
-        for (let i = 0; i < s.cellCount; i++) {
-          if (s.cells[i] > 1) {
-            this.spawnLiquidDroplet(effect, rect, i, s.cells[i], s.bodyOffset, s.bodyVelocity)
-          }
-        }
-        s.cells.fill(0)
-      }
-      s.bodyOffset = 0
-      s.bodyVelocity = 0
-      s.bodyAlpha = 1
-
-      // 1. Random flow injection — 2-4 bumps per ~60ms, dispersed across width
+      // ---------- ACTIVE: flow injection + gentle center-bias growth ----------
       s.flowAcc += dt
-      if (s.flowAcc >= 0.06) {
+      if (s.flowAcc >= 0.05) {
         s.flowAcc = 0
         const injections = 2 + Math.floor(Math.random() * 3)
-        for (let k = 0; k < injections; k++) {
-          const i = Math.floor(Math.random() * s.cellCount)
-          const amount = 0.4 + Math.random() * 1.3
+        for (let j = 0; j < injections; j++) {
+          // Bias injections toward the center — edges only get flow from
+          // diffusion, which combined with the taper keeps a rounded profile.
+          const bias = Math.sin(Math.random() * Math.PI)
+          const i = Math.max(
+            0,
+            Math.min(s.cellCount - 1, Math.floor((0.15 + bias * 0.7) * s.cellCount)),
+          )
+          const amount = 0.4 + Math.random() * 1.6
           s.cells[i] += amount
-          if (i > 0) s.cells[i - 1] += amount * 0.45
-          if (i < s.cellCount - 1) s.cells[i + 1] += amount * 0.45
+          if (i > 0) s.cells[i - 1] += amount * 0.3
+          if (i < s.cellCount - 1) s.cells[i + 1] += amount * 0.3
         }
       }
 
-      // 2. Lateral diffusion (surface tension) + gentle center-bias growth
-      const k = 0.2
-      const next = s.cells.slice()
+      // Gentle center-weighted growth so runoff naturally hangs lowest in the
+      // middle — kept low so the top surface isn't forced flat.
       const half = s.cellCount / 2
       for (let i = 0; i < s.cellCount; i++) {
-        const left = i > 0 ? s.cells[i - 1] : s.cells[i]
-        const right = i < s.cellCount - 1 ? s.cells[i + 1] : s.cells[i]
-        next[i] = s.cells[i] + k * (left + right - 2 * s.cells[i])
-        // Weak gravity bias toward center so runoff pools naturally low
         const centerDist = Math.abs(i - half) / half
-        next[i] += (1 - centerDist) * 0.55 * dt
+        s.cells[i] += (1 - centerDist) * 0.35 * dt
       }
-      s.cells = next
 
-      // 3. Cap + random droplet detach from any sufficiently tall cell
-      const maxH = 14
+      // Active pinch-off: tall cells shed droplets probabilistically. Each
+      // droplet actually removes mass from the source cell — the dripping
+      // is what bounds the steady-state thickness, not an arbitrary cap.
       for (let i = 0; i < s.cellCount; i++) {
-        if (s.cells[i] > maxH) s.cells[i] = maxH
-        const threshold = 8 + s.detachMargin[i]
+        const threshold = 7 + s.detachMargin[i]
         if (s.cells[i] > threshold) {
-          const pinchProb = (s.cells[i] - threshold) * dt * 2.4
-          if (Math.random() < pinchProb) {
+          const prob = (s.cells[i] - threshold) * dt * 2.2
+          if (Math.random() < prob) {
             this.spawnLiquidDroplet(effect, rect, i, s.cells[i])
             s.cells[i] = Math.max(0, s.cells[i] - 4.5)
             s.detachMargin[i] = Math.random() * 3
           }
         }
       }
-    } else if (hasBody) {
-      // Drain: body translates down with gravity, fades, sheds random droplets
-      s.bodyVelocity += 380 * dt
-      s.bodyOffset += s.bodyVelocity * dt
-      s.bodyAlpha = Math.max(0, s.bodyAlpha - dt / 0.9)
-
-      // Keep shedding droplets as the body falls, dispersed
-      if (s.bodyAlpha > 0.2 && Math.random() < dt * 16) {
-        const i = Math.floor(Math.random() * s.cellCount)
-        if (s.cells[i] > 1) {
-          this.spawnLiquidDroplet(effect, rect, i, s.cells[i], s.bodyOffset, s.bodyVelocity)
-          s.cells[i] = Math.max(0, s.cells[i] - 2)
+    } else {
+      // ---------- DRAIN: no flow, aggressive droplet shedding + slow shrink ----------
+      // Pinch droplets from the tallest available cell several times per second.
+      // Each pinch removes ~3 units from its cell, so the body visibly loses
+      // volume with every droplet that leaves it.
+      s.drainAcc += dt
+      while (s.drainAcc >= 0.045) {
+        s.drainAcc -= 0.045
+        let best = -1
+        let bestH = 1.2
+        // Sample a few candidates and drip from the tallest — preserves the
+        // dispersed look while making sure we always target "real" liquid.
+        for (let t = 0; t < 5; t++) {
+          const i = Math.floor(Math.random() * s.cellCount)
+          if (s.cells[i] > bestH) {
+            best = i
+            bestH = s.cells[i]
+          }
+        }
+        if (best >= 0) {
+          this.spawnLiquidDroplet(effect, rect, best, s.cells[best])
+          s.cells[best] = Math.max(0, s.cells[best] - 3)
         }
       }
-
-      if (s.bodyAlpha <= 0) {
-        s.cells.fill(0)
-        s.bodyOffset = 0
-        s.bodyVelocity = 0
-        s.bodyAlpha = 1
+      // Passive shrinkage — the thin residue keeps retreating back into the
+      // button edge rather than lingering forever.
+      for (let i = 0; i < s.cellCount; i++) {
+        s.cells[i] = Math.max(0, s.cells[i] - 4.5 * dt)
       }
     }
 
-    // Draw — single Graphics, two passes (body + specular top pixel)
+    // Enforce per-cell max (edge taper + global cap).
+    for (let i = 0; i < s.cellCount; i++) {
+      const m = cellMax(i)
+      if (s.cells[i] > m) s.cells[i] = m
+      if (s.cells[i] < 0) s.cells[i] = 0
+    }
+
+    // ---------- Draw ----------
     s.graphic.clear()
+    const hasBody = s.cells.some((c) => c > 0.15)
     if (!hasBody) return
 
     const cellWidth = rect.width / s.cellCount
-    const baseY = rect.bottom + s.bodyOffset
+    const baseY = rect.bottom
 
-    // Pass 1 — the main liquid body, fills all cells
+    // Body pass — one rect per cell; overdraw 0.6 px horizontally to hide
+    // sub-pixel seams between neighbouring bars.
     for (let i = 0; i < s.cellCount; i++) {
       const h = s.cells[i]
-      if (h < 0.15) continue
+      if (h < 0.2) continue
       const x = rect.left + i * cellWidth
-      const w = cellWidth + 0.6 // small overdraw avoids pixel gaps between neighboring cells
+      const w = cellWidth + 0.6
       s.graphic.rect(Math.round(x), Math.round(baseY), Math.max(1, Math.round(w)), Math.max(1, Math.round(h)))
     }
-    s.graphic.fill({ color, alpha: 0.92 * s.bodyAlpha })
+    s.graphic.fill({ color, alpha: 0.92 })
 
-    // Pass 2 — 1px specular top row for the "wet" shine
-    if (s.bodyAlpha > 0.3) {
-      for (let i = 0; i < s.cellCount; i++) {
-        const h = s.cells[i]
-        if (h < 1) continue
-        const x = rect.left + i * cellWidth
-        const w = cellWidth + 0.6
-        s.graphic.rect(Math.round(x), Math.round(baseY), Math.max(1, Math.round(w)), 1)
-      }
-      s.graphic.fill({ color: lighten(color, 0.42), alpha: 0.9 * s.bodyAlpha })
+    // Specular highlight pass — only on cells thick enough to "catch light".
+    let anySpec = false
+    for (let i = 0; i < s.cellCount; i++) {
+      if (s.cells[i] < 1) continue
+      const x = rect.left + i * cellWidth
+      const w = cellWidth + 0.6
+      s.graphic.rect(Math.round(x), Math.round(baseY), Math.max(1, Math.round(w)), 1)
+      anySpec = true
+    }
+    if (anySpec) {
+      s.graphic.fill({ color: lighten(color, 0.42), alpha: 0.88 })
     }
   }
 
@@ -705,8 +727,6 @@ export class EffectsEngine {
     rect: DOMRect,
     cellIndex: number,
     thickness: number,
-    yOffset = 0,
-    inheritVy = 0,
   ): void {
     const p = this.pickFreeParticle()
     if (!p) return
@@ -716,9 +736,9 @@ export class EffectsEngine {
     const cx = rect.left + cellIndex * cellWidth + cellWidth / 2
     const jitterX = (Math.random() - 0.5) * cellWidth * 0.8
     const x = cx + jitterX
-    const y = rect.bottom + yOffset + thickness
+    const y = rect.bottom + thickness
     p.vx = (Math.random() - 0.5) * 6
-    p.vy = inheritVy + 20 + Math.random() * 40
+    p.vy = 20 + Math.random() * 40
     p.gravity = 600
     p.life = 0.8 + Math.random() * 0.5
     p.maxLife = p.life
