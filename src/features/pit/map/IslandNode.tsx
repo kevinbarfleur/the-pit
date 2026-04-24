@@ -118,7 +118,7 @@ export function IslandNode({ node, state, canCommit, style }: IslandNodeProps) {
         ? {
             color: TYPE_COLOR[node.type],
             shape: 'patch' as const,
-            heightScale: 0.45,
+            heightScale: 0.8,
             countScale: 0.55,
           }
         : { color: TYPE_COLOR[node.type] }

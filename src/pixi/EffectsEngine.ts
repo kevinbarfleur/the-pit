@@ -1256,8 +1256,9 @@ export class EffectsEngine {
     const r = Math.random()
     let rawHeight: number
     if (side === 'patch') {
-      // Always short: 2..6 px.
-      rawHeight = 2 + Math.floor(Math.random() * 5)
+      // Short but visible: 5..12 engine pixels. Earlier 2..6 × 0.45
+      // heightScale rounded to 1–3 px which read as dust, not grass.
+      rawHeight = 5 + Math.floor(Math.random() * 8)
     } else if (side !== 'top') {
       rawHeight = 3 + Math.floor(Math.random() * 7)
     } else if (r < 0.32) rawHeight = 3 + Math.floor(Math.random() * 4)
