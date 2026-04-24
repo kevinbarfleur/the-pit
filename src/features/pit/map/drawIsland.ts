@@ -392,6 +392,7 @@ export function drawIsland(
   ctx: CanvasRenderingContext2D,
   id: string,
   type: PitNodeType,
+  forceEventVariant?: EventVariant,
 ): void {
   ctx.clearRect(0, 0, ISLAND_W, ISLAND_H)
   const hash = hashId(id)
@@ -407,7 +408,7 @@ export function drawIsland(
   drawSignpost(ctx, signpost, plaque)
 
   // --- GROUND PROPS ---
-  drawProps(ctx, ground, type, id)
+  drawProps(ctx, ground, type, id, forceEventVariant)
 
   // --- SHADOW (decor, last so it sits over the underside) ---
   drawShadow(ctx)
@@ -457,6 +458,7 @@ function drawProps(
   ground: GroundArea,
   type: PitNodeType,
   id: string,
+  forceEventVariant?: EventVariant,
 ): void {
   /** Shorthand: project a world-space (x, y, z) onto the sprite. */
   const w = (x: number, y: number, z: number = 0) =>
@@ -476,12 +478,15 @@ function drawProps(
     drawCoinStack(ctx, stack.sx, stack.sy)
     return
   }
-  if (type === 'event' && computeEventVariant(id) === 'spring') {
-    // Pond sits in front of the signpost on the ground plane. The
-    // hover effect (`spring`) anchors here and continuously runs
-    // streams of water drops outward off the cap.
-    const pond = w(0, 4, 0)
-    drawPond(ctx, pond.sx, pond.sy)
+  if (type === 'event') {
+    const variant = forceEventVariant ?? computeEventVariant(id)
+    if (variant === 'spring') {
+      // Pond sits in front of the signpost on the ground plane. The
+      // hover effect (`spring`) anchors here and continuously runs
+      // streams of water drops outward off the cap.
+      const pond = w(0, 4, 0)
+      drawPond(ctx, pond.sx, pond.sy)
+    }
     return
   }
 }

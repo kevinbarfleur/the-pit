@@ -25,6 +25,10 @@ interface IslandPreviewProps {
    *  waiting for pointerenter. The preview page uses this so every
    *  island's effect is visible at a glance. */
   effectAlwaysOn?: boolean
+  /** When set, forces a specific event sub-variant on the preview
+   *  irrespective of the id hash. Use this from the demo page to
+   *  reliably show e.g. the spring variant. */
+  forceEventVariant?: 'plain' | 'spring'
 }
 
 const TYPE_GLYPH: Record<PitNodeType, string> = {
@@ -71,6 +75,7 @@ export function IslandPreview({
   type,
   scale = 3,
   effectAlwaysOn = true,
+  forceEventVariant,
 }: IslandPreviewProps) {
   const rootRef = useRef<HTMLDivElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -86,8 +91,8 @@ export function IslandPreview({
     const ctx = canvas.getContext('2d', { alpha: true })
     if (!ctx) return
     ctx.imageSmoothingEnabled = false
-    drawIsland(ctx, id, type)
-  }, [id, type])
+    drawIsland(ctx, id, type, forceEventVariant)
+  }, [id, type, forceEventVariant])
 
   useEffect(() => {
     if (!engine) return
@@ -97,7 +102,8 @@ export function IslandPreview({
 
     // event-spring islands override the default sparkle with the
     // continuous water-flow effect.
-    const isSpring = type === 'event' && computeEventVariant(id) === 'spring'
+    const eventVariant = forceEventVariant ?? computeEventVariant(id)
+    const isSpring = type === 'event' && eventVariant === 'spring'
     const kind: AttachKind = isSpring ? 'spring' : TYPE_HOVER[type]
     const color = isSpring ? 0x6ec3d4 : TYPE_COLOR[type]
     const config: AttachConfig =
