@@ -1,0 +1,32 @@
+@import "tailwindcss";
+
+@theme {
+  --font-mono: "Monaspace Neon", "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+
+  --color-pit-ink: #0a0a0a;
+  --color-pit-ink-2: #111111;
+  --color-pit-bone: #d8cfb8;
+  --color-pit-dim: #6b6b6b;
+  --color-pit-green: #9ae66e;
+  --color-pit-amber: #d4a147;
+  --color-pit-red: #d45a5a;
+  --color-pit-violet: #9a7bd4;
+}
+
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  min-height: 100dvh;
+  background: var(--color-pit-ink);
+  color: var(--color-pit-bone);
+  font-family: var(--font-mono);
+  font-variant-ligatures: contextual;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: var(--color-pit-green);
+  color: var(--color-pit-ink);
+}
