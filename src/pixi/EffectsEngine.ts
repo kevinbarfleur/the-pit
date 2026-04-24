@@ -2243,22 +2243,21 @@ export class EffectsEngine {
       }
     }
 
-    // Dust motes — a scatter of single pixels that twinkle around the
-    // hoard at a time-varying positions, giving the whole area a
-    // "floating gold particles" feel on top of the ray pattern.
-    const moteCount = 18
+    // Dust motes — a few single-pixel twinkles tightly clustered on
+    // the halo's mid-band (not spraying wide) so they read as dust
+    // kicked up from the hoard rather than sparkles floating off into
+    // the cap.
+    const moteCount = 10
     for (let m = 0; m < moteCount; m++) {
-      // Each mote has a stable angular offset + orbit radius + bob
-      // phase; we read (time, m) to position + flicker it.
       const moteSeed = m * 0.618
       const moteAngle = moteSeed * Math.PI * 2 + s.time * 0.25
-      const moteR = spotHalf * (0.35 + 0.6 * ((moteSeed * 7) % 1))
+      const moteR = spotHalf * (0.55 + 0.3 * ((moteSeed * 7) % 1))
       const twinkle = 0.5 + 0.5 * Math.sin(s.time * 4 + moteSeed * 9)
-      if (twinkle < 0.15) continue
+      if (twinkle < 0.3) continue
       const mx = Math.round(cx + Math.cos(moteAngle) * moteR)
-      const my = Math.round(cy + Math.sin(moteAngle) * moteR * 0.7)
+      const my = Math.round(cy + Math.sin(moteAngle) * moteR * 0.55)
       g.rect(mx, my, 1, 1)
-      g.fill({ color: colorLight, alpha: twinkle * 0.7 })
+      g.fill({ color: colorLight, alpha: twinkle * 0.55 })
     }
   }
 

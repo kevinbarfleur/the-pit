@@ -234,7 +234,7 @@ export function drawIsland(
   // of this hoard so the wash of light feels emitted from the treasure
   // itself.
   if (type === 'treasure') {
-    const hoard = treasureHoardLayout()
+    const hoard = treasureHoardLayout(id)
     drawTreasureChest(ctx, hoard.leftChestX, hoard.rowY)
     drawTreasureChest(ctx, hoard.rightChestX, hoard.rowY)
     drawCoinStack(ctx, hoard.stackX, hoard.stackY)
@@ -246,24 +246,45 @@ export function drawIsland(
   drawShadow(ctx)
 }
 
-/** Static layout of the treasure hoard. Two 7×5 chests and one 6×4
- *  coin stack, packed tightly as one compact mound right under the
- *  signpost. The coin stack sits in front (lower) and the chests
- *  flank it slightly offset upward — reads as a little pile of loot
- *  rather than three separate objects spread across the cap. */
-function treasureHoardLayout(): {
+/**
+ * Static layout of the treasure hoard, **anchored under the signpost**
+ * rather than at the geometric centre of the island.
+ *
+ * The signpost has a per-id X jitter (±3 native px) and a Y depth
+ * variant (plaqueCenterY 5..8). If the hoard used fixed coordinates,
+ * islands whose plaque leans left or sits high would end up with a
+ * hoard floating away from the signpost's base. Here we derive:
+ *
+ *  - center X = plaqueCenterX (so the pile always sits right under
+ *    the panel, regardless of the jitter)
+ *  - row Y = bottom of the stake + 6 px (chests rest on the "ground"
+ *    at the foot of the signpost, not halfway up the cap)
+ *  - stack Y = row Y + 5 (coin stack is in the foreground, below the
+ *    chests)
+ *
+ * All values are clamped so they stay within the visible cap band.
+ */
+function treasureHoardLayout(id: string): {
   leftChestX: number
   rightChestX: number
   rowY: number
   stackX: number
   stackY: number
 } {
+  const sp = computeSignpostLayout(id)
+  // Bottom of the stake in native px — that's the signpost's "base".
+  const stakeBottom = sp.plaqueCenterY + Math.floor(sp.plaqueH / 2) + 5
+  // Chests sit on the ground right at the foot of the stake.
+  const rowY = stakeBottom + 6
+  // Coin stack tucked in front of the chest row.
+  const stackY = rowY + 5
+  const cx = sp.plaqueCenterX
   return {
-    leftChestX: 14,
-    rightChestX: 22,
-    rowY: 22,
-    stackX: 18,
-    stackY: 27,
+    leftChestX: cx - 4,
+    rightChestX: cx + 4,
+    rowY,
+    stackX: cx,
+    stackY,
   }
 }
 
@@ -285,7 +306,7 @@ export function computeIslandSpot(
     // Bounding rect of the whole compact mound. Used by godray as
     // its anchor so the halo wraps the pile rather than floating
     // somewhere else on the cap.
-    const h = treasureHoardLayout()
+    const h = treasureHoardLayout(id)
     const left = h.leftChestX - 4
     const right = h.rightChestX + 4
     const top = h.rowY - 3
