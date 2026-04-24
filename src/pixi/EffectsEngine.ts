@@ -2502,73 +2502,46 @@ export class EffectsEngine {
 
     const cx = rect.left + rect.width / 2
     const cy = rect.top + rect.height / 2
-    // Pond ellipse: 64% of placeable zone, irregular silhouette.
     const ellRx = rect.width * 0.32
     const ellRy = rect.height * 0.32
+    // The "lip" is one fixed point on the rim where ALL the overflow
+    // pours. We don't drop pixels from every angle — the cascade is
+    // a coherent column, not a sphere of spray.
+    const lipAngle = (s.cascadeIdx / s.cellCount) * Math.PI * 2
+    // Vertical-only side: clamp to right or left horizontal vector
+    // so the cascade falls at the cap's side, not at the back.
+    const lipDirX = s.side === 'left' ? -1 : 1
+    const lipDirY = 0
+    const lipBaseX = cx + lipDirX * ellRx
+    const lipBaseY = cy + lipDirY * ellRy
+    void lipAngle
+
+    // ---------- SIMPLE WAVE FOR THE WATER SURFACE ----------
+    // No more height-field around the whole rim. Just a small
+    // animated wobble of the surface for life.
     const N = s.cellCount
 
-    // ---------- TOP HEIGHT FIELD ----------
-    // Gently diffused, fed by a wave field plus a sustained column
-    // on the cascade side. Pinch-off droplets remove mass when cells
-    // exceed a per-cell threshold.
-    const k = 0.16
-    const next = s.topCells.slice()
-    for (let i = 0; i < N; i++) {
-      const left = s.topCells[(i - 1 + N) % N]
-      const right = s.topCells[(i + 1) % N]
-      next[i] = s.topCells[i] + k * (left + right - 2 * s.topCells[i])
-    }
-    s.topCells = next
-
-    if (effect.enabled) {
-      // Constant fill + travelling-wave injection across the rim.
-      for (let i = 0; i < N; i++) {
-        const a = (i / N) * Math.PI * 2
-        const wave =
-          1.4 +
-          Math.sin(s.time * 1.6 + a * 3) * 0.9 +
-          Math.sin(s.time * 2.4 + a * 5 + 0.7) * 0.6
-        s.topCells[i] += wave * dt + (Math.random() - 0.3) * 0.18
-      }
-      // Cascade-side sustained heavy fill — 5 cells around `cascadeIdx`
-      // get an extra constant flow so the chosen side is always
-      // overflowing the most.
-      for (let off = -2; off <= 2; off++) {
-        const idx = (s.cascadeIdx + off + N) % N
-        const w = 1 - Math.abs(off) * 0.2
-        s.topCells[idx] += 6 * w * dt
-      }
-
-      // Pinch-off droplets — every cell that exceeds threshold has a
-      // probability per frame to shed a chaotic droplet, removing
-      // 1.5 px of mass from the cell. That's how the rim looks alive:
-      // pixels constantly leaving it.
-      s.flowAcc += dt
-      if (s.flowAcc >= 0.04) {
-        s.flowAcc = 0
-        for (let i = 0; i < N; i++) {
-          const threshold = i === s.cascadeIdx ? 1.5 : 2.4 + s.topNoise[i] * 0.4
-          if (s.topCells[i] <= threshold) continue
-          const isCasc = Math.abs(((i - s.cascadeIdx + N + N / 2) % N) - N / 2) <= 2
-          const prob = (s.topCells[i] - threshold) * (isCasc ? 0.85 : 0.35)
-          if (Math.random() < prob) {
-            this.spawnSpringRimDrop(s, rect, i)
-            s.topCells[i] = Math.max(0, s.topCells[i] - 1.6)
-          }
-        }
-      }
-    } else {
+    if (!effect.enabled) {
       for (let i = 0; i < N; i++) s.topCells[i] = Math.max(0, s.topCells[i] - 6 * dt)
     }
 
-    // Per-cell cap with edge taper baked into the static jitter.
-    for (let i = 0; i < N; i++) {
-      const cap = 4.5 + s.topNoise[i] * 0.6
-      if (s.topCells[i] > cap) s.topCells[i] = cap
+    // ---------- CASCADE: continuous mass spawn at the lip ----------
+    // We model the whole cascade as a stream of falling drops spawned
+    // every ~22ms at the lip with a small horizontal jitter. They
+    // accelerate downward under gravity. The TIP of the column has
+    // an extra burst of side-spreading drops so it splashes when
+    // hitting the void below the cap.
+    if (effect.enabled) {
+      s.flowAcc += dt
+      const cadence = 0.022 // 45 spawns/s
+      while (s.flowAcc >= cadence) {
+        s.flowAcc -= cadence
+        this.spawnSpringRimDrop(s, rect, lipBaseX, lipBaseY, lipDirX)
+      }
     }
 
-    // ---------- DROPS PHYSICS ----------
-    const gravity = 320
+    // ---------- PHYSICS ----------
+    const gravity = 380
     for (const d of s.drops) {
       if (!d.inUse) continue
       d.life -= dt
@@ -2576,7 +2549,7 @@ export class EffectsEngine {
         d.inUse = false
         continue
       }
-      d.vx *= 0.985
+      d.vx *= 0.99
       d.vy += gravity * dt
       d.x += d.vx * dt
       d.y += d.vy * dt
@@ -2586,78 +2559,80 @@ export class EffectsEngine {
     const g = s.graphic
     g.clear()
 
-    // 1) Pond body — solid ellipse fill (the "still" water).
+    // 1) Pond body — solid ellipse fill, slightly inset so the rim
+    // outline reads as raised.
     fillEllipse(g, cx, cy, ellRx - 1, ellRy - 1, s.color, 0.9)
-    // Subtle moving highlights on the surface so it doesn't read
-    // like a flat disc.
-    for (let k2 = 0; k2 < 4; k2++) {
-      const ang = s.time * 0.55 + k2 * 1.7
-      const fx = Math.cos(ang) * ellRx * 0.6
-      const fy = Math.sin(ang * 1.3 + 0.4) * ellRy * 0.4
+
+    // 2) Surface highlights — thin wobbling stripe + 3 specular flecks.
+    const stripeY = cy - ellRy * 0.45
+    for (let dx = -ellRx + 2; dx <= ellRx - 2; dx += 1) {
+      const t = Math.abs(dx) / ellRx
+      if (t > 0.85) continue
+      const wob = Math.sin(s.time * 2.1 + dx * 0.7) * 0.5
+      g.rect(Math.round(cx + dx), Math.round(stripeY + wob), 1, 1)
+      g.fill({ color: colorLight, alpha: 0.5 * (1 - t) })
+    }
+    for (let k2 = 0; k2 < 3; k2++) {
+      const ang = s.time * 0.6 + k2 * 2.1
+      const fx = Math.cos(ang) * ellRx * 0.55
+      const fy = Math.sin(ang * 1.3) * ellRy * 0.4
       g.rect(Math.round(cx + fx), Math.round(cy + fy), 1, 1)
-      g.fill({ color: 0xffffff, alpha: 0.5 })
+      g.fill({ color: 0xffffff, alpha: 0.55 })
     }
 
-    // 2) Living rim — for every cell, plot pixels OUTWARD from the
-    //    base ellipse all the way to its current top-cells height.
-    //    The static jitter shifts the base so the silhouette is never
-    //    a clean ellipse, and the dynamic height bumps it up further
-    //    where the wave is currently high. Result: a chunky, lumpy,
-    //    moving rim that looks unmistakably like overflowing water.
+    // 3) Outline — pond rim drawn with the static jitter so the
+    // silhouette is irregular (NO live spray everywhere — just the
+    // outline of the body).
     for (let i = 0; i < N; i++) {
       const a = (i / N) * Math.PI * 2
-      const baseR_x = ellRx + s.topNoise[i]
-      const baseR_y = ellRy + s.topNoise[i]
-      const h = s.topCells[i]
-      const totalR_x = baseR_x + h
-      const totalR_y = baseR_y + h
-      // Step pixel-by-pixel from base to tip along the angle ray.
-      const baseX = cx + Math.cos(a) * baseR_x
-      const baseY = cy + Math.sin(a) * baseR_y
-      const tipX = cx + Math.cos(a) * totalR_x
-      const tipY = cy + Math.sin(a) * totalR_y
-      const dx = tipX - baseX
-      const dy = tipY - baseY
-      const dist = Math.sqrt(dx * dx + dy * dy)
-      const steps = Math.max(1, Math.ceil(dist))
-      for (let k2 = 0; k2 <= steps; k2++) {
-        const tt = steps === 0 ? 0 : k2 / steps
-        const px = Math.round(baseX + dx * tt)
-        const py = Math.round(baseY + dy * tt)
-        const atTip = k2 === steps && h > 0.7
-        g.rect(px, py, 1, 1)
-        g.fill({ color: atTip ? colorLight : s.color, alpha: 0.95 })
-      }
+      const r_x = ellRx + s.topNoise[i]
+      const r_y = ellRy + s.topNoise[i]
+      const x = Math.round(cx + Math.cos(a) * r_x)
+      const y = Math.round(cy + Math.sin(a) * r_y)
+      g.rect(x, y, 1, 1)
+      g.fill({ color: colorDark, alpha: 0.85 })
     }
 
-    // 3) Drops — chaotic 1×1 / 1×2 pixels falling under gravity. No
-    //    sustained column, no clean line; just a stream of pixels
-    //    leaving the rim and dropping past the cap.
+    // 4) Lip — a fat 3-px thick downward bulge of water at the
+    // cascade origin, animated with a slow vertical pulse so it
+    // reads as the constant overflow point.
+    const lipPulse = Math.sin(s.time * 4) * 0.5 + 1.5
+    const lipW = 4
+    const lipH = Math.round(2 + lipPulse)
+    const lipX = Math.round(lipBaseX) - Math.floor(lipW / 2) + (s.side === 'left' ? -1 : 0)
+    g.rect(lipX, Math.round(lipBaseY), lipW, lipH)
+    g.fill({ color: s.color, alpha: 0.95 })
+    g.rect(lipX + 1, Math.round(lipBaseY), 2, 1)
+    g.fill({ color: colorLight, alpha: 0.85 })
+
+    // 5) Falling cascade column — drops drawn as 1×3 streaks for a
+    // strong vertical motion blur. They cluster near the lip's X
+    // because they all spawn there with low horizontal velocity.
     for (const d of s.drops) {
       if (!d.inUse) continue
-      const t = d.life / d.maxLife
-      const alpha = 0.55 + 0.4 * t
-      const isStreak = d.vy > 90 && t < 0.7
-      if (isStreak) {
-        g.rect(Math.round(d.x), Math.round(d.y), 1, 2)
-      } else {
-        g.rect(Math.round(d.x), Math.round(d.y), 1, 1)
-      }
-      g.fill({ color: t > 0.7 ? colorLight : s.color, alpha })
-      // Occasional darker trailing pixel for fast falling drops.
-      if (isStreak && Math.random() < 0.4) {
-        g.rect(Math.round(d.x), Math.round(d.y) - 1, 1, 1)
-        g.fill({ color: colorDark, alpha: 0.5 })
-      }
+      const speed = Math.abs(d.vy)
+      const streakLen = speed > 200 ? 3 : speed > 120 ? 2 : 1
+      g.rect(Math.round(d.x), Math.round(d.y), 1, streakLen)
+      g.fill({ color: s.color, alpha: 0.9 })
+      // Bright tip pixel
+      g.rect(Math.round(d.x), Math.round(d.y), 1, 1)
+      g.fill({ color: colorLight, alpha: 0.9 })
     }
   }
 
   /**
-   * Pinch a droplet off the rim cell `cellIdx`. Direction is the
-   * outward radial; cascade-side cells get extra downward kick so
-   * water visibly pours off there.
+   * Spawn a drop at the lip. All drops start at roughly the same
+   * point with a tiny horizontal jitter, so when many spawn quickly
+   * + accelerate under gravity they form a coherent **falling column
+   * of water**, not a sphere of spray.
    */
-  private spawnSpringRimDrop(s: SpringState, rect: DOMRect, cellIdx: number): void {
+  private spawnSpringRimDrop(
+    s: SpringState,
+    _rect: DOMRect,
+    lipBaseX: number,
+    lipBaseY: number,
+    lipDirX: number,
+  ): void {
     let drop: SpringDrop | undefined
     for (const d of s.drops) {
       if (!d.inUse) {
@@ -2678,29 +2653,13 @@ export class EffectsEngine {
       }
       s.drops.push(drop)
     }
-    const cx = rect.left + rect.width / 2
-    const cy = rect.top + rect.height / 2
-    const ellRx = rect.width * 0.32
-    const ellRy = rect.height * 0.32
-    const a = (cellIdx / s.cellCount) * Math.PI * 2
-    const baseR_x = ellRx + s.topNoise[cellIdx]
-    const baseR_y = ellRy + s.topNoise[cellIdx]
-    const h = s.topCells[cellIdx]
-    const px = cx + Math.cos(a) * (baseR_x + h)
-    const py = cy + Math.sin(a) * (baseR_y + h)
-    drop.x = px + (Math.random() - 0.5) * 0.7
-    drop.y = py + (Math.random() - 0.5) * 0.7
-    // Outward radial velocity.
-    const distFromCascade = Math.min(
-      Math.abs(cellIdx - s.cascadeIdx),
-      s.cellCount - Math.abs(cellIdx - s.cascadeIdx),
-    )
-    const isCasc = distFromCascade <= 2
-    const radialSpeed = isCasc ? 8 + Math.random() * 14 : 16 + Math.random() * 18
-    const downKick = isCasc ? 60 + Math.random() * 50 : (Math.random() - 0.4) * 18
-    drop.vx = Math.cos(a) * radialSpeed + (Math.random() - 0.5) * 12
-    drop.vy = Math.sin(a) * radialSpeed + downKick
-    drop.life = isCasc ? 1.0 + Math.random() * 0.8 : 0.55 + Math.random() * 0.45
+    // Three columns of jitter so the column has visible width.
+    const col = Math.floor(Math.random() * 3) - 1
+    drop.x = lipBaseX + col + lipDirX * 1
+    drop.y = lipBaseY + 1 + Math.random() * 1.5
+    drop.vx = lipDirX * (4 + Math.random() * 6) + (Math.random() - 0.5) * 4
+    drop.vy = 25 + Math.random() * 35
+    drop.life = 1.6 + Math.random() * 0.7
     drop.maxLife = drop.life
     drop.inUse = true
   }
