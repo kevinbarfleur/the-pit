@@ -9,6 +9,7 @@ import {
   CAP_TOP_ANCHOR_CSS,
   ISLAND_H,
   ISLAND_W,
+  computeIslandSpot,
   computeSignpostLayout,
   drawIsland,
 } from './drawIsland'
@@ -78,11 +79,16 @@ export function IslandNode({ node, state, canCommit, style }: IslandNodeProps) {
   const ref = useRef<HTMLButtonElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const capZoneRef = useRef<HTMLDivElement | null>(null)
+  const spotZoneRef = useRef<HTMLDivElement | null>(null)
   const engine = useEffects()
   const setHoveredId = usePitUiStore((s) => s.setHoveredId)
   const startZoomIn = usePitUiStore((s) => s.startZoomIn)
 
   const signpost = useMemo(() => computeSignpostLayout(node.id), [node.id])
+  const spot = useMemo(
+    () => computeIslandSpot(node.id, node.type),
+    [node.id, node.type],
+  )
 
   // Draw the bitmap once per (id, type). State changes are handled in CSS.
   useEffect(() => {
@@ -110,6 +116,7 @@ export function IslandNode({ node, state, canCommit, style }: IslandNodeProps) {
     if (!engine || !hoverEnabled) return
     const btn = ref.current
     const cap = capZoneRef.current
+    const spotEl = spotZoneRef.current
     if (!btn || !cap) return
 
     const kind = TYPE_HOVER[node.type]
@@ -122,7 +129,11 @@ export function IslandNode({ node, state, canCommit, style }: IslandNodeProps) {
             countScale: 5,
           }
         : { color: TYPE_COLOR[node.type] }
-    const { id, detach } = engine.attachWithHandle(cap, kind, attachConfig)
+    // godray / coins anchor on the island's pixel-art spot (chest /
+    // coin stack) when it exists.
+    const attachTarget =
+      (kind === 'godray' || kind === 'coins') && spotEl ? spotEl : cap
+    const { id, detach } = engine.attachWithHandle(attachTarget, kind, attachConfig)
     engine.setEnabled(id, false)
 
     const onEnter = () => engine.setEnabled(id, true)
@@ -234,6 +245,19 @@ export function IslandNode({ node, state, canCommit, style }: IslandNodeProps) {
         }}
         aria-hidden="true"
       />
+      {spot && (
+        <div
+          ref={spotZoneRef}
+          className={styles.capZone}
+          style={{
+            top: `${(spot.y - spot.h / 2) * SCALE}px`,
+            left: `${(spot.x - spot.w / 2) * SCALE}px`,
+            width: `${spot.w * SCALE}px`,
+            height: `${spot.h * SCALE}px`,
+          }}
+          aria-hidden="true"
+        />
+      )}
       {/* Glyph overlay, positioned over the signpost plaque. Tilt
           follows the signpost's pose so the glyph stays legible
           regardless of the variant. */}

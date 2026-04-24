@@ -6,6 +6,7 @@ import type { PitNodeType } from '../../../game/pit/types'
 import {
   ISLAND_H,
   ISLAND_W,
+  computeIslandSpot,
   computeSignpostLayout,
   drawIsland,
 } from './drawIsland'
@@ -73,9 +74,11 @@ export function IslandPreview({
   const rootRef = useRef<HTMLDivElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const capZoneRef = useRef<HTMLDivElement | null>(null)
+  const spotZoneRef = useRef<HTMLDivElement | null>(null)
   const engine = useEffects()
 
   const signpost = useMemo(() => computeSignpostLayout(id), [id])
+  const spot = useMemo(() => computeIslandSpot(id, type), [id, type])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -90,6 +93,7 @@ export function IslandPreview({
     if (!engine) return
     const root = rootRef.current
     const cap = capZoneRef.current
+    const spotEl = spotZoneRef.current
     if (!root || !cap) return
 
     const kind = TYPE_HOVER[type]
@@ -98,7 +102,13 @@ export function IslandPreview({
       kind === 'grass'
         ? { color, shape: 'patch', heightScale: 1, countScale: 8 }
         : { color }
-    const { id: effectId, detach } = engine.attachWithHandle(cap, kind, config)
+    // godray and coins anchor on the island's pixel-art "spot" (chest
+    // for treasure, coin stack for shop) so the effect reads as
+    // emanating from that object rather than from the centre of the
+    // island. Everything else still uses the generic cap zone.
+    const attachTarget =
+      (kind === 'godray' || kind === 'coins') && spotEl ? spotEl : cap
+    const { id: effectId, detach } = engine.attachWithHandle(attachTarget, kind, config)
     engine.setEnabled(effectId, effectAlwaysOn)
 
     // Always also react to hover so interactive toggling still works
@@ -159,6 +169,19 @@ export function IslandPreview({
         }}
         aria-hidden="true"
       />
+      {spot && (
+        <div
+          ref={spotZoneRef}
+          className={styles.capZone}
+          style={{
+            top: `${(spot.y - spot.h / 2) * scale}px`,
+            left: `${(spot.x - spot.w / 2) * scale}px`,
+            width: `${spot.w * scale}px`,
+            height: `${spot.h * scale}px`,
+          }}
+          aria-hidden="true"
+        />
+      )}
       <span
         className={styles.glyph}
         style={{

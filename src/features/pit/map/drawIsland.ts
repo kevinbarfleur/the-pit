@@ -233,10 +233,46 @@ export function drawIsland(
   // godray hover aura. Side (left/right of the plaque) picked off the
   // hash so the scene stays stable.
   if (type === 'treasure') {
-    const chestOnRight = ((hash >> 28) & 1) === 0
-    drawChest(ctx, signpost, chestOnRight)
+    const spot = computeIslandSpot(id, 'treasure')!
+    drawChest(ctx, spot.x, spot.y)
+  }
+  if (type === 'shop') {
+    const spot = computeIslandSpot(id, 'shop')!
+    drawCoinStack(ctx, spot.x, spot.y)
   }
   drawShadow(ctx)
+}
+
+/**
+ * Position of the pixel-art "spot" a few islands carry on top of their
+ * cap: the treasure chest and the shop coin-stack. Exposed so the
+ * React layer can anchor a hover effect exactly on top of it — the
+ * hover aura then reads as emanating from the chest / stack rather
+ * than from the centre of the island.
+ *
+ * Returns native-pixel coordinates of the centre of the spot and its
+ * dimensions. Callers scale these by the island's CSS SCALE.
+ */
+export function computeIslandSpot(
+  id: string,
+  type: PitNodeType,
+): { x: number; y: number; w: number; h: number } | null {
+  if (type !== 'treasure' && type !== 'shop') return null
+  const hash = hashId(id)
+  const signpost = computeSignpostLayout(id)
+  const onRight = ((hash >> 28) & 1) === 0
+  const side = onRight ? 1 : -1
+  const cx = Math.round(signpost.plaqueCenterX + side * (signpost.plaqueW / 2 + 3))
+  const top = Math.round(signpost.plaqueCenterY + signpost.plaqueH / 2 + 2)
+  if (type === 'treasure') {
+    const W = 7
+    const H = 5
+    return { x: cx, y: top + Math.floor(H / 2), w: W, h: H }
+  }
+  // shop
+  const W = 6
+  const H = 4
+  return { x: cx, y: top + Math.floor(H / 2), w: W, h: H }
 }
 
 // ---------- cap + stalactites ----------
@@ -532,24 +568,12 @@ function drawShadow(ctx: CanvasRenderingContext2D): void {
  * the cap's visible top surface. Palette is a warm wood body with a
  * gold strap + lock so it reads unambiguously as loot even at small
  * sizes.
- *
- * Positioned relative to the signpost so it always sits beside the
- * plaque rather than clashing with it. The `onRight` flag stably
- * picks which side of the plaque the chest lands on per-island.
  */
-function drawChest(
-  ctx: CanvasRenderingContext2D,
-  signpost: SignpostLayout,
-  onRight: boolean,
-): void {
+function drawChest(ctx: CanvasRenderingContext2D, spotX: number, spotY: number): void {
   const CHEST_W = 7
   const CHEST_H = 5
-  // Offset the chest so it hugs the plaque side but doesn't overlap it.
-  const side = onRight ? 1 : -1
-  const cx = Math.round(signpost.plaqueCenterX + side * (signpost.plaqueW / 2 + 3))
-  // Sit the chest at the base of the signpost (on the cap surface).
-  const top = Math.round(signpost.plaqueCenterY + signpost.plaqueH / 2 + 2)
-  const x0 = cx - Math.floor(CHEST_W / 2)
+  const x0 = spotX - Math.floor(CHEST_W / 2)
+  const top = spotY - Math.floor(CHEST_H / 2)
 
   // Skip entirely if the chest would fall outside the canvas.
   if (x0 < 1 || x0 + CHEST_W > ISLAND_W - 1) return
@@ -605,4 +629,58 @@ function drawChest(
   // Gold highlight pips — sells the metal sheen.
   plot(ctx, x0 + 1, top + 2, GOLD_LIGHT)
   plot(ctx, x0 + CHEST_W - 2, top + 2, GOLD_LIGHT)
+}
+
+// ---------- coin stack (shop) ----------
+
+/**
+ * A tiny stack of gold coins, 6×4 native, planted next to the sign
+ * post on shop islands. Reads unambiguously as "stuff for sale" even
+ * before the hover coin-rain kicks in. Shape is a 3-tier stepped
+ * pyramid of coins — thin stacks are more legible at this size than
+ * tall ones.
+ */
+function drawCoinStack(ctx: CanvasRenderingContext2D, spotX: number, spotY: number): void {
+  const W = 6
+  const H = 4
+  const x0 = spotX - Math.floor(W / 2)
+  const top = spotY - Math.floor(H / 2)
+  if (x0 < 1 || x0 + W > ISLAND_W - 1) return
+  if (top + H > ISLAND_H - 2) return
+
+  const OUTLINE = '#2a1808'
+  const GOLD_DARK = '#8a5a14'
+  const GOLD_MID = '#d4a040'
+  const GOLD_LIGHT = '#f8e088'
+
+  // Row 0: the topmost coin — 2 wide centred
+  // Row 1: 4 wide coin
+  // Row 2: 6 wide base coin
+  // Row 3: bottom outline + shadow under the stack
+  const rows: Array<{ offX: number; w: number }> = [
+    { offX: 2, w: 2 }, // top coin
+    { offX: 1, w: 4 }, // middle coin
+    { offX: 0, w: 6 }, // base coin
+  ]
+
+  for (let i = 0; i < rows.length; i++) {
+    const { offX, w } = rows[i]
+    const y = top + i
+    for (let dx = 0; dx < w; dx++) {
+      const x = x0 + offX + dx
+      let color: string
+      if (dx === 0 || dx === w - 1) color = OUTLINE
+      else if (dx === 1) color = GOLD_LIGHT
+      else if (dx === w - 2) color = GOLD_DARK
+      else color = GOLD_MID
+      plot(ctx, x, y, color)
+    }
+  }
+
+  // Bottom outline for the base coin + shadow pip beneath.
+  for (let dx = 0; dx < W; dx++) {
+    plot(ctx, x0 + dx, top + 3, OUTLINE)
+  }
+  // Optional specular sparkle on the middle coin.
+  plot(ctx, x0 + 2, top + 1, '#ffffff')
 }

@@ -362,20 +362,27 @@ interface GodrayState {
 }
 
 /**
- * Coins — small gold pips orbiting the attached element on an ellipse
- * (not a sphere), so the motion reads as top-down / isometric. Used
- * for shop islands: coins dance above the panel.
+ * Coins — gold pips that jet out of the attached element in short arcs
+ * with gravity. Used for shop islands: the coin stack keeps spitting
+ * coins that loft upward, flip in mid-air, and fall back down. Reads
+ * unambiguously as a busy merchant handling money.
  */
 interface CoinEntity {
   g: Graphics
-  angle: number
-  angularVel: number
-  radius: number
-  bobPhase: number
+  x: number
+  y: number
+  vx: number
+  vy: number
+  rotPhase: number
+  rotSpeed: number
+  age: number
+  maxAge: number
+  inUse: boolean
 }
 
 interface CoinState {
   entities: CoinEntity[]
+  spawnAcc: number
   time: number
   color: number
 }
@@ -1262,21 +1269,29 @@ export class EffectsEngine {
     const countScale = effect.config.countScale
 
     if (effect.config.shape === 'patch') {
-      // Area distribution: blades scatter randomly across the rect. The
-      // caller typically provides a small, wide rect matching the top
-      // surface of an island cap, producing a pixel-art patch of short
-      // grass growing on the visible ground — read as isometric, not as
-      // grass growing up from a rectangular edge.
-      //
-      // Base count is 60 in patch mode (vs 34+10 on edge) because
-      // ground-cover needs real density to stop reading as a handful
-      // of scattered blades. Callers scale with `countScale` (default
-      // 1 in the config; islands pass 5+ to actually carpet).
-      const count = Math.max(20, Math.round(60 * countScale))
-      for (let i = 0; i < count; i++) {
+      // Area distribution: blades scatter randomly across the rect. To
+      // avoid the "square of grass" silhouette the user flagged, we
+      // reject any (fx, fy) that falls outside an irregular ellipse
+      // inscribed in the rect. The ellipse is slightly wider than tall
+      // (×1.75 y-weight) to hug the top surface of a cap, and each
+      // rejection test adds a small angle-dependent noise so the
+      // boundary reads as organic dirt, not a perfect ellipse.
+      const targetCount = Math.max(20, Math.round(60 * countScale))
+      let placed = 0
+      let attempts = 0
+      const attemptCap = targetCount * 6
+      while (placed < targetCount && attempts < attemptCap) {
+        attempts++
         const fx = Math.random()
         const fy = Math.random()
+        const dx = fx - 0.5
+        const dy = fy - 0.5
+        const angle = Math.atan2(dy, dx)
+        const boundary = 0.225 + 0.04 * Math.sin(angle * 5)
+        const distSq = dx * dx + dy * dy * 1.75
+        if (distSq > boundary) continue
         blades.push(this.buildBlade('patch', fx, pickColor(), heightScale, fy))
+        placed++
       }
     } else {
       // Classic edge distribution — used by buttons.
@@ -2124,12 +2139,12 @@ export class EffectsEngine {
   private initGodray(effect: AttachedEffect): void {
     const graphic = new Graphics()
     this.ambientLayer.addChild(graphic)
-    const rayCount = 18
+    const rayCount = 14
     const rays: GodraySpec[] = []
     for (let i = 0; i < rayCount; i++) {
       rays.push({
         angle: (i / rayCount) * Math.PI * 2,
-        length: 55 + Math.random() * 35, // 55..90 px — reach well past the island
+        length: 22 + Math.random() * 18, // 22..40 px — just past the chest
         phase: Math.random() * Math.PI * 2,
       })
     }
@@ -2146,8 +2161,10 @@ export class EffectsEngine {
     const s = effect.godray
     if (!s) return
     s.time += dt
-    s.rotation += dt * 0.28 // slow rotation
+    s.rotation += dt * 0.32
 
+    // Centre on the attach element — callers put this on the chest's
+    // own zone, so the rays look like they emanate from the treasure.
     const cx = rect.left + rect.width / 2
     const cy = rect.top + rect.height / 2
     const g = s.graphic
@@ -2157,20 +2174,22 @@ export class EffectsEngine {
     const colorMid = lighten(s.color, 0.2)
     const colorDark = darken(s.color, 0.15)
 
-    // --- Outer halo: two concentric soft squares that wrap the whole
-    // island in warm light. Breathes at a slower rate than the rays.
+    // Compact halo stack — scaled to hug the chest rather than the whole
+    // island. Breathes slower than the rays.
     const haloBreathe = 0.75 + 0.25 * Math.sin(s.time * 2.1)
-    const outerR = 48
+    const outerR = 22
     g.rect(Math.round(cx) - outerR, Math.round(cy) - outerR, outerR * 2, outerR * 2)
-    g.fill({ color: s.color, alpha: 0.08 * haloBreathe })
-    const midR = 28
+    g.fill({ color: s.color, alpha: 0.1 * haloBreathe })
+    const midR = 14
     g.rect(Math.round(cx) - midR, Math.round(cy) - midR, midR * 2, midR * 2)
-    g.fill({ color: colorMid, alpha: 0.16 * haloBreathe })
-    const innerR = 16
+    g.fill({ color: colorMid, alpha: 0.18 * haloBreathe })
+    const innerR = 8
     g.rect(Math.round(cx) - innerR, Math.round(cy) - innerR, innerR * 2, innerR * 2)
-    g.fill({ color: colorLight, alpha: 0.22 * haloBreathe })
+    g.fill({ color: colorLight, alpha: 0.28 * haloBreathe })
 
-    // --- Rays: dense pip trails radiating outward.
+    // Rays start at a minimum radius of 4 px so the chest itself isn't
+    // covered — the beam emanates from the chest, not through it.
+    const innerSkip = 4
     for (const ray of s.rays) {
       const a = ray.angle + s.rotation
       const pulse = 0.55 + 0.45 * (0.5 + 0.5 * Math.sin(s.time * 3.2 + ray.phase))
@@ -2178,29 +2197,20 @@ export class EffectsEngine {
       const dx = Math.cos(a)
       const dy = Math.sin(a)
 
-      // Step 1 px along the ray so the beam reads as a solid rod of
-      // light rather than a dotted trail.
       const steps = Math.max(8, Math.round(len))
-      for (let i = 2; i < steps; i++) {
+      for (let i = innerSkip; i < steps; i++) {
         const t = i / steps
         const r = i
         const x = Math.round(cx + dx * r)
         const y = Math.round(cy + dy * r)
-        const size = t < 0.2 ? 3 : t < 0.5 ? 2 : 1
-        const alpha = Math.pow(1 - t, 1.4) * pulse
+        const size = t < 0.25 ? 2 : 1
+        const alpha = Math.pow(1 - t, 1.3) * pulse
         if (alpha < 0.06) continue
         const color = t < 0.3 ? colorLight : t < 0.7 ? s.color : colorDark
         g.rect(x - size / 2, y - size / 2, size, size)
         g.fill({ color, alpha })
       }
     }
-
-    // --- Central bright core so rays feel emitted, not just floating.
-    const core = 0.7 + 0.3 * Math.sin(s.time * 4)
-    g.rect(Math.round(cx) - 4, Math.round(cy) - 4, 8, 8)
-    g.fill({ color: colorLight, alpha: 0.45 * core })
-    g.rect(Math.round(cx) - 2, Math.round(cy) - 2, 4, 4)
-    g.fill({ color: 0xffffff, alpha: 0.65 * core })
   }
 
   // =====================================================================
@@ -2209,21 +2219,28 @@ export class EffectsEngine {
   // signals "shop" at a glance.
   // =====================================================================
   private initCoins(effect: AttachedEffect): void {
-    const count = 8
+    const poolSize = 32
     const entities: CoinEntity[] = []
-    for (let i = 0; i < count; i++) {
+    for (let i = 0; i < poolSize; i++) {
       const g = new Graphics()
+      g.visible = false
       this.ambientLayer.addChild(g)
       entities.push({
         g,
-        angle: (i / count) * Math.PI * 2,
-        angularVel: 0.8 + Math.random() * 0.5,
-        radius: 26 + Math.random() * 8, // 26..34 px — wide enough to read
-        bobPhase: Math.random() * Math.PI * 2,
+        x: 0,
+        y: 0,
+        vx: 0,
+        vy: 0,
+        rotPhase: 0,
+        rotSpeed: 0,
+        age: 0,
+        maxAge: 0,
+        inUse: false,
       })
     }
     effect.coins = {
       entities,
+      spawnAcc: 0,
       time: 0,
       color: effect.config.color,
     }
@@ -2234,56 +2251,92 @@ export class EffectsEngine {
     if (!s) return
     s.time += dt
 
-    const cx = rect.left + rect.width / 2
-    const cy = rect.top + rect.height / 2
+    // Spawn a new coin every ~120ms while the effect is enabled.
+    if (effect.enabled) {
+      s.spawnAcc += dt
+      const cadence = 0.12
+      while (s.spawnAcc >= cadence) {
+        s.spawnAcc -= cadence
+        this.spawnCoinFromStack(s, rect)
+      }
+    }
 
+    const gravity = 220 // px/s²
     const colorLight = lighten(s.color, 0.5)
     const colorMid = lighten(s.color, 0.1)
     const colorDark = darken(s.color, 0.4)
 
     for (const c of s.entities) {
-      c.angle += c.angularVel * dt
-      const bob = Math.round(Math.sin(s.time * 2.8 + c.bobPhase) * 2)
-      // Elliptical orbit (y squashed to ~45%) for a top-down feel.
-      const x = cx + Math.cos(c.angle) * c.radius
-      const y = cy + Math.sin(c.angle) * c.radius * 0.45 + bob
+      if (!c.inUse) continue
+      c.age += dt
+      if (c.age >= c.maxAge) {
+        c.inUse = false
+        c.g.visible = false
+        continue
+      }
 
-      c.g.clear()
-      // 4×4 gold coin with shading: dark outline + mid fill + bright
-      // top highlight + white specular pixel. Rotation is faked via
-      // the bob phase — every few frames the coin "flips" (shrinks in
-      // x to read as an edge-on view).
-      const flip = Math.abs(Math.sin(c.angle * 2 + c.bobPhase))
-      const w = flip < 0.25 ? 2 : 4 // 2 during the edge-on frame
+      // Physics step.
+      c.vy += gravity * dt
+      c.vx *= 0.995
+      c.x += c.vx * dt
+      c.y += c.vy * dt
+      c.rotPhase += c.rotSpeed * dt
+
+      // Render — coin width oscillates with rotPhase so the coin reads
+      // as a spinning disc: 4 px (full face) → 2 px → 1 px (edge-on)
+      // → 2 px → 4 px …
+      const spin = Math.abs(Math.cos(c.rotPhase))
+      const w = spin > 0.75 ? 4 : spin > 0.35 ? 3 : spin > 0.1 ? 2 : 1
       const h = 4
       const offX = -Math.floor(w / 2)
       const offY = -Math.floor(h / 2)
-      // outline
+      c.g.clear()
       c.g.rect(offX, offY, w, h)
       c.g.fill({ color: colorDark })
-      // mid fill (1 px inset)
       if (w > 2) {
         c.g.rect(offX + 1, offY + 1, w - 2, h - 2)
         c.g.fill({ color: colorMid })
       }
-      // top highlight row
       c.g.rect(offX + 1, offY + 1, Math.max(1, w - 2), 1)
       c.g.fill({ color: s.color })
-      // specular pixel
       c.g.rect(offX + 1, offY + 1, 1, 1)
       c.g.fill({ color: colorLight })
-      // sparkle white pixel on full-face coins
-      if (w === 4) {
+      if (w >= 4) {
         c.g.rect(offX + 2, offY + 1, 1, 1)
         c.g.fill({ color: 0xffffff })
       }
-      c.g.x = Math.round(x)
-      c.g.y = Math.round(y)
+      c.g.x = Math.round(c.x)
+      c.g.y = Math.round(c.y)
 
-      // Back-of-orbit dimming so the 3D read is clear.
-      const behind = Math.sin(c.angle)
-      c.g.alpha = behind < 0 ? 0.45 : 1
+      // Fade in over first 12% of life, out over last 25%.
+      const t = c.age / c.maxAge
+      const fadeIn = Math.min(1, t / 0.12)
+      const fadeOut = t > 0.75 ? 1 - (t - 0.75) / 0.25 : 1
+      c.g.alpha = fadeIn * fadeOut
+      c.g.visible = true
     }
+  }
+
+  private spawnCoinFromStack(s: CoinState, rect: DOMRect): void {
+    const c = s.entities.find((e) => !e.inUse)
+    if (!c) return
+    // Origin: the centre-top of the attach rect — callers put the
+    // coin-stack zone div there, so coins visually pop out of the pile.
+    const cx = rect.left + rect.width / 2
+    const cy = rect.top + rect.height * 0.35
+    const horiz = (Math.random() - 0.5) * 2 // [-1, 1]
+    // Launch upward + slightly outward in one of the two main
+    // directions. Vertical speed dominates so coins arc up, not sideways.
+    c.x = cx
+    c.y = cy
+    c.vx = horiz * (25 + Math.random() * 30)
+    c.vy = -(60 + Math.random() * 45)
+    c.rotPhase = Math.random() * Math.PI * 2
+    c.rotSpeed = 10 + Math.random() * 6
+    c.age = 0
+    c.maxAge = 1.0 + Math.random() * 0.5
+    c.inUse = true
+    c.g.visible = true
   }
 }
 
