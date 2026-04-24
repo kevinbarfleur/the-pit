@@ -2172,31 +2172,40 @@ export class EffectsEngine {
     const colorMid = lighten(s.color, 0.2)
     const colorDark = darken(s.color, 0.15)
 
-    // Scale the halo + ray lengths with the attached rect so a big
-    // hoard zone gets a big wash of light and a small single chest
-    // gets a tighter glow. Base metric is the rect's longer side.
-    const spotSize = Math.max(rect.width, rect.height)
-    const haloScale = Math.max(1, spotSize / 36) // 1 at a standard 36-px spot, more on bigger
-    const rayScale = haloScale
+    // Soft halo, built from 6 concentric *ellipses* instead of rects so
+    // the shape reads as a glow rather than a stacked square. Each
+    // layer contributes a small alpha (0.04) and the layers are sized
+    // from outside-in; the composition fades smoothly from a hot
+    // centre to transparent edges without the painted-rectangle
+    // artefact the previous version produced.
+    //
+    // The ellipse is wider than it is tall (×1.6) — the hoard layout
+    // is horizontal, so a flatter pool of light matches the silhouette
+    // of what's actually glowing.
+    const spotHalf = Math.max(22, Math.max(rect.width, rect.height) * 0.9)
+    const haloBreathe = 0.88 + 0.12 * Math.sin(s.time * 2.1)
+    const rings = 6
+    for (let i = 0; i < rings; i++) {
+      // Outer ring largest and faintest; inner ring smallest and
+      // brightest. Accumulated alpha at the centre is ~6 × 0.04 = 0.24.
+      const t = i / rings
+      const rx = spotHalf * (1 - t * 0.85) * haloBreathe
+      const ry = rx / 1.6
+      const color = i < 2 ? colorLight : i < 4 ? colorMid : s.color
+      g.ellipse(cx, cy, rx, ry)
+      g.fill({ color, alpha: 0.04 })
+    }
 
-    // Halo stack — three concentric squares, brightest in the centre.
-    // Alphas raised from the previous pass so "the hoard glows" reads
-    // strongly even before you notice individual rays.
-    const haloBreathe = 0.8 + 0.2 * Math.sin(s.time * 2.1)
-    const outerR = Math.round(46 * haloScale)
-    g.rect(Math.round(cx) - outerR, Math.round(cy) - outerR, outerR * 2, outerR * 2)
-    g.fill({ color: s.color, alpha: 0.14 * haloBreathe })
-    const midR = Math.round(28 * haloScale)
-    g.rect(Math.round(cx) - midR, Math.round(cy) - midR, midR * 2, midR * 2)
-    g.fill({ color: colorMid, alpha: 0.24 * haloBreathe })
-    const innerR = Math.round(16 * haloScale)
-    g.rect(Math.round(cx) - innerR, Math.round(cy) - innerR, innerR * 2, innerR * 2)
-    g.fill({ color: colorLight, alpha: 0.36 * haloBreathe })
+    // A small extra-bright hot core right on the hoard centre so the
+    // glow always has a well-defined source.
+    const core = 0.7 + 0.3 * Math.sin(s.time * 3)
+    g.ellipse(cx, cy, 10 * core + 4, 7 * core + 3)
+    g.fill({ color: colorLight, alpha: 0.18 })
 
-    // Rays start at a minimum radius matching the hoard's silhouette so
-    // the beams read as emanating from behind / around the objects,
-    // never covering them.
-    const innerSkip = Math.max(5, Math.round(spotSize * 0.35))
+    // Rays — same as before, but with a taper that avoids covering the
+    // pixel-art objects inside the hoard silhouette.
+    const innerSkip = Math.max(5, Math.round(spotHalf * 0.7))
+    const rayScale = Math.max(1, spotHalf / 30)
     for (const ray of s.rays) {
       const a = ray.angle + s.rotation
       const pulse = 0.55 + 0.45 * (0.5 + 0.5 * Math.sin(s.time * 3.2 + ray.phase))
@@ -2205,13 +2214,13 @@ export class EffectsEngine {
       const dy = Math.sin(a)
 
       const steps = Math.max(10, Math.round(len))
-      for (let i = innerSkip; i < steps; i++) {
-        const t = i / steps
+      for (let i = innerSkip; i < innerSkip + steps; i++) {
+        const t = (i - innerSkip) / steps
         const r = i
         const x = Math.round(cx + dx * r)
         const y = Math.round(cy + dy * r)
         const size = t < 0.25 ? 2 : 1
-        const alpha = Math.pow(1 - t, 1.25) * pulse
+        const alpha = Math.pow(1 - t, 1.35) * pulse * 0.85
         if (alpha < 0.06) continue
         const color = t < 0.3 ? colorLight : t < 0.7 ? s.color : colorDark
         g.rect(x - size / 2, y - size / 2, size, size)

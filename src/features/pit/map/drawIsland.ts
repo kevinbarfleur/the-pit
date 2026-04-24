@@ -235,8 +235,8 @@ export function drawIsland(
   // itself.
   if (type === 'treasure') {
     const hoard = treasureHoardLayout()
-    drawSmallChest(ctx, hoard.leftChestX, hoard.rowY)
-    drawSmallChest(ctx, hoard.rightChestX, hoard.rowY)
+    drawTreasureChest(ctx, hoard.leftChestX, hoard.rowY)
+    drawTreasureChest(ctx, hoard.rightChestX, hoard.rowY)
     drawCoinStack(ctx, hoard.stackX, hoard.stackY)
   }
   if (type === 'shop') {
@@ -246,8 +246,9 @@ export function drawIsland(
   drawShadow(ctx)
 }
 
-/** Static layout of the treasure hoard. Placed in the wider half of
- *  the cap's bottom band; two chests flank a central coin stack. */
+/** Static layout of the treasure hoard. Two 7×5 chests flank a 6×4
+ *  coin stack — bigger objects than the previous 5×4 chests because
+ *  the user wanted them to read clearly against the cap. */
 function treasureHoardLayout(): {
   leftChestX: number
   rightChestX: number
@@ -256,11 +257,11 @@ function treasureHoardLayout(): {
   stackY: number
 } {
   return {
-    leftChestX: 8,
-    rightChestX: 28,
+    leftChestX: 9,
+    rightChestX: 27,
     rowY: 22,
     stackX: 18,
-    stackY: 26,
+    stackY: 27,
   }
 }
 
@@ -279,14 +280,14 @@ export function computeIslandSpot(
   type: PitNodeType,
 ): { x: number; y: number; w: number; h: number } | null {
   if (type === 'treasure') {
-    // Bounding rect of the whole hoard (two chests + centre coin
+    // Bounding rect of the whole hoard (two 7×5 chests + centre coin
     // stack). The godray hover anchors here so the halo covers every
     // shiny object on the cap, not just a single chest.
     const h = treasureHoardLayout()
-    const left = h.leftChestX - 4
+    const left = h.leftChestX - 4 // 7 wide → halfW 3.5 + 0.5 margin
     const right = h.rightChestX + 4
-    const top = h.rowY - 3
-    const bottom = h.stackY + 2
+    const top = h.rowY - 3 // top of chest row
+    const bottom = h.stackY + 3 // bottom of coin stack
     return {
       x: (left + right) / 2,
       y: (top + bottom) / 2,
@@ -603,18 +604,19 @@ function drawShadow(ctx: CanvasRenderingContext2D): void {
  * sizes.
  */
 /**
- * Small chest, 5×4 native — two of these flank the centre coin stack
- * on treasure islands. Warm wood body + gold lid strap + tiny keyhole.
+ * Treasure chest, 7×5 native. Full-detail variant used on the
+ * treasure hoard — wood body + gold lid strap + keyhole + corner pips.
  */
-function drawSmallChest(ctx: CanvasRenderingContext2D, spotX: number, spotY: number): void {
-  const W = 5
-  const H = 4
+function drawTreasureChest(ctx: CanvasRenderingContext2D, spotX: number, spotY: number): void {
+  const W = 7
+  const H = 5
   const x0 = spotX - Math.floor(W / 2)
   const top = spotY - Math.floor(H / 2)
   if (x0 < 1 || x0 + W > ISLAND_W - 1) return
   if (top + H > ISLAND_H - 2) return
 
   const OUTLINE = '#1e1206'
+  const WOOD_DARK = '#4a2810'
   const WOOD_MID = '#6a3c18'
   const WOOD_LIGHT = '#8a5624'
   const GOLD_DARK = '#8a6020'
@@ -626,18 +628,29 @@ function drawSmallChest(ctx: CanvasRenderingContext2D, spotX: number, spotY: num
       const x = x0 + dx
       const y = top + dy
       if (x < 0 || x >= ISLAND_W || y < 0 || y >= ISLAND_H) continue
+
       let color: string
       const onSideEdge = dx === 0 || dx === W - 1
       const onTopEdge = dy === 0
       const onBotEdge = dy === H - 1
-      if (onSideEdge || onTopEdge || onBotEdge) color = OUTLINE
-      else if (dy === 1) color = dx === 1 ? GOLD_MID : GOLD_DARK
-      else color = dx === 1 ? WOOD_LIGHT : WOOD_MID
-    plot(ctx, x, y, color)
+      if (onSideEdge || onTopEdge || onBotEdge) {
+        color = OUTLINE
+      } else if (dy === 1) {
+        color = dx === 1 ? WOOD_DARK : WOOD_LIGHT
+      } else if (dy === 2) {
+        const isLock = dx === Math.floor(W / 2)
+        if (isLock) color = GOLD_DARK
+        else color = dx === 1 ? GOLD_DARK : dx === W - 2 ? GOLD_DARK : GOLD_MID
+      } else {
+        color = dx === 1 ? WOOD_DARK : WOOD_MID
+      }
+      plot(ctx, x, y, color)
     }
   }
-  // Small lock pip.
-  plot(ctx, x0 + Math.floor(W / 2), top + 1, GOLD_LIGHT)
+  // Keyhole + gold highlight pips.
+  plot(ctx, x0 + Math.floor(W / 2), top + 2, OUTLINE)
+  plot(ctx, x0 + 1, top + 2, GOLD_LIGHT)
+  plot(ctx, x0 + W - 2, top + 2, GOLD_LIGHT)
 }
 
 // ---------- coin stack (shop) ----------
