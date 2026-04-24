@@ -1,27 +1,53 @@
+import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
+import styles from './index.module.css'
 
 export const Route = createFileRoute('/')({
-  component: IndexPage,
+  component: TitlePage,
 })
 
-function IndexPage() {
+const PIT_ASCII = String.raw`
+ ████████╗ ██╗  ██╗ ███████╗    ██████╗  ██╗ ████████╗
+ ╚══██╔══╝ ██║  ██║ ██╔════╝    ██╔══██╗ ██║ ╚══██╔══╝
+    ██║    ███████║ █████╗      ██████╔╝ ██║    ██║
+    ██║    ██╔══██║ ██╔══╝      ██╔═══╝  ██║    ██║
+    ██║    ██║  ██║ ███████╗    ██║      ██║    ██║
+    ╚═╝    ╚═╝  ╚═╝ ╚══════╝    ╚═╝      ╚═╝    ╚═╝
+    ▓▒      ▓▒  ▓▒   ▓▒          ▓▒      ▓▒     ▓▒
+    ▓▒      ▒    ▒   ▓▒          ▓▒       ▒     ▓▒
+    ▓▒      ▒        ▓▒          ▓▒       ▒     ▓▒
+    ▒       ░        ▒                    ░      ▒
+    ▒                                             ░
+    ░
+`
+
+const MENU_ITEMS = [
+  { key: 'new', label: 'new run', dim: false, meta: '' },
+  { key: 'continue', label: 'continue', dim: true, meta: 'D012 torch 3/5' },
+  { key: 'leaderboards', label: 'leaderboards', dim: true, meta: '' },
+  { key: 'settings', label: 'settings', dim: true, meta: '' },
+] as const
+
+function TitlePage() {
+  const [selected, setSelected] = useState<string>('new')
   return (
-    <main className="min-h-dvh p-6 md:p-10">
-      <pre className="text-[11px] md:text-xs leading-tight text-pit-green opacity-80 mb-8 select-none">
-{`┌─────────────────────────────────────────────────────────────┐
-│                                                             │
-│    T H E   P I T                                            │
-│    ─────────────                                            │
-│    an idle delve into darkness.                             │
-│                                                             │
-└─────────────────────────────────────────────────────────────┘`}
-      </pre>
-      <div className="space-y-1 text-sm text-pit-bone">
-        <p><span className="text-pit-dim">$</span> ./the-pit init</p>
-        <p className="text-pit-dim">&gt; booting runtime...</p>
-        <p className="text-pit-dim">&gt; connecting to convex... <span className="text-pit-green">ok</span></p>
-        <p className="text-pit-dim">&gt; awaiting twitch auth...</p>
-        <p className="text-pit-dim">&gt; status: <span className="text-pit-amber">scaffolding in progress</span></p>
+    <main className={styles.page}>
+      <div className={styles.body}>
+        <pre className={styles.wordmark}>{PIT_ASCII}</pre>
+        <div className={styles.tagline}>"every descent writes your economy"</div>
+        <div className={styles.menu}>
+          {MENU_ITEMS.map((it) => (
+            <button
+              key={it.key}
+              type="button"
+              className={`${styles.item} ${selected === it.key ? styles.sel : ''}`.trim()}
+              onClick={() => setSelected(it.key)}
+            >
+              {it.label}
+              {it.meta ? <> · {it.meta}</> : null}
+            </button>
+          ))}
+        </div>
       </div>
     </main>
   )

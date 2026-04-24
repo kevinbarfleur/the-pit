@@ -1,0 +1,278 @@
+/* Shared wireframe layout primitives — mirrors .pit / .body / .col from the design bundle */
+
+.pit {
+  width: 100%;
+  min-height: 100dvh;
+  background:
+    radial-gradient(ellipse at 50% 20%, rgba(154, 230, 110, 0.02), transparent 60%),
+    var(--color-pit-ink);
+  color: var(--color-pit-bone);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  line-height: 1.45;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  image-rendering: pixelated;
+}
+
+.pit::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  background:
+    repeating-linear-gradient(0deg, transparent 0 3px, rgba(0, 0, 0, 0.06) 3px 4px),
+    radial-gradient(ellipse at center, transparent 50%, rgba(0, 0, 0, 0.55) 100%);
+}
+
+.body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  position: relative;
+  z-index: 2;
+}
+
+.col {
+  padding: 14px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.col + .col {
+  box-shadow: inset 2px 0 0 var(--color-pit-line);
+}
+
+.grid2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.grid3 {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 10px;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.h {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.between {
+  justify-content: space-between;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.dim {
+  color: var(--color-pit-dim);
+}
+
+.boneBr {
+  color: var(--color-pit-bone-bright);
+}
+
+.g {
+  color: var(--color-pit-green);
+}
+
+.a {
+  color: var(--color-pit-amber);
+}
+
+.r {
+  color: var(--color-pit-red);
+}
+
+.v {
+  color: var(--color-pit-violet);
+}
+
+.c {
+  color: var(--color-pit-cyan);
+}
+
+.tag {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  font-size: 10px;
+  color: var(--color-pit-dim);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  z-index: 4;
+  font-family: var(--font-display);
+  font-size: 13px;
+}
+
+.kitHeader {
+  position: relative;
+  z-index: 2;
+  padding: 6px 14px;
+  font-size: 10px;
+  color: var(--color-pit-dim);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  background: rgba(0, 0, 0, 0.4);
+  border-bottom: 1px solid var(--color-pit-line);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.kitLink {
+  color: var(--color-pit-gild);
+  text-decoration: none;
+}
+.kitLink:hover {
+  color: var(--color-pit-bone-bright);
+}
+
+.grow {
+  flex: 1;
+}
+
+.descendBar {
+  padding: 16px 20px;
+  border-top: 1px solid var(--color-pit-line);
+  background: var(--color-pit-ink-2);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 24px;
+  position: relative;
+  z-index: 2;
+}
+
+.arena {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 80px;
+  position: relative;
+  background: radial-gradient(ellipse at center, var(--color-pit-ink-3), var(--color-pit-ink) 70%);
+  min-height: 180px;
+}
+
+.arenaActor {
+  text-align: center;
+}
+
+.arenaActorGlyph {
+  font-size: 40px;
+}
+
+.arenaFloat {
+  position: absolute;
+  top: 40px;
+  left: 40%;
+  font-size: 18px;
+  color: var(--color-pit-amber);
+}
+
+.combatToolbar {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  padding: 8px 0;
+  border-top: 1px solid var(--color-pit-line);
+  align-items: center;
+}
+
+.mapDepthRow {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 40px;
+  padding: 10px 0;
+  width: 100%;
+}
+
+.mapDepthLabel {
+  width: 50px;
+  font-size: 11px;
+  color: var(--color-pit-dim);
+  text-align: right;
+}
+
+.mapDepthNodes {
+  display: flex;
+  gap: 30px;
+}
+
+.mapConnector {
+  color: var(--color-pit-dim);
+  font-size: 20px;
+  text-align: center;
+  line-height: 1;
+  letter-spacing: 1em;
+}
+
+.mapScroll {
+  flex: 2;
+  align-items: center;
+  overflow-y: auto;
+}
+
+.mapRight {
+  flex: 1;
+  background: var(--color-pit-ink-2);
+}
+
+.eventBody {
+  flex: 1.2;
+  padding: 40px;
+  justify-content: center;
+}
+
+.eventChoices {
+  flex: 1;
+  background: var(--color-pit-ink-2);
+  padding: 24px;
+}
+
+.subtitleIntro {
+  font-size: 10px;
+  letter-spacing: 0.15em;
+  color: var(--color-pit-dim);
+  text-transform: uppercase;
+}
+
+.narrative {
+  font-size: 16px;
+  line-height: 1.7;
+  font-family: var(--font-sans);
+  font-style: italic;
+  color: var(--color-pit-bone-bright);
+  margin-top: 16px;
+}
+
+.cursor {
+  display: inline-block;
+  width: 8px;
+  height: 14px;
+  background: var(--color-pit-green);
+  animation: pit-blink 1s steps(1) infinite;
+  vertical-align: -2px;
+  box-shadow: 0 0 4px var(--color-pit-green);
+}
