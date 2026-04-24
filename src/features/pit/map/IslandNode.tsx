@@ -162,25 +162,26 @@ export function IslandNode({ node, state, canCommit, style }: IslandNodeProps) {
   const plaqueHCss = signpost.plaqueH * SCALE
   const tiltDeg = (Math.atan(signpost.tiltRise) * 180) / Math.PI
 
-  // Cap zone — a thin horizontal band at the very top of the cap.
+  // Effect anchor zone — a tiny patch at the **foot of the signpost**,
+  // on the cap's top surface. The island reads as an isometric piece
+  // of earth with a stake planted in it; effects should look like
+  // they're *happening on that ground, around the stake*, not
+  // radiating from the whole tile. Grass becomes a tuft at the foot
+  // of the panel, blood pools seep from its base, embers glow around
+  // the stake, sparkle orbits it.
   //
-  // Why not the full cap rect: effects like `grass` spawn on the top
-  // edge of their attached element. If the zone is the full cap rect
-  // (roughly 64 CSS wide, 48 tall), blades anchor all along a 64-px
-  // horizontal span — much wider than the cap's actual silhouette at
-  // its widest point (~36 CSS). The blades then grow upward from
-  // positions that sit outside the rock, which reads as grass floating
-  // over empty space.
-  //
-  // Instead we crop the spawn target to a narrow band (native x=9..27,
-  // y=10..13) that traces the top of the cap in its widest region.
-  // Grass, embers and sparkle now all radiate from within the rock's
-  // silhouette. Side tufts become negligible because the zone is only
-  // a few CSS pixels tall.
-  const capZoneTopCss = 10 * SCALE
-  const capZoneHeightCss = 3 * SCALE
-  const capZoneLeftCss = 9 * SCALE
-  const capZoneWidthCss = 18 * SCALE
+  // The patch tracks the signpost's own position: it inherits
+  // `plaqueCenterX` so it follows the signpost's horizontal jitter
+  // (±3 px), and sits just below the plaque's bottom edge so grass
+  // blades anchor on the cap surface right where the panel meets it.
+  const patchCx = signpost.plaqueCenterX
+  const patchCyNative = signpost.plaqueCenterY + signpost.plaqueH / 2 + 1
+  const PATCH_W_NATIVE = 10
+  const PATCH_H_NATIVE = 2
+  const capZoneLeftCss = (patchCx - PATCH_W_NATIVE / 2) * SCALE
+  const capZoneTopCss = patchCyNative * SCALE
+  const capZoneWidthCss = PATCH_W_NATIVE * SCALE
+  const capZoneHeightCss = PATCH_H_NATIVE * SCALE
 
   return (
     <button
