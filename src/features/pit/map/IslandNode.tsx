@@ -137,13 +137,8 @@ export function IslandNode({ node, state, canCommit, style }: IslandNodeProps) {
     } else {
       attachConfig = { color: TYPE_COLOR[node.type] }
     }
-    // Spring uses the cap-rect (cap silhouette ellipse bounds) so its
-    // top sheet hugs the cap top arc and the side stream falls from
-    // the cap's widest horizontal point. Other effects stay on the
-    // capZone for placement.
-    const capRect = capRectRef.current
-    const attachTarget = kind === 'spring' ? capRect ?? btn : cap
-    const { id, detach } = engine.attachWithHandle(attachTarget, kind, attachConfig)
+    // All effects (spring included) anchor on the ground capZone.
+    const { id, detach } = engine.attachWithHandle(cap, kind, attachConfig)
     engine.setEnabled(id, false)
 
     const onEnter = () => engine.setEnabled(id, true)

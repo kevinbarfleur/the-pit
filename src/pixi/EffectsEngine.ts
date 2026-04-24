@@ -396,17 +396,14 @@ interface CoinState {
 }
 
 /**
- * Spring — water overflows the top of the island and cascades down a
- * single side. Built like `drip-pool`'s top-band + side-stream + drops,
- * but with only ONE side active and no bottom pool: the cascade just
- * keeps falling past the rock.
- *
- * Components:
- *  - `topCells`: 1D height field along the top edge (water visible
- *    above the cap, like a thin shimmering layer about to spill over).
- *  - `sideLength`: how far down the chosen side the stream has reached.
- *  - `drops`: detached droplets falling under gravity once they pinch
- *    off the side stream's tip.
+ * Spring — a living pond on the island's ground. The water surface
+ * sits in a soft ellipse roughly filling the placeable zone, ripples
+ * non-stop, and visibly OVERFLOWS the rim — small tongues of water
+ * spill outward on every side at the rim's high points (driven by
+ * the same wave motion). On the chosen side, an extra-strong stream
+ * is constantly running off the cap's edge and cascading down past
+ * the rock with detached droplets, the way blood pours off the
+ * danger button.
  */
 interface SpringDrop {
   x: number
@@ -419,11 +416,15 @@ interface SpringDrop {
 
 interface SpringState {
   graphic: Graphics
-  topCells: number[]
-  cellCount: number
-  sideLength: number
-  topFlowAcc: number
-  sideDropAcc: number
+  /** Surface height-field samples around the rim, indexed by angle. */
+  rimCells: number[]
+  rimCellCount: number
+  /** Rim-relative offset of the chosen-side cascade origin (one of
+   *  the rim cells whose angle matches `side`). */
+  cascadeRimIndex: number
+  /** Length of the side cascade stream in px (rim point → falling). */
+  cascadeLength: number
+  cascadeAcc: number
   drops: SpringDrop[]
   side: 'left' | 'right'
   time: number
@@ -2441,22 +2442,33 @@ export class EffectsEngine {
   }
 
   // =====================================================================
-  // SPRING — water spills off the top of the island and cascades down
-  // a single side, never reaching a pool: it just falls past the rock.
-  // Built from a top-edge height field + one continuous side stream +
-  // pinched-off drops falling under gravity.
+  // SPRING — a living pond filling the placeable zone, with overflow
+  // tongues spilling outward and a cascade running off one chosen side.
   // =====================================================================
   private initSpring(effect: AttachedEffect): void {
     const graphic = new Graphics()
     this.dripLayer.addChild(graphic)
-    const cellCount = 24
+    const rimCellCount = 32
+    // Cascade origin: the rim cell whose angle is closest to ±π/2 in
+    // x (left/right of the pond), depending on `side`.
+    const sideAngle = effect.config.side === 'left' ? Math.PI : 0
+    let bestIdx = 0
+    let bestDelta = Infinity
+    for (let i = 0; i < rimCellCount; i++) {
+      const a = (i / rimCellCount) * Math.PI * 2
+      const delta = Math.abs(((a - sideAngle + Math.PI * 3) % (Math.PI * 2)) - Math.PI)
+      if (delta < bestDelta) {
+        bestDelta = delta
+        bestIdx = i
+      }
+    }
     effect.spring = {
       graphic,
-      topCells: new Array(cellCount).fill(0),
-      cellCount,
-      sideLength: 0,
-      topFlowAcc: 0,
-      sideDropAcc: 0,
+      rimCells: new Array(rimCellCount).fill(0),
+      rimCellCount,
+      cascadeRimIndex: bestIdx,
+      cascadeLength: 0,
+      cascadeAcc: 0,
       drops: [],
       side: effect.config.side,
       time: 0,
@@ -2469,78 +2481,67 @@ export class EffectsEngine {
     if (!s) return
     s.time += dt
 
-    const colorLight = lighten(s.color, 0.4)
-    const colorDark = darken(s.color, 0.25)
+    const colorLight = lighten(s.color, 0.45)
+    const colorDark = darken(s.color, 0.3)
 
-    // The attached rect is the cap's ellipse bounds. Cells project
-    // onto an ellipse top arc: at cell i, x-fraction `fx` from 0..1,
-    // dx ∈ [-1, 1], the silhouette top is at:
-    //     y_top(fx) = rect.center.y - sqrt(1 - dx²) × rect.height/2
-    // Cells whose `verticalFactor` is too small (near the edge) are
-    // skipped so the water doesn't overflow off the silhouette.
+    // Pond ellipse occupies ~92% of the rect (rect comes in as the
+    // ground placeable zone). Centred at the rect's centre.
     const cx = rect.left + rect.width / 2
     const cy = rect.top + rect.height / 2
-    const halfH = rect.height / 2
-    const halfW = rect.width / 2
+    const ellRx = rect.width * 0.46
+    const ellRy = rect.height * 0.46
 
-    // ---------------- TOP BAND ----------------
-    // 1D height field clinging to the top edge of the rect. Always
-    // filling, gentle diffusion, capped — same shape as drip-pool but
-    // a touch taller because we want the water to read as a sheet
-    // covering the top, not just a thin rim.
-    const topMax = 4.5
-    const topK = 0.18
-    const topNext = s.topCells.slice()
-    for (let i = 0; i < s.cellCount; i++) {
-      const left = i > 0 ? s.topCells[i - 1] : s.topCells[i]
-      const right = i < s.cellCount - 1 ? s.topCells[i + 1] : s.topCells[i]
-      topNext[i] = s.topCells[i] + topK * (left + right - 2 * s.topCells[i])
+    // ---------- LIVING SURFACE: ripple field ----------
+    // `rimCells[i]` holds an extra "swell" amount in px applied
+    // outward at angle `i / N × 2π`. Each cell breathes on its own
+    // sine, and a slow lateral diffusion smooths neighbours so the
+    // overall outline reads as a wavy living rim instead of jagged
+    // independent peaks.
+    const N = s.rimCellCount
+    const next = s.rimCells.slice()
+    const k = 0.18
+    for (let i = 0; i < N; i++) {
+      const left = s.rimCells[(i - 1 + N) % N]
+      const right = s.rimCells[(i + 1) % N]
+      next[i] = s.rimCells[i] + k * (left + right - 2 * s.rimCells[i])
     }
-    s.topCells = topNext
+    s.rimCells = next
     if (effect.enabled) {
-      for (let i = 0; i < s.cellCount; i++) {
-        s.topCells[i] += (3.0 + Math.random() * 1.6) * dt
+      for (let i = 0; i < N; i++) {
+        const a = (i / N) * Math.PI * 2
+        // Three overlapping sines + a small noise injection so each rim
+        // point breathes without the whole ring pulsing in unison.
+        const w =
+          Math.sin(s.time * 1.3 + a * 2) * 0.55 +
+          Math.sin(s.time * 2.1 + a * 3 + 0.7) * 0.32 +
+          Math.sin(s.time * 0.7 + a * 5 + 1.4) * 0.18
+        s.rimCells[i] = w + (Math.random() - 0.5) * 0.18
       }
-      s.topFlowAcc += dt
-      if (s.topFlowAcc >= 0.08) {
-        s.topFlowAcc = 0
-        const i = Math.floor(Math.random() * s.cellCount)
-        s.topCells[i] += 0.5 + Math.random() * 0.6
-      }
+      // Boost the cascade-origin cell so it sits visibly higher than
+      // the rest — that's the rim point overflowing the most.
+      const surge = 1.6 + 0.5 * Math.sin(s.time * 2.7)
+      s.rimCells[s.cascadeRimIndex] += surge
     } else {
-      for (let i = 0; i < s.cellCount; i++) {
-        s.topCells[i] = Math.max(0, s.topCells[i] - 5 * dt)
-      }
-    }
-    // Edge taper + cap.
-    for (let i = 0; i < s.cellCount; i++) {
-      let m = topMax
-      if (i < 2) m = Math.min(topMax, 1 + i * 1.5)
-      if (i >= s.cellCount - 2) m = Math.min(topMax, 1 + (s.cellCount - 1 - i) * 1.5)
-      s.topCells[i] = Math.max(0, Math.min(m, s.topCells[i]))
+      for (let i = 0; i < N; i++) s.rimCells[i] *= 1 - dt * 4
     }
 
-    // ---------------- SIDE STREAM ----------------
-    // Stream starts at the cap's widest horizontal extent (vertical
-    // centre of rect) and descends past rect.bottom in a vertical
-    // cascade. Always-active grow/retreat against `enabled`.
-    const sideGrow = 220 // px/s
-    const sideRetreat = 280
-    const sideMax = rect.height + 80
+    // ---------- CASCADE STREAM (chosen side) ----------
+    const cascadeGrow = 240
+    const cascadeRetreat = 320
+    const cascadeMax = rect.height * 1.3 + 60
     if (effect.enabled) {
-      s.sideLength = Math.min(sideMax, s.sideLength + sideGrow * dt)
-      s.sideDropAcc += dt
-      if (s.sideLength > 14 && s.sideDropAcc >= 0.16) {
-        s.sideDropAcc = 0
+      s.cascadeLength = Math.min(cascadeMax, s.cascadeLength + cascadeGrow * dt)
+      s.cascadeAcc += dt
+      if (s.cascadeLength > 12 && s.cascadeAcc >= 0.1) {
+        s.cascadeAcc = 0
         this.spawnSpringSideDrop(s, rect)
       }
     } else {
-      s.sideLength = Math.max(0, s.sideLength - sideRetreat * dt)
+      s.cascadeLength = Math.max(0, s.cascadeLength - cascadeRetreat * dt)
     }
 
-    // ---------------- DROPS ----------------
-    // Each drop falls under gravity past the cap, fades over its life.
-    const gravity = 320
+    // ---------- DROPS ----------
+    const gravity = 360
     for (const d of s.drops) {
       if (!d.inUse) continue
       d.life -= dt
@@ -2552,56 +2553,87 @@ export class EffectsEngine {
       d.y += d.vy * dt
     }
 
-    // ---------------- RENDER ----------------
+    // ---------- RENDER ----------
     const g = s.graphic
     g.clear()
 
-    // Top band — slabs follow the ellipse silhouette. Each cell's
-    // base sits on the ellipse top arc; the water slab extends a
-    // few px ABOVE that arc.
-    const cellWidth = rect.width / s.cellCount
-    for (let i = 0; i < s.cellCount; i++) {
-      const h = s.topCells[i]
-      if (h < 0.18) continue
-      const fx = (i + 0.5) / s.cellCount
-      const dx = (fx - 0.5) * 2 // -1..1
-      const vertFactor = Math.sqrt(Math.max(0, 1 - dx * dx))
-      if (vertFactor < 0.08) continue // skip near-edge cells (off silhouette)
-      const baseY = cy - vertFactor * halfH
-      const x = rect.left + i * cellWidth
-      const w = Math.max(1, Math.ceil(cellWidth))
-      const drawY = baseY - h
-      g.rect(Math.round(x), Math.round(drawY), w, Math.ceil(h))
-      g.fill({ color: s.color, alpha: 0.88 })
-      // Top sheen — 1 px brighter line at the very top of the slab.
-      g.rect(Math.round(x), Math.round(drawY), w, 1)
-      g.fill({ color: colorLight, alpha: 0.75 })
-      // A tiny dark pixel at the silhouette boundary so the water
-      // visually "tucks under" the cap edge.
-      g.rect(Math.round(x), Math.round(baseY), w, 1)
-      g.fill({ color: colorDark, alpha: 0.45 })
+    // 1) Pond body — fill the ellipse with the pond colour, slightly
+    //    inset so the rim reads as raised water, plus a brighter
+    //    central highlight band that wobbles.
+    const bodyAlpha = 0.92
+    fillEllipse(g, cx, cy, ellRx - 1, ellRy - 1, s.color, bodyAlpha)
+    // Highlight band — a horizontal stripe slightly above centre, its
+    // y wobbling on time so the surface looks alive.
+    const highlightY = cy - ellRy * 0.35 + Math.sin(s.time * 1.7) * 0.6
+    for (let dx = -ellRx + 2; dx <= ellRx - 2; dx += 1) {
+      const t = Math.abs(dx) / ellRx
+      if (t > 0.85) continue
+      const wobble = Math.sin(s.time * 1.9 + dx * 0.6) * 0.6
+      const yy = Math.round(highlightY + wobble)
+      g.rect(Math.round(cx + dx), yy, 1, 1)
+      g.fill({ color: colorLight, alpha: 0.45 * (1 - t) })
+    }
+    // A few moving specular flecks
+    for (let k2 = 0; k2 < 3; k2++) {
+      const ang = s.time * 0.6 + k2 * 2.1
+      const fx = Math.cos(ang) * ellRx * 0.5
+      const fy = Math.sin(ang * 1.4) * ellRy * 0.35
+      g.rect(Math.round(cx + fx), Math.round(cy + fy), 1, 1)
+      g.fill({ color: 0xffffff, alpha: 0.55 })
     }
 
-    // Side stream — start at the cap's WIDEST point (vertical centre
-    // of rect, on the chosen side's silhouette edge). The water rolls
-    // off there and descends in a 2-wide cascade past rect.bottom.
-    if (s.sideLength > 0.4) {
-      const streamX = s.side === 'left' ? cx - halfW - 1 : cx + halfW - 1
-      const streamW = 2
-      const streamH = Math.ceil(s.sideLength)
-      const yStart = cy
-      g.rect(Math.round(streamX), Math.round(yStart), streamW, streamH)
-      g.fill({ color: s.color, alpha: 0.9 })
-      // Inner bright sheen.
-      const sheenX = s.side === 'left' ? streamX + 1 : streamX
-      g.rect(Math.round(sheenX), Math.round(yStart), 1, streamH)
-      g.fill({ color: colorLight, alpha: 0.65 })
-      // Tip — darker pixel showing motion at leading edge.
-      g.rect(Math.round(streamX), Math.round(yStart + streamH), streamW, 1)
+    // 2) Living rim — at every angle the rim pixel is offset OUTWARD
+    //    by `rimCells[i]` px, so when a swell rises high enough the
+    //    rim visibly overflows past the ellipse outline. Drawn as
+    //    short tongues of water (1-3 px tall) extending from the
+    //    base ellipse to the swell offset.
+    for (let i = 0; i < N; i++) {
+      const a = (i / N) * Math.PI * 2
+      const baseX = cx + Math.cos(a) * ellRx
+      const baseY = cy + Math.sin(a) * ellRy
+      const swell = Math.max(0, s.rimCells[i])
+      const tipX = baseX + Math.cos(a) * swell
+      const tipY = baseY + Math.sin(a) * swell
+      // Plot every pixel along the segment from base to tip.
+      const steps = Math.max(1, Math.ceil(swell + 1))
+      for (let k2 = 0; k2 <= steps; k2++) {
+        const tt = steps === 0 ? 0 : k2 / steps
+        const px = Math.round(baseX + (tipX - baseX) * tt)
+        const py = Math.round(baseY + (tipY - baseY) * tt)
+        // Outer tip is a brighter highlight; inner is the body colour.
+        const isTip = k2 >= steps - 0
+        g.rect(px, py, 1, 1)
+        g.fill({ color: isTip && swell > 0.6 ? colorLight : s.color, alpha: 0.95 })
+      }
+      // Dark seam right where the rim meets the body (1 px under).
+      g.rect(Math.round(baseX), Math.round(baseY), 1, 1)
+      g.fill({ color: colorDark, alpha: 0.6 })
+    }
+
+    // 3) Cascade — a continuous 2-3 wide stream falling from the
+    //    cascade rim point straight down, past rect.bottom. The
+    //    stream's width pulses with the same surge that boosts its
+    //    origin rim cell so it reads as the same body of water.
+    if (s.cascadeLength > 0.4) {
+      const aCasc = (s.cascadeRimIndex / N) * Math.PI * 2
+      const originX = cx + Math.cos(aCasc) * ellRx
+      const originY = cy + Math.sin(aCasc) * ellRy
+      const streamW = 3
+      const streamH = Math.ceil(s.cascadeLength)
+      // Slight horizontal wobble on the falling column.
+      const sway = Math.round(Math.sin(s.time * 3.2) * 0.6)
+      const streamX = Math.round(originX) - Math.floor(streamW / 2) + sway
+      g.rect(streamX, Math.round(originY), streamW, streamH)
+      g.fill({ color: s.color, alpha: 0.92 })
+      // Inner sheen
+      g.rect(streamX + (s.side === 'left' ? streamW - 1 : 0), Math.round(originY), 1, streamH)
+      g.fill({ color: colorLight, alpha: 0.7 })
+      // Tip plume — 2 px darker pixel showing leading edge.
+      g.rect(streamX, Math.round(originY + streamH), streamW, 1)
       g.fill({ color: colorDark, alpha: 0.85 })
     }
 
-    // Drops — single 1×2 px streaks falling.
+    // 4) Free drops — 1×2 px streaks falling under gravity.
     for (const d of s.drops) {
       if (!d.inUse) continue
       const t = d.life / d.maxLife
@@ -2626,15 +2658,48 @@ export class EffectsEngine {
     }
     const cx = rect.left + rect.width / 2
     const cy = rect.top + rect.height / 2
-    const halfW = rect.width / 2
-    const streamX = s.side === 'left' ? cx - halfW - 1 : cx + halfW - 1
-    const tipY = cy + s.sideLength
-    drop.x = streamX + (s.side === 'left' ? -0.5 : 0.5) + (Math.random() - 0.5) * 1.5
-    drop.y = tipY
-    drop.vy = 40 + Math.random() * 50
-    drop.life = 1.2 + Math.random() * 0.6
+    const ellRx = rect.width * 0.46
+    const ellRy = rect.height * 0.46
+    const aCasc = (s.cascadeRimIndex / s.rimCellCount) * Math.PI * 2
+    const originX = cx + Math.cos(aCasc) * ellRx
+    const originY = cy + Math.sin(aCasc) * ellRy
+    drop.x = originX + (Math.random() - 0.5) * 2.5
+    drop.y = originY + s.cascadeLength
+    drop.vy = 50 + Math.random() * 60
+    drop.life = 1.0 + Math.random() * 0.6
     drop.maxLife = drop.life
     drop.inUse = true
+  }
+}
+
+/**
+ * Filled axis-aligned ellipse drawn pixel-by-pixel on the supplied
+ * Graphics. Used by the spring water body so the pond reads as a
+ * solid disc instead of an outlined ring.
+ */
+function fillEllipse(
+  g: Graphics,
+  cx: number,
+  cy: number,
+  rx: number,
+  ry: number,
+  color: number,
+  alpha: number,
+): void {
+  const x0 = Math.floor(cx - rx)
+  const x1 = Math.ceil(cx + rx)
+  const y0 = Math.floor(cy - ry)
+  const y1 = Math.ceil(cy + ry)
+  for (let y = y0; y <= y1; y++) {
+    const dy = (y + 0.5 - cy) / ry
+    const half = Math.sqrt(Math.max(0, 1 - dy * dy)) * rx
+    const xa = Math.round(cx - half)
+    const xb = Math.round(cx + half)
+    if (xb <= xa) continue
+    void x0
+    void x1
+    g.rect(xa, y, xb - xa, 1)
+    g.fill({ color, alpha })
   }
 }
 

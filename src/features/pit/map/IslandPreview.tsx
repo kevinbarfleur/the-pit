@@ -122,14 +122,12 @@ export function IslandPreview({
     } else {
       config = { color }
     }
-    // Spring attaches to the cap-rect div which is sized + positioned
-    // to the cap's ellipse bounds — that lets the effect render the
-    // top water sheet along the silhouette curve and the side stream
-    // off the actual cap edge. Every other effect anchors on the
-    // ground area (capZone) for placement purposes.
-    const capRect = capRectRef.current
-    const attachTarget = kind === 'spring' ? capRect ?? root : cap
-    const { id: effectId, detach } = engine.attachWithHandle(attachTarget, kind, config)
+    // Every effect — spring included — anchors on the ground area
+    // (capZone). Spring renders a pond filling that ellipse with a
+    // living rim that overflows; its cascade column drops past the
+    // bottom of the rect, which is fine because the Pixi canvas isn't
+    // clipped to the host div.
+    const { id: effectId, detach } = engine.attachWithHandle(cap, kind, config)
     engine.setEnabled(effectId, effectAlwaysOn)
 
     // Always also react to hover so interactive toggling still works
