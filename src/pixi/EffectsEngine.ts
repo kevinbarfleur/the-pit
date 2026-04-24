@@ -2533,13 +2533,18 @@ export class EffectsEngine {
     // hitting the void below the cap.
     if (effect.enabled) {
       s.flowAcc += dt
-      const cadence = 0.018 // ≈55 spawns/s
+      const cadence = 0.022
       while (s.flowAcc >= cadence) {
         s.flowAcc -= cadence
-        // Spawn 3 drops at once to thicken the column noticeably.
-        this.spawnSpringRimDrop(s, rect, lipBaseX, lipBaseY, lipDirX)
-        this.spawnSpringRimDrop(s, rect, lipBaseX, lipBaseY, lipDirX)
-        this.spawnSpringRimDrop(s, rect, lipBaseX, lipBaseY, lipDirX)
+        // Spawn one drop per parallel jet so the cascade reads as
+        // multiple thin streams falling side by side. The lip is
+        // ~14 px wide → 7 jets at -6, -4, -2, 0, +2, +4, +6 px from
+        // the lip centre. Each jet has its own slow horizontal jitter
+        // so the column flickers but stays legibly multi-strand.
+        const jetOffsets = [-6, -4, -2, 0, 2, 4, 6]
+        for (const off of jetOffsets) {
+          this.spawnSpringRimDrop(s, rect, lipBaseX + off, lipBaseY, lipDirX)
+        }
       }
     }
 
@@ -2631,48 +2636,39 @@ export class EffectsEngine {
     g.rect(lipX, Math.round(lipBaseY) + lipH - 1, lipW, 1)
     g.fill({ color: colorDark, alpha: 0.6 })
 
-    // 5) Falling cascade column — ~3× thicker than before. Each
-    // drop now renders as a 6-9 px wide strip that flares with age.
+    // 5) Falling cascade — multiple parallel 1-px jets running side
+    // by side. Each drop is rendered as a 1-2 px streak following
+    // its own lane (no extra width), and the per-drop life cap +
+    // fade gives the cascade a clean stopping distance instead of
+    // an infinite trail.
     for (const d of s.drops) {
       if (!d.inUse) continue
       const t = 1 - d.life / d.maxLife // 0 at spawn, 1 at death
-      // Outward drift so the column flares wider as it falls.
-      const flare = lipDirX * t * t * 8
-      const x = Math.round(d.x + flare)
-      const y = Math.round(d.y)
       const speed = Math.abs(d.vy)
-      const streakLen = speed > 240 ? 4 : speed > 160 ? 3 : speed > 90 ? 2 : 1
-      // Body width widens with age — 6 → 9 px.
-      const w = t > 0.65 ? 9 : t > 0.3 ? 7 : 6
-      const xStart = x - Math.floor(w / 2)
-      g.rect(xStart, y, w, streakLen)
-      g.fill({ color: s.color, alpha: 0.9 })
-      // Bright inner core (2 px) so the column has visible depth.
-      g.rect(xStart + Math.floor(w / 2) - 1, y, 2, streakLen)
-      g.fill({ color: colorLight, alpha: 0.7 })
-      // Dark side-edge pixels giving the column a 3D shading cue.
-      g.rect(xStart, y, 1, streakLen)
-      g.fill({ color: colorDark, alpha: 0.55 })
-      g.rect(xStart + w - 1, y, 1, streakLen)
-      g.fill({ color: colorDark, alpha: 0.55 })
-      // Trailing dark band on fast drops for motion-blur depth.
-      if (speed > 180) {
-        g.rect(xStart, y + streakLen, w, 1)
-        g.fill({ color: colorDark, alpha: 0.5 })
-      }
+      const streakLen = speed > 220 ? 3 : speed > 140 ? 2 : 1
+      const x = Math.round(d.x)
+      const y = Math.round(d.y)
+      // Fade out hard over the last 35 % of the drop's life.
+      const fade = t > 0.65 ? 1 - (t - 0.65) / 0.35 : 1
+      g.rect(x, y, 1, streakLen)
+      g.fill({ color: s.color, alpha: 0.9 * fade })
+      // Bright tip pixel
+      g.rect(x, y, 1, 1)
+      g.fill({ color: colorLight, alpha: 0.85 * fade })
     }
   }
 
   /**
-   * Spawn a drop at the lip. All drops start at roughly the same
-   * point with a tiny horizontal jitter, so when many spawn quickly
-   * + accelerate under gravity they form a coherent **falling column
-   * of water**, not a sphere of spray.
+   * Spawn a drop at a precise lane offset along the lip. Each lane
+   * keeps its own X (no random jitter) so the cascade reads as
+   * several distinct parallel jets rather than one wide blur.
+   * Lifetime is short and bounded so the cascade visibly STOPS at
+   * roughly twice the cap height — no infinite trail.
    */
   private spawnSpringRimDrop(
     s: SpringState,
-    _rect: DOMRect,
-    lipBaseX: number,
+    rect: DOMRect,
+    laneX: number,
     lipBaseY: number,
     lipDirX: number,
   ): void {
@@ -2684,7 +2680,7 @@ export class EffectsEngine {
       }
     }
     if (!drop) {
-      if (s.drops.length >= 96) return
+      if (s.drops.length >= 160) return
       drop = {
         x: 0,
         y: 0,
@@ -2696,15 +2692,19 @@ export class EffectsEngine {
       }
       s.drops.push(drop)
     }
-    // Five columns of jitter so the cascade column is visibly wide.
-    const col = Math.floor(Math.random() * 5) - 2
-    drop.x = lipBaseX + col + lipDirX * 2
-    drop.y = lipBaseY + 1 + Math.random() * 1.5
-    drop.vx = lipDirX * (4 + Math.random() * 6) + (Math.random() - 0.5) * 5
-    drop.vy = 25 + Math.random() * 45
-    drop.life = 1.6 + Math.random() * 0.7
-    drop.maxLife = drop.life
+    drop.x = laneX + lipDirX * 2
+    drop.y = lipBaseY + 1 + Math.random() * 1.2
+    // Mostly vertical; small lane-preserving outward velocity.
+    drop.vx = lipDirX * (3 + Math.random() * 4)
+    drop.vy = 25 + Math.random() * 35
+    // Lifetime tuned to span ~2× the cap height. With gravity 380
+    // px/s² + initial vy ~50 px/s, after ~0.9-1.1 s the drop has
+    // travelled ~180-200 px which is roughly 2× a typical island
+    // cap height at scale 4. After that it fades out.
+    drop.maxLife = 0.9 + Math.random() * 0.25
+    drop.life = drop.maxLife
     drop.inUse = true
+    void rect
   }
 
 }
