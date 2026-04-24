@@ -396,14 +396,20 @@ interface CoinState {
 }
 
 /**
- * Spring — a living pond on the island's ground. The water surface
- * sits in a soft ellipse roughly filling the placeable zone, ripples
- * non-stop, and visibly OVERFLOWS the rim — small tongues of water
- * spill outward on every side at the rim's high points (driven by
- * the same wave motion). On the chosen side, an extra-strong stream
- * is constantly running off the cap's edge and cascading down past
- * the rock with detached droplets, the way blood pours off the
- * danger button.
+ * Spring — same architecture as `drip-pool` (the bloody-button
+ * effect), repurposed for water spilling off an island.
+ *
+ *   - `topCells[]`: 1-D height field along the rim, in px above
+ *     the base ellipse. Constantly fed by a wave field, diffused
+ *     laterally for surface tension, capped per cell at a tapered
+ *     max so the rim profile reads as a chunky liquid shoulder.
+ *   - When a top cell goes over its threshold, a droplet pinches
+ *     off (mass leaves the field). That droplet keeps its outward
+ *     direction and falls under gravity — tons of small chaotic
+ *     pixels, never a clean line.
+ *   - On the chosen side, an extra fat sustained column of cells
+ *     overflows continuously, dripping off the rim and cascading
+ *     down past the rock with sustained mass loss.
  */
 interface SpringDrop {
   x: number
@@ -412,24 +418,19 @@ interface SpringDrop {
   vy: number
   life: number
   maxLife: number
-  /** 'splash' = short-lived overflow particle near the rim,
-   *  'fall'   = long-lived droplet falling off the cascade.       */
-  kind: 'splash' | 'fall'
   inUse: boolean
 }
 
 interface SpringState {
   graphic: Graphics
-  /** Surface height-field samples around the rim, indexed by angle. */
-  rimCells: number[]
-  rimCellCount: number
-  /** Rim-relative offset of the chosen-side cascade origin (one of
-   *  the rim cells whose angle matches `side`). */
-  cascadeRimIndex: number
-  /** Length of the side cascade stream in px (rim point → falling). */
-  cascadeLength: number
-  cascadeAcc: number
-  splashAcc: number
+  /** Top-band height field around the rim, indexed by angle. */
+  topCells: number[]
+  topNoise: number[] // static per-cell jitter (irregular silhouette)
+  cellCount: number
+  /** Rim cell aligned with the chosen cascade side. */
+  cascadeIdx: number
+  flowAcc: number
+  drainAcc: number
   drops: SpringDrop[]
   side: 'left' | 'right'
   time: number
@@ -2453,14 +2454,23 @@ export class EffectsEngine {
   private initSpring(effect: AttachedEffect): void {
     const graphic = new Graphics()
     this.dripLayer.addChild(graphic)
-    const rimCellCount = 32
-    // Cascade origin: the rim cell whose angle is closest to ±π/2 in
-    // x (left/right of the pond), depending on `side`.
+    const cellCount = 32
+    // Static per-cell jitter — gives the rim its irregular outline.
+    const topNoise: number[] = []
+    for (let i = 0; i < cellCount; i++) {
+      const a = (i / cellCount) * Math.PI * 2
+      const noise =
+        Math.sin(a * 3 + 0.7) * 0.7 +
+        Math.sin(a * 5 + 1.9) * 0.5 +
+        Math.sin(a * 8 + 3.1) * 0.3
+      topNoise.push(noise)
+    }
+    // Cascade origin = rim cell aligned with chosen side.
     const sideAngle = effect.config.side === 'left' ? Math.PI : 0
     let bestIdx = 0
     let bestDelta = Infinity
-    for (let i = 0; i < rimCellCount; i++) {
-      const a = (i / rimCellCount) * Math.PI * 2
+    for (let i = 0; i < cellCount; i++) {
+      const a = (i / cellCount) * Math.PI * 2
       const delta = Math.abs(((a - sideAngle + Math.PI * 3) % (Math.PI * 2)) - Math.PI)
       if (delta < bestDelta) {
         bestDelta = delta
@@ -2469,12 +2479,12 @@ export class EffectsEngine {
     }
     effect.spring = {
       graphic,
-      rimCells: new Array(rimCellCount).fill(0),
-      rimCellCount,
-      cascadeRimIndex: bestIdx,
-      cascadeLength: 0,
-      cascadeAcc: 0,
-      splashAcc: 0,
+      topCells: new Array(cellCount).fill(0),
+      topNoise,
+      cellCount,
+      cascadeIdx: bestIdx,
+      flowAcc: 0,
+      drainAcc: 0,
       drops: [],
       side: effect.config.side,
       time: 0,
@@ -2490,96 +2500,75 @@ export class EffectsEngine {
     const colorLight = lighten(s.color, 0.45)
     const colorDark = darken(s.color, 0.3)
 
-    // Pond ellipse — sized to clearly fit INSIDE the placeable
-    // ground zone (rect). 64% of the rect on X and Y so the rim
-    // overflow tongues + splash particles still stay inside the
-    // visible cap surface.
     const cx = rect.left + rect.width / 2
     const cy = rect.top + rect.height / 2
+    // Pond ellipse: 64% of placeable zone, irregular silhouette.
     const ellRx = rect.width * 0.32
     const ellRy = rect.height * 0.32
+    const N = s.cellCount
 
-    // Per-rim-cell static angular jitter (radius offset) generates
-    // the irregular outline of the pond — hashed off the cell index
-    // so the silhouette is stable per island, never a clean ellipse.
-    const baseRimJitter = (i: number): number => {
-      const a = (i / s.rimCellCount) * Math.PI * 2
-      return (
-        Math.sin(a * 3 + 0.7) * 0.55 +
-        Math.sin(a * 5 + 1.9) * 0.35 +
-        Math.sin(a * 8 + 3.1) * 0.22
-      )
-    }
-
-    // ---------- LIVING SURFACE: ripple field + splashes ----------
-    const N = s.rimCellCount
-    // Lateral diffusion smooths neighbour swells.
-    const next = s.rimCells.slice()
-    const k = 0.18
+    // ---------- TOP HEIGHT FIELD ----------
+    // Gently diffused, fed by a wave field plus a sustained column
+    // on the cascade side. Pinch-off droplets remove mass when cells
+    // exceed a per-cell threshold.
+    const k = 0.16
+    const next = s.topCells.slice()
     for (let i = 0; i < N; i++) {
-      const left = s.rimCells[(i - 1 + N) % N]
-      const right = s.rimCells[(i + 1) % N]
-      next[i] = s.rimCells[i] + k * (left + right - 2 * s.rimCells[i])
+      const left = s.topCells[(i - 1 + N) % N]
+      const right = s.topCells[(i + 1) % N]
+      next[i] = s.topCells[i] + k * (left + right - 2 * s.topCells[i])
     }
-    s.rimCells = next
+    s.topCells = next
+
     if (effect.enabled) {
+      // Constant fill + travelling-wave injection across the rim.
       for (let i = 0; i < N; i++) {
         const a = (i / N) * Math.PI * 2
-        // Wave field: three travelling waves + a noise jitter on top of
-        // the static jitter, so the pond's outline is irregular AND
-        // alive (constantly moving).
-        const w =
-          Math.sin(s.time * 1.3 + a * 2) * 0.6 +
-          Math.sin(s.time * 2.1 + a * 3 + 0.7) * 0.4 +
-          Math.sin(s.time * 0.7 + a * 5 + 1.4) * 0.25
-        s.rimCells[i] = w + (Math.random() - 0.5) * 0.3
+        const wave =
+          1.4 +
+          Math.sin(s.time * 1.6 + a * 3) * 0.9 +
+          Math.sin(s.time * 2.4 + a * 5 + 0.7) * 0.6
+        s.topCells[i] += wave * dt + (Math.random() - 0.3) * 0.18
       }
-      // Cascade origin gets a constant heavy surge.
-      const surge = 1.8 + 0.6 * Math.sin(s.time * 2.7)
-      s.rimCells[s.cascadeRimIndex] += surge
-    } else {
-      for (let i = 0; i < N; i++) s.rimCells[i] *= 1 - dt * 4
-    }
+      // Cascade-side sustained heavy fill — 5 cells around `cascadeIdx`
+      // get an extra constant flow so the chosen side is always
+      // overflowing the most.
+      for (let off = -2; off <= 2; off++) {
+        const idx = (s.cascadeIdx + off + N) % N
+        const w = 1 - Math.abs(off) * 0.2
+        s.topCells[idx] += 6 * w * dt
+      }
 
-    // Spawn splash particles wherever a rim cell crests above ~1.0 —
-    // that's the water bumping against itself and overflowing.
-    if (effect.enabled) {
-      s.splashAcc += dt
-      const splashCadence = 0.045
-      while (s.splashAcc >= splashCadence) {
-        s.splashAcc -= splashCadence
-        // Pick the cell with the biggest swell among a random sample.
-        let pick = -1
-        let bestS = 0.4
-        for (let t = 0; t < 6; t++) {
-          const idx = Math.floor(Math.random() * N)
-          const sw = s.rimCells[idx]
-          if (sw > bestS) {
-            bestS = sw
-            pick = idx
+      // Pinch-off droplets — every cell that exceeds threshold has a
+      // probability per frame to shed a chaotic droplet, removing
+      // 1.5 px of mass from the cell. That's how the rim looks alive:
+      // pixels constantly leaving it.
+      s.flowAcc += dt
+      if (s.flowAcc >= 0.04) {
+        s.flowAcc = 0
+        for (let i = 0; i < N; i++) {
+          const threshold = i === s.cascadeIdx ? 1.5 : 2.4 + s.topNoise[i] * 0.4
+          if (s.topCells[i] <= threshold) continue
+          const isCasc = Math.abs(((i - s.cascadeIdx + N + N / 2) % N) - N / 2) <= 2
+          const prob = (s.topCells[i] - threshold) * (isCasc ? 0.85 : 0.35)
+          if (Math.random() < prob) {
+            this.spawnSpringRimDrop(s, rect, i)
+            s.topCells[i] = Math.max(0, s.topCells[i] - 1.6)
           }
         }
-        if (pick >= 0) this.spawnSpringSplash(s, rect, pick, baseRimJitter(pick))
-      }
-    }
-
-    // ---------- CASCADE STREAM (chosen side) ----------
-    const cascadeGrow = 240
-    const cascadeRetreat = 320
-    const cascadeMax = rect.height * 1.3 + 60
-    if (effect.enabled) {
-      s.cascadeLength = Math.min(cascadeMax, s.cascadeLength + cascadeGrow * dt)
-      s.cascadeAcc += dt
-      if (s.cascadeLength > 12 && s.cascadeAcc >= 0.1) {
-        s.cascadeAcc = 0
-        this.spawnSpringSideDrop(s, rect)
       }
     } else {
-      s.cascadeLength = Math.max(0, s.cascadeLength - cascadeRetreat * dt)
+      for (let i = 0; i < N; i++) s.topCells[i] = Math.max(0, s.topCells[i] - 6 * dt)
     }
 
-    // ---------- DROPS ----------
-    const gravity = 360
+    // Per-cell cap with edge taper baked into the static jitter.
+    for (let i = 0; i < N; i++) {
+      const cap = 4.5 + s.topNoise[i] * 0.6
+      if (s.topCells[i] > cap) s.topCells[i] = cap
+    }
+
+    // ---------- DROPS PHYSICS ----------
+    const gravity = 320
     for (const d of s.drops) {
       if (!d.inUse) continue
       d.life -= dt
@@ -2587,127 +2576,88 @@ export class EffectsEngine {
         d.inUse = false
         continue
       }
-      // Splash particles get full XY ballistics with a slight drag,
-      // falling drops just keep accelerating downward.
-      if (d.kind === 'splash') {
-        d.vx *= 0.95
-        d.vy += gravity * 0.6 * dt
-        d.x += d.vx * dt
-        d.y += d.vy * dt
-      } else {
-        d.vy += gravity * dt
-        d.y += d.vy * dt
-      }
+      d.vx *= 0.985
+      d.vy += gravity * dt
+      d.x += d.vx * dt
+      d.y += d.vy * dt
     }
 
     // ---------- RENDER ----------
     const g = s.graphic
     g.clear()
 
-    // 1) Pond body — fill the ellipse with the pond colour, slightly
-    //    inset so the rim reads as raised water, plus a brighter
-    //    central highlight band that wobbles.
-    const bodyAlpha = 0.92
-    fillEllipse(g, cx, cy, ellRx - 1, ellRy - 1, s.color, bodyAlpha)
-    // Highlight band — a horizontal stripe slightly above centre, its
-    // y wobbling on time so the surface looks alive.
-    const highlightY = cy - ellRy * 0.35 + Math.sin(s.time * 1.7) * 0.6
-    for (let dx = -ellRx + 2; dx <= ellRx - 2; dx += 1) {
-      const t = Math.abs(dx) / ellRx
-      if (t > 0.85) continue
-      const wobble = Math.sin(s.time * 1.9 + dx * 0.6) * 0.6
-      const yy = Math.round(highlightY + wobble)
-      g.rect(Math.round(cx + dx), yy, 1, 1)
-      g.fill({ color: colorLight, alpha: 0.45 * (1 - t) })
-    }
-    // A few moving specular flecks
-    for (let k2 = 0; k2 < 3; k2++) {
-      const ang = s.time * 0.6 + k2 * 2.1
-      const fx = Math.cos(ang) * ellRx * 0.5
-      const fy = Math.sin(ang * 1.4) * ellRy * 0.35
+    // 1) Pond body — solid ellipse fill (the "still" water).
+    fillEllipse(g, cx, cy, ellRx - 1, ellRy - 1, s.color, 0.9)
+    // Subtle moving highlights on the surface so it doesn't read
+    // like a flat disc.
+    for (let k2 = 0; k2 < 4; k2++) {
+      const ang = s.time * 0.55 + k2 * 1.7
+      const fx = Math.cos(ang) * ellRx * 0.6
+      const fy = Math.sin(ang * 1.3 + 0.4) * ellRy * 0.4
       g.rect(Math.round(cx + fx), Math.round(cy + fy), 1, 1)
-      g.fill({ color: 0xffffff, alpha: 0.55 })
+      g.fill({ color: 0xffffff, alpha: 0.5 })
     }
 
-    // 2) Living rim — outline made irregular by the static jitter,
-    //    PLUS a swell that pushes pixels outward so the water
-    //    visibly bulges and overflows where the wave is highest.
+    // 2) Living rim — for every cell, plot pixels OUTWARD from the
+    //    base ellipse all the way to its current top-cells height.
+    //    The static jitter shifts the base so the silhouette is never
+    //    a clean ellipse, and the dynamic height bumps it up further
+    //    where the wave is currently high. Result: a chunky, lumpy,
+    //    moving rim that looks unmistakably like overflowing water.
     for (let i = 0; i < N; i++) {
       const a = (i / N) * Math.PI * 2
-      const staticOffset = baseRimJitter(i) // ±~1.1 px irregular outline
-      const baseX = cx + Math.cos(a) * (ellRx + staticOffset)
-      const baseY = cy + Math.sin(a) * (ellRy + staticOffset)
-      const swell = Math.max(0, s.rimCells[i])
-      const tipX = baseX + Math.cos(a) * swell
-      const tipY = baseY + Math.sin(a) * swell
-      const steps = Math.max(1, Math.ceil(swell + 1))
+      const baseR_x = ellRx + s.topNoise[i]
+      const baseR_y = ellRy + s.topNoise[i]
+      const h = s.topCells[i]
+      const totalR_x = baseR_x + h
+      const totalR_y = baseR_y + h
+      // Step pixel-by-pixel from base to tip along the angle ray.
+      const baseX = cx + Math.cos(a) * baseR_x
+      const baseY = cy + Math.sin(a) * baseR_y
+      const tipX = cx + Math.cos(a) * totalR_x
+      const tipY = cy + Math.sin(a) * totalR_y
+      const dx = tipX - baseX
+      const dy = tipY - baseY
+      const dist = Math.sqrt(dx * dx + dy * dy)
+      const steps = Math.max(1, Math.ceil(dist))
       for (let k2 = 0; k2 <= steps; k2++) {
         const tt = steps === 0 ? 0 : k2 / steps
-        const px = Math.round(baseX + (tipX - baseX) * tt)
-        const py = Math.round(baseY + (tipY - baseY) * tt)
-        const isTip = k2 >= steps - 0
+        const px = Math.round(baseX + dx * tt)
+        const py = Math.round(baseY + dy * tt)
+        const atTip = k2 === steps && h > 0.7
         g.rect(px, py, 1, 1)
-        g.fill({ color: isTip && swell > 0.6 ? colorLight : s.color, alpha: 0.95 })
+        g.fill({ color: atTip ? colorLight : s.color, alpha: 0.95 })
       }
-      // Dark seam right where the rim meets the body (1 px under).
-      g.rect(Math.round(baseX), Math.round(baseY), 1, 1)
-      g.fill({ color: colorDark, alpha: 0.6 })
     }
 
-    // 3) Cascade — a continuous 2-3 wide stream falling from the
-    //    cascade rim point straight down, past rect.bottom. The
-    //    stream's width pulses with the same surge that boosts its
-    //    origin rim cell so it reads as the same body of water.
-    if (s.cascadeLength > 0.4) {
-      const aCasc = (s.cascadeRimIndex / N) * Math.PI * 2
-      const originX = cx + Math.cos(aCasc) * ellRx
-      const originY = cy + Math.sin(aCasc) * ellRy
-      const streamW = 3
-      const streamH = Math.ceil(s.cascadeLength)
-      // Slight horizontal wobble on the falling column.
-      const sway = Math.round(Math.sin(s.time * 3.2) * 0.6)
-      const streamX = Math.round(originX) - Math.floor(streamW / 2) + sway
-      g.rect(streamX, Math.round(originY), streamW, streamH)
-      g.fill({ color: s.color, alpha: 0.92 })
-      // Inner sheen
-      g.rect(streamX + (s.side === 'left' ? streamW - 1 : 0), Math.round(originY), 1, streamH)
-      g.fill({ color: colorLight, alpha: 0.7 })
-      // Tip plume — 2 px darker pixel showing leading edge.
-      g.rect(streamX, Math.round(originY + streamH), streamW, 1)
-      g.fill({ color: colorDark, alpha: 0.85 })
-    }
-
-    // 4) Free drops — splash pixels (1×1) bouncing around the rim
-    //    and falling drops (1×2 streaks) descending past the cascade.
+    // 3) Drops — chaotic 1×1 / 1×2 pixels falling under gravity. No
+    //    sustained column, no clean line; just a stream of pixels
+    //    leaving the rim and dropping past the cap.
     for (const d of s.drops) {
       if (!d.inUse) continue
       const t = d.life / d.maxLife
-      const alpha = 0.55 + 0.35 * t
-      if (d.kind === 'splash') {
-        g.rect(Math.round(d.x), Math.round(d.y), 1, 1)
-        // Splash pixels get a brighter colour so they pop against
-        // the body — they're foam, not bulk water.
-        const c = t > 0.65 ? colorLight : s.color
-        g.fill({ color: c, alpha })
-      } else {
+      const alpha = 0.55 + 0.4 * t
+      const isStreak = d.vy > 90 && t < 0.7
+      if (isStreak) {
         g.rect(Math.round(d.x), Math.round(d.y), 1, 2)
-        g.fill({ color: s.color, alpha })
+      } else {
+        g.rect(Math.round(d.x), Math.round(d.y), 1, 1)
+      }
+      g.fill({ color: t > 0.7 ? colorLight : s.color, alpha })
+      // Occasional darker trailing pixel for fast falling drops.
+      if (isStreak && Math.random() < 0.4) {
+        g.rect(Math.round(d.x), Math.round(d.y) - 1, 1, 1)
+        g.fill({ color: colorDark, alpha: 0.5 })
       }
     }
   }
 
   /**
-   * Spawn a splash particle near the rim cell that just crested.
-   * The particle gets an outward + slightly upward velocity so it
-   * reads as water bumping against itself and bursting up at the
-   * overflow point.
+   * Pinch a droplet off the rim cell `cellIdx`. Direction is the
+   * outward radial; cascade-side cells get extra downward kick so
+   * water visibly pours off there.
    */
-  private spawnSpringSplash(
-    s: SpringState,
-    rect: DOMRect,
-    rimIdx: number,
-    rimStaticOffset: number,
-  ): void {
+  private spawnSpringRimDrop(s: SpringState, rect: DOMRect, cellIdx: number): void {
     let drop: SpringDrop | undefined
     for (const d of s.drops) {
       if (!d.inUse) {
@@ -2716,7 +2666,7 @@ export class EffectsEngine {
       }
     }
     if (!drop) {
-      if (s.drops.length >= 64) return
+      if (s.drops.length >= 96) return
       drop = {
         x: 0,
         y: 0,
@@ -2724,7 +2674,6 @@ export class EffectsEngine {
         vy: 0,
         life: 0,
         maxLife: 0,
-        kind: 'splash',
         inUse: false,
       }
       s.drops.push(drop)
@@ -2733,61 +2682,29 @@ export class EffectsEngine {
     const cy = rect.top + rect.height / 2
     const ellRx = rect.width * 0.32
     const ellRy = rect.height * 0.32
-    const a = (rimIdx / s.rimCellCount) * Math.PI * 2
-    const baseR = Math.max(ellRx, ellRy) + rimStaticOffset
-    const baseX = cx + Math.cos(a) * (ellRx + rimStaticOffset)
-    const baseY = cy + Math.sin(a) * (ellRy + rimStaticOffset)
-    drop.x = baseX + (Math.random() - 0.5) * 0.7
-    drop.y = baseY + (Math.random() - 0.5) * 0.7
-    // Outward radial velocity + slight upward kick (jostling water).
-    const speedOut = 14 + Math.random() * 16
-    drop.vx = Math.cos(a) * speedOut + (Math.random() - 0.5) * 12
-    drop.vy = Math.sin(a) * speedOut + (Math.random() - 0.5) * 10 - 6
-    drop.life = 0.45 + Math.random() * 0.35
+    const a = (cellIdx / s.cellCount) * Math.PI * 2
+    const baseR_x = ellRx + s.topNoise[cellIdx]
+    const baseR_y = ellRy + s.topNoise[cellIdx]
+    const h = s.topCells[cellIdx]
+    const px = cx + Math.cos(a) * (baseR_x + h)
+    const py = cy + Math.sin(a) * (baseR_y + h)
+    drop.x = px + (Math.random() - 0.5) * 0.7
+    drop.y = py + (Math.random() - 0.5) * 0.7
+    // Outward radial velocity.
+    const distFromCascade = Math.min(
+      Math.abs(cellIdx - s.cascadeIdx),
+      s.cellCount - Math.abs(cellIdx - s.cascadeIdx),
+    )
+    const isCasc = distFromCascade <= 2
+    const radialSpeed = isCasc ? 8 + Math.random() * 14 : 16 + Math.random() * 18
+    const downKick = isCasc ? 60 + Math.random() * 50 : (Math.random() - 0.4) * 18
+    drop.vx = Math.cos(a) * radialSpeed + (Math.random() - 0.5) * 12
+    drop.vy = Math.sin(a) * radialSpeed + downKick
+    drop.life = isCasc ? 1.0 + Math.random() * 0.8 : 0.55 + Math.random() * 0.45
     drop.maxLife = drop.life
-    drop.kind = 'splash'
     drop.inUse = true
-    void baseR
   }
 
-  private spawnSpringSideDrop(s: SpringState, rect: DOMRect): void {
-    let drop: SpringDrop | undefined
-    for (const d of s.drops) {
-      if (!d.inUse) {
-        drop = d
-        break
-      }
-    }
-    if (!drop) {
-      if (s.drops.length >= 64) return
-      drop = {
-        x: 0,
-        y: 0,
-        vx: 0,
-        vy: 0,
-        life: 0,
-        maxLife: 0,
-        kind: 'fall',
-        inUse: false,
-      }
-      s.drops.push(drop)
-    }
-    const cx = rect.left + rect.width / 2
-    const cy = rect.top + rect.height / 2
-    const ellRx = rect.width * 0.32
-    const ellRy = rect.height * 0.32
-    const aCasc = (s.cascadeRimIndex / s.rimCellCount) * Math.PI * 2
-    const originX = cx + Math.cos(aCasc) * ellRx
-    const originY = cy + Math.sin(aCasc) * ellRy
-    drop.x = originX + (Math.random() - 0.5) * 2.5
-    drop.y = originY + s.cascadeLength
-    drop.vx = 0
-    drop.vy = 50 + Math.random() * 60
-    drop.life = 1.0 + Math.random() * 0.6
-    drop.maxLife = drop.life
-    drop.kind = 'fall'
-    drop.inUse = true
-  }
 }
 
 /**
