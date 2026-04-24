@@ -66,25 +66,42 @@ export interface GroundArea {
   height: number
 }
 
+/** Native-pixel height of the habitable band. Small enough that props
+ *  stay visibly clustered around the base of the signpost rather than
+ *  spread across the whole cap. */
+const GROUND_HEIGHT = 13
+
 /**
  * Derive the habitable zone for a given island id.
  *
- * - `centerX` follows `plaqueCenterX` exactly so the ground tracks the
- *   signpost's horizontal jitter (±3 px).
- * - `top` sits just below the stake's bottom (the panel's root in the
- *   ground). Anything above this y would overlap the sign post.
- * - `bottom` caps a few px before the cap's visible bottom so props
- *   don't clash with the stalactite row.
- * - `width` is clamped symmetrically around `centerX` and always fits
- *   inside the cap silhouette's widest horizontal extent.
+ * `centerX` tracks the **visual base of the stake**, not just the
+ * plaque's centre — that's crucial for tilted signposts. A panel with
+ * `tiltRise = +0.3` leans right, so each row of its stake is drawn
+ * offset by `round(row × tiltRise)` in `drawSignpost`. The stake's
+ * bottom pixel (5 rows below the plaque's centre) lands at
+ * `plaqueCenterX + round(5 × tiltRise)`, not at `plaqueCenterX`. If
+ * the ground used the raw centre, a leaning panel would have its
+ * hoard / grass / effects drift to the opposite side of where the
+ * player visually expects the panel to be planted.
+ *
+ * `top` sits just below the stake's visual bottom so nothing on the
+ * ground overlaps the sign post itself. `bottom` is bounded to
+ * `top + GROUND_HEIGHT` rather than the cap's extreme bottom — this
+ * keeps props tightly clustered around the signpost base, avoiding
+ * the "grass spread all the way to the stalactites" look.
  */
 export function computeGroundArea(id: string): GroundArea {
   const sp = computeSignpostLayout(id)
-  const stakeBottom = sp.plaqueCenterY + Math.floor(sp.plaqueH / 2) + 5
-  const top = stakeBottom + 1
-  const bottom = CAP_Y_BOTTOM_BASE - 2
-  const halfW = 10
-  const centerX = sp.plaqueCenterX
+  // Local (relative-to-plaque) Y of the stake's bottom pixel.
+  const stakeBottomLocalY = Math.floor(sp.plaqueH / 2) + 5
+  const stakeBottomAbsY = sp.plaqueCenterY + stakeBottomLocalY
+  // Tilt shift of that bottom pixel — same rule drawSignpost uses
+  // when it paints the stake so the ground lands exactly under it.
+  const stakeBaseOffsetX = Math.round(stakeBottomLocalY * sp.tiltRise)
+  const centerX = sp.plaqueCenterX + stakeBaseOffsetX
+  const top = stakeBottomAbsY + 1
+  const bottom = Math.min(top + GROUND_HEIGHT, CAP_Y_BOTTOM_BASE - 2)
+  const halfW = 9
   const left = centerX - halfW
   const right = centerX + halfW
   return {
