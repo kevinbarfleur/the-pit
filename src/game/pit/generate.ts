@@ -135,13 +135,18 @@ function pickWidth(depth: number, rng: ReturnType<typeof cursor>): number {
 }
 
 /**
- * Pick `width` distinct columns in [0, MAX_COLUMNS), spread symmetrically.
- * Centers single nodes; uses 0/2 for width 2 (outer edges); uses 0/1/2 for
- * width 3 (full row).
+ * Pick `width` adjacent columns in [0, MAX_COLUMNS). Rows pack together
+ * rather than spreading to the outer edges so every downlink from row N
+ * lands in a column at most 1 step away from its parent — the player
+ * always sees a short, clearly-ranked chain rather than crossed spaghetti.
+ *
+ * width 1  → centre
+ * width 2  → {0,1} or {1,2} depending on the row rng
+ * width 3  → {0,1,2}
  */
-function pickColumns(width: number): number[] {
+function pickColumns(width: number, rng: ReturnType<typeof cursor>): number[] {
   if (width === 1) return [Math.floor(MAX_COLUMNS / 2)]
-  if (width === 2) return [0, MAX_COLUMNS - 1]
+  if (width === 2) return rng.unit() < 0.5 ? [0, 1] : [1, 2]
   return Array.from({ length: MAX_COLUMNS }, (_, i) => i)
 }
 
@@ -158,7 +163,7 @@ export function generateChunkNodes(runSeed: string, chunkIndex: number): PitNode
   for (let rel = 0; rel < CHUNK_HEIGHT; rel++) {
     const depth = chunkIndex * CHUNK_HEIGHT + rel
     const width = pickWidth(depth, rng)
-    const columns = pickColumns(width)
+    const columns = pickColumns(width, rng)
     for (const col of columns) {
       const isBoss = depth > 0 && depth % BOSS_EVERY === 0
       const type: PitNodeType = isBoss ? 'boss' : pickType(depth, rng.unit())
@@ -177,17 +182,20 @@ export function generateChunkNodes(runSeed: string, chunkIndex: number): PitNode
 }
 
 /**
- * Compute deterministic downlinks from `rowA` to `rowB`. Mutates each rowA
- * node's `linksDown`. Guarantees:
- *   - every rowB node receives ≥ 1 incoming link;
- *   - every rowA node emits ≥ 1 outgoing link;
- *   - no duplicate links from a single node.
+ * Compute deterministic downlinks from `rowA` to `rowB`. Mutates each
+ * rowA node's `linksDown`.
  *
- * The algorithm first assigns each rowB node to its closest-column rowA
- * neighbour (incoming guarantee), then patches any rowA node without an
- * outgoing link by pointing it at its closest-column rowB neighbour, and
- * finally adds at most one extra cross-link per rowA node at low
- * probability to create organic divergence.
+ * This is the heart of the "choice" feel of the map: each parent picks
+ * 1–3 children from its immediate column neighbourhood (col−1, col,
+ * col+1). Parents with 2+ children present the player with a fork; a
+ * parent with 1 child is a forced descent (uncommon, used near bosses).
+ *
+ * Guarantees:
+ *   - every rowB node receives ≥ 1 incoming link (no orphaned tiles);
+ *   - every rowA node emits ≥ 1 outgoing link;
+ *   - every downlink targets a column within ±1 of the parent's column
+ *     (short, readable chains — no crossed spaghetti);
+ *   - no duplicate links from the same node.
  */
 export function linkRows(
   runSeed: string,
@@ -198,33 +206,45 @@ export function linkRows(
   if (rowA.length === 0 || rowB.length === 0) return
   const rng = cursor(runSeed, (depthA << 8) ^ 0x9e3779b1)
 
-  // Step 1 — every rowB node receives one incoming link.
-  for (const b of rowB) {
-    const a = closestByColumn(rowA, b.column)
-    if (!a.linksDown.includes(b.id)) a.linksDown.push(b.id)
-  }
-
-  // Step 2 — every rowA node emits at least one link.
+  // Pass 1 — each parent picks 1–3 adjacent children.
   for (const a of rowA) {
-    if (a.linksDown.length === 0) {
-      const b = closestByColumn(rowB, a.column)
-      a.linksDown.push(b.id)
+    const candidates = rowB.filter((b) => Math.abs(b.column - a.column) <= 1)
+    const pool = candidates.length > 0 ? candidates : [closestByColumn(rowB, a.column)]
+    const n = chooseNumChildren(rng, pool.length)
+    // Shuffle deterministically and take the first n.
+    const shuffled = shuffleStable(pool, rng)
+    for (let i = 0; i < n; i++) {
+      a.linksDown.push(shuffled[i].id)
     }
   }
 
-  // Step 3 — up to one bonus cross-link per rowA node at 25% probability,
-  // only when the bonus target isn't already linked (no duplicates).
-  for (const a of rowA) {
-    if (rowB.length < 2) break
-    if (rng.unit() > 0.25) continue
-    // Pick a rowB node at a column offset by ±1 from a's column.
-    const offset = rng.unit() < 0.5 ? -1 : 1
-    const targetCol = a.column + offset
-    const b = rowB.find((n) => n.column === targetCol)
-    if (!b) continue
-    if (a.linksDown.includes(b.id)) continue
-    a.linksDown.push(b.id)
+  // Pass 2 — orphan rescue. Any rowB node without a parent gets adopted
+  // by the closest-column rowA node (that doesn't already link to it).
+  for (const b of rowB) {
+    const hasParent = rowA.some((a) => a.linksDown.includes(b.id))
+    if (hasParent) continue
+    const a = closestByColumn(rowA, b.column)
+    if (!a.linksDown.includes(b.id)) a.linksDown.push(b.id)
   }
+}
+
+/** Bias toward forks: 30% one child, 55% two, 15% three — clipped to
+ *  available candidates so a parent with only one neighbour never
+ *  duplicates or errors. */
+function chooseNumChildren(rng: ReturnType<typeof cursor>, maxAvailable: number): number {
+  const roll = rng.unit()
+  const n = roll < 0.3 ? 1 : roll < 0.85 ? 2 : 3
+  return Math.min(n, Math.max(1, maxAvailable))
+}
+
+/** In-place-free shuffle seeded by the supplied rng (Fisher-Yates). */
+function shuffleStable<T>(list: T[], rng: ReturnType<typeof cursor>): T[] {
+  const out = list.slice()
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = rng.int(i + 1)
+    ;[out[i], out[j]] = [out[j], out[i]]
+  }
+  return out
 }
 
 function closestByColumn(row: PitNode[], col: number): PitNode {

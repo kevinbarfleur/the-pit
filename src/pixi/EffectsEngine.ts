@@ -439,6 +439,23 @@ export class EffectsEngine {
     }
   }
 
+  /**
+   * Freeze every effect update. Meant for moments where the screen is
+   * transforming heavily (zoom transition) and re-rendering the Pixi
+   * stage alongside a scaled DOM becomes expensive.
+   */
+  pauseTicker(): void {
+    if (this.ready) this.app.ticker.stop()
+  }
+
+  /**
+   * Resume the effect ticker after a `pauseTicker()` call. Safe to call
+   * if the ticker is already running.
+   */
+  resumeTicker(): void {
+    if (this.ready) this.app.ticker.start()
+  }
+
   // =====================================================================
   // Triggered effects — click/event driven
   // =====================================================================

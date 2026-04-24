@@ -1,0 +1,175 @@
+/*
+ * Floating pixel-art island. All colouring is keyed off the data-type
+ * attribute — CSS custom properties resolve the top/surface/stalactite
+ * tints so a single polygon clip can be reused across every type.
+ *
+ * The island's vertical space is 60px cap + ~24px underside. `top` sits
+ * in the upper 60px, stalactites start at ~cap bottom and dangle.
+ */
+
+.island {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: block;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  image-rendering: pixelated;
+  animation-name: islandFloat;
+  animation-iteration-count: infinite;
+  animation-timing-function: steps(1);
+  animation-duration: var(--island-float-period, 2.2s);
+}
+
+.island:disabled {
+  cursor: not-allowed;
+  animation-play-state: paused;
+}
+
+.island:focus-visible {
+  outline: 2px dashed var(--color-pit-gild);
+  outline-offset: 4px;
+}
+
+/* Subtle bob — four step frames per period, ±2px. Step easing keeps it
+ * pixel-art honest (no GPU interpolation between frames). */
+@keyframes islandFloat {
+  0% { transform: translate(-50%, -50%); }
+  25% { transform: translate(-50%, calc(-50% - 1px)); }
+  50% { transform: translate(-50%, calc(-50% - 2px)); }
+  75% { transform: translate(-50%, calc(-50% - 1px)); }
+  100% { transform: translate(-50%, -50%); }
+}
+
+.shadow {
+  position: absolute;
+  left: 50%;
+  bottom: -2px;
+  transform: translateX(-50%);
+  width: 70%;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  filter: blur(2px);
+  z-index: 0;
+  pointer-events: none;
+}
+
+.top {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+  /* Base tint is overridden per data-type below. */
+  background:
+    radial-gradient(
+      ellipse at 40% 30%,
+      rgba(255, 255, 255, 0.18) 0%,
+      rgba(255, 255, 255, 0) 55%
+    ),
+    repeating-linear-gradient(
+      0deg,
+      rgba(0, 0, 0, 0.08) 0 1px,
+      rgba(0, 0, 0, 0) 1px 3px
+    ),
+    var(--top-color, #8a8a8a);
+  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.4);
+}
+
+.topHighlight {
+  position: absolute;
+  top: 4px;
+  left: 12px;
+  width: 18px;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.35);
+  pointer-events: none;
+}
+
+.glyph {
+  position: relative;
+  font-family: var(--font-display);
+  font-size: 24px;
+  line-height: 1;
+  color: #000;
+  text-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.15),
+    1px 1px 0 rgba(0, 0, 0, 0.45);
+  z-index: 3;
+}
+
+.underside {
+  position: absolute;
+  top: 56px;
+  left: 0;
+  width: 100%;
+  height: 24px;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.stalactite {
+  position: absolute;
+  transform: translateX(-50%);
+  background: var(--stalactite-color, #3a3a3a);
+  box-shadow: inset 1px 0 0 rgba(255, 255, 255, 0.08);
+  image-rendering: pixelated;
+}
+
+/* --- Type tints -----------------------------------------------------
+ * Each type defines the top colour and a darker stalactite colour. The
+ * underside tint stays close to the type to keep the silhouette
+ * readable even after the glyph clips out of sight during zoom. */
+
+.top[data-type='combat']    { --top-color: #9a3a3a; }
+.top[data-type='elite']     { --top-color: #b58b3a; }
+.top[data-type='boss']      { --top-color: #6b2020; }
+.top[data-type='event']     { --top-color: #5b3d8a; }
+.top[data-type='shop']      { --top-color: #3a8f9a; }
+.top[data-type='rest']      { --top-color: #4e8a3a; }
+.top[data-type='cache']     { --top-color: #7a7260; }
+.top[data-type='treasure']  { --top-color: #c28535; }
+
+.island[data-type='combat'] .stalactite   { --stalactite-color: #4a1a1a; }
+.island[data-type='elite'] .stalactite    { --stalactite-color: #5c4320; }
+.island[data-type='boss'] .stalactite     { --stalactite-color: #2e0e0e; }
+.island[data-type='event'] .stalactite    { --stalactite-color: #2a1c42; }
+.island[data-type='shop'] .stalactite     { --stalactite-color: #1c4248; }
+.island[data-type='rest'] .stalactite     { --stalactite-color: #233f1a; }
+.island[data-type='cache'] .stalactite    { --stalactite-color: #3a3428; }
+.island[data-type='treasure'] .stalactite { --stalactite-color: #5f3f15; }
+
+/* --- State modifiers ------------------------------------------------ */
+
+.island[data-state='current'] .top {
+  box-shadow:
+    inset 0 0 0 2px var(--color-pit-green),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.4),
+    0 0 18px 2px rgba(154, 230, 110, 0.35);
+}
+
+.island[data-state='cleared'] {
+  opacity: 0.75;
+}
+
+.island[data-state='cleared-exhausted'] {
+  opacity: 0.4;
+}
+
+.island[data-state='locked'] {
+  opacity: 0.3;
+  filter: grayscale(0.8);
+}
+
+.island[data-state='bypassed'] {
+  opacity: 0.28;
+  filter: grayscale(0.9);
+}

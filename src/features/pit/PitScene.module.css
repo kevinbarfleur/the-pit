@@ -7,6 +7,18 @@
   font-family: var(--font-sans);
 }
 
+/*
+ * While the zoom is running, hide the chrome that surrounds the shaft —
+ * depth gauge, detail panel, walls, chain overlay. Using display:none
+ * (rather than opacity) takes the subtrees out of layout entirely, which
+ * is the cheapest way to tell the browser it doesn't need to paint them
+ * on every zoom step.
+ */
+.scene[data-zoom='active'] :global([data-pit-chrome]) {
+  display: none !important;
+}
+
+
 .roomLayer {
   position: absolute;
   inset: 0;

@@ -1,6 +1,6 @@
 import type { PitRun } from '../../../hooks/usePitRun'
 import { MAX_COLUMNS } from '../../../game/pit/types'
-import { PitNode } from './PitNode'
+import { IslandNode } from './IslandNode'
 import styles from './NodeMap.module.css'
 
 interface NodeMapProps {
@@ -33,7 +33,7 @@ export function NodeMap({ run, minDepth, maxDepth, rowHeight }: NodeMapProps) {
             style={{ top: depth * rowHeight, height: rowHeight }}
           >
             {row.map((node) => (
-              <PitNode
+              <IslandNode
                 key={node.id}
                 node={node}
                 state={run.nodeState(node)}

@@ -40,7 +40,7 @@ export function NodeDetailPanel({ run }: NodeDetailPanelProps) {
   const hovered = hoveredId ? run.window.byId.get(hoveredId) ?? null : null
 
   return (
-    <aside className={styles.panel}>
+    <aside className={styles.panel} data-pit-chrome>
       {hovered ? <HoveredView node={hovered} run={run} /> : <NoHoverView run={run} />}
     </aside>
   )

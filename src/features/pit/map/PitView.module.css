@@ -4,14 +4,11 @@
   display: grid;
   grid-template-columns: 80px 1fr 300px;
   overflow: hidden;
-  transition: opacity 120ms linear;
-}
-
-.root[data-fade='out'] {
-  /* Chrome (depth gauge + right panel + shaft walls) fades while the map
-     itself is transformed by <ZoomTransition>. Only the content needs to
-     survive until scene='in-node'. */
-  opacity: 1;
+  will-change: transform;
+  /* Hint the browser to promote the map to its own layer — critical when
+     ZoomTransition applies a big scale transform so the GPU doesn't
+     relayout the underlying content on every step. */
+  transform: translateZ(0);
 }
 
 .shaft {

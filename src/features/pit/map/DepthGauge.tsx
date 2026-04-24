@@ -23,7 +23,7 @@ export function DepthGauge({
   const rows: number[] = []
   for (let d = minDepth; d <= maxDepth; d++) rows.push(d)
   return (
-    <aside className={styles.gauge} aria-label="depth gauge">
+    <aside className={styles.gauge} aria-label="depth gauge" data-pit-chrome>
       <div
         className={styles.ticks}
         style={{ transform: `translateY(${cameraOffset}px)` }}

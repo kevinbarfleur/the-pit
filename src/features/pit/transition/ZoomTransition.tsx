@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { useEffects } from '../../../hooks/useEffects'
 import styles from './ZoomTransition.module.css'
 
 export type ZoomDirection = 'in' | 'out'
@@ -12,21 +13,23 @@ interface ZoomTransitionProps {
 
 /**
  * Stepped-scale zoom on the Pit map. Moves `#pit-map-root` through a
- * discrete sequence of scales with a 140ms dwell per step, giving a
- * chunky pixel-art "drilling in" feel rather than a GPU-smooth pinch.
+ * discrete sequence of scales with a 120ms dwell per step.
  *
- * Per CLAUDE.md, interpolation easing is banned — only linear/step. Step
- * is what we use. Also doubles as a pixelation-preserving approach: the
- * GPU never has to resample between two arbitrary sub-pixel scales.
- *
- * Chrome (depth gauge, right panel, shaft walls) is faded by a sibling
- * overlay that absorbs pointer events while the zoom runs.
+ * Performance notes (iterated on user feedback about lag):
+ *  - Scale max capped at 8× to keep the composited surface manageable.
+ *  - `EffectsEngine.pauseTicker()` freezes the Pixi stage for the
+ *    duration of the animation — no hover effects, no embers, no
+ *    sparkle wasting cycles on elements that are scaling out.
+ *  - Chrome is kept *present* (React stays mounted) but CSS switches it
+ *    to `display: none` via a `data-zoom` attribute on the scene root
+ *    so browsers don't paint or layout it while the map scales.
  */
-const SCALE_STEPS = [1, 2, 4, 8, 12] as const
-const STEP_MS = 140
+const SCALE_STEPS = [1, 2, 4, 6, 8] as const
+const STEP_MS = 120
 
 export function ZoomTransition({ anchor, direction, onComplete }: ZoomTransitionProps) {
   const doneRef = useRef(false)
+  const engine = useEffects()
 
   useEffect(() => {
     const root = document.getElementById('pit-map-root')
@@ -34,6 +37,9 @@ export function ZoomTransition({ anchor, direction, onComplete }: ZoomTransition
       onComplete()
       return
     }
+    // Freeze the Pixi ticker — nothing on-screen needs its updates
+    // while the map is scaling and all the hover effects are offscreen.
+    engine?.pauseTicker()
 
     const steps = direction === 'in' ? SCALE_STEPS : [...SCALE_STEPS].reverse()
     const maxScale = SCALE_STEPS[SCALE_STEPS.length - 1]
@@ -79,6 +85,9 @@ export function ZoomTransition({ anchor, direction, onComplete }: ZoomTransition
     return () => {
       cancelled = true
       for (const t of timers) window.clearTimeout(t)
+      // Resume the ticker in any scenario — zoom done, zoom cancelled, or
+      // unmount for any other reason. Always safe.
+      engine?.resumeTicker()
       // Only restore on a cancel (unmount before complete).
       if (!doneRef.current) {
         root.style.transform = prevTransform

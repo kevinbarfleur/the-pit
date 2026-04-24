@@ -52,7 +52,7 @@ export function PitScene() {
   const showTransition = scene === 'zooming-in' || scene === 'zooming-out'
 
   return (
-    <div className={styles.scene}>
+    <div className={styles.scene} data-zoom={showTransition ? 'active' : 'idle'}>
       {showMap && <PitView run={run} />}
       {showRoom && pendingCommit && (
         <div className={styles.roomLayer}>

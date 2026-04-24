@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef } from 'react'
 import type { PitRun } from '../../../hooks/usePitRun'
-import { usePitUiStore } from '../../../stores/pitUiStore'
 import { DepthGauge } from './DepthGauge'
 import { NodeDetailPanel } from './NodeDetailPanel'
 import { NodeMap } from './NodeMap'
@@ -26,13 +25,8 @@ interface PitViewProps {
 
 export function PitView({ run }: PitViewProps) {
   const shaftRef = useRef<HTMLDivElement | null>(null)
-  const scene = usePitUiStore((s) => s.scene)
 
   const cameraOffset = useCameraOffset(run.currentDepth)
-
-  // Fade the chrome + shaft for the zoom transition. The map container
-  // itself is transformed by <ZoomTransition>; we just drive opacity here.
-  const chromeFadedOut = scene === 'zooming-in' || scene === 'in-node'
 
   // Depth range rendered this frame. Read off the run's window.
   const { minDepth, maxDepth } = useMemo(() => {
@@ -46,11 +40,7 @@ export function PitView({ run }: PitViewProps) {
   }, [run.window])
 
   return (
-    <div
-      className={styles.root}
-      data-fade={chromeFadedOut ? 'out' : 'in'}
-      id="pit-map-root"
-    >
+    <div className={styles.root} id="pit-map-root">
       <PitShaft />
       <DepthGauge
         currentDepth={run.currentDepth}

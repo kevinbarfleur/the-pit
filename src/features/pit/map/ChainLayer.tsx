@@ -1,7 +1,9 @@
-import { useMemo } from 'react'
-import { MAX_COLUMNS, type PitNode, type PitNodeState } from '../../../game/pit/types'
+import { useEffect, useMemo } from 'react'
+import type { PitNode, PitNodeState } from '../../../game/pit/types'
 import type { PitRun } from '../../../hooks/usePitRun'
-import styles from './ChainLayer.module.css'
+import { useChains } from '../../../hooks/useChains'
+import { usePitUiStore } from '../../../stores/pitUiStore'
+import type { ChainSpec, ChainState } from '../../../pixi/ChainsEngine'
 
 interface ChainLayerProps {
   run: PitRun
@@ -11,91 +13,118 @@ interface ChainLayerProps {
 }
 
 /**
- * V1 chains — a lightweight SVG pass that renders each downlink as a
- * vertical dashed "chain" segment tinted by its traversal state. This is
- * the stopgap until `ChainsEngine.ts` implements pixel-art maillons with
- * pendulum swing and tension animations on commit. The geometry math is
- * already in the final coordinate system (column % → lane centre, depth
- * row → y offset) so upgrading to Pixi later is a drop-in swap.
+ * Drives the Pixi `ChainsEngine` from the Pit graph. For every downlink
+ * in the visible window it computes viewport-space anchor coordinates
+ * by reading the island buttons' DOMRects (they expose data-island-id +
+ * data-anchor-top/bottom, populated by `IslandNode`), classifies the
+ * chain's state, and calls `engine.syncChains(specs)`.
+ *
+ * Sync runs on every animation frame so the chains follow:
+ *   - island float bob (the IslandNode animates its transform),
+ *   - camera translate (shaftInner transform),
+ *   - page resize / scroll.
+ *
+ * Rendering is handled entirely by the engine; this component mounts no
+ * DOM of its own.
  */
-export function ChainLayer({ run, minDepth, maxDepth, rowHeight }: ChainLayerProps) {
-  const links = useMemo(() => computeLinks(run, minDepth, maxDepth), [run, minDepth, maxDepth])
-  const totalHeight = (maxDepth - minDepth + 1) * rowHeight
+export function ChainLayer({ run }: ChainLayerProps) {
+  const engine = useChains()
+  const scene = usePitUiStore((s) => s.scene)
 
-  return (
-    <svg
-      className={styles.svg}
-      preserveAspectRatio="none"
-      viewBox={`0 ${minDepth * rowHeight} 100 ${totalHeight}`}
-      aria-hidden="true"
-    >
-      {links.map((l, i) => (
-        <line
-          key={i}
-          className={styles.chain}
-          data-state={l.state}
-          x1={l.x1}
-          y1={l.y1}
-          x2={l.x2}
-          y2={l.y2}
-        />
-      ))}
-    </svg>
-  )
-}
+  // Pre-compute the static list of (from, to) node pairs we need to
+  // render. This is the only thing that changes when the graph changes;
+  // the per-frame loop just reads positions and state.
+  const pairs = useMemo(() => collectLinkPairs(run), [run.window])
 
-interface Link {
-  x1: number
-  y1: number
-  x2: number
-  y2: number
-  state: 'traversed' | 'active' | 'latent' | 'bypassed'
-}
+  useEffect(() => {
+    if (!engine) return
+    // Freeze chain sim during the zoom transition — anchor reads would
+    // be meaningless while the map is scaling up.
+    if (scene === 'zooming-in' || scene === 'in-node' || scene === 'zooming-out') {
+      engine.pauseTicker()
+      // Clear any visible chains so none remain when the room mounts.
+      engine.syncChains([])
+      return
+    }
+    engine.resumeTicker()
 
-function laneCenterPercent(column: number): number {
-  const laneWidth = 100 / MAX_COLUMNS
-  return column * laneWidth + laneWidth / 2
-}
-
-function computeLinks(run: PitRun, minDepth: number, maxDepth: number): Link[] {
-  const links: Link[] = []
-  for (let d = minDepth; d <= maxDepth; d++) {
-    const row = run.window.byDepth.get(d)
-    if (!row) continue
-    for (const from of row) {
-      for (const toId of from.linksDown) {
-        const to = run.window.byId.get(toId)
-        if (!to) continue
-        const fromState = run.nodeState(from)
-        const toState = run.nodeState(to)
-        const state = classifyLink(fromState, toState, run, from, to)
-        links.push({
-          x1: laneCenterPercent(from.column),
-          y1: from.depth * 140 + 70,
-          x2: laneCenterPercent(to.column),
-          y2: to.depth * 140 + 70,
-          state,
+    let running = true
+    const push = () => {
+      if (!running) return
+      const specs: ChainSpec[] = []
+      for (const pair of pairs) {
+        const fromEl = document.querySelector<HTMLElement>(`[data-island-id="${cssEscape(pair.fromId)}"]`)
+        const toEl = document.querySelector<HTMLElement>(`[data-island-id="${cssEscape(pair.toId)}"]`)
+        if (!fromEl || !toEl) continue
+        const fromRect = fromEl.getBoundingClientRect()
+        const toRect = toEl.getBoundingClientRect()
+        const fromAnchor = Number(fromEl.dataset.anchorBottom ?? 50) / 100
+        const toAnchor = Number(toEl.dataset.anchorTop ?? 50) / 100
+        specs.push({
+          id: `${pair.fromId}->${pair.toId}`,
+          fromX: fromRect.left + fromRect.width * fromAnchor,
+          fromY: fromRect.bottom - 2,
+          toX: toRect.left + toRect.width * toAnchor,
+          toY: toRect.top + 2,
+          state: pair.state(run),
         })
       }
+      engine.syncChains(specs)
+      raf = requestAnimationFrame(push)
     }
-  }
-  return links
+    let raf = requestAnimationFrame(push)
+    return () => {
+      running = false
+      cancelAnimationFrame(raf)
+      engine.syncChains([])
+    }
+  }, [engine, pairs, run, scene])
+
+  return null
 }
 
-function classifyLink(
-  fromState: PitNodeState,
-  toState: PitNodeState,
-  run: PitRun,
-  from: PitNode,
-  to: PitNode,
-): Link['state'] {
-  // Both ends traversed, and the path actually contains them in order.
+// -----------------------------------------------------------------------
+// Internal
+// -----------------------------------------------------------------------
+
+interface LinkPair {
+  fromId: string
+  toId: string
+  /** Closure that re-classifies the chain state from current run state. */
+  state: (run: PitRun) => ChainState
+}
+
+function collectLinkPairs(run: PitRun): LinkPair[] {
+  const out: LinkPair[] = []
+  for (const from of run.window.nodes) {
+    for (const toId of from.linksDown) {
+      const to = run.window.byId.get(toId)
+      if (!to) continue
+      out.push({
+        fromId: from.id,
+        toId: to.id,
+        state: (r) => classify(from, to, r),
+      })
+    }
+  }
+  return out
+}
+
+function classify(from: PitNode, to: PitNode, run: PitRun): ChainState {
   const path = run.state.path
   const fromIdx = path.indexOf(from.id)
   const toIdx = path.indexOf(to.id)
   if (fromIdx !== -1 && toIdx !== -1 && toIdx === fromIdx + 1) return 'traversed'
-  if (fromState === 'current') return 'active'
-  if (toState === 'current') return 'active'
+  const toState: PitNodeState = run.nodeState(to)
+  const fromState: PitNodeState = run.nodeState(from)
+  if (fromState === 'current' || toState === 'current') return 'active'
   if (fromState === 'bypassed' || toState === 'bypassed') return 'bypassed'
   return 'latent'
+}
+
+/** Minimal CSS.escape replacement — the node ids (e.g. "50:1") contain
+ *  a colon which breaks attribute selectors if unescaped. */
+function cssEscape(s: string): string {
+  if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') return CSS.escape(s)
+  return s.replace(/([^\w-])/g, '\\$1')
 }

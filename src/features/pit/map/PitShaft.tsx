@@ -8,5 +8,5 @@ import styles from './PitShaft.module.css'
  * animated bricks without changing the component API.
  */
 export function PitShaft() {
-  return <div className={styles.shaft} aria-hidden="true" />
+  return <div className={styles.shaft} aria-hidden="true" data-pit-chrome />
 }
