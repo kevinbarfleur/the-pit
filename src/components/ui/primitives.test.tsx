@@ -167,7 +167,7 @@ describe('interactive primitives', () => {
     expect(engine.emitBurst).not.toHaveBeenCalled()
   })
 
-  it('Button juicy attaches a drip-pool with variant-matched color', () => {
+  it('Button primary+juicy attaches ivy with green color', () => {
     const engine = stubEngine()
     render(
       <EffectsContext.Provider value={engine}>
@@ -178,11 +178,11 @@ describe('interactive primitives', () => {
     )
     expect(engine.attachWithHandle).toHaveBeenCalled()
     const call = (engine.attachWithHandle as ReturnType<typeof vi.fn>).mock.calls[0]
-    expect(call[1]).toBe('drip-pool')
+    expect(call[1]).toBe('ivy')
     expect(call[2]).toEqual(expect.objectContaining({ color: 0x9ae66e }))
   })
 
-  it('Button danger+juicy uses the red drip color', () => {
+  it('Button danger+juicy attaches drip-pool with red color', () => {
     const engine = stubEngine()
     render(
       <EffectsContext.Provider value={engine}>
@@ -192,7 +192,34 @@ describe('interactive primitives', () => {
       </EffectsContext.Provider>,
     )
     const call = (engine.attachWithHandle as ReturnType<typeof vi.fn>).mock.calls[0]
+    expect(call[1]).toBe('drip-pool')
     expect(call[2]).toEqual(expect.objectContaining({ color: 0xd45a5a }))
+  })
+
+  it('Button default+juicy attaches embers with amber color', () => {
+    const engine = stubEngine()
+    render(
+      <EffectsContext.Provider value={engine}>
+        <Button juicy variant="default">
+          offer
+        </Button>
+      </EffectsContext.Provider>,
+    )
+    const call = (engine.attachWithHandle as ReturnType<typeof vi.fn>).mock.calls[0]
+    expect(call[1]).toBe('embers')
+    expect(call[2]).toEqual(expect.objectContaining({ color: 0xd4a147 }))
+  })
+
+  it('Button ghost+juicy does NOT attach any hover effect', () => {
+    const engine = stubEngine()
+    render(
+      <EffectsContext.Provider value={engine}>
+        <Button juicy variant="ghost">
+          ghost
+        </Button>
+      </EffectsContext.Provider>,
+    )
+    expect(engine.attachWithHandle).not.toHaveBeenCalled()
   })
 
   it('Input renders with icon and cursor', () => {

@@ -29,7 +29,15 @@ export interface DripOptions {
   size?: number
 }
 
-export type AttachKind = 'aura' | 'ripple' | 'pulse' | 'sparkle' | 'drips' | 'drip-pool'
+export type AttachKind =
+  | 'aura'
+  | 'ripple'
+  | 'pulse'
+  | 'sparkle'
+  | 'drips'
+  | 'drip-pool'
+  | 'ivy'
+  | 'embers'
 
 export interface AttachConfig {
   color?: number
@@ -75,7 +83,7 @@ interface Particle {
   size: number
   color: number
   trail: boolean
-  fadeMode: 'linear' | 'late'
+  fadeMode: 'linear' | 'late' | 'ember'
   inUse: boolean
 }
 
@@ -150,6 +158,25 @@ interface DripState {
   graphic: Graphics
 }
 
+/** One pixel-art tendril growing from a button edge outward. */
+interface IvyTendril {
+  side: 'top' | 'right' | 'bottom' | 'left'
+  originFrac: number // 0..1, placement along the edge
+  dir: { x: number; y: number } // unit growth direction (perpendicular to edge)
+  segments: Array<{ dx: number; dy: number }> // offsets from origin in px, in world-delta
+  targetLength: number // segment count the tendril wants to reach
+  growInterval: number // seconds between segments
+  growAcc: number
+  state: 'growing' | 'idle' | 'retracting' | 'dead'
+  leafAt: number // segment index to place a leaf glyph at (−1 = none)
+}
+
+interface IvyState {
+  tendrils: IvyTendril[]
+  graphic: Graphics
+  color: number
+}
+
 interface AttachedEffect {
   id: number
   el: HTMLElement
@@ -166,6 +193,8 @@ interface AttachedEffect {
   enabled: boolean
   // drip-pool-specific state (only set for drip-pool)
   drip?: DripState
+  // ivy-specific state (only set for ivy)
+  ivy?: IvyState
 }
 
 let nextEffectId = 1
@@ -420,6 +449,10 @@ export class EffectsEngine {
       this.initDripPool(effect)
     }
 
+    if (kind === 'ivy') {
+      this.initIvy(effect)
+    }
+
     this.attached.push(effect)
 
     return { id, detach: () => this.detach(id) }
@@ -459,6 +492,10 @@ export class EffectsEngine {
       effect.drip.graphic.destroy()
       effect.drip = undefined
     }
+    if (effect.ivy) {
+      effect.ivy.graphic.destroy()
+      effect.ivy = undefined
+    }
     this.attached.splice(idx, 1)
   }
 
@@ -490,7 +527,12 @@ export class EffectsEngine {
       p.g.y += p.vy * dt
       p.vy += p.gravity * dt
       const t = p.life / p.maxLife
-      if (p.fadeMode === 'late') {
+      if (p.fadeMode === 'ember') {
+        // fade-in during first 20%, hold, fade-out during last 30%
+        const fadeIn = Math.min(1, (1 - t) / 0.2)
+        const fadeOut = t > 0.3 ? 1 : t / 0.3
+        p.g.alpha = Math.min(fadeIn, fadeOut)
+      } else if (p.fadeMode === 'late') {
         p.g.alpha = t > 0.3 ? 1 : t / 0.3
       } else {
         p.g.alpha = t > 0.5 ? 1 : t * 2
@@ -548,11 +590,15 @@ export class EffectsEngine {
       effect.lastRect = effect.el.getBoundingClientRect()
       const rect = effect.lastRect
 
-      // drip-pool must tick regardless of enabled state: the simulation has a
-      // drain phase that runs when enabled=false, and the body has to follow
-      // the button across scrolls even while draining.
+      // drip-pool and ivy must tick regardless of enabled state: they both
+      // have a retract/drain phase that runs when enabled=false, and must
+      // follow the button across scrolls during the outro.
       if (effect.kind === 'drip-pool') {
         this.tickDripPool(effect, rect, dt)
+        continue
+      }
+      if (effect.kind === 'ivy') {
+        this.tickIvy(effect, rect, dt)
         continue
       }
 
@@ -593,6 +639,14 @@ export class EffectsEngine {
         }
         case 'aura': {
           // orbit logic handled in tickOrbits via lastRect
+          break
+        }
+        case 'embers': {
+          effect.spawnAcc += dt
+          while (effect.spawnAcc >= effect.cadence) {
+            effect.spawnAcc -= effect.cadence
+            this.spawnEmberParticle(effect, rect)
+          }
           break
         }
       }
@@ -951,6 +1005,148 @@ export class EffectsEngine {
     p.inUse = true
   }
 
+  // =========================================================
+  // IVY — pixel tendrils grow from the 4 button edges on hover,
+  //        retract pixel-by-pixel on leave.
+  // =========================================================
+  private initIvy(effect: AttachedEffect): void {
+    const graphic = new Graphics()
+    this.dripLayer.addChild(graphic)
+    const tendrils: IvyTendril[] = []
+    const sides: Array<'top' | 'right' | 'bottom' | 'left'> = ['top', 'right', 'bottom', 'left']
+    for (const side of sides) {
+      const count = 3 + Math.floor(Math.random() * 2) // 3..4
+      for (let i = 0; i < count; i++) {
+        // Spread origins along the edge with jitter
+        const originFrac = (i + 0.5) / count + (Math.random() - 0.5) * 0.12
+        let dir = { x: 0, y: 0 }
+        if (side === 'top') dir = { x: 0, y: -1 }
+        else if (side === 'bottom') dir = { x: 0, y: 1 }
+        else if (side === 'left') dir = { x: -1, y: 0 }
+        else if (side === 'right') dir = { x: 1, y: 0 }
+        const targetLength = 6 + Math.floor(Math.random() * 7) // 6..12
+        const leafAt = Math.random() < 0.6 ? targetLength - 1 : -1
+        tendrils.push({
+          side,
+          originFrac: Math.min(0.94, Math.max(0.06, originFrac)),
+          dir,
+          segments: [],
+          targetLength,
+          growInterval: 0.05 + Math.random() * 0.05, // 50-100ms per pixel
+          growAcc: Math.random() * 0.06, // staggered start
+          state: 'growing',
+          leafAt,
+        })
+      }
+    }
+    effect.ivy = { tendrils, graphic, color: effect.config.color }
+  }
+
+  private tickIvy(effect: AttachedEffect, rect: DOMRect, dt: number): void {
+    const state = effect.ivy
+    if (!state) return
+
+    // Advance each tendril's growth or retraction
+    for (const t of state.tendrils) {
+      if (effect.enabled) {
+        // Re-enter growth if we were retracting
+        if (t.state === 'retracting' || t.state === 'dead') t.state = 'growing'
+      } else if (t.state === 'growing' || t.state === 'idle') {
+        t.state = 'retracting'
+        t.growAcc = 0
+      }
+
+      if (t.state === 'growing') {
+        t.growAcc += dt
+        while (t.growAcc >= t.growInterval && t.segments.length < t.targetLength) {
+          t.growAcc -= t.growInterval
+          // Last segment's offset (or 0,0 at origin)
+          const last = t.segments.length > 0 ? t.segments[t.segments.length - 1] : { dx: 0, dy: 0 }
+          // Step by the unit direction vector
+          let dx = last.dx + t.dir.x
+          let dy = last.dy + t.dir.y
+          // Perpendicular 1-px jitter 35% of the time (pixel-art crookedness)
+          if (Math.random() < 0.35) {
+            const j = Math.random() < 0.5 ? -1 : 1
+            if (Math.abs(t.dir.x) > 0.5) dy += j
+            else dx += j
+          }
+          t.segments.push({ dx, dy })
+        }
+        if (t.segments.length >= t.targetLength) t.state = 'idle'
+      } else if (t.state === 'retracting') {
+        t.growAcc += dt
+        const retractInterval = t.growInterval * 0.5 // retract ~2× faster than grow
+        while (t.growAcc >= retractInterval && t.segments.length > 0) {
+          t.growAcc -= retractInterval
+          t.segments.pop()
+        }
+        if (t.segments.length === 0) t.state = 'dead'
+      }
+    }
+
+    // --- Render ---
+    state.graphic.clear()
+
+    // Pass 1 — segments (1×1 px trunks)
+    let anySegment = false
+    for (const t of state.tendrils) {
+      if (t.segments.length === 0) continue
+      const origin = this.resolveIvyOrigin(t, rect)
+      for (const seg of t.segments) {
+        state.graphic.rect(Math.round(origin.x + seg.dx), Math.round(origin.y + seg.dy), 1, 1)
+        anySegment = true
+      }
+    }
+    if (anySegment) state.graphic.fill({ color: state.color, alpha: 0.92 })
+
+    // Pass 2 — leaves at idle tips (2×2 px, lighter tone)
+    let anyLeaf = false
+    for (const t of state.tendrils) {
+      if (t.state !== 'idle' || t.leafAt < 0) continue
+      if (t.segments.length <= t.leafAt) continue
+      const seg = t.segments[t.leafAt]
+      const origin = this.resolveIvyOrigin(t, rect)
+      const x = Math.round(origin.x + seg.dx) - 1
+      const y = Math.round(origin.y + seg.dy) - 1
+      state.graphic.rect(x, y, 2, 2)
+      anyLeaf = true
+    }
+    if (anyLeaf) state.graphic.fill({ color: lighten(state.color, 0.3), alpha: 0.95 })
+  }
+
+  private resolveIvyOrigin(t: IvyTendril, rect: DOMRect): { x: number; y: number } {
+    if (t.side === 'top') return { x: rect.left + rect.width * t.originFrac, y: rect.top }
+    if (t.side === 'bottom') return { x: rect.left + rect.width * t.originFrac, y: rect.bottom }
+    if (t.side === 'left') return { x: rect.left, y: rect.top + rect.height * t.originFrac }
+    return { x: rect.right, y: rect.top + rect.height * t.originFrac }
+  }
+
+  // =========================================================
+  // EMBERS — amber particles rising from below the button,
+  //           fading in, glowing, then fading out mid-air.
+  // =========================================================
+  private spawnEmberParticle(effect: AttachedEffect, rect: DOMRect): void {
+    const p = this.pickFreeParticle()
+    if (!p) return
+    const x = rect.left + Math.random() * rect.width
+    const y = rect.bottom + 1 + Math.random() * 3
+    p.vx = (Math.random() - 0.5) * 14
+    p.vy = -30 - Math.random() * 45 // upward
+    p.gravity = 32 // mild slowdown as it rises, never really falls within its life
+    p.life = 1.0 + Math.random() * 0.9
+    p.maxLife = p.life
+    p.size = Math.random() < 0.28 ? 2 : 1
+    p.color = effect.config.color
+    p.fadeMode = 'ember'
+    this.drawParticle(p)
+    p.g.x = x
+    p.g.y = y
+    p.g.alpha = 0
+    p.g.visible = true
+    p.inUse = true
+  }
+
   private tickAmbient(dt: number): void {
     for (const p of this.ambientParticles) {
       if (!p.inUse) continue
@@ -1238,6 +1434,8 @@ const DEFAULT_ATTACH_COLOR: Record<AttachKind, number> = {
   sparkle: COLOR_VIOLET,
   drips: COLOR_BONE,
   'drip-pool': COLOR_RED,
+  ivy: COLOR_GREEN,
+  embers: 0xd4a147, // warm amber — matches button default border
 }
 
 const ATTACH_CADENCE: Record<AttachKind, number> = {
@@ -1246,5 +1444,7 @@ const ATTACH_CADENCE: Record<AttachKind, number> = {
   pulse: 0.42,
   sparkle: 0.8,
   drips: 0.35,
-  'drip-pool': 0, // handled via column growth
+  'drip-pool': 0, // handled via drip simulation
+  ivy: 0, // per-tendril growth intervals
+  embers: 0.055, // ~18 ember spawns per second
 }
