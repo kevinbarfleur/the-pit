@@ -2472,6 +2472,17 @@ export class EffectsEngine {
     const colorLight = lighten(s.color, 0.4)
     const colorDark = darken(s.color, 0.25)
 
+    // The attached rect is the cap's ellipse bounds. Cells project
+    // onto an ellipse top arc: at cell i, x-fraction `fx` from 0..1,
+    // dx ∈ [-1, 1], the silhouette top is at:
+    //     y_top(fx) = rect.center.y - sqrt(1 - dx²) × rect.height/2
+    // Cells whose `verticalFactor` is too small (near the edge) are
+    // skipped so the water doesn't overflow off the silhouette.
+    const cx = rect.left + rect.width / 2
+    const cy = rect.top + rect.height / 2
+    const halfH = rect.height / 2
+    const halfW = rect.width / 2
+
     // ---------------- TOP BAND ----------------
     // 1D height field clinging to the top edge of the rect. Always
     // filling, gentle diffusion, capped — same shape as drip-pool but
@@ -2510,15 +2521,14 @@ export class EffectsEngine {
     }
 
     // ---------------- SIDE STREAM ----------------
-    // The chosen side fills from the top edge downward continuously.
-    // Length is allowed to extend BEYOND rect.height so the cascade
-    // visibly falls past the bottom of the cap.
+    // Stream starts at the cap's widest horizontal extent (vertical
+    // centre of rect) and descends past rect.bottom in a vertical
+    // cascade. Always-active grow/retreat against `enabled`.
     const sideGrow = 220 // px/s
     const sideRetreat = 280
-    const sideMax = rect.height + 60
+    const sideMax = rect.height + 80
     if (effect.enabled) {
       s.sideLength = Math.min(sideMax, s.sideLength + sideGrow * dt)
-      // Drops pinch off the tip while it's long enough to read.
       s.sideDropAcc += dt
       if (s.sideLength > 14 && s.sideDropAcc >= 0.16) {
         s.sideDropAcc = 0
@@ -2546,35 +2556,47 @@ export class EffectsEngine {
     const g = s.graphic
     g.clear()
 
-    // Top band — slabs going UP from rect.top by `topCells[i]` px.
+    // Top band — slabs follow the ellipse silhouette. Each cell's
+    // base sits on the ellipse top arc; the water slab extends a
+    // few px ABOVE that arc.
     const cellWidth = rect.width / s.cellCount
     for (let i = 0; i < s.cellCount; i++) {
       const h = s.topCells[i]
       if (h < 0.18) continue
+      const fx = (i + 0.5) / s.cellCount
+      const dx = (fx - 0.5) * 2 // -1..1
+      const vertFactor = Math.sqrt(Math.max(0, 1 - dx * dx))
+      if (vertFactor < 0.08) continue // skip near-edge cells (off silhouette)
+      const baseY = cy - vertFactor * halfH
       const x = rect.left + i * cellWidth
-      const y = rect.top - h
       const w = Math.max(1, Math.ceil(cellWidth))
-      g.rect(Math.round(x), Math.round(y), w, Math.ceil(h))
+      const drawY = baseY - h
+      g.rect(Math.round(x), Math.round(drawY), w, Math.ceil(h))
       g.fill({ color: s.color, alpha: 0.88 })
-      // Top sheen
-      g.rect(Math.round(x), Math.round(y), w, 1)
-      g.fill({ color: colorLight, alpha: 0.7 })
+      // Top sheen — 1 px brighter line at the very top of the slab.
+      g.rect(Math.round(x), Math.round(drawY), w, 1)
+      g.fill({ color: colorLight, alpha: 0.75 })
+      // A tiny dark pixel at the silhouette boundary so the water
+      // visually "tucks under" the cap edge.
+      g.rect(Math.round(x), Math.round(baseY), w, 1)
+      g.fill({ color: colorDark, alpha: 0.45 })
     }
 
-    // Side stream — a vertical 2-wide bar starting at rect.top on the
-    // chosen edge, descending `sideLength` px.
+    // Side stream — start at the cap's WIDEST point (vertical centre
+    // of rect, on the chosen side's silhouette edge). The water rolls
+    // off there and descends in a 2-wide cascade past rect.bottom.
     if (s.sideLength > 0.4) {
-      const streamX = s.side === 'left' ? rect.left - 2 : rect.right
+      const streamX = s.side === 'left' ? cx - halfW - 1 : cx + halfW - 1
       const streamW = 2
       const streamH = Math.ceil(s.sideLength)
-      const yStart = rect.top
+      const yStart = cy
       g.rect(Math.round(streamX), Math.round(yStart), streamW, streamH)
       g.fill({ color: s.color, alpha: 0.9 })
-      // Inner bright line
+      // Inner bright sheen.
       const sheenX = s.side === 'left' ? streamX + 1 : streamX
       g.rect(Math.round(sheenX), Math.round(yStart), 1, streamH)
       g.fill({ color: colorLight, alpha: 0.65 })
-      // Tip — small darker pixel showing motion at the leading edge.
+      // Tip — darker pixel showing motion at leading edge.
       g.rect(Math.round(streamX), Math.round(yStart + streamH), streamW, 1)
       g.fill({ color: colorDark, alpha: 0.85 })
     }
@@ -2602,8 +2624,11 @@ export class EffectsEngine {
       drop = { x: 0, y: 0, vy: 0, life: 0, maxLife: 0, inUse: false }
       s.drops.push(drop)
     }
-    const streamX = s.side === 'left' ? rect.left - 2 : rect.right
-    const tipY = rect.top + s.sideLength
+    const cx = rect.left + rect.width / 2
+    const cy = rect.top + rect.height / 2
+    const halfW = rect.width / 2
+    const streamX = s.side === 'left' ? cx - halfW - 1 : cx + halfW - 1
+    const tipY = cy + s.sideLength
     drop.x = streamX + (s.side === 'left' ? -0.5 : 0.5) + (Math.random() - 0.5) * 1.5
     drop.y = tipY
     drop.vy = 40 + Math.random() * 50

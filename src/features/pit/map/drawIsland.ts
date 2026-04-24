@@ -453,6 +453,33 @@ export function findIdForEventVariant(prefix: string, variant: EventVariant): st
   return prefix
 }
 
+/**
+ * Approximate (un-deformed) ellipse bounds of the cap in native pixels.
+ * Used by effects that need to hug the visible silhouette of the rock
+ * — e.g. spring's water sheet running along the cap top, or any
+ * future flood / slime / vines effect.
+ */
+export interface CapBounds {
+  centerX: number
+  centerY: number
+  halfWidth: number
+  halfHeight: number
+}
+
+export function computeCapBounds(id: string): CapBounds {
+  const hash = hashId(id)
+  const variants = pickVariants(hash)
+  const capGeom = capGeometry(variants.cap)
+  const capTop = CAP_Y_TOP_BASE + capGeom.yOffset
+  const capBottom = CAP_Y_BOTTOM_BASE + capGeom.yOffset
+  return {
+    centerX: ISLAND_W / 2,
+    centerY: (capTop + capBottom) / 2,
+    halfWidth: capGeom.radiusBase,
+    halfHeight: capGeom.radiusBase * capGeom.aspect,
+  }
+}
+
 function drawProps(
   ctx: CanvasRenderingContext2D,
   ground: GroundArea,

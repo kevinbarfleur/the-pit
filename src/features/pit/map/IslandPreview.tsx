@@ -6,6 +6,7 @@ import type { PitNodeType } from '../../../game/pit/types'
 import {
   ISLAND_H,
   ISLAND_W,
+  computeCapBounds,
   computeEventVariant,
   computeGroundArea,
   computeSignpostLayout,
@@ -80,10 +81,12 @@ export function IslandPreview({
   const rootRef = useRef<HTMLDivElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const capZoneRef = useRef<HTMLDivElement | null>(null)
+  const capRectRef = useRef<HTMLDivElement | null>(null)
   const engine = useEffects()
 
   const signpost = useMemo(() => computeSignpostLayout(id), [id])
   const ground = useMemo(() => computeGroundArea(id), [id])
+  const capBounds = useMemo(() => computeCapBounds(id), [id])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -119,11 +122,13 @@ export function IslandPreview({
     } else {
       config = { color }
     }
-    // Spring attaches to the whole island root so its top sheet covers
-    // the cap and its side stream can cascade past the bottom; every
-    // other effect still anchors on the ground area (capZone) so
-    // grass/embers/etc. only spawn on the placeable surface.
-    const attachTarget = kind === 'spring' ? root : cap
+    // Spring attaches to the cap-rect div which is sized + positioned
+    // to the cap's ellipse bounds — that lets the effect render the
+    // top water sheet along the silhouette curve and the side stream
+    // off the actual cap edge. Every other effect anchors on the
+    // ground area (capZone) for placement purposes.
+    const capRect = capRectRef.current
+    const attachTarget = kind === 'spring' ? capRect ?? root : cap
     const { id: effectId, detach } = engine.attachWithHandle(attachTarget, kind, config)
     engine.setEnabled(effectId, effectAlwaysOn)
 
@@ -182,6 +187,17 @@ export function IslandPreview({
           left: `${capZoneLeftCss}px`,
           width: `${capZoneWidthCss}px`,
           height: `${capZoneHeightCss}px`,
+        }}
+        aria-hidden="true"
+      />
+      <div
+        ref={capRectRef}
+        className={styles.capZone}
+        style={{
+          top: `${(capBounds.centerY - capBounds.halfHeight) * scale}px`,
+          left: `${(capBounds.centerX - capBounds.halfWidth) * scale}px`,
+          width: `${capBounds.halfWidth * 2 * scale}px`,
+          height: `${capBounds.halfHeight * 2 * scale}px`,
         }}
         aria-hidden="true"
       />

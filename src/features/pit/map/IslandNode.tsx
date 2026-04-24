@@ -9,6 +9,7 @@ import {
   CAP_TOP_ANCHOR_CSS,
   ISLAND_H,
   ISLAND_W,
+  computeCapBounds,
   computeEventVariant,
   computeGroundArea,
   computeSignpostLayout,
@@ -80,12 +81,14 @@ export function IslandNode({ node, state, canCommit, style }: IslandNodeProps) {
   const ref = useRef<HTMLButtonElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const capZoneRef = useRef<HTMLDivElement | null>(null)
+  const capRectRef = useRef<HTMLDivElement | null>(null)
   const engine = useEffects()
   const setHoveredId = usePitUiStore((s) => s.setHoveredId)
   const startZoomIn = usePitUiStore((s) => s.startZoomIn)
 
   const signpost = useMemo(() => computeSignpostLayout(node.id), [node.id])
   const ground = useMemo(() => computeGroundArea(node.id), [node.id])
+  const capBounds = useMemo(() => computeCapBounds(node.id), [node.id])
 
   // Draw the bitmap once per (id, type). State changes are handled in CSS.
   useEffect(() => {
@@ -134,10 +137,12 @@ export function IslandNode({ node, state, canCommit, style }: IslandNodeProps) {
     } else {
       attachConfig = { color: TYPE_COLOR[node.type] }
     }
-    // Spring needs the full island button as its rect (its top sheet
-    // covers the cap and the side cascade falls past the bottom).
-    // Other effects stay on the capZone (placeable ground surface).
-    const attachTarget = kind === 'spring' ? btn : cap
+    // Spring uses the cap-rect (cap silhouette ellipse bounds) so its
+    // top sheet hugs the cap top arc and the side stream falls from
+    // the cap's widest horizontal point. Other effects stay on the
+    // capZone for placement.
+    const capRect = capRectRef.current
+    const attachTarget = kind === 'spring' ? capRect ?? btn : cap
     const { id, detach } = engine.attachWithHandle(attachTarget, kind, attachConfig)
     engine.setEnabled(id, false)
 
@@ -243,6 +248,17 @@ export function IslandNode({ node, state, canCommit, style }: IslandNodeProps) {
           left: `${capZoneLeftCss}px`,
           width: `${capZoneWidthCss}px`,
           height: `${capZoneHeightCss}px`,
+        }}
+        aria-hidden="true"
+      />
+      <div
+        ref={capRectRef}
+        className={styles.capZone}
+        style={{
+          top: `${(capBounds.centerY - capBounds.halfHeight) * SCALE}px`,
+          left: `${(capBounds.centerX - capBounds.halfWidth) * SCALE}px`,
+          width: `${capBounds.halfWidth * 2 * SCALE}px`,
+          height: `${capBounds.halfHeight * 2 * SCALE}px`,
         }}
         aria-hidden="true"
       />
