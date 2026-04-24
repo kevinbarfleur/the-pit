@@ -407,7 +407,7 @@ export function drawIsland(
   drawSignpost(ctx, signpost, plaque)
 
   // --- GROUND PROPS ---
-  drawProps(ctx, ground, type)
+  drawProps(ctx, ground, type, id)
 
   // --- SHADOW (decor, last so it sits over the underside) ---
   drawShadow(ctx)
@@ -424,21 +424,45 @@ export function drawIsland(
  * strictly under the panel writes `ground.centerX` / `ground.centerY`;
  * a chest on the left side of the pile writes `ground.centerX - 4`.
  */
+/**
+ * Event islands have several sub-variants picked off the id hash.
+ *   - 'plain'  : keeps the default sparkle aura.
+ *   - 'spring' : a natural pond on the ground from which streams of
+ *                water flow off the edge of the island and cascade
+ *                downward — used for water-themed events.
+ */
+export type EventVariant = 'plain' | 'spring'
+
+export function computeEventVariant(id: string): EventVariant {
+  // Use a high-bit slice of the hash so it doesn't correlate with
+  // signpost / cap variant choices.
+  return ((hashId(id) >> 22) & 1) === 0 ? 'plain' : 'spring'
+}
+
+/**
+ * Return an id derived from `prefix` whose `computeEventVariant`
+ * picks the requested variant. Used by previews to deterministically
+ * land on a specific sub-variant.
+ */
+export function findIdForEventVariant(prefix: string, variant: EventVariant): string {
+  for (let i = 0; i < 256; i++) {
+    const candidate = `${prefix}:${i}`
+    if (computeEventVariant(candidate) === variant) return candidate
+  }
+  return prefix
+}
+
 function drawProps(
   ctx: CanvasRenderingContext2D,
   ground: GroundArea,
   type: PitNodeType,
+  id: string,
 ): void {
   /** Shorthand: project a world-space (x, y, z) onto the sprite. */
   const w = (x: number, y: number, z: number = 0) =>
     worldToScreen(ground, x, y, z)
 
   if (type === 'treasure') {
-    // Compact hoard, read left-to-right:
-    //  - left chest at world (−4, 2, 0) — 4 units to the left, 2
-    //    forward of the stake, resting on the ground.
-    //  - right chest at world (+4, 2, 0).
-    //  - coin stack at (0, 5, 0) — further forward and dead centre.
     const chestLeft = w(-4, 2, 0)
     const chestRight = w(4, 2, 0)
     const stack = w(0, 5, 0)
@@ -448,9 +472,16 @@ function drawProps(
     return
   }
   if (type === 'shop') {
-    // Single coin pile in front of the sign post at world (0, 3, 0).
     const stack = w(0, 3, 0)
     drawCoinStack(ctx, stack.sx, stack.sy)
+    return
+  }
+  if (type === 'event' && computeEventVariant(id) === 'spring') {
+    // Pond sits in front of the signpost on the ground plane. The
+    // hover effect (`spring`) anchors here and continuously runs
+    // streams of water drops outward off the cap.
+    const pond = w(0, 4, 0)
+    drawPond(ctx, pond.sx, pond.sy)
     return
   }
 }
@@ -876,4 +907,67 @@ function drawCoinStack(ctx: CanvasRenderingContext2D, spotX: number, spotY: numb
   }
   // Optional specular sparkle on the middle coin.
   plot(ctx, x0 + 2, top + 1, '#ffffff')
+}
+
+// ---------- pond (event: spring) ----------
+
+/**
+ * Tiny pixel-art pond, ~9×4 native, drawn on the ground in front of
+ * the signpost on `event-spring` islands. Top-down ellipse with a
+ * dark rim, a mid-blue body, lighter shimmer pixels and a couple of
+ * white specular flecks. Companion to the `spring` hover effect that
+ * pours water out of it.
+ */
+function drawPond(ctx: CanvasRenderingContext2D, spotX: number, spotY: number): void {
+  const W = 11
+  const H = 5
+  const x0 = spotX - Math.floor(W / 2)
+  const top = spotY - Math.floor(H / 2)
+  if (x0 < 1 || x0 + W > ISLAND_W - 1) return
+  if (top + H > ISLAND_H - 2) return
+
+  const RIM = '#0a1822'
+  const DARK = '#1f4458'
+  const MID = '#2f6e88'
+  const LIGHT = '#5ea2bc'
+  const SHIMMER = '#a4d2e2'
+
+  // 5-row ellipse, narrower at top + bottom rows for an oval silhouette.
+  // Row 0 (top):    . _ X X X X X _ .
+  // Row 1:          _ X X X X X X X _
+  // Row 2 (mid):    X X X X X X X X X
+  // Row 3:          _ X X X X X X X _
+  // Row 4 (bot):    . _ X X X X X _ .
+  const rows: number[] = [3, 2, 1, 2, 3] // inset per row
+  for (let dy = 0; dy < H; dy++) {
+    const inset = rows[dy]
+    for (let dx = 0; dx < W; dx++) {
+      if (dx < inset || dx >= W - inset) continue
+      const x = x0 + dx
+      const y = top + dy
+      const onRim =
+        dx === inset ||
+        dx === W - inset - 1 ||
+        dy === 0 ||
+        dy === H - 1 ||
+        (dy === 1 && (dx === inset + 0 || dx === W - inset - 1)) ||
+        (dy === H - 2 && (dx === inset + 0 || dx === W - inset - 1))
+      let color: string
+      if (dy === 0 || dy === H - 1) {
+        color = RIM
+      } else if (onRim) {
+        color = DARK
+      } else if (dy === 1) {
+        color = MID
+      } else if (dy === 2) {
+        color = LIGHT
+      } else {
+        color = MID
+      }
+      plot(ctx, x, y, color)
+    }
+  }
+  // Two specular flecks for water shimmer.
+  plot(ctx, x0 + 3, top + 1, SHIMMER)
+  plot(ctx, x0 + W - 4, top + 2, SHIMMER)
 }

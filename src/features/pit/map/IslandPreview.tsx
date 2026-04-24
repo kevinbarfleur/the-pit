@@ -6,6 +6,7 @@ import type { PitNodeType } from '../../../game/pit/types'
 import {
   ISLAND_H,
   ISLAND_W,
+  computeEventVariant,
   computeGroundArea,
   computeSignpostLayout,
   drawIsland,
@@ -94,8 +95,11 @@ export function IslandPreview({
     const cap = capZoneRef.current
     if (!root || !cap) return
 
-    const kind = TYPE_HOVER[type]
-    const color = TYPE_COLOR[type]
+    // event-spring islands override the default sparkle with the
+    // continuous water-flow effect.
+    const isSpring = type === 'event' && computeEventVariant(id) === 'spring'
+    const kind: AttachKind = isSpring ? 'spring' : TYPE_HOVER[type]
+    const color = isSpring ? 0x6ec3d4 : TYPE_COLOR[type]
     const config: AttachConfig =
       kind === 'grass'
         ? { color, shape: 'patch', heightScale: 1, countScale: 8 }

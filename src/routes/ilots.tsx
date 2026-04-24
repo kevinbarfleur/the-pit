@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { IslandPreview } from '../features/pit/map/IslandPreview'
+import { findIdForEventVariant } from '../features/pit/map/drawIsland'
 import type { PitNodeType } from '../game/pit/types'
 import styles from './ilots.module.css'
 
@@ -30,6 +31,7 @@ const PREVIEW_ENTRIES: PreviewEntry[] = [
   { type: 'elite', idSeed: 'ilot-preview:elite', label: 'Elite', hoverEffect: 'embers (gild)', blurb: 'gild embers — named threat' },
   { type: 'boss', idSeed: 'ilot-preview:boss', label: 'Boss', hoverEffect: 'embers (red)', blurb: 'crimson embers — floor-keeper' },
   { type: 'event', idSeed: 'ilot-preview:event', label: 'Event', hoverEffect: 'sparkle (violet)', blurb: 'violet sparkle — something speaks' },
+  { type: 'event', idSeed: findIdForEventVariant('ilot-preview:event-spring', 'spring'), label: 'Event · Spring', hoverEffect: 'spring (water flow)', blurb: 'pond + cascading streams' },
   { type: 'shop', idSeed: 'ilot-preview:shop', label: 'Shop', hoverEffect: 'coins (gold orbit)', blurb: 'coins orbiting — merchant waits' },
   { type: 'rest', idSeed: 'ilot-preview:rest', label: 'Rest', hoverEffect: 'grass (green)', blurb: 'green grass — a quiet moment' },
   { type: 'cache', idSeed: 'ilot-preview:cache', label: 'Cache', hoverEffect: 'sparkle (bone)', blurb: 'bone sparkle — sealed chest' },

@@ -9,6 +9,7 @@ import {
   CAP_TOP_ANCHOR_CSS,
   ISLAND_H,
   ISLAND_W,
+  computeEventVariant,
   computeGroundArea,
   computeSignpostLayout,
   drawIsland,
@@ -114,7 +115,9 @@ export function IslandNode({ node, state, canCommit, style }: IslandNodeProps) {
     const cap = capZoneRef.current
     if (!btn || !cap) return
 
-    const kind = TYPE_HOVER[node.type]
+    const isSpring =
+      node.type === 'event' && computeEventVariant(node.id) === 'spring'
+    const kind: AttachKind = isSpring ? 'spring' : TYPE_HOVER[node.type]
     const attachConfig =
       kind === 'grass'
         ? {
@@ -123,7 +126,7 @@ export function IslandNode({ node, state, canCommit, style }: IslandNodeProps) {
             heightScale: 0.8,
             countScale: 5,
           }
-        : { color: TYPE_COLOR[node.type] }
+        : { color: isSpring ? 0x6ec3d4 : TYPE_COLOR[node.type] }
     // All effects anchor on the ground area (the capZone div) — the
     // single source of truth for where props sit on this island.
     const { id, detach } = engine.attachWithHandle(cap, kind, attachConfig)

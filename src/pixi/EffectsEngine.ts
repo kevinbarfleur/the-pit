@@ -40,6 +40,7 @@ export type AttachKind =
   | 'embers'
   | 'godray'
   | 'coins'
+  | 'spring'
 
 export interface AttachConfig {
   color?: number
@@ -336,6 +337,8 @@ interface AttachedEffect {
   godray?: GodrayState
   // coins-specific state (only set for coins)
   coins?: CoinState
+  // spring-specific state (only set for spring)
+  spring?: SpringState
 }
 
 /**
@@ -382,6 +385,36 @@ interface CoinEntity {
 
 interface CoinState {
   entities: CoinEntity[]
+  spawnAcc: number
+  time: number
+  color: number
+}
+
+/**
+ * Spring — a continuous flow of water that pours out of an `event-
+ * spring` island's pond, runs to the cap's edge, then cascades down
+ * past the rock. Drops are spawned at the pond, given an outward
+ * velocity along one of a few preset stream directions, and fall
+ * under gravity with a short trail. Splash ripples bloom on the pond
+ * itself at a slow cadence.
+ */
+interface SpringDrop {
+  g: Graphics
+  x: number
+  y: number
+  vx: number
+  vy: number
+  age: number
+  maxAge: number
+  trailX: number[]
+  trailY: number[]
+  trailAcc: number
+  inUse: boolean
+}
+
+interface SpringState {
+  ripple: Graphics
+  drops: SpringDrop[]
   spawnAcc: number
   time: number
   color: number
@@ -677,6 +710,10 @@ export class EffectsEngine {
       this.initCoins(effect)
     }
 
+    if (kind === 'spring') {
+      this.initSpring(effect)
+    }
+
     this.attached.push(effect)
 
     return { id, detach: () => this.detach(id) }
@@ -731,6 +768,11 @@ export class EffectsEngine {
     if (effect.coins) {
       for (const c of effect.coins.entities) c.g.destroy()
       effect.coins = undefined
+    }
+    if (effect.spring) {
+      effect.spring.ripple.destroy()
+      for (const d of effect.spring.drops) d.g.destroy()
+      effect.spring = undefined
     }
     this.attached.splice(idx, 1)
   }
@@ -847,6 +889,10 @@ export class EffectsEngine {
       }
       if (effect.kind === 'coins') {
         this.tickCoins(effect, rect, dt)
+        continue
+      }
+      if (effect.kind === 'spring') {
+        this.tickSpring(effect, rect, dt)
         continue
       }
 
@@ -2369,13 +2415,9 @@ export class EffectsEngine {
   private spawnCoinFromStack(s: CoinState, rect: DOMRect): void {
     const c = s.entities.find((e) => !e.inUse)
     if (!c) return
-    // Origin: the centre-top of the attach rect — callers put the
-    // coin-stack zone div there, so coins visually pop out of the pile.
     const cx = rect.left + rect.width / 2
     const cy = rect.top + rect.height * 0.35
-    const horiz = (Math.random() - 0.5) * 2 // [-1, 1]
-    // Launch upward + slightly outward in one of the two main
-    // directions. Vertical speed dominates so coins arc up, not sideways.
+    const horiz = (Math.random() - 0.5) * 2
     c.x = cx
     c.y = cy
     c.vx = horiz * (25 + Math.random() * 30)
@@ -2386,6 +2428,204 @@ export class EffectsEngine {
     c.maxAge = 1.0 + Math.random() * 0.5
     c.inUse = true
     c.g.visible = true
+  }
+
+  // =====================================================================
+  // SPRING — water drops pour out of an island's pond, run to the
+  // cap's edge, then fall as cascades. Continuous, never-ending. Used
+  // for `event-spring` islands.
+  // =====================================================================
+  private initSpring(effect: AttachedEffect): void {
+    const ripple = new Graphics()
+    this.dripLayer.addChild(ripple)
+    const poolSize = 64
+    const drops: SpringDrop[] = []
+    for (let i = 0; i < poolSize; i++) {
+      const g = new Graphics()
+      g.visible = false
+      this.dripLayer.addChild(g)
+      drops.push({
+        g,
+        x: 0,
+        y: 0,
+        vx: 0,
+        vy: 0,
+        age: 0,
+        maxAge: 0,
+        trailX: [0, 0, 0],
+        trailY: [0, 0, 0],
+        trailAcc: 0,
+        inUse: false,
+      })
+    }
+    effect.spring = {
+      ripple,
+      drops,
+      spawnAcc: 0,
+      time: 0,
+      color: effect.config.color,
+    }
+  }
+
+  private tickSpring(effect: AttachedEffect, rect: DOMRect, dt: number): void {
+    const s = effect.spring
+    if (!s) return
+    s.time += dt
+
+    // --- Spawn cadence: a steady stream of droplets coming out of
+    // the pond. 35 ms gap → ~28 drops/s, four pre-set angular streams
+    // (left, front-left, front-right, right) so the flow reads as
+    // "rivers off the cap" rather than random spray.
+    if (effect.enabled) {
+      s.spawnAcc += dt
+      const cadence = 0.04
+      while (s.spawnAcc >= cadence) {
+        s.spawnAcc -= cadence
+        this.spawnSpringDrop(s, rect)
+      }
+    }
+
+    const cx = rect.left + rect.width / 2
+    const cy = rect.top + rect.height / 2
+
+    // --- Pond ripples — slow concentric breathing centred on the pond,
+    // continuously running so the water reads as alive even if all
+    // drops are mid-air. Two rings, brightest in the centre.
+    s.ripple.clear()
+    const colorLight = lighten(s.color, 0.45)
+    const colorDark = darken(s.color, 0.25)
+    const phase1 = (s.time * 0.9) % 1
+    const phase2 = ((s.time * 0.9 + 0.5) % 1)
+    drawRipple(s.ripple, cx, cy, phase1, s.color, colorLight)
+    drawRipple(s.ripple, cx, cy, phase2, s.color, colorLight)
+
+    // --- Drops physics + render.
+    const gravity = 200
+    for (const d of s.drops) {
+      if (!d.inUse) continue
+      d.age += dt
+      if (d.age >= d.maxAge) {
+        d.inUse = false
+        d.g.visible = false
+        continue
+      }
+      // Phase 1 — flowing across the cap (small downward accel only).
+      // Phase 2 — falling off the edge (full gravity + slight drag).
+      const offEdge = d.age > 0.45
+      d.vy += (offEdge ? gravity : 30) * dt
+      d.vx *= 0.995
+      d.x += d.vx * dt
+      d.y += d.vy * dt
+      // Trail — capture position every 35 ms.
+      d.trailAcc += dt
+      if (d.trailAcc >= 0.035) {
+        d.trailAcc -= 0.035
+        d.trailX[2] = d.trailX[1]
+        d.trailY[2] = d.trailY[1]
+        d.trailX[1] = d.trailX[0]
+        d.trailY[1] = d.trailY[0]
+        d.trailX[0] = d.x
+        d.trailY[0] = d.y
+      }
+      // Render.
+      d.g.clear()
+      // Trail (3 stale positions, fading).
+      for (let i = 2; i >= 0; i--) {
+        const tx = d.trailX[i]
+        const ty = d.trailY[i]
+        if (tx === 0 && ty === 0) continue
+        const trailAlpha = 0.32 - i * 0.09
+        if (trailAlpha <= 0) continue
+        d.g.rect(Math.round(tx) - cx - 0.5, Math.round(ty) - cy - 0.5, 1, 1)
+        d.g.fill({ color: colorDark, alpha: trailAlpha })
+      }
+      // Head — 1 px bright cyan.
+      d.g.rect(Math.round(d.x) - cx - 0.5, Math.round(d.y) - cy - 0.5, 1, 1)
+      d.g.fill({ color: colorLight })
+      d.g.x = cx
+      d.g.y = cy
+      d.g.alpha = 1
+      d.g.visible = true
+    }
+  }
+
+  private spawnSpringDrop(s: SpringState, rect: DOMRect): void {
+    const d = s.drops.find((x) => !x.inUse)
+    if (!d) return
+    const cx = rect.left + rect.width / 2
+    const cy = rect.top + rect.height / 2
+    // 4 stream directions, biased toward the front of the cap so most
+    // water visibly cascades down past the lower edge of the rock.
+    //   −0.6π → front-left (down + left)
+    //   −0.4π → front-right (down + right)
+    //   −0.95π → far left (slight down)
+    //    0.95π → far right (slight down)
+    //
+    // Note: in screen coords +Y is down, so vy > 0 means going forward
+    // off the cap front. The streams have positive vx for right,
+    // negative for left, and a small vy to start so they roll outward.
+    const streamPick = Math.floor(Math.random() * 4)
+    let vx: number, vy: number
+    switch (streamPick) {
+      case 0: // front-left
+        vx = -22 - Math.random() * 8
+        vy = 8 + Math.random() * 4
+        break
+      case 1: // front-right
+        vx = 22 + Math.random() * 8
+        vy = 8 + Math.random() * 4
+        break
+      case 2: // far left
+        vx = -28 - Math.random() * 6
+        vy = -2 + Math.random() * 6
+        break
+      case 3: // far right
+      default:
+        vx = 28 + Math.random() * 6
+        vy = -2 + Math.random() * 6
+        break
+    }
+    // Spawn jitter inside the pond rim (radius ≈ 4 px in screen).
+    const jitterAngle = Math.random() * Math.PI * 2
+    const jitterR = Math.random() * 2.5
+    d.x = cx + Math.cos(jitterAngle) * jitterR
+    d.y = cy + Math.sin(jitterAngle) * jitterR * 0.5
+    d.vx = vx
+    d.vy = vy
+    d.age = 0
+    d.maxAge = 1.6 + Math.random() * 0.6
+    // Seed trail so first frame doesn't streak from (0, 0).
+    for (let i = 0; i < 3; i++) {
+      d.trailX[i] = d.x
+      d.trailY[i] = d.y
+    }
+    d.trailAcc = 0
+    d.inUse = true
+    d.g.visible = true
+  }
+}
+
+/** Draw a single concentric ripple ring expanding from (cx, cy). */
+function drawRipple(
+  g: Graphics,
+  cx: number,
+  cy: number,
+  phase: number,
+  color: number,
+  colorLight: number,
+): void {
+  // Phase 0..1: ring grows from r=2 to r=10, alpha fades out.
+  const r = 2 + phase * 8
+  const alpha = (1 - phase) * 0.5
+  if (alpha < 0.02) return
+  // Build a ring as 16 sample points (poor-man's stroke at low res).
+  const segments = 18
+  for (let i = 0; i < segments; i++) {
+    const a = (i / segments) * Math.PI * 2
+    const x = Math.round(cx + Math.cos(a) * r)
+    const y = Math.round(cy + Math.sin(a) * r * 0.45) // ellipse aspect
+    g.rect(x, y, 1, 1)
+    g.fill({ color: i % 3 === 0 ? colorLight : color, alpha })
   }
 }
 
@@ -2477,6 +2717,7 @@ const DEFAULT_ATTACH_COLOR: Record<AttachKind, number> = {
   embers: 0xd4a147,
   godray: 0xf0c050, // radiant gold
   coins: 0xf0c040, // coin gold
+  spring: 0x6ec3d4, // pond cyan
 }
 
 const ATTACH_CADENCE: Record<AttachKind, number> = {
@@ -2490,4 +2731,5 @@ const ATTACH_CADENCE: Record<AttachKind, number> = {
   embers: 0.055,
   godray: 0, // fully sim-driven, no per-tick spawn
   coins: 0, // fully sim-driven
+  spring: 0, // fully sim-driven
 }
