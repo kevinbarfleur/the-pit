@@ -54,6 +54,14 @@ const COLOR_VIOLET = 0x9a7bd4
 const COLOR_CYAN = 0x6ec3d4
 const COLOR_DIM = 0x6b6b6b
 
+// Ember-specific palette — the ramp a live coal travels through as it cools.
+const EMBER_HOT_COLOR = 0xffa030 // incandescent orange at spawn
+const EMBER_COOL_COLOR = 0xa23318 // deep cooling red
+const EMBER_DEAD_COLOR = 0x1a0a00 // charred, near-black
+const EMBER_HALO_COLOR = 0xd4703a // warm amber-red for the heat aura
+const EMBER_SMOKE_COLOR = 0x6b6b6b
+const EMBER_SPARK_COLOR = 0xfff0c0
+
 const BURST_COLORS: Record<BurstVariant, number> = {
   primary: COLOR_GREEN,
   danger: COLOR_RED,
@@ -258,14 +266,26 @@ interface EmberEntity {
   size: number
   phase: number
   pulseSpeed: number
-  kind: 'ember' | 'smoke'
+  kind: 'ember' | 'smoke' | 'spark'
+  // Trail of previous positions for motion smear (embers only).
+  // Captured at a coarse cadence to read as discrete pixel steps rather
+  // than a smooth line.
+  trailX: number[]
+  trailY: number[]
+  trailAcc: number
+  // Horizontal wobble phase so smoke wisps drift independently.
+  wobblePhase: number
   inUse: boolean
 }
 
 interface EmberState {
   entities: EmberEntity[]
+  heatGlow: Graphics
+  heatTime: number
+  heatAmp: number
   spawnAcc: number
   smokeAcc: number
+  sparkAcc: number
   color: number
 }
 
@@ -597,6 +617,7 @@ export class EffectsEngine {
       effect.grass = undefined
     }
     if (effect.embers) {
+      effect.embers.heatGlow.destroy()
       for (const en of effect.embers.entities) en.g.destroy()
       effect.embers = undefined
     }
@@ -1402,15 +1423,18 @@ export class EffectsEngine {
   }
 
   // =========================================================
-  // EMBERS — dedicated particle pool with button-avoidance
-  //           forces. Spawns on the sides + below, repulsion
-  //           keeps them outside the button's interior, and
-  //           above the top they converge back toward center.
-  //           Smoke wisps interleaved to signal rising heat.
+  // EMBERS — the button reads as a furnace. A pulsing heat halo
+  //   hugs its silhouette, smoke billows off the top, live
+  //   embers spiral up the flanks with a cooling color ramp
+  //   (bright orange → amber → deep red → carbon) and motion-
+  //   smear trails, and occasional sparks pop out in tight
+  //   cracks. Dying embers sometimes crackle into 2–3 sparks.
   // =========================================================
   private initEmbers(effect: AttachedEffect): void {
-    const count = 64
+    const count = 96
     const entities: EmberEntity[] = []
+    const heatGlow = new Graphics()
+    this.embersLayer.addChild(heatGlow)
     for (let i = 0; i < count; i++) {
       const g = new Graphics()
       g.visible = false
@@ -1427,13 +1451,21 @@ export class EffectsEngine {
         phase: 0,
         pulseSpeed: 5,
         kind: 'ember',
+        trailX: [0, 0, 0],
+        trailY: [0, 0, 0],
+        trailAcc: 0,
+        wobblePhase: 0,
         inUse: false,
       })
     }
     effect.embers = {
       entities,
+      heatGlow,
+      heatTime: 0,
+      heatAmp: 0,
       spawnAcc: 0,
       smokeAcc: 0,
+      sparkAcc: 0,
       color: effect.config.color,
     }
   }
@@ -1442,17 +1474,61 @@ export class EffectsEngine {
     const s = effect.embers
     if (!s) return
 
+    // --- Heat halo: a pulsing amber aura hugging the button silhouette. ---
+    // Two concentric bands breathe at slightly different rates so the edge
+    // feels like convected heat rather than a static glow. The outer band is
+    // weaker and larger; the inner band is tight and brighter.
+    s.heatTime += dt
+    const halo = s.heatGlow
+    halo.clear()
+    // Ramp halo intensity down smoothly when hover ends — instant-off would
+    // feel brittle given how hot the button reads while hovered.
+    const haloTarget = effect.enabled ? 1 : 0
+    const haloApproach = effect.enabled ? 6 : 2.4
+    s.heatAmp += (haloTarget - s.heatAmp) * Math.min(1, haloApproach * dt)
+    const haloAmp = s.heatAmp
+    if (haloAmp > 0.02) {
+      const pulseOuter = 0.55 + 0.45 * Math.sin(s.heatTime * 3.4)
+      const pulseInner = 0.65 + 0.35 * Math.sin(s.heatTime * 5.1 + 1.1)
+      const outerExpand = 7
+      const innerExpand = 3
+      const outerColor = lighten(EMBER_HALO_COLOR, 0.05)
+      const innerColor = lighten(EMBER_HALO_COLOR, 0.3)
+      halo.rect(
+        rect.left - outerExpand,
+        rect.top - outerExpand,
+        rect.width + outerExpand * 2,
+        rect.height + outerExpand * 2,
+      )
+      halo.fill({ color: outerColor, alpha: 0.12 * pulseOuter * haloAmp })
+      halo.rect(
+        rect.left - innerExpand,
+        rect.top - innerExpand,
+        rect.width + innerExpand * 2,
+        rect.height + innerExpand * 2,
+      )
+      halo.fill({ color: innerColor, alpha: 0.26 * pulseInner * haloAmp })
+      // Bottom seam — the button "sits in" a pool of heat.
+      halo.rect(rect.left - 4, rect.bottom - 2, rect.width + 8, 5)
+      halo.fill({ color: EMBER_HOT_COLOR, alpha: 0.32 * pulseInner * haloAmp })
+    }
+
     // --- Spawn (only while hovered) ---
     if (effect.enabled) {
       s.spawnAcc += dt
-      while (s.spawnAcc >= 0.04) {
-        s.spawnAcc -= 0.04
-        this.spawnEmberEntity(s, rect, false)
+      while (s.spawnAcc >= 0.035) {
+        s.spawnAcc -= 0.035
+        this.spawnEmberEntity(s, rect, 'ember')
       }
       s.smokeAcc += dt
-      while (s.smokeAcc >= 0.16) {
-        s.smokeAcc -= 0.16
-        this.spawnEmberEntity(s, rect, true)
+      while (s.smokeAcc >= 0.09) {
+        s.smokeAcc -= 0.09
+        this.spawnEmberEntity(s, rect, 'smoke')
+      }
+      s.sparkAcc += dt
+      while (s.sparkAcc >= 0.22) {
+        s.sparkAcc -= 0.22
+        this.spawnEmberEntity(s, rect, 'spark')
       }
     }
 
@@ -1466,15 +1542,20 @@ export class EffectsEngine {
       if (!e.inUse) continue
       e.life -= dt
       if (e.life <= 0) {
+        // Crackle: a dying ember has a small chance to pop 2–3 sparks.
+        if (e.kind === 'ember' && Math.random() < 0.22) {
+          const popCount = 2 + Math.floor(Math.random() * 2)
+          for (let i = 0; i < popCount; i++) {
+            this.spawnSparkAt(s, e.x, e.y)
+          }
+        }
         e.inUse = false
         e.g.visible = false
         continue
       }
 
-      // Button repulsion: a soft pressure field whose strength is proportional
-      // to how deep the entity is inside the button's bounding rect. Pushes
-      // outward horizontally — since embers rise, this routes them along the
-      // left or right side of the button instead of through it.
+      // Button repulsion: softest along the sides, strongest deep inside —
+      // guides the flow around the button rather than through it.
       const dx = e.x - cx
       const dy = e.y - cy
       const insideX = Math.max(0, 1 - Math.abs(dx) / marginW)
@@ -1482,100 +1563,232 @@ export class EffectsEngine {
       const inside = insideX * insideY
       if (inside > 0.02) {
         const dirSign = dx >= 0 ? 1 : -1
-        e.vx += dirSign * 320 * inside * dt
-        // Small upward assist so the entity escapes the top rather than below
-        e.vy -= 45 * inside * dt
+        e.vx += dirSign * 360 * inside * dt
+        e.vy -= 55 * inside * dt
       }
 
-      // Buoyancy gravity (mild — particles slow but don't fall within life)
-      e.vy += (e.kind === 'smoke' ? 6 : 22) * dt
-
-      // Horizontal drag
-      e.vx *= e.kind === 'smoke' ? 0.975 : 0.95
-
-      // Above the button's top edge: gentle inward pull so the flow
-      // converges back together over the button ("it crowns the button")
-      if (e.y < rect.top - 4) {
-        const pull = (cx - e.x) * (e.kind === 'smoke' ? 0.55 : 1.1)
-        e.vx += pull * dt * 0.11
+      if (e.kind === 'smoke') {
+        // Smoke rises continuously, drifts with a sinusoidal wobble, and
+        // expands slightly over its life. No net gravity — it's a buoyant
+        // gas column.
+        e.wobblePhase += dt * 2.1
+        e.vx += Math.sin(e.wobblePhase) * 14 * dt
+        e.vx *= 0.98
+        e.vy += -6 * dt // slight continuous lift
+        // Above the button — converge gently so the column reads tight, not
+        // a diffuse cloud.
+        if (e.y < rect.top - 2) {
+          const pull = (cx - e.x) * 0.35
+          e.vx += pull * dt * 0.08
+        }
+      } else if (e.kind === 'spark') {
+        // Very light, very fast, near-ballistic short arcs.
+        e.vy += 14 * dt
+        e.vx *= 0.9
+      } else {
+        // Ember: buoyant rise with mild gravity and drag. Captures a trail
+        // every ~45ms for the motion-smear effect.
+        e.vy += 20 * dt
+        e.vx *= 0.94
+        e.trailAcc += dt
+        if (e.trailAcc >= 0.045) {
+          e.trailAcc -= 0.045
+          // shift trail: [0] is most recent previous position
+          e.trailX[2] = e.trailX[1]
+          e.trailY[2] = e.trailY[1]
+          e.trailX[1] = e.trailX[0]
+          e.trailY[1] = e.trailY[0]
+          e.trailX[0] = e.x
+          e.trailY[0] = e.y
+        }
+        if (e.y < rect.top - 4) {
+          const pull = (cx - e.x) * 1.0
+          e.vx += pull * dt * 0.11
+        }
       }
 
       e.x += e.vx * dt
       e.y += e.vy * dt
       e.phase += dt
 
-      // Render — alpha combines fade-in, fade-out and (for embers) a glow pulse
+      // --- Render ---
+      e.g.clear()
       e.g.x = Math.round(e.x)
       e.g.y = Math.round(e.y)
 
-      const t = e.life / e.maxLife
-      const fadeIn = Math.min(1, (1 - t) / 0.18)
+      const t = e.life / e.maxLife // 1 → fresh, 0 → dying
+      const fadeIn = Math.min(1, (1 - t) / 0.15)
       const fadeOut = t > 0.3 ? 1 : t / 0.3
-      let alpha: number
+
       if (e.kind === 'smoke') {
-        alpha = Math.min(fadeIn, fadeOut) * 0.22
+        // Smoke grows a bit as it rises (1 → 1.4× its spawn size)
+        const grown = Math.max(1, Math.round(e.size * (1 + (1 - t) * 0.4)))
+        // Irregular shape: two slightly offset rectangles so it doesn't
+        // read as a perfect square.
+        const offY = Math.round(Math.sin(e.wobblePhase * 1.3) * 0.5)
+        e.g.rect(-grown / 2, -grown / 2 + offY, grown, grown)
+        e.g.fill({ color: EMBER_SMOKE_COLOR, alpha: 0.9 })
+        e.g.rect(-grown / 2 + 1, -grown / 2 - 1 + offY, Math.max(1, grown - 2), 1)
+        e.g.fill({ color: 0x8a8a8a, alpha: 0.7 })
+        e.g.alpha = Math.min(fadeIn, fadeOut) * 0.35
+      } else if (e.kind === 'spark') {
+        e.g.rect(-0.5, -0.5, 1, 1)
+        e.g.fill({ color: EMBER_SPARK_COLOR })
+        // Bright, short-lived — no fadeIn, sharp decay.
+        e.g.alpha = Math.min(1, fadeOut * 1.2)
       } else {
-        const glow = 0.55 + 0.45 * Math.sin(e.phase * e.pulseSpeed)
-        alpha = Math.min(fadeIn, fadeOut) * glow
+        // Ember: color cools as it ages.
+        //   age 0.0–0.4 : bright orange (hot core)
+        //   age 0.4–0.75: amber
+        //   age 0.75–1.0: deep red → carbon
+        const age = 1 - t // 0 → just spawned
+        let coreColor: number
+        if (age < 0.35) {
+          coreColor = blendColor(EMBER_HOT_COLOR, s.color, age / 0.35)
+        } else if (age < 0.7) {
+          coreColor = blendColor(s.color, EMBER_COOL_COLOR, (age - 0.35) / 0.35)
+        } else {
+          coreColor = blendColor(EMBER_COOL_COLOR, EMBER_DEAD_COLOR, (age - 0.7) / 0.3)
+        }
+        const glow = 0.65 + 0.35 * Math.sin(e.phase * e.pulseSpeed)
+
+        // Trail: render oldest → newest so the newest sits on top.
+        for (let i = 2; i >= 0; i--) {
+          const tx = e.trailX[i] - e.x
+          const ty = e.trailY[i] - e.y
+          if (tx === 0 && ty === 0) continue
+          const trailAlpha = (0.35 - i * 0.09) * glow * fadeOut
+          if (trailAlpha <= 0) continue
+          // Trail fragments darken progressively — the heat is behind the head.
+          const trailColor = blendColor(coreColor, EMBER_DEAD_COLOR, 0.2 + i * 0.2)
+          e.g.rect(Math.round(tx) - 0.5, Math.round(ty) - 0.5, 1, 1)
+          e.g.fill({ color: trailColor, alpha: trailAlpha })
+        }
+
+        // Core with a tiny brighter pixel on top to sell the incandescence.
+        e.g.rect(-e.size / 2, -e.size / 2, e.size, e.size)
+        e.g.fill({ color: coreColor, alpha: 1 })
+        if (age < 0.55 && e.size >= 2) {
+          e.g.rect(-e.size / 2, -e.size / 2, 1, 1)
+          e.g.fill({ color: lighten(coreColor, 0.4), alpha: 0.9 })
+        }
+        e.g.alpha = Math.min(fadeIn, fadeOut) * glow
       }
-      e.g.alpha = alpha
+
+      e.g.visible = true
     }
   }
 
-  private spawnEmberEntity(s: EmberState, rect: DOMRect, isSmoke: boolean): void {
+  private spawnEmberEntity(s: EmberState, rect: DOMRect, kind: 'ember' | 'smoke' | 'spark'): void {
     const e = s.entities.find((en) => !en.inUse)
     if (!e) return
 
     const cx = rect.left + rect.width / 2
-    const zone = Math.random()
     let x: number, y: number, vx: number, vy: number
 
-    if (zone < 0.38) {
-      // Left flank — beside the button on its left, some below the bottom
-      x = rect.left - 2 - Math.random() * 11
-      y = rect.bottom + Math.random() * 8 - Math.random() * rect.height * 0.4
-      vx = -(2 + Math.random() * 7)
-      vy = -(22 + Math.random() * 38)
-    } else if (zone < 0.76) {
-      // Right flank
-      x = rect.right + 2 + Math.random() * 11
-      y = rect.bottom + Math.random() * 8 - Math.random() * rect.height * 0.4
-      vx = 2 + Math.random() * 7
-      vy = -(22 + Math.random() * 38)
+    if (kind === 'smoke') {
+      // Smoke rises from the top edge of the button (and slightly above it).
+      x = rect.left + (0.1 + Math.random() * 0.8) * rect.width
+      y = rect.top - 2 - Math.random() * 4
+      vx = (Math.random() - 0.5) * 16
+      vy = -(20 + Math.random() * 26)
+    } else if (kind === 'spark') {
+      // Sparks emerge from the seams — sides or top edge — close to the button.
+      const edge = Math.random()
+      if (edge < 0.4) {
+        x = rect.left - 1 - Math.random() * 3
+        y = rect.top + rect.height * (0.2 + Math.random() * 0.7)
+        vx = -(6 + Math.random() * 20)
+      } else if (edge < 0.8) {
+        x = rect.right + 1 + Math.random() * 3
+        y = rect.top + rect.height * (0.2 + Math.random() * 0.7)
+        vx = 6 + Math.random() * 20
+      } else {
+        x = rect.left + (0.2 + Math.random() * 0.6) * rect.width
+        y = rect.top - 1 - Math.random() * 3
+        vx = (Math.random() - 0.5) * 40
+      }
+      vy = -(60 + Math.random() * 70)
     } else {
-      // Below center — immediately pushed to a side by initial velocity
-      x = rect.left + (0.15 + Math.random() * 0.7) * rect.width
-      y = rect.bottom + 3 + Math.random() * 10
-      vx = (x < cx ? -1 : 1) * (7 + Math.random() * 10)
-      vy = -(18 + Math.random() * 28)
-    }
-
-    if (isSmoke) {
-      vy *= 0.5
-      vx *= 0.65
+      // Ember: side flanks + below center, same routing as before.
+      const zone = Math.random()
+      if (zone < 0.4) {
+        x = rect.left - 2 - Math.random() * 11
+        y = rect.bottom + Math.random() * 8 - Math.random() * rect.height * 0.4
+        vx = -(2 + Math.random() * 7)
+        vy = -(22 + Math.random() * 38)
+      } else if (zone < 0.8) {
+        x = rect.right + 2 + Math.random() * 11
+        y = rect.bottom + Math.random() * 8 - Math.random() * rect.height * 0.4
+        vx = 2 + Math.random() * 7
+        vy = -(22 + Math.random() * 38)
+      } else {
+        x = rect.left + (0.15 + Math.random() * 0.7) * rect.width
+        y = rect.bottom + 3 + Math.random() * 10
+        vx = (x < cx ? -1 : 1) * (7 + Math.random() * 10)
+        vy = -(18 + Math.random() * 28)
+      }
     }
 
     e.x = x
     e.y = y
     e.vx = vx
     e.vy = vy
-    e.life = isSmoke ? 1.8 + Math.random() * 1.1 : 1.1 + Math.random() * 0.8
+    if (kind === 'smoke') {
+      e.life = 1.9 + Math.random() * 1.1
+      e.size = 3 + (Math.random() < 0.4 ? 1 : 0)
+    } else if (kind === 'spark') {
+      e.life = 0.3 + Math.random() * 0.25
+      e.size = 1
+    } else {
+      e.life = 1.0 + Math.random() * 0.9
+      e.size = Math.random() < 0.22 ? 3 : Math.random() < 0.5 ? 2 : 1
+    }
     e.maxLife = e.life
-    e.size = isSmoke
-      ? 2 + (Math.random() < 0.35 ? 1 : 0)
-      : Math.random() < 0.3
-        ? 2
-        : 1
-    e.kind = isSmoke ? 'smoke' : 'ember'
+    e.kind = kind
     e.phase = Math.random() * Math.PI * 2
     e.pulseSpeed = 4 + Math.random() * 3
+    e.wobblePhase = Math.random() * Math.PI * 2
+    // Seed trail at spawn point so the first rendered frame doesn't show
+    // a trail racing in from the origin (0,0).
+    e.trailX[0] = x
+    e.trailX[1] = x
+    e.trailX[2] = x
+    e.trailY[0] = y
+    e.trailY[1] = y
+    e.trailY[2] = y
+    e.trailAcc = 0
     e.inUse = true
 
     e.g.clear()
-    e.g.rect(-e.size / 2, -e.size / 2, e.size, e.size)
-    e.g.fill({ color: isSmoke ? 0x6b6b6b : s.color })
-    e.g.x = Math.round(x)
-    e.g.y = Math.round(y)
+    e.g.alpha = 0
+    e.g.visible = true
+  }
+
+  private spawnSparkAt(s: EmberState, x: number, y: number): void {
+    const e = s.entities.find((en) => !en.inUse)
+    if (!e) return
+    const angle = Math.random() * Math.PI * 2
+    const speed = 25 + Math.random() * 35
+    e.x = x
+    e.y = y
+    e.vx = Math.cos(angle) * speed
+    e.vy = Math.sin(angle) * speed - 20
+    e.kind = 'spark'
+    e.size = 1
+    e.life = 0.25 + Math.random() * 0.25
+    e.maxLife = e.life
+    e.phase = 0
+    e.wobblePhase = 0
+    e.trailX[0] = x
+    e.trailX[1] = x
+    e.trailX[2] = x
+    e.trailY[0] = y
+    e.trailY[1] = y
+    e.trailY[2] = y
+    e.trailAcc = 0
+    e.inUse = true
+    e.g.clear()
     e.g.alpha = 0
     e.g.visible = true
   }
