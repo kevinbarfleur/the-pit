@@ -1488,8 +1488,8 @@ export class EffectsEngine {
     s.heatAmp += (haloTarget - s.heatAmp) * Math.min(1, haloApproach * dt)
     const haloAmp = s.heatAmp
     if (haloAmp > 0.02) {
-      const pulseOuter = 0.55 + 0.45 * Math.sin(s.heatTime * 3.4)
-      const pulseInner = 0.65 + 0.35 * Math.sin(s.heatTime * 5.1 + 1.1)
+      // Steady halo — no pulse. The sensation of "hot" should come from the
+      // embers and smoke behaving, not from the button itself blinking.
       const outerExpand = 7
       const innerExpand = 3
       const outerColor = lighten(EMBER_HALO_COLOR, 0.05)
@@ -1500,17 +1500,17 @@ export class EffectsEngine {
         rect.width + outerExpand * 2,
         rect.height + outerExpand * 2,
       )
-      halo.fill({ color: outerColor, alpha: 0.12 * pulseOuter * haloAmp })
+      halo.fill({ color: outerColor, alpha: 0.1 * haloAmp })
       halo.rect(
         rect.left - innerExpand,
         rect.top - innerExpand,
         rect.width + innerExpand * 2,
         rect.height + innerExpand * 2,
       )
-      halo.fill({ color: innerColor, alpha: 0.26 * pulseInner * haloAmp })
+      halo.fill({ color: innerColor, alpha: 0.22 * haloAmp })
       // Bottom seam — the button "sits in" a pool of heat.
       halo.rect(rect.left - 4, rect.bottom - 2, rect.width + 8, 5)
-      halo.fill({ color: EMBER_HOT_COLOR, alpha: 0.32 * pulseInner * haloAmp })
+      halo.fill({ color: EMBER_HOT_COLOR, alpha: 0.28 * haloAmp })
     }
 
     // --- Spawn (only while hovered) ---
@@ -1650,7 +1650,9 @@ export class EffectsEngine {
         } else {
           coreColor = blendColor(EMBER_COOL_COLOR, EMBER_DEAD_COLOR, (age - 0.7) / 0.3)
         }
-        const glow = 0.65 + 0.35 * Math.sin(e.phase * e.pulseSpeed)
+        // Very gentle scintillation — avoids a blinking feel while keeping
+        // the core visually alive.
+        const glow = 0.88 + 0.12 * Math.sin(e.phase * e.pulseSpeed)
 
         // Trail: render oldest → newest so the newest sits on top.
         for (let i = 2; i >= 0; i--) {
