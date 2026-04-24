@@ -158,22 +158,48 @@ interface DripState {
   graphic: Graphics
 }
 
-/** One pixel-art tendril growing from a button edge outward. */
+/** One pixel-art tendril growing from a button edge outward and upward. */
 interface IvyTendril {
   side: 'top' | 'right' | 'bottom' | 'left'
   originFrac: number // 0..1, placement along the edge
-  dir: { x: number; y: number } // unit growth direction (perpendicular to edge)
-  segments: Array<{ dx: number; dy: number }> // offsets from origin in px, in world-delta
-  targetLength: number // segment count the tendril wants to reach
-  growInterval: number // seconds between segments
+  angle: number // current growth angle in radians (−π/2 = up, 0 = right)
+  spin: number // radians added per new segment (coiling)
+  upwardBias: number // per-step tilt toward up (0..0.2)
+  wobble: number // per-step random jitter amplitude (0..0.35)
+  segments: Array<{ dx: number; dy: number }>
+  targetLength: number
+  growInterval: number
   growAcc: number
   state: 'growing' | 'idle' | 'retracting' | 'dead'
-  leafAt: number // segment index to place a leaf glyph at (−1 = none)
+  thickness: 1 | 2
+  leafAt: number // segment index for a leaf accent (−1 = none)
 }
 
 interface IvyState {
   tendrils: IvyTendril[]
   graphic: Graphics
+  color: number
+}
+
+interface EmberEntity {
+  g: Graphics
+  x: number
+  y: number
+  vx: number
+  vy: number
+  life: number
+  maxLife: number
+  size: number
+  phase: number
+  pulseSpeed: number
+  kind: 'ember' | 'smoke'
+  inUse: boolean
+}
+
+interface EmberState {
+  entities: EmberEntity[]
+  spawnAcc: number
+  smokeAcc: number
   color: number
 }
 
@@ -195,6 +221,8 @@ interface AttachedEffect {
   drip?: DripState
   // ivy-specific state (only set for ivy)
   ivy?: IvyState
+  // embers-specific state (only set for embers)
+  embers?: EmberState
 }
 
 let nextEffectId = 1
@@ -212,6 +240,7 @@ export class EffectsEngine {
   private orbitLayer = new Container()
   private ambientLayer = new Container()
   private dripLayer = new Container()
+  private embersLayer = new Container()
   private ready = false
   private disposed = false
 
@@ -247,6 +276,7 @@ export class EffectsEngine {
     this.app.stage.addChild(this.ambientLayer)
     this.app.stage.addChild(this.dripLayer)
     this.app.stage.addChild(this.particlesLayer)
+    this.app.stage.addChild(this.embersLayer)
     this.app.stage.addChild(this.orbitLayer)
     this.app.stage.addChild(this.ringsLayer)
 
@@ -453,6 +483,10 @@ export class EffectsEngine {
       this.initIvy(effect)
     }
 
+    if (kind === 'embers') {
+      this.initEmbers(effect)
+    }
+
     this.attached.push(effect)
 
     return { id, detach: () => this.detach(id) }
@@ -495,6 +529,10 @@ export class EffectsEngine {
     if (effect.ivy) {
       effect.ivy.graphic.destroy()
       effect.ivy = undefined
+    }
+    if (effect.embers) {
+      for (const en of effect.embers.entities) en.g.destroy()
+      effect.embers = undefined
     }
     this.attached.splice(idx, 1)
   }
@@ -590,15 +628,19 @@ export class EffectsEngine {
       effect.lastRect = effect.el.getBoundingClientRect()
       const rect = effect.lastRect
 
-      // drip-pool and ivy must tick regardless of enabled state: they both
-      // have a retract/drain phase that runs when enabled=false, and must
-      // follow the button across scrolls during the outro.
+      // drip-pool, ivy and embers all tick regardless of enabled state: they
+      // have drain/retract/fade-out phases that run when enabled=false, and
+      // must follow the button across scrolls during that outro.
       if (effect.kind === 'drip-pool') {
         this.tickDripPool(effect, rect, dt)
         continue
       }
       if (effect.kind === 'ivy') {
         this.tickIvy(effect, rect, dt)
+        continue
+      }
+      if (effect.kind === 'embers') {
+        this.tickEmbers(effect, rect, dt)
         continue
       }
 
@@ -639,14 +681,6 @@ export class EffectsEngine {
         }
         case 'aura': {
           // orbit logic handled in tickOrbits via lastRect
-          break
-        }
-        case 'embers': {
-          effect.spawnAcc += dt
-          while (effect.spawnAcc >= effect.cadence) {
-            effect.spawnAcc -= effect.cadence
-            this.spawnEmberParticle(effect, rect)
-          }
           break
         }
       }
@@ -1015,26 +1049,64 @@ export class EffectsEngine {
     const tendrils: IvyTendril[] = []
     const sides: Array<'top' | 'right' | 'bottom' | 'left'> = ['top', 'right', 'bottom', 'left']
     for (const side of sides) {
-      const count = 3 + Math.floor(Math.random() * 2) // 3..4
+      // Lush foliage: 7-9 tendrils per side, with the top getting the most
+      // (plants reach upward) and the sides having slightly more than bottom.
+      const count = side === 'top' ? 9 : side === 'bottom' ? 7 : 8
       for (let i = 0; i < count; i++) {
-        // Spread origins along the edge with jitter
         const originFrac = (i + 0.5) / count + (Math.random() - 0.5) * 0.12
-        let dir = { x: 0, y: 0 }
-        if (side === 'top') dir = { x: 0, y: -1 }
-        else if (side === 'bottom') dir = { x: 0, y: 1 }
-        else if (side === 'left') dir = { x: -1, y: 0 }
-        else if (side === 'right') dir = { x: 1, y: 0 }
-        const targetLength = 6 + Math.floor(Math.random() * 7) // 6..12
-        const leafAt = Math.random() < 0.6 ? targetLength - 1 : -1
+
+        // Initial angle anchored perpendicular to the edge with small jitter
+        const jit = (Math.random() - 0.5) * 0.55
+        let initAngle: number
+        if (side === 'top') initAngle = -Math.PI / 2 + jit
+        else if (side === 'right') initAngle = 0 + jit
+        else if (side === 'bottom') initAngle = Math.PI / 2 + jit
+        else initAngle = Math.PI + jit
+
+        // Upward gravitropism — plants curve toward the sky. Top tendrils
+        // already point up (low bias). Side tendrils curve up over distance.
+        // Bottom tendrils need a strong bias to U-turn back up.
+        let upwardBias: number
+        if (side === 'top') upwardBias = 0.01 + Math.random() * 0.03
+        else if (side === 'bottom') upwardBias = 0.11 + Math.random() * 0.09
+        else upwardBias = 0.06 + Math.random() * 0.06
+
+        // 30% of tendrils coil — constant per-step rotation
+        const spin = Math.random() < 0.3
+          ? (Math.random() < 0.5 ? -1 : 1) * (0.08 + Math.random() * 0.14)
+          : 0
+
+        // Per-step organic jitter
+        const wobble = 0.12 + Math.random() * 0.2
+
+        // Massive length diversity — this is what creates "foisonnement":
+        //   ~30% short shoots (3-6)
+        //   ~50% medium vines (8-17)
+        //   ~20% long creepers (18-30)
+        const r = Math.random()
+        let targetLength: number
+        if (r < 0.3) targetLength = 3 + Math.floor(Math.random() * 4)
+        else if (r < 0.8) targetLength = 8 + Math.floor(Math.random() * 10)
+        else targetLength = 18 + Math.floor(Math.random() * 13)
+
+        // 22% chance of a thicker 2px trunk for the larger vines
+        const thickness: 1 | 2 = Math.random() < 0.22 ? 2 : 1
+
+        const leafAt = targetLength > 5 && Math.random() < 0.6 ? targetLength - 1 : -1
+
         tendrils.push({
           side,
-          originFrac: Math.min(0.94, Math.max(0.06, originFrac)),
-          dir,
+          originFrac: Math.min(0.95, Math.max(0.05, originFrac)),
+          angle: initAngle,
+          spin,
+          upwardBias,
+          wobble,
           segments: [],
           targetLength,
-          growInterval: 0.05 + Math.random() * 0.05, // 50-100ms per pixel
-          growAcc: Math.random() * 0.06, // staggered start
+          growInterval: 0.04 + Math.random() * 0.06,
+          growAcc: Math.random() * 0.12, // strongly staggered start for wave-in
           state: 'growing',
+          thickness,
           leafAt,
         })
       }
@@ -1046,10 +1118,8 @@ export class EffectsEngine {
     const state = effect.ivy
     if (!state) return
 
-    // Advance each tendril's growth or retraction
     for (const t of state.tendrils) {
       if (effect.enabled) {
-        // Re-enter growth if we were retracting
         if (t.state === 'retracting' || t.state === 'dead') t.state = 'growing'
       } else if (t.state === 'growing' || t.state === 'idle') {
         t.state = 'retracting'
@@ -1060,23 +1130,29 @@ export class EffectsEngine {
         t.growAcc += dt
         while (t.growAcc >= t.growInterval && t.segments.length < t.targetLength) {
           t.growAcc -= t.growInterval
-          // Last segment's offset (or 0,0 at origin)
+
+          // Spin (coiling) applied per segment
+          t.angle += t.spin
+
+          // Upward gravitropism — rotate the angle toward −π/2 (straight up).
+          // Normalize delta to the shortest signed arc.
+          let delta = -Math.PI / 2 - t.angle
+          while (delta > Math.PI) delta -= 2 * Math.PI
+          while (delta < -Math.PI) delta += 2 * Math.PI
+          t.angle += delta * t.upwardBias
+
+          // Random wobble for pixel-art crookedness
+          t.angle += (Math.random() - 0.5) * t.wobble
+
+          const stepDx = Math.cos(t.angle)
+          const stepDy = Math.sin(t.angle)
           const last = t.segments.length > 0 ? t.segments[t.segments.length - 1] : { dx: 0, dy: 0 }
-          // Step by the unit direction vector
-          let dx = last.dx + t.dir.x
-          let dy = last.dy + t.dir.y
-          // Perpendicular 1-px jitter 35% of the time (pixel-art crookedness)
-          if (Math.random() < 0.35) {
-            const j = Math.random() < 0.5 ? -1 : 1
-            if (Math.abs(t.dir.x) > 0.5) dy += j
-            else dx += j
-          }
-          t.segments.push({ dx, dy })
+          t.segments.push({ dx: last.dx + stepDx, dy: last.dy + stepDy })
         }
         if (t.segments.length >= t.targetLength) t.state = 'idle'
       } else if (t.state === 'retracting') {
         t.growAcc += dt
-        const retractInterval = t.growInterval * 0.5 // retract ~2× faster than grow
+        const retractInterval = t.growInterval * 0.5
         while (t.growAcc >= retractInterval && t.segments.length > 0) {
           t.growAcc -= retractInterval
           t.segments.pop()
@@ -1085,22 +1161,25 @@ export class EffectsEngine {
       }
     }
 
-    // --- Render ---
+    // ---- Render (one Graphics, rebuilt each frame) ----
     state.graphic.clear()
 
-    // Pass 1 — segments (1×1 px trunks)
-    let anySegment = false
+    // Pass 1: trunks. Thickness 1 → 1×1 px, thickness 2 → 2×2 px centered.
+    let anyTrunk = false
     for (const t of state.tendrils) {
       if (t.segments.length === 0) continue
       const origin = this.resolveIvyOrigin(t, rect)
       for (const seg of t.segments) {
-        state.graphic.rect(Math.round(origin.x + seg.dx), Math.round(origin.y + seg.dy), 1, 1)
-        anySegment = true
+        const x = Math.round(origin.x + seg.dx)
+        const y = Math.round(origin.y + seg.dy)
+        if (t.thickness === 2) state.graphic.rect(x - 1, y - 1, 2, 2)
+        else state.graphic.rect(x, y, 1, 1)
+        anyTrunk = true
       }
     }
-    if (anySegment) state.graphic.fill({ color: state.color, alpha: 0.92 })
+    if (anyTrunk) state.graphic.fill({ color: state.color, alpha: 0.92 })
 
-    // Pass 2 — leaves at idle tips (2×2 px, lighter tone)
+    // Pass 2: leaves at idle tips (lighter tone, 2×2)
     let anyLeaf = false
     for (const t of state.tendrils) {
       if (t.state !== 'idle' || t.leafAt < 0) continue
@@ -1112,7 +1191,7 @@ export class EffectsEngine {
       state.graphic.rect(x, y, 2, 2)
       anyLeaf = true
     }
-    if (anyLeaf) state.graphic.fill({ color: lighten(state.color, 0.3), alpha: 0.95 })
+    if (anyLeaf) state.graphic.fill({ color: lighten(state.color, 0.32), alpha: 0.95 })
   }
 
   private resolveIvyOrigin(t: IvyTendril, rect: DOMRect): { x: number; y: number } {
@@ -1123,28 +1202,182 @@ export class EffectsEngine {
   }
 
   // =========================================================
-  // EMBERS — amber particles rising from below the button,
-  //           fading in, glowing, then fading out mid-air.
+  // EMBERS — dedicated particle pool with button-avoidance
+  //           forces. Spawns on the sides + below, repulsion
+  //           keeps them outside the button's interior, and
+  //           above the top they converge back toward center.
+  //           Smoke wisps interleaved to signal rising heat.
   // =========================================================
-  private spawnEmberParticle(effect: AttachedEffect, rect: DOMRect): void {
-    const p = this.pickFreeParticle()
-    if (!p) return
-    const x = rect.left + Math.random() * rect.width
-    const y = rect.bottom + 1 + Math.random() * 3
-    p.vx = (Math.random() - 0.5) * 14
-    p.vy = -30 - Math.random() * 45 // upward
-    p.gravity = 32 // mild slowdown as it rises, never really falls within its life
-    p.life = 1.0 + Math.random() * 0.9
-    p.maxLife = p.life
-    p.size = Math.random() < 0.28 ? 2 : 1
-    p.color = effect.config.color
-    p.fadeMode = 'ember'
-    this.drawParticle(p)
-    p.g.x = x
-    p.g.y = y
-    p.g.alpha = 0
-    p.g.visible = true
-    p.inUse = true
+  private initEmbers(effect: AttachedEffect): void {
+    const count = 64
+    const entities: EmberEntity[] = []
+    for (let i = 0; i < count; i++) {
+      const g = new Graphics()
+      g.visible = false
+      this.embersLayer.addChild(g)
+      entities.push({
+        g,
+        x: 0,
+        y: 0,
+        vx: 0,
+        vy: 0,
+        life: 0,
+        maxLife: 0,
+        size: 1,
+        phase: 0,
+        pulseSpeed: 5,
+        kind: 'ember',
+        inUse: false,
+      })
+    }
+    effect.embers = {
+      entities,
+      spawnAcc: 0,
+      smokeAcc: 0,
+      color: effect.config.color,
+    }
+  }
+
+  private tickEmbers(effect: AttachedEffect, rect: DOMRect, dt: number): void {
+    const s = effect.embers
+    if (!s) return
+
+    // --- Spawn (only while hovered) ---
+    if (effect.enabled) {
+      s.spawnAcc += dt
+      while (s.spawnAcc >= 0.04) {
+        s.spawnAcc -= 0.04
+        this.spawnEmberEntity(s, rect, false)
+      }
+      s.smokeAcc += dt
+      while (s.smokeAcc >= 0.16) {
+        s.smokeAcc -= 0.16
+        this.spawnEmberEntity(s, rect, true)
+      }
+    }
+
+    // --- Update physics for all live entities ---
+    const cx = rect.left + rect.width / 2
+    const cy = rect.top + rect.height / 2
+    const marginW = rect.width / 2 + 6
+    const marginH = rect.height / 2 + 6
+
+    for (const e of s.entities) {
+      if (!e.inUse) continue
+      e.life -= dt
+      if (e.life <= 0) {
+        e.inUse = false
+        e.g.visible = false
+        continue
+      }
+
+      // Button repulsion: a soft pressure field whose strength is proportional
+      // to how deep the entity is inside the button's bounding rect. Pushes
+      // outward horizontally — since embers rise, this routes them along the
+      // left or right side of the button instead of through it.
+      const dx = e.x - cx
+      const dy = e.y - cy
+      const insideX = Math.max(0, 1 - Math.abs(dx) / marginW)
+      const insideY = Math.max(0, 1 - Math.abs(dy) / marginH)
+      const inside = insideX * insideY
+      if (inside > 0.02) {
+        const dirSign = dx >= 0 ? 1 : -1
+        e.vx += dirSign * 320 * inside * dt
+        // Small upward assist so the entity escapes the top rather than below
+        e.vy -= 45 * inside * dt
+      }
+
+      // Buoyancy gravity (mild — particles slow but don't fall within life)
+      e.vy += (e.kind === 'smoke' ? 6 : 22) * dt
+
+      // Horizontal drag
+      e.vx *= e.kind === 'smoke' ? 0.975 : 0.95
+
+      // Above the button's top edge: gentle inward pull so the flow
+      // converges back together over the button ("it crowns the button")
+      if (e.y < rect.top - 4) {
+        const pull = (cx - e.x) * (e.kind === 'smoke' ? 0.55 : 1.1)
+        e.vx += pull * dt * 0.11
+      }
+
+      e.x += e.vx * dt
+      e.y += e.vy * dt
+      e.phase += dt
+
+      // Render — alpha combines fade-in, fade-out and (for embers) a glow pulse
+      e.g.x = Math.round(e.x)
+      e.g.y = Math.round(e.y)
+
+      const t = e.life / e.maxLife
+      const fadeIn = Math.min(1, (1 - t) / 0.18)
+      const fadeOut = t > 0.3 ? 1 : t / 0.3
+      let alpha: number
+      if (e.kind === 'smoke') {
+        alpha = Math.min(fadeIn, fadeOut) * 0.22
+      } else {
+        const glow = 0.55 + 0.45 * Math.sin(e.phase * e.pulseSpeed)
+        alpha = Math.min(fadeIn, fadeOut) * glow
+      }
+      e.g.alpha = alpha
+    }
+  }
+
+  private spawnEmberEntity(s: EmberState, rect: DOMRect, isSmoke: boolean): void {
+    const e = s.entities.find((en) => !en.inUse)
+    if (!e) return
+
+    const cx = rect.left + rect.width / 2
+    const zone = Math.random()
+    let x: number, y: number, vx: number, vy: number
+
+    if (zone < 0.38) {
+      // Left flank — beside the button on its left, some below the bottom
+      x = rect.left - 2 - Math.random() * 11
+      y = rect.bottom + Math.random() * 8 - Math.random() * rect.height * 0.4
+      vx = -(2 + Math.random() * 7)
+      vy = -(22 + Math.random() * 38)
+    } else if (zone < 0.76) {
+      // Right flank
+      x = rect.right + 2 + Math.random() * 11
+      y = rect.bottom + Math.random() * 8 - Math.random() * rect.height * 0.4
+      vx = 2 + Math.random() * 7
+      vy = -(22 + Math.random() * 38)
+    } else {
+      // Below center — immediately pushed to a side by initial velocity
+      x = rect.left + (0.15 + Math.random() * 0.7) * rect.width
+      y = rect.bottom + 3 + Math.random() * 10
+      vx = (x < cx ? -1 : 1) * (7 + Math.random() * 10)
+      vy = -(18 + Math.random() * 28)
+    }
+
+    if (isSmoke) {
+      vy *= 0.5
+      vx *= 0.65
+    }
+
+    e.x = x
+    e.y = y
+    e.vx = vx
+    e.vy = vy
+    e.life = isSmoke ? 1.8 + Math.random() * 1.1 : 1.1 + Math.random() * 0.8
+    e.maxLife = e.life
+    e.size = isSmoke
+      ? 2 + (Math.random() < 0.35 ? 1 : 0)
+      : Math.random() < 0.3
+        ? 2
+        : 1
+    e.kind = isSmoke ? 'smoke' : 'ember'
+    e.phase = Math.random() * Math.PI * 2
+    e.pulseSpeed = 4 + Math.random() * 3
+    e.inUse = true
+
+    e.g.clear()
+    e.g.rect(-e.size / 2, -e.size / 2, e.size, e.size)
+    e.g.fill({ color: isSmoke ? 0x6b6b6b : s.color })
+    e.g.x = Math.round(x)
+    e.g.y = Math.round(y)
+    e.g.alpha = 0
+    e.g.visible = true
   }
 
   private tickAmbient(dt: number): void {
