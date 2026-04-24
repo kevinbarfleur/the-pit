@@ -2139,12 +2139,17 @@ export class EffectsEngine {
   private initGodray(effect: AttachedEffect): void {
     const graphic = new Graphics()
     this.ambientLayer.addChild(graphic)
-    const rayCount = 14
+    const rayCount = 22
     const rays: GodraySpec[] = []
     for (let i = 0; i < rayCount; i++) {
+      // Small per-ray angle jitter + length jitter so the radiation
+      // doesn't read as a perfect sunburst — we want a scattered,
+      // dusty pixel-art glow, not a wheel.
+      const baseAngle = (i / rayCount) * Math.PI * 2
+      const angleJitter = (Math.random() - 0.5) * 0.25
       rays.push({
-        angle: (i / rayCount) * Math.PI * 2,
-        length: 22 + Math.random() * 18, // 22..40 px — just past the chest
+        angle: baseAngle + angleJitter,
+        length: 20 + Math.random() * 24, // 20..44 px
         phase: Math.random() * Math.PI * 2,
       })
     }
@@ -2202,8 +2207,10 @@ export class EffectsEngine {
     g.ellipse(cx, cy, 10 * core + 4, 7 * core + 3)
     g.fill({ color: colorLight, alpha: 0.18 })
 
-    // Rays — same as before, but with a taper that avoids covering the
-    // pixel-art objects inside the hoard silhouette.
+    // Rays — diffused and pixel-art dusty. Each pip gets a perpendicular
+    // jitter of up to ±1 px so beams don't read as precise sunbursts
+    // but as scattered pixel dust. Alpha is halved compared to the
+    // previous pass so they blend into the halo rather than pop out.
     const innerSkip = Math.max(5, Math.round(spotHalf * 0.7))
     const rayScale = Math.max(1, spotHalf / 30)
     for (const ray of s.rays) {
@@ -2212,20 +2219,46 @@ export class EffectsEngine {
       const len = ray.length * pulse * rayScale
       const dx = Math.cos(a)
       const dy = Math.sin(a)
+      // Perpendicular unit for jitter.
+      const px = -dy
+      const py = dx
 
       const steps = Math.max(10, Math.round(len))
       for (let i = innerSkip; i < innerSkip + steps; i++) {
         const t = (i - innerSkip) / steps
         const r = i
-        const x = Math.round(cx + dx * r)
-        const y = Math.round(cy + dy * r)
-        const size = t < 0.25 ? 2 : 1
-        const alpha = Math.pow(1 - t, 1.35) * pulse * 0.85
-        if (alpha < 0.06) continue
+        // Subpixel jitter that's stable across frames for this (ray, i)
+        // via a noise derived from the ray phase — avoids frame-to-
+        // frame shimmer while still looking scattered.
+        const jitterSeed = Math.sin(ray.phase * 17 + i * 2.3)
+        const jitter = Math.round(jitterSeed * 1.2)
+        const x = Math.round(cx + dx * r + px * jitter)
+        const y = Math.round(cy + dy * r + py * jitter)
+        const size = t < 0.22 ? 2 : 1
+        const alpha = Math.pow(1 - t, 1.5) * pulse * 0.55
+        if (alpha < 0.05) continue
         const color = t < 0.3 ? colorLight : t < 0.7 ? s.color : colorDark
         g.rect(x - size / 2, y - size / 2, size, size)
         g.fill({ color, alpha })
       }
+    }
+
+    // Dust motes — a scatter of single pixels that twinkle around the
+    // hoard at a time-varying positions, giving the whole area a
+    // "floating gold particles" feel on top of the ray pattern.
+    const moteCount = 18
+    for (let m = 0; m < moteCount; m++) {
+      // Each mote has a stable angular offset + orbit radius + bob
+      // phase; we read (time, m) to position + flicker it.
+      const moteSeed = m * 0.618
+      const moteAngle = moteSeed * Math.PI * 2 + s.time * 0.25
+      const moteR = spotHalf * (0.35 + 0.6 * ((moteSeed * 7) % 1))
+      const twinkle = 0.5 + 0.5 * Math.sin(s.time * 4 + moteSeed * 9)
+      if (twinkle < 0.15) continue
+      const mx = Math.round(cx + Math.cos(moteAngle) * moteR)
+      const my = Math.round(cy + Math.sin(moteAngle) * moteR * 0.7)
+      g.rect(mx, my, 1, 1)
+      g.fill({ color: colorLight, alpha: twinkle * 0.7 })
     }
   }
 

@@ -246,9 +246,11 @@ export function drawIsland(
   drawShadow(ctx)
 }
 
-/** Static layout of the treasure hoard. Two 7×5 chests flank a 6×4
- *  coin stack — bigger objects than the previous 5×4 chests because
- *  the user wanted them to read clearly against the cap. */
+/** Static layout of the treasure hoard. Two 7×5 chests and one 6×4
+ *  coin stack, packed tightly as one compact mound right under the
+ *  signpost. The coin stack sits in front (lower) and the chests
+ *  flank it slightly offset upward — reads as a little pile of loot
+ *  rather than three separate objects spread across the cap. */
 function treasureHoardLayout(): {
   leftChestX: number
   rightChestX: number
@@ -257,8 +259,8 @@ function treasureHoardLayout(): {
   stackY: number
 } {
   return {
-    leftChestX: 9,
-    rightChestX: 27,
+    leftChestX: 14,
+    rightChestX: 22,
     rowY: 22,
     stackX: 18,
     stackY: 27,
@@ -280,14 +282,14 @@ export function computeIslandSpot(
   type: PitNodeType,
 ): { x: number; y: number; w: number; h: number } | null {
   if (type === 'treasure') {
-    // Bounding rect of the whole hoard (two 7×5 chests + centre coin
-    // stack). The godray hover anchors here so the halo covers every
-    // shiny object on the cap, not just a single chest.
+    // Bounding rect of the whole compact mound. Used by godray as
+    // its anchor so the halo wraps the pile rather than floating
+    // somewhere else on the cap.
     const h = treasureHoardLayout()
-    const left = h.leftChestX - 4 // 7 wide → halfW 3.5 + 0.5 margin
+    const left = h.leftChestX - 4
     const right = h.rightChestX + 4
-    const top = h.rowY - 3 // top of chest row
-    const bottom = h.stackY + 3 // bottom of coin stack
+    const top = h.rowY - 3
+    const bottom = h.stackY + 3
     return {
       x: (left + right) / 2,
       y: (top + bottom) / 2,
