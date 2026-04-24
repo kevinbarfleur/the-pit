@@ -1,5 +1,4 @@
 import type { PitRun } from '../../../hooks/usePitRun'
-import { MAX_COLUMNS } from '../../../game/pit/types'
 import { IslandNode } from './IslandNode'
 import styles from './NodeMap.module.css'
 
@@ -51,8 +50,11 @@ export function NodeMap({ run, minDepth, maxDepth, rowHeight }: NodeMapProps) {
 }
 
 function columnToPercent(column: number): number {
-  // MAX_COLUMNS lanes split the shaft evenly; each lane's centre is used
-  // as the anchor for its nodes.
-  const laneWidth = 100 / MAX_COLUMNS
-  return column * laneWidth + laneWidth / 2
+  // Lanes are deliberately packed toward the centre of the shaft: 32%,
+  // 50%, 68% rather than 17/50/83. Short horizontal distance between
+  // adjacent columns keeps every downlink chain nearly vertical, which
+  // is the only way chains read as pulled/taut rather than slanting
+  // across the map and visually crossing one another.
+  const laneCenters = [32, 50, 68]
+  return laneCenters[column] ?? 50
 }

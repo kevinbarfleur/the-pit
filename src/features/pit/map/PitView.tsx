@@ -15,7 +15,7 @@ import styles from './PitView.module.css'
  * cleared ground behind.
  */
 
-export const ROW_HEIGHT = 140
+export const ROW_HEIGHT = 200
 /** Fraction of the viewport where the current node is pinned vertically. */
 const CAMERA_ANCHOR_FRAC = 0.55
 

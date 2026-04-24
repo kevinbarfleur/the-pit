@@ -1,11 +1,11 @@
-import { useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import type { CSSProperties } from 'react'
 import type { AttachKind } from '../../../pixi/EffectsEngine'
 import { useEffects } from '../../../hooks/useEffects'
 import { useHoverEffect } from '../../../hooks/useHoverEffect'
 import { usePitUiStore } from '../../../stores/pitUiStore'
 import type { PitNode as PitNodeModel, PitNodeState, PitNodeType } from '../../../game/pit/types'
-import { computeIslandShape } from './IslandShape'
+import { drawIsland, ISLAND_H, ISLAND_W } from './drawIsland'
 import styles from './IslandNode.module.css'
 
 interface IslandNodeProps {
@@ -15,7 +15,14 @@ interface IslandNodeProps {
   style?: CSSProperties
 }
 
-const SIZE_PX = 60
+/**
+ * CSS upscale multiplier. The island is rendered at its native
+ * ISLAND_W × ISLAND_H pixel dimensions on a canvas, then scaled up by
+ * this factor via `image-rendering: pixelated`. Blowing it up from the
+ * internal resolution preserves every pixel edge — this is what sells
+ * the terminal pixel-art DNA.
+ */
+const SCALE = 2
 
 const TYPE_GLYPH: Record<PitNodeType, string> = {
   combat: '⚔',
@@ -51,32 +58,31 @@ const TYPE_COLOR: Record<PitNodeType, number> = {
 }
 
 /**
- * A floating pixel-art island used as the clickable node on the Pit map.
- * Replaces the rectangular tile primitive.
+ * Floating pixel-art island node.
  *
- * Visual anatomy:
- *   - Top cap    — an irregular circle clipped by a 14-vertex polygon.
- *                  Tinted by the node type and dithered with a 1px
- *                  pattern to sell the pixel-art feel.
- *   - Underside  — 3–5 dangling stalactites in a darker tint, positioned
- *                  deterministically from the node id so the island
- *                  always reads as the same chunk of earth.
- *   - Drop shadow— elliptical fuzz underneath to anchor the float.
- *   - Float bob  — step-keyframed Y translation with a per-id period +
- *                  delay, so nearby islands don't breathe in unison.
- *
- * Chain anchor attributes:
- *   - data-anchor-top / data-anchor-bottom expose the % offsets where
- *     incoming / outgoing chains should latch. The Pixi ChainsEngine
- *     reads these when it rebuilds its segment list.
+ * Renders a bitmap-per-island on a small 2D canvas at native pixel
+ * resolution (ISLAND_W × ISLAND_H), then upscales via CSS. This keeps
+ * every pixel hard-edged and lets `drawIsland` control the palette and
+ * dithering directly — unlike the earlier clip-path approach which
+ * relied on GPU anti-aliasing and didn't read as pixel art.
  */
 export function IslandNode({ node, state, canCommit, style }: IslandNodeProps) {
   const ref = useRef<HTMLButtonElement | null>(null)
+  const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const engine = useEffects()
   const setHoveredId = usePitUiStore((s) => s.setHoveredId)
   const startZoomIn = usePitUiStore((s) => s.startZoomIn)
 
-  const shape = useMemo(() => computeIslandShape(node.id, SIZE_PX), [node.id])
+  // Draw once per (id, type). State changes are handled in CSS (filter,
+  // opacity) without a full repaint — faster and stable visually.
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const ctx = canvas.getContext('2d', { alpha: true })
+    if (!ctx) return
+    ctx.imageSmoothingEnabled = false
+    drawIsland(ctx, node.id, node.type)
+  }, [node.id, node.type])
 
   const hoverEnabled =
     state !== 'locked' && state !== 'bypassed' && state !== 'current'
@@ -106,20 +112,16 @@ export function IslandNode({ node, state, canCommit, style }: IslandNodeProps) {
     })
   }
 
-  const stalacticElements = shape.stalactites.map((s, i) => (
-    <span
-      key={i}
-      className={styles.stalactite}
-      style={{
-        left: `${s.xPercent}%`,
-        top: `${s.topOffset}px`,
-        width: `${s.width}px`,
-        height: `${s.height}px`,
-        // Pointed tip via clip-path — trapezoid that narrows downward.
-        clipPath: `polygon(0 0, 100% 0, 70% 100%, 30% 100%)`,
-      }}
-    />
-  ))
+  // Stagger the float animation per-id so a cluster doesn't breathe in
+  // unison. Hash a short deterministic delay from the node id.
+  const floatDelay = useMemo(() => {
+    let h = 0
+    for (let i = 0; i < node.id.length; i++) h = (h * 31 + node.id.charCodeAt(i)) | 0
+    return ((h >>> 0) % 1000) / 1000
+  }, [node.id])
+
+  const w = ISLAND_W * SCALE
+  const h = ISLAND_H * SCALE
 
   return (
     <button
@@ -129,8 +131,8 @@ export function IslandNode({ node, state, canCommit, style }: IslandNodeProps) {
       data-state={state}
       data-type={node.type}
       data-island-id={node.id}
-      data-anchor-top={shape.topAnchorPercent}
-      data-anchor-bottom={shape.bottomAnchorPercent}
+      data-anchor-top={50}
+      data-anchor-bottom={50}
       disabled={!canCommit}
       onMouseEnter={() => setHoveredId(node.id)}
       onMouseLeave={() => setHoveredId(null)}
@@ -140,25 +142,21 @@ export function IslandNode({ node, state, canCommit, style }: IslandNodeProps) {
       style={
         {
           ...style,
-          width: `${SIZE_PX}px`,
-          height: `${SIZE_PX + 24}px`,
-          animationDuration: `${shape.floatPeriod}s`,
-          animationDelay: `-${shape.floatDelay}s`,
-          ['--island-float-period' as string]: `${shape.floatPeriod}s`,
+          width: `${w}px`,
+          height: `${h}px`,
+          animationDelay: `-${floatDelay * 2.4}s`,
         } as CSSProperties
       }
       aria-label={`${node.type} at depth ${node.depth}`}
     >
-      <span className={styles.shadow} />
-      <span
-        className={styles.top}
-        style={{ clipPath: shape.clipPath }}
-        data-type={node.type}
-      >
-        <span className={styles.topHighlight} />
-        <span className={styles.glyph}>{TYPE_GLYPH[node.type]}</span>
-      </span>
-      <span className={styles.underside}>{stalacticElements}</span>
+      <canvas
+        ref={canvasRef}
+        className={styles.canvas}
+        width={ISLAND_W}
+        height={ISLAND_H}
+        style={{ width: `${w}px`, height: `${h}px` }}
+      />
+      <span className={styles.glyph}>{TYPE_GLYPH[node.type]}</span>
     </button>
   )
 }

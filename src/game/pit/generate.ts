@@ -228,12 +228,13 @@ export function linkRows(
   }
 }
 
-/** Bias toward forks: 30% one child, 55% two, 15% three — clipped to
- *  available candidates so a parent with only one neighbour never
- *  duplicates or errors. */
+/** Children per parent: 45% one (pure descent), 52% two (choice), 3%
+ *  three (rare trilemma). Biased hard toward 1–2 to avoid the visual
+ *  spaghetti of three-way forks whose chains entangle with the
+ *  neighbour's chains when the row is full-width. */
 function chooseNumChildren(rng: ReturnType<typeof cursor>, maxAvailable: number): number {
   const roll = rng.unit()
-  const n = roll < 0.3 ? 1 : roll < 0.85 ? 2 : 3
+  const n = roll < 0.45 ? 1 : roll < 0.97 ? 2 : 3
   return Math.min(n, Math.max(1, maxAvailable))
 }
 

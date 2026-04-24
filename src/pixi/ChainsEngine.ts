@@ -32,23 +32,63 @@ export interface ChainSpec {
 
 // --------------------- palette ---------------------
 
-const CHAIN_COLOR: Record<ChainState, { dark: number; light: number; alpha: number }> = {
-  traversed: { dark: 0x8a6a28, light: 0xd4a147, alpha: 0.92 },
-  active: { dark: 0x9c9482, light: 0xe5dec6, alpha: 0.85 },
-  latent: { dark: 0x5a5448, light: 0x8a8370, alpha: 0.72 },
-  bypassed: { dark: 0x2a2a2a, light: 0x444444, alpha: 0.55 },
+/**
+ * Per-state palette. Each state gets four tones so a maillon reads as
+ * a proper pixel-art ring: outline, core fill, rim highlight, and
+ * recessed shadow.
+ */
+interface ChainPalette {
+  outline: number
+  core: number
+  rim: number
+  shadow: number
+  alpha: number
+}
+
+const CHAIN_COLOR: Record<ChainState, ChainPalette> = {
+  traversed: {
+    outline: 0x1e1608,
+    core: 0x8a6828,
+    rim: 0xe4c070,
+    shadow: 0x4a3614,
+    alpha: 0.95,
+  },
+  active: {
+    outline: 0x1a1a14,
+    core: 0xa09880,
+    rim: 0xe8e2c8,
+    shadow: 0x5a5448,
+    alpha: 0.92,
+  },
+  latent: {
+    outline: 0x141410,
+    core: 0x6a6456,
+    rim: 0x9a9380,
+    shadow: 0x3a362a,
+    alpha: 0.82,
+  },
+  bypassed: {
+    outline: 0x0a0a0a,
+    core: 0x3a3a3a,
+    rim: 0x565656,
+    shadow: 0x1e1e1e,
+    alpha: 0.55,
+  },
 }
 
 const SWING_AMPLITUDE_PX: Record<ChainState, number> = {
-  traversed: 0.6, // taut: almost no sway
-  active: 1.4,
-  latent: 2.2,
-  bypassed: 3.0, // frayed, leans a lot
+  traversed: 0.3, // taut gild chain — almost no sway
+  active: 0.8,
+  latent: 1.4,
+  bypassed: 2.2, // frayed, leans a lot
 }
 
 const POOL_SIZE = 128
-/** Approximate px distance along the chain between maillons. */
-const MAILLON_SPACING = 9
+/** Px along the chain between consecutive maillons. Tight so they
+ *  interlock visually rather than reading as dotted beads. */
+const MAILLON_SPACING = 5
+const MAILLON_W_V = 5
+const MAILLON_H_V = 6
 
 // --------------------- internal ---------------------
 
@@ -248,27 +288,22 @@ export class ChainsEngine {
 
     const palette = CHAIN_COLOR[e.state]
     const amp = SWING_AMPLITUDE_PX[e.state]
-    // Primary sway: single-pendulum sine with max at midpoint.
     const sway = Math.sin(e.swingTime * 1.4 + e.phase) * amp
 
-    // Segment count — always odd so there's a clean midpoint maillon.
+    // Always odd for a clean midpoint maillon.
     let segmentCount = Math.max(3, Math.round(length / MAILLON_SPACING))
     if (segmentCount % 2 === 0) segmentCount += 1
 
     for (let i = 0; i < segmentCount; i++) {
       const t = i / (segmentCount - 1)
-      // Cap the swing at the midpoint and taper to 0 at both ends —
-      // anchors are glued to the islands, rope bulges in between.
       const taper = Math.sin(t * Math.PI)
       const offset = sway * taper
       const x = e.curFromX + dx * t + perpX * offset
       const y = e.curFromY + dy * t + perpY * offset
-
-      // Alternate orientation: even indices vertical, odd horizontal.
-      // That's the defining "chain" silhouette — two linked rings, one
-      // on its side, one upright.
+      // Alternate vertical/horizontal — the defining silhouette of a
+      // chain: every other ring is on its side.
       const vertical = i % 2 === 0
-      drawMaillon(g, x, y, vertical, palette.dark, palette.light, palette.alpha)
+      drawMaillon(g, x, y, vertical, palette)
     }
   }
 }
@@ -285,38 +320,80 @@ function hashIdToUnit(id: string): number {
 }
 
 /**
- * Draw a single chain link (maillon). A 5×7 or 7×5 pixel shape: a ring
- * drawn as a dark outer rectangle with a 1-px lighter highlight on one
- * edge, centred on (x, y).
+ * Draw a single chain link (maillon) as a pixel-art ring centred on
+ * (x, y). Each maillon is plotted pixel-by-pixel via 1×1 rects so the
+ * shape reads as a discrete metal ring rather than a smudged blob.
+ *
+ * Vertical orientation (5×6):
+ *   . X X X .
+ *   X . . . X
+ *   X . . . X
+ *   X . . . X
+ *   X . . . X
+ *   . X X X .
+ * where the top-row pixels get the `rim` highlight, the left column
+ * gets `core`, the right + bottom get `shadow`, and the outer corners
+ * fall on `outline`.
+ *
+ * Horizontal orientation is the 90° transpose (6×5).
  */
 function drawMaillon(
   g: Graphics,
   x: number,
   y: number,
   vertical: boolean,
-  dark: number,
-  light: number,
-  alpha: number,
+  palette: ChainPalette,
 ): void {
-  const w = vertical ? 5 : 7
-  const h = vertical ? 7 : 5
-  const halfW = w / 2
-  const halfH = h / 2
-  const cx = Math.round(x)
-  const cy = Math.round(y)
+  const w = vertical ? MAILLON_W_V : MAILLON_H_V
+  const h = vertical ? MAILLON_H_V : MAILLON_W_V
+  const cx = Math.round(x) - Math.floor(w / 2)
+  const cy = Math.round(y) - Math.floor(h / 2)
 
-  // Outer body
-  g.rect(cx - halfW, cy - halfH, w, h)
-  g.fill({ color: dark, alpha })
-  // Inner hole — one-pixel hollow so it reads as a ring rather than a
-  // solid block. Draw a transparent-ish inner cutout via a darker fill
-  // (doesn't break the flat z-order since the same Graphics is used).
-  g.rect(cx - halfW + 1, cy - halfH + 1, w - 2, h - 2)
-  g.fill({ color: 0x000000, alpha: 0.55 })
-  // Highlight on the upper-left edge — one pixel of light to sell the
-  // metallic sheen.
-  g.rect(cx - halfW, cy - halfH, 1, 1)
-  g.fill({ color: light, alpha: Math.min(1, alpha + 0.05) })
-  g.rect(cx - halfW + 1, cy - halfH, 1, 1)
-  g.fill({ color: light, alpha: Math.min(1, alpha + 0.05) })
+  const px = (dx: number, dy: number, color: number) => {
+    g.rect(cx + dx, cy + dy, 1, 1)
+    g.fill({ color, alpha: palette.alpha })
+  }
+
+  if (vertical) {
+    // Top rim — bright highlight
+    px(1, 0, palette.rim)
+    px(2, 0, palette.rim)
+    px(3, 0, palette.rim)
+    // Outer corners (outline)
+    px(0, 1, palette.outline)
+    px(4, 1, palette.outline)
+    px(0, 4, palette.outline)
+    px(4, 4, palette.outline)
+    // Left wall — core
+    px(0, 2, palette.core)
+    px(0, 3, palette.core)
+    // Right wall — shadow
+    px(4, 2, palette.shadow)
+    px(4, 3, palette.shadow)
+    // Bottom rim — shadow
+    px(1, 5, palette.shadow)
+    px(2, 5, palette.shadow)
+    px(3, 5, palette.shadow)
+  } else {
+    // Horizontal (rotated 90°)
+    // Top rim (left column when rotated)
+    px(0, 1, palette.rim)
+    px(0, 2, palette.rim)
+    px(0, 3, palette.rim)
+    // Outer corners
+    px(1, 0, palette.outline)
+    px(1, 4, palette.outline)
+    px(4, 0, palette.outline)
+    px(4, 4, palette.outline)
+    // Top wall — core
+    px(2, 0, palette.core)
+    px(3, 0, palette.core)
+    // Bottom wall — shadow
+    px(2, 4, palette.shadow)
+    px(3, 4, palette.shadow)
+    // Right rim — shadow
+    px(5, 1, palette.shadow)
+    px(5, 2, palette.shadow)
+    px(5, 3, palette.shadow)
+  }
 }
