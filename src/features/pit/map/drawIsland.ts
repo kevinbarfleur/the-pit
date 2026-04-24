@@ -228,6 +228,14 @@ export function drawIsland(
 
   drawCapAndStalactites(ctx, rng, stone, variants.cap, variants.stal)
   drawSignpost(ctx, signpost, plaque)
+  // Treasure islands get a tiny chest planted next to the sign post —
+  // communicates "loot on this rock" at a glance, independent of the
+  // godray hover aura. Side (left/right of the plaque) picked off the
+  // hash so the scene stays stable.
+  if (type === 'treasure') {
+    const chestOnRight = ((hash >> 28) & 1) === 0
+    drawChest(ctx, signpost, chestOnRight)
+  }
   drawShadow(ctx)
 }
 
@@ -515,4 +523,86 @@ function drawShadow(ctx: CanvasRenderingContext2D): void {
     plot(ctx, x, shadowY, '#000000')
     if (off < 0.45) plot(ctx, x, shadowY + 1, '#000000')
   }
+}
+
+// ---------- treasure chest ----------
+
+/**
+ * A tiny pixel-art chest, 7×5 native, planted next to the signpost on
+ * the cap's visible top surface. Palette is a warm wood body with a
+ * gold strap + lock so it reads unambiguously as loot even at small
+ * sizes.
+ *
+ * Positioned relative to the signpost so it always sits beside the
+ * plaque rather than clashing with it. The `onRight` flag stably
+ * picks which side of the plaque the chest lands on per-island.
+ */
+function drawChest(
+  ctx: CanvasRenderingContext2D,
+  signpost: SignpostLayout,
+  onRight: boolean,
+): void {
+  const CHEST_W = 7
+  const CHEST_H = 5
+  // Offset the chest so it hugs the plaque side but doesn't overlap it.
+  const side = onRight ? 1 : -1
+  const cx = Math.round(signpost.plaqueCenterX + side * (signpost.plaqueW / 2 + 3))
+  // Sit the chest at the base of the signpost (on the cap surface).
+  const top = Math.round(signpost.plaqueCenterY + signpost.plaqueH / 2 + 2)
+  const x0 = cx - Math.floor(CHEST_W / 2)
+
+  // Skip entirely if the chest would fall outside the canvas.
+  if (x0 < 1 || x0 + CHEST_W > ISLAND_W - 1) return
+  if (top + CHEST_H > ISLAND_H - 2) return
+
+  const OUTLINE = '#1e1206'
+  const WOOD_DARK = '#4a2810'
+  const WOOD_MID = '#6a3c18'
+  const WOOD_LIGHT = '#8a5624'
+  const GOLD_DARK = '#8a6020'
+  const GOLD_MID = '#d4a040'
+  const GOLD_LIGHT = '#f4d078'
+
+  // Lid (top band) + body. The lid is 2 rows with a gold strap through
+  // its middle and a tiny lock square on the front.
+  //
+  //  Row 0 : outline top ____________
+  //  Row 1 : wood lid + gold rim     \
+  //  Row 2 : gold strap + lock        } chest
+  //  Row 3 : wood body                /
+  //  Row 4 : outline bottom _________/
+  for (let dy = 0; dy < CHEST_H; dy++) {
+    for (let dx = 0; dx < CHEST_W; dx++) {
+      const x = x0 + dx
+      const y = top + dy
+      if (x < 0 || x >= ISLAND_W || y < 0 || y >= ISLAND_H) continue
+
+      let color: string
+      const onSideEdge = dx === 0 || dx === CHEST_W - 1
+      const onTopEdge = dy === 0
+      const onBotEdge = dy === CHEST_H - 1
+      if (onSideEdge || onTopEdge || onBotEdge) {
+        color = OUTLINE
+      } else if (dy === 1) {
+        // Lid row — light wood + one-pixel gold rim at the top.
+        color = dx === 1 ? WOOD_DARK : WOOD_LIGHT
+      } else if (dy === 2) {
+        // Gold strap running across the middle, with a lock square at centre.
+        const isLock = dx === Math.floor(CHEST_W / 2)
+        if (isLock) color = GOLD_DARK
+        else color = dx === 1 ? GOLD_DARK : dx === CHEST_W - 2 ? GOLD_DARK : GOLD_MID
+      } else {
+        // Body row — darker wood.
+        color = dx === 1 ? WOOD_DARK : WOOD_MID
+      }
+      plot(ctx, x, y, color)
+    }
+  }
+
+  // Lock keyhole — single dark pixel dead centre of the strap.
+  const lockX = x0 + Math.floor(CHEST_W / 2)
+  plot(ctx, lockX, top + 2, OUTLINE)
+  // Gold highlight pips — sells the metal sheen.
+  plot(ctx, x0 + 1, top + 2, GOLD_LIGHT)
+  plot(ctx, x0 + CHEST_W - 2, top + 2, GOLD_LIGHT)
 }

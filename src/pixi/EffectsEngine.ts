@@ -38,6 +38,8 @@ export type AttachKind =
   | 'drip-pool'
   | 'grass'
   | 'embers'
+  | 'godray'
+  | 'coins'
 
 export interface AttachConfig {
   color?: number
@@ -330,6 +332,52 @@ interface AttachedEffect {
   grass?: GrassState
   // embers-specific state (only set for embers)
   embers?: EmberState
+  // godray-specific state (only set for godray)
+  godray?: GodrayState
+  // coins-specific state (only set for coins)
+  coins?: CoinState
+}
+
+/**
+ * Godray — rotating pixel-art beams of warm light emanating from the
+ * attached element. Used on the Pit's treasure islands: reads as the
+ * rock being blessed / haunted by a divine glow, a radically different
+ * signal from combat's embers or event's sparkle.
+ */
+interface GodraySpec {
+  /** Base angle of the ray, in radians. */
+  angle: number
+  /** Peak length in px. Varies per ray so the halo is irregular. */
+  length: number
+  /** Phase offset so every ray pulses on its own cycle. */
+  phase: number
+}
+
+interface GodrayState {
+  graphic: Graphics
+  rays: GodraySpec[]
+  rotation: number
+  time: number
+  color: number
+}
+
+/**
+ * Coins — small gold pips orbiting the attached element on an ellipse
+ * (not a sphere), so the motion reads as top-down / isometric. Used
+ * for shop islands: coins dance above the panel.
+ */
+interface CoinEntity {
+  g: Graphics
+  angle: number
+  angularVel: number
+  radius: number
+  bobPhase: number
+}
+
+interface CoinState {
+  entities: CoinEntity[]
+  time: number
+  color: number
 }
 
 let nextEffectId = 1
@@ -614,6 +662,14 @@ export class EffectsEngine {
       this.initEmbers(effect)
     }
 
+    if (kind === 'godray') {
+      this.initGodray(effect)
+    }
+
+    if (kind === 'coins') {
+      this.initCoins(effect)
+    }
+
     this.attached.push(effect)
 
     return { id, detach: () => this.detach(id) }
@@ -660,6 +716,14 @@ export class EffectsEngine {
     if (effect.embers) {
       for (const en of effect.embers.entities) en.g.destroy()
       effect.embers = undefined
+    }
+    if (effect.godray) {
+      effect.godray.graphic.destroy()
+      effect.godray = undefined
+    }
+    if (effect.coins) {
+      for (const c of effect.coins.entities) c.g.destroy()
+      effect.coins = undefined
     }
     this.attached.splice(idx, 1)
   }
@@ -768,6 +832,14 @@ export class EffectsEngine {
       }
       if (effect.kind === 'embers') {
         this.tickEmbers(effect, rect, dt)
+        continue
+      }
+      if (effect.kind === 'godray') {
+        this.tickGodray(effect, rect, dt)
+        continue
+      }
+      if (effect.kind === 'coins') {
+        this.tickCoins(effect, rect, dt)
         continue
       }
 
@@ -2042,6 +2114,144 @@ export class EffectsEngine {
     r.g.x = r.x
     r.g.y = r.y
   }
+
+  // =====================================================================
+  // GODRAY — pixel-art rotating beams of divine gold light. Used on
+  // treasure islands. Each "ray" is rendered as a row of discrete
+  // square pixels stepping outward from a centre, fading with distance
+  // and pulsing on its own phase. Sim-driven (no spawn cadence).
+  // =====================================================================
+  private initGodray(effect: AttachedEffect): void {
+    const graphic = new Graphics()
+    // Live on the ambient layer so it paints behind the particle bursts.
+    this.ambientLayer.addChild(graphic)
+    const rayCount = 10
+    const rays: GodraySpec[] = []
+    for (let i = 0; i < rayCount; i++) {
+      rays.push({
+        angle: (i / rayCount) * Math.PI * 2,
+        length: 22 + Math.random() * 16, // 22..38 px
+        phase: Math.random() * Math.PI * 2,
+      })
+    }
+    effect.godray = {
+      graphic,
+      rays,
+      rotation: 0,
+      time: 0,
+      color: effect.config.color,
+    }
+  }
+
+  private tickGodray(effect: AttachedEffect, rect: DOMRect, dt: number): void {
+    const s = effect.godray
+    if (!s) return
+    s.time += dt
+    s.rotation += dt * 0.35 // slow rotation
+
+    const cx = rect.left + rect.width / 2
+    const cy = rect.top + rect.height / 2
+    const g = s.graphic
+    g.clear()
+
+    const colorLight = lighten(s.color, 0.45)
+    const colorDark = darken(s.color, 0.1)
+
+    for (const ray of s.rays) {
+      const a = ray.angle + s.rotation
+      const pulse = 0.45 + 0.55 * (0.5 + 0.5 * Math.sin(s.time * 3.2 + ray.phase))
+      const len = ray.length * pulse
+      const dx = Math.cos(a)
+      const dy = Math.sin(a)
+
+      // Step along the ray, 2 px at a time. Each step is a square pip;
+      // size tapers from 2 at base to 1 at tip. Color tapers from
+      // bright rim at base toward mid at tip. Alpha tapers to zero.
+      const steps = Math.max(4, Math.round(len / 2))
+      for (let i = 1; i < steps; i++) {
+        const t = i / steps
+        const r = i * 2
+        const x = Math.round(cx + dx * r)
+        const y = Math.round(cy + dy * r)
+        const size = t < 0.35 ? 2 : 1
+        const alpha = (1 - t) * 0.75 * pulse
+        if (alpha < 0.05) continue
+        const color = t < 0.4 ? colorLight : t < 0.75 ? s.color : colorDark
+        g.rect(x - size / 2, y - size / 2, size, size)
+        g.fill({ color, alpha })
+      }
+    }
+
+    // Central halo — a small bright square at the source so the rays
+    // feel anchored, not just floating.
+    const halo = 0.7 + 0.3 * Math.sin(s.time * 4)
+    g.rect(Math.round(cx) - 2, Math.round(cy) - 2, 4, 4)
+    g.fill({ color: colorLight, alpha: 0.55 * halo })
+    g.rect(Math.round(cx) - 1, Math.round(cy) - 1, 2, 2)
+    g.fill({ color: 0xffffff, alpha: 0.7 * halo })
+  }
+
+  // =====================================================================
+  // COINS — gold pips orbit the attached element on an ellipse (isometric
+  // top-down), each bobbing slightly on its own phase. Simple, evocative,
+  // signals "shop" at a glance.
+  // =====================================================================
+  private initCoins(effect: AttachedEffect): void {
+    const count = 4
+    const entities: CoinEntity[] = []
+    for (let i = 0; i < count; i++) {
+      const g = new Graphics()
+      this.ambientLayer.addChild(g)
+      entities.push({
+        g,
+        angle: (i / count) * Math.PI * 2,
+        angularVel: 0.7 + Math.random() * 0.4,
+        radius: 16 + Math.random() * 6, // 16..22 px
+        bobPhase: Math.random() * Math.PI * 2,
+      })
+    }
+    effect.coins = {
+      entities,
+      time: 0,
+      color: effect.config.color,
+    }
+  }
+
+  private tickCoins(effect: AttachedEffect, rect: DOMRect, dt: number): void {
+    const s = effect.coins
+    if (!s) return
+    s.time += dt
+
+    const cx = rect.left + rect.width / 2
+    const cy = rect.top + rect.height / 2
+
+    const colorLight = lighten(s.color, 0.35)
+    const colorDark = darken(s.color, 0.35)
+
+    for (const c of s.entities) {
+      c.angle += c.angularVel * dt
+      const bob = Math.round(Math.sin(s.time * 3 + c.bobPhase) * 1.5)
+      // Elliptical orbit (y squashed) for a top-down isometric feel.
+      const x = cx + Math.cos(c.angle) * c.radius
+      const y = cy + Math.sin(c.angle) * c.radius * 0.38 + bob
+
+      c.g.clear()
+      // 2×2 gold pip with one brighter highlight pixel.
+      c.g.rect(0, 0, 2, 2)
+      c.g.fill({ color: colorDark })
+      c.g.rect(0, 0, 2, 1)
+      c.g.fill({ color: s.color })
+      c.g.rect(0, 0, 1, 1)
+      c.g.fill({ color: colorLight })
+      c.g.x = Math.round(x) - 1
+      c.g.y = Math.round(y) - 1
+
+      // Dim the coins that are behind (sin(angle) < 0 = back of the
+      // ellipse in top-down projection) so the orbit reads as 3D.
+      const behind = Math.sin(c.angle)
+      c.g.alpha = behind < 0 ? 0.35 : 1
+    }
+  }
 }
 
 // =====================================================================
@@ -2129,16 +2339,20 @@ const DEFAULT_ATTACH_COLOR: Record<AttachKind, number> = {
   drips: COLOR_BONE,
   'drip-pool': COLOR_RED,
   grass: COLOR_GREEN,
-  embers: 0xd4a147, // warm amber — matches button default border
+  embers: 0xd4a147,
+  godray: 0xf0c050, // radiant gold
+  coins: 0xf0c040, // coin gold
 }
 
 const ATTACH_CADENCE: Record<AttachKind, number> = {
-  aura: 0, // handled by orbit
-  ripple: 0, // handled via rippleAcc in engine
+  aura: 0,
+  ripple: 0,
   pulse: 0.42,
   sparkle: 0.8,
   drips: 0.35,
-  'drip-pool': 0, // handled via drip simulation
-  grass: 0, // per-blade growth rates
-  embers: 0.055, // ~18 ember spawns per second
+  'drip-pool': 0,
+  grass: 0,
+  embers: 0.055,
+  godray: 0, // fully sim-driven, no per-tick spawn
+  coins: 0, // fully sim-driven
 }

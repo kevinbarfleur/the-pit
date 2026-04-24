@@ -30,10 +30,10 @@ const PREVIEW_ENTRIES: PreviewEntry[] = [
   { type: 'elite', idSeed: 'ilot-preview:elite', label: 'Elite', hoverEffect: 'embers (gild)', blurb: 'gild embers — named threat' },
   { type: 'boss', idSeed: 'ilot-preview:boss', label: 'Boss', hoverEffect: 'embers (red)', blurb: 'crimson embers — floor-keeper' },
   { type: 'event', idSeed: 'ilot-preview:event', label: 'Event', hoverEffect: 'sparkle (violet)', blurb: 'violet sparkle — something speaks' },
-  { type: 'shop', idSeed: 'ilot-preview:shop', label: 'Shop', hoverEffect: 'ripple (cyan)', blurb: 'cyan ripple — merchant waits' },
+  { type: 'shop', idSeed: 'ilot-preview:shop', label: 'Shop', hoverEffect: 'coins (gold orbit)', blurb: 'coins orbiting — merchant waits' },
   { type: 'rest', idSeed: 'ilot-preview:rest', label: 'Rest', hoverEffect: 'grass (green)', blurb: 'green grass — a quiet moment' },
   { type: 'cache', idSeed: 'ilot-preview:cache', label: 'Cache', hoverEffect: 'sparkle (bone)', blurb: 'bone sparkle — sealed chest' },
-  { type: 'treasure', idSeed: 'ilot-preview:treasure', label: 'Treasure', hoverEffect: 'embers (amber)', blurb: 'amber embers — gleaming' },
+  { type: 'treasure', idSeed: 'ilot-preview:treasure', label: 'Treasure', hoverEffect: 'godray (gold)', blurb: 'divine rays + chest — gleaming' },
 ]
 
 function IslandsPreview() {

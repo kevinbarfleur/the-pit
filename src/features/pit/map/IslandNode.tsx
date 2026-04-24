@@ -39,10 +39,10 @@ const TYPE_HOVER: Record<PitNodeType, AttachKind> = {
   elite: 'embers',
   boss: 'embers',
   event: 'sparkle',
-  shop: 'ripple',
+  shop: 'coins',
   rest: 'grass',
   cache: 'sparkle',
-  treasure: 'embers',
+  treasure: 'godray',
 }
 
 const TYPE_COLOR: Record<PitNodeType, number> = {
@@ -50,10 +50,10 @@ const TYPE_COLOR: Record<PitNodeType, number> = {
   elite: 0xb58b3a,
   boss: 0xd45a5a,
   event: 0x9a7bd4,
-  shop: 0x6ec3d4,
+  shop: 0xf0c040,
   rest: 0x9ae66e,
   cache: 0xd8cfb8,
-  treasure: 0xd4a147,
+  treasure: 0xf0c050,
 }
 
 /**
