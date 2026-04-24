@@ -99,6 +99,11 @@ export function IslandNode({ node, state, canCommit, style }: IslandNodeProps) {
   // and don't bleed over the signpost or the gap above the stalactites.
   // Pointer events still listen on the button so the hover triggers
   // cover the full visual.
+  //
+  // For grass specifically, we switch to the `patch` distribution +
+  // compress blade heights so the visual reads as a short isometric
+  // patch of grass on the cap's top surface (rather than tall blades
+  // growing from a rectangle edge, which is the button-style default).
   const hoverEnabled =
     state !== 'locked' && state !== 'bypassed' && state !== 'current'
   useEffect(() => {
@@ -107,9 +112,17 @@ export function IslandNode({ node, state, canCommit, style }: IslandNodeProps) {
     const cap = capZoneRef.current
     if (!btn || !cap) return
 
-    const { id, detach } = engine.attachWithHandle(cap, TYPE_HOVER[node.type], {
-      color: TYPE_COLOR[node.type],
-    })
+    const kind = TYPE_HOVER[node.type]
+    const attachConfig =
+      kind === 'grass'
+        ? {
+            color: TYPE_COLOR[node.type],
+            shape: 'patch' as const,
+            heightScale: 0.45,
+            countScale: 0.55,
+          }
+        : { color: TYPE_COLOR[node.type] }
+    const { id, detach } = engine.attachWithHandle(cap, kind, attachConfig)
     engine.setEnabled(id, false)
 
     const onEnter = () => engine.setEnabled(id, true)
@@ -162,26 +175,19 @@ export function IslandNode({ node, state, canCommit, style }: IslandNodeProps) {
   const plaqueHCss = signpost.plaqueH * SCALE
   const tiltDeg = (Math.atan(signpost.tiltRise) * 180) / Math.PI
 
-  // Effect anchor zone — a tiny patch at the **foot of the signpost**,
-  // on the cap's top surface. The island reads as an isometric piece
-  // of earth with a stake planted in it; effects should look like
-  // they're *happening on that ground, around the stake*, not
-  // radiating from the whole tile. Grass becomes a tuft at the foot
-  // of the panel, blood pools seep from its base, embers glow around
-  // the stake, sparkle orbits it.
-  //
-  // The patch tracks the signpost's own position: it inherits
-  // `plaqueCenterX` so it follows the signpost's horizontal jitter
-  // (±3 px), and sits just below the plaque's bottom edge so grass
-  // blades anchor on the cap surface right where the panel meets it.
-  const patchCx = signpost.plaqueCenterX
-  const patchCyNative = signpost.plaqueCenterY + signpost.plaqueH / 2 + 1
-  const PATCH_W_NATIVE = 10
-  const PATCH_H_NATIVE = 2
-  const capZoneLeftCss = (patchCx - PATCH_W_NATIVE / 2) * SCALE
-  const capZoneTopCss = patchCyNative * SCALE
-  const capZoneWidthCss = PATCH_W_NATIVE * SCALE
-  const capZoneHeightCss = PATCH_H_NATIVE * SCALE
+  // Effect anchor zone — the **visible top surface of the cap**, used
+  // as a patch-distribution area for grass (and as an origin for other
+  // radiating effects). The island is drawn in an isometric-looking
+  // style, with the top of the rock reading as a slab of ground you
+  // could plant a panel into; this zone is that slab. Grass scatters
+  // across its area as short blades, reading as a tuft of grass
+  // growing on the ground rather than a spray coming off a button's
+  // edge. Embers, sparkle, ripple and pulse then all radiate from the
+  // centre of this slab, which sits under the signpost.
+  const capZoneTopCss = 11 * SCALE // just below the cap's highest pixel
+  const capZoneHeightCss = 10 * SCALE // thin slab of visible top surface
+  const capZoneLeftCss = 7 * SCALE
+  const capZoneWidthCss = 22 * SCALE
 
   return (
     <button

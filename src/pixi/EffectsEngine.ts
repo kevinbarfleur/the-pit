@@ -42,6 +42,21 @@ export type AttachKind =
 export interface AttachConfig {
   color?: number
   intensity?: number
+  /**
+   * Grass-specific: how blades are distributed across the attached rect.
+   *   - 'edge' (default): blades anchor on the top edge + side tufts,
+   *     growing upward. Reads as "grass on the top of a button".
+   *   - 'patch': blades scatter randomly across the rect's area,
+   *     anchoring on arbitrary (x, y) points. Reads as a top-down
+   *     patch of grass on a surface — used by the isometric Pit
+   *     islands where grass grows ON the cap rather than AROUND a
+   *     rectangle.
+   */
+  shape?: 'edge' | 'patch'
+  /** Multiplier applied to blade target heights. Default 1. */
+  heightScale?: number
+  /** Multiplier applied to blade count. Default 1. */
+  countScale?: number
 }
 
 // --------------------- color helpers ---------------------
@@ -197,8 +212,18 @@ interface DripState {
  * blade displaced more than the base (wind effect scales with height²).
  */
 interface GrassBlade {
-  side: 'top' | 'left' | 'right'
-  originFrac: number // 0..1 along its host edge
+  /**
+   * Where on the host rect the blade is anchored.
+   *   - 'top' | 'left' | 'right': classic edge-anchored blade. `originFrac`
+   *     is the 0..1 position along that edge.
+   *   - 'patch': anchored at a (x, y) point inside the rect's area.
+   *     `originFrac` is used as the x fraction; `originFracY` is the y.
+   *     Used by isometric island surfaces where grass grows ON the
+   *     rock's top face rather than AROUND its rectangle.
+   */
+  side: 'top' | 'left' | 'right' | 'patch'
+  originFrac: number // 0..1 along its host edge (x for 'patch')
+  originFracY?: number // 0..1 y-fraction, set for 'patch'
 
   // Static per-blade shape (set once)
   targetHeight: number // total segment count the blade wants to reach
@@ -555,6 +580,9 @@ export class EffectsEngine {
     const resolved: Required<AttachConfig> = {
       color: config.color ?? DEFAULT_ATTACH_COLOR[kind],
       intensity: config.intensity ?? 1,
+      shape: config.shape ?? 'edge',
+      heightScale: config.heightScale ?? 1,
+      countScale: config.countScale ?? 1,
     }
     const cadence = ATTACH_CADENCE[kind]
     const effect: AttachedEffect = {
@@ -1148,8 +1176,6 @@ export class EffectsEngine {
     const blades: GrassBlade[] = []
     const baseColor = effect.config.color
 
-    // Palette variants for depth. Without parsing the source color we work
-    // in HSL-ish via lighten() and a manual darken.
     const darker = darken(baseColor, 0.24)
     const lighter = lighten(baseColor, 0.22)
 
@@ -1160,20 +1186,41 @@ export class EffectsEngine {
       return baseColor
     }
 
-    // Large grass population on the top edge for the dense-field feel.
-    const topCount = 34
-    for (let i = 0; i < topCount; i++) {
-      blades.push(this.buildBlade('top', (i + 0.5) / topCount + (Math.random() - 0.5) * 0.035, pickColor()))
-    }
+    const heightScale = effect.config.heightScale
+    const countScale = effect.config.countScale
 
-    // Tufts on the upper 30% of each side edge — small concentrations near
-    // the top corners, as if the field spills over the button's rim.
-    const sideCount = 5
-    for (let i = 0; i < sideCount; i++) {
-      const base = (i + 0.5) / sideCount
-      const frac = base * 0.3
-      blades.push(this.buildBlade('left', frac, pickColor()))
-      blades.push(this.buildBlade('right', frac, pickColor()))
+    if (effect.config.shape === 'patch') {
+      // Area distribution: blades scatter randomly across the rect. The
+      // caller typically provides a small, wide rect matching the top
+      // surface of an island cap, producing a pixel-art patch of short
+      // grass growing on the visible ground — read as isometric, not as
+      // grass growing up from a rectangular edge.
+      const count = Math.max(4, Math.round(20 * countScale))
+      for (let i = 0; i < count; i++) {
+        const fx = Math.random()
+        const fy = Math.random()
+        blades.push(this.buildBlade('patch', fx, pickColor(), heightScale, fy))
+      }
+    } else {
+      // Classic edge distribution — used by buttons.
+      const topCount = Math.max(4, Math.round(34 * countScale))
+      for (let i = 0; i < topCount; i++) {
+        blades.push(
+          this.buildBlade(
+            'top',
+            (i + 0.5) / topCount + (Math.random() - 0.5) * 0.035,
+            pickColor(),
+            heightScale,
+          ),
+        )
+      }
+      const sideCount = Math.max(1, Math.round(5 * countScale))
+      for (let i = 0; i < sideCount; i++) {
+        const base = (i + 0.5) / sideCount
+        const frac = base * 0.3
+        blades.push(this.buildBlade('left', frac, pickColor(), heightScale))
+        blades.push(this.buildBlade('right', frac, pickColor(), heightScale))
+      }
     }
 
     effect.grass = {
@@ -1186,28 +1233,37 @@ export class EffectsEngine {
   }
 
   private buildBlade(
-    side: 'top' | 'left' | 'right',
+    side: GrassBlade['side'],
     originFrac: number,
     color: number,
+    heightScale: number = 1,
+    originFracY?: number,
   ): GrassBlade {
     // Most blades point straight up; side tufts lean slightly outward first
-    // then the wind + natural curve carry them up.
+    // then the wind + natural curve carry them up. Patch blades get a
+    // modest jitter — they should stand up but not perfectly parallel.
     let baseAngle = -Math.PI / 2
     if (side === 'left') baseAngle += -0.25 + (Math.random() - 0.5) * 0.35
     else if (side === 'right') baseAngle += 0.25 + (Math.random() - 0.5) * 0.35
+    else if (side === 'patch') baseAngle += (Math.random() - 0.5) * 0.28
     else baseAngle += (Math.random() - 0.5) * 0.4 // top blades get wider jitter
 
-    // Slight natural bend (same direction each segment)
     const naturalCurve = (Math.random() - 0.5) * 0.035
 
-    // Height distribution: short / medium / tall for field variety.
+    // Height distribution. Patch mode caps the upper end so an isometric
+    // tuft doesn't grow taller than its host rock. Every mode is then
+    // multiplied by `heightScale` before rounding.
     const r = Math.random()
-    let targetHeight: number
-    if (side !== 'top') {
-      targetHeight = 3 + Math.floor(Math.random() * 7) // 3..9 — lower on sides
-    } else if (r < 0.32) targetHeight = 3 + Math.floor(Math.random() * 4) // 3..6
-    else if (r < 0.8) targetHeight = 7 + Math.floor(Math.random() * 8) // 7..14
-    else targetHeight = 15 + Math.floor(Math.random() * 8) // 15..22
+    let rawHeight: number
+    if (side === 'patch') {
+      // Always short: 2..6 px.
+      rawHeight = 2 + Math.floor(Math.random() * 5)
+    } else if (side !== 'top') {
+      rawHeight = 3 + Math.floor(Math.random() * 7)
+    } else if (r < 0.32) rawHeight = 3 + Math.floor(Math.random() * 4)
+    else if (r < 0.8) rawHeight = 7 + Math.floor(Math.random() * 8)
+    else rawHeight = 15 + Math.floor(Math.random() * 8)
+    const targetHeight = Math.max(1, Math.round(rawHeight * heightScale))
 
     // Taller blades sway more; shorter barely move. Wind amplitude is scaled
     // again by height² in the tick so the base stays anchored.
@@ -1220,6 +1276,10 @@ export class EffectsEngine {
     return {
       side,
       originFrac: Math.min(0.98, Math.max(0.02, originFrac)),
+      originFracY:
+        originFracY === undefined
+          ? undefined
+          : Math.min(0.98, Math.max(0.02, originFracY)),
       targetHeight,
       baseAngle,
       naturalCurve,
@@ -1431,7 +1491,12 @@ export class EffectsEngine {
   private resolveGrassOrigin(b: GrassBlade, rect: DOMRect): { x: number; y: number } {
     if (b.side === 'top') return { x: rect.left + rect.width * b.originFrac, y: rect.top }
     if (b.side === 'left') return { x: rect.left, y: rect.top + rect.height * b.originFrac }
-    return { x: rect.right, y: rect.top + rect.height * b.originFrac }
+    if (b.side === 'right') return { x: rect.right, y: rect.top + rect.height * b.originFrac }
+    // 'patch': origin is an arbitrary (x, y) inside the rect.
+    return {
+      x: rect.left + rect.width * b.originFrac,
+      y: rect.top + rect.height * (b.originFracY ?? 0.5),
+    }
   }
 
   // =========================================================
