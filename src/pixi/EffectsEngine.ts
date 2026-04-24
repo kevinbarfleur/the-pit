@@ -129,13 +129,24 @@ const ORBIT_POOL_SIZE = 48
  * cells clear and the state is ready for the next hover.
  */
 interface DripState {
+  // Bottom pool (height field extending downward from button bottom)
   cells: number[]
   cellCount: number
-  // Random detach threshold offset per cell (refreshed after each pinch)
   detachMargin: number[]
-  // Throttle accumulators
   flowAcc: number
   drainAcc: number
+
+  // Top band (height field extending upward above the button top edge)
+  topCells: number[]
+  topFlowAcc: number
+
+  // Side streams — vertical liquid coating the left/right edges of the button.
+  // The "length" is how many px of the edge are currently covered, from the top.
+  leftLength: number
+  rightLength: number
+  leftDropAcc: number
+  rightDropAcc: number
+
   graphic: Graphics
 }
 
@@ -424,6 +435,12 @@ export class EffectsEngine {
       detachMargin: new Array(cellCount).fill(0).map(() => Math.random() * 3),
       flowAcc: 0,
       drainAcc: 0,
+      topCells: new Array(cellCount).fill(0),
+      topFlowAcc: 0,
+      leftLength: 0,
+      rightLength: 0,
+      leftDropAcc: 0,
+      rightDropAcc: 0,
       graphic,
     }
   }
@@ -689,37 +706,217 @@ export class EffectsEngine {
       if (s.cells[i] < 0) s.cells[i] = 0
     }
 
-    // ---------- Draw ----------
+    // =========================================================
+    // TOP BAND — thin liquid strip above the button's top edge
+    // =========================================================
+    const topMax = 3.2
+
+    // Diffusion (lighter than the bottom's)
+    const topK = 0.15
+    const topNext = s.topCells.slice()
+    for (let i = 0; i < s.cellCount; i++) {
+      const left = i > 0 ? s.topCells[i - 1] : s.topCells[i]
+      const right = i < s.cellCount - 1 ? s.topCells[i + 1] : s.topCells[i]
+      topNext[i] = s.topCells[i] + topK * (left + right - 2 * s.topCells[i])
+    }
+    s.topCells = topNext
+
+    if (effect.enabled) {
+      // Uniform pour + small random ripple so the strip isn't a perfect line
+      for (let i = 0; i < s.cellCount; i++) {
+        s.topCells[i] += (2.2 + Math.random() * 1.4) * dt
+      }
+      s.topFlowAcc += dt
+      if (s.topFlowAcc >= 0.1) {
+        s.topFlowAcc = 0
+        const i = Math.floor(Math.random() * s.cellCount)
+        s.topCells[i] += 0.4 + Math.random() * 0.5
+      }
+    } else {
+      for (let i = 0; i < s.cellCount; i++) {
+        s.topCells[i] = Math.max(0, s.topCells[i] - 5 * dt)
+      }
+    }
+
+    // Edge taper on top band too (subtle)
+    for (let i = 0; i < s.cellCount; i++) {
+      let topM = topMax
+      if (i < 2) topM = Math.min(topMax, 0.6 + i * 1.2)
+      if (i >= s.cellCount - 2) topM = Math.min(topMax, 0.6 + (s.cellCount - 1 - i) * 1.2)
+      if (s.topCells[i] > topM) s.topCells[i] = topM
+      if (s.topCells[i] < 0) s.topCells[i] = 0
+    }
+
+    // =========================================================
+    // SIDE STREAMS — liquid cascading down the left & right edges
+    // =========================================================
+    const sideGrow = 160 // px/s
+    const sideRetreat = 240 // px/s
+    const sideMax = Math.max(0, rect.height - 2)
+
+    if (effect.enabled) {
+      s.leftLength = Math.min(sideMax, s.leftLength + sideGrow * dt)
+      s.rightLength = Math.min(sideMax, s.rightLength + sideGrow * dt)
+
+      // Once the stream has reached ~70% of the side, it "overflows" into
+      // the bottom pool at that corner. Edge-tapered bottom cells can still
+      // fill to their caps (~2..5 px) and the diffusion step carries mass
+      // inward.
+      if (s.leftLength > sideMax * 0.7) {
+        s.cells[0] += 3 * dt
+        if (s.cellCount > 1) s.cells[1] += 2 * dt
+      }
+      if (s.rightLength > sideMax * 0.7) {
+        s.cells[s.cellCount - 1] += 3 * dt
+        if (s.cellCount > 1) s.cells[s.cellCount - 2] += 2 * dt
+      }
+
+      // Side droplets: small pixels spraying outward from the stream's
+      // leading tip every ~250ms once the stream is long enough to see.
+      s.leftDropAcc += dt
+      if (s.leftLength > 10 && s.leftDropAcc >= 0.22) {
+        s.leftDropAcc = 0
+        this.spawnSideDroplet(effect, rect, 'left')
+      }
+      s.rightDropAcc += dt
+      if (s.rightLength > 10 && s.rightDropAcc >= 0.22) {
+        s.rightDropAcc = 0
+        this.spawnSideDroplet(effect, rect, 'right')
+      }
+    } else {
+      s.leftLength = Math.max(0, s.leftLength - sideRetreat * dt)
+      s.rightLength = Math.max(0, s.rightLength - sideRetreat * dt)
+    }
+
+    // =========================================================
+    // DRAW — a single Graphics rebuilt from scratch each frame
+    // =========================================================
     s.graphic.clear()
     const hasBody = s.cells.some((c) => c > 0.15)
-    if (!hasBody) return
+    const hasTop = s.topCells.some((c) => c > 0.15)
+    const hasSides = s.leftLength > 0.3 || s.rightLength > 0.3
+    if (!hasBody && !hasTop && !hasSides) return
 
     const cellWidth = rect.width / s.cellCount
     const baseY = rect.bottom
+    const topY = rect.top
 
-    // Body pass — one rect per cell; overdraw 0.6 px horizontally to hide
-    // sub-pixel seams between neighbouring bars.
-    for (let i = 0; i < s.cellCount; i++) {
-      const h = s.cells[i]
-      if (h < 0.2) continue
-      const x = rect.left + i * cellWidth
-      const w = cellWidth + 0.6
-      s.graphic.rect(Math.round(x), Math.round(baseY), Math.max(1, Math.round(w)), Math.max(1, Math.round(h)))
-    }
-    s.graphic.fill({ color, alpha: 0.92 })
+    // ---- BOTTOM POOL ----
+    if (hasBody) {
+      // Body pass
+      for (let i = 0; i < s.cellCount; i++) {
+        const h = s.cells[i]
+        if (h < 0.2) continue
+        const x = rect.left + i * cellWidth
+        const w = cellWidth + 0.6
+        s.graphic.rect(Math.round(x), Math.round(baseY), Math.max(1, Math.round(w)), Math.max(1, Math.round(h)))
+      }
+      s.graphic.fill({ color, alpha: 0.92 })
 
-    // Specular highlight pass — only on cells thick enough to "catch light".
-    let anySpec = false
-    for (let i = 0; i < s.cellCount; i++) {
-      if (s.cells[i] < 1) continue
-      const x = rect.left + i * cellWidth
-      const w = cellWidth + 0.6
-      s.graphic.rect(Math.round(x), Math.round(baseY), Math.max(1, Math.round(w)), 1)
-      anySpec = true
+      // Bottom specular
+      let anySpec = false
+      for (let i = 0; i < s.cellCount; i++) {
+        if (s.cells[i] < 1) continue
+        const x = rect.left + i * cellWidth
+        const w = cellWidth + 0.6
+        s.graphic.rect(Math.round(x), Math.round(baseY), Math.max(1, Math.round(w)), 1)
+        anySpec = true
+      }
+      if (anySpec) s.graphic.fill({ color: lighten(color, 0.42), alpha: 0.88 })
     }
-    if (anySpec) {
-      s.graphic.fill({ color: lighten(color, 0.42), alpha: 0.88 })
+
+    // ---- TOP BAND ----
+    if (hasTop) {
+      for (let i = 0; i < s.cellCount; i++) {
+        const h = s.topCells[i]
+        if (h < 0.2) continue
+        const x = rect.left + i * cellWidth
+        const w = cellWidth + 0.6
+        const yTop = topY - Math.max(1, Math.round(h))
+        s.graphic.rect(Math.round(x), yTop, Math.max(1, Math.round(w)), Math.max(1, Math.round(h)))
+      }
+      s.graphic.fill({ color, alpha: 0.88 })
+
+      // Specular row on top surface (the wet shine facing the sky)
+      let anyTopSpec = false
+      for (let i = 0; i < s.cellCount; i++) {
+        const h = s.topCells[i]
+        if (h < 1) continue
+        const x = rect.left + i * cellWidth
+        const w = cellWidth + 0.6
+        const yTop = topY - Math.max(1, Math.round(h))
+        s.graphic.rect(Math.round(x), yTop, Math.max(1, Math.round(w)), 1)
+        anyTopSpec = true
+      }
+      if (anyTopSpec) s.graphic.fill({ color: lighten(color, 0.42), alpha: 0.85 })
     }
+
+    // ---- SIDE STREAMS ----
+    if (hasSides) {
+      if (s.leftLength > 0.3) {
+        s.graphic.rect(
+          Math.round(rect.left - 1),
+          Math.round(rect.top),
+          2,
+          Math.max(1, Math.round(s.leftLength)),
+        )
+      }
+      if (s.rightLength > 0.3) {
+        s.graphic.rect(
+          Math.round(rect.right - 1),
+          Math.round(rect.top),
+          2,
+          Math.max(1, Math.round(s.rightLength)),
+        )
+      }
+      s.graphic.fill({ color, alpha: 0.9 })
+
+      // 1px bright edge on each stream (the outer lip "catches light")
+      if (s.leftLength > 2) {
+        s.graphic.rect(
+          Math.round(rect.left - 1),
+          Math.round(rect.top),
+          1,
+          Math.max(1, Math.round(s.leftLength)),
+        )
+      }
+      if (s.rightLength > 2) {
+        s.graphic.rect(
+          Math.round(rect.right),
+          Math.round(rect.top),
+          1,
+          Math.max(1, Math.round(s.rightLength)),
+        )
+      }
+      if (s.leftLength > 2 || s.rightLength > 2) {
+        s.graphic.fill({ color: lighten(color, 0.42), alpha: 0.7 })
+      }
+    }
+  }
+
+  private spawnSideDroplet(effect: AttachedEffect, rect: DOMRect, side: 'left' | 'right'): void {
+    const p = this.pickFreeParticle()
+    if (!p) return
+    const s = effect.drip
+    if (!s) return
+    const length = side === 'left' ? s.leftLength : s.rightLength
+    const edgeX = side === 'left' ? rect.left - 1 : rect.right + 1
+    // spawn somewhere between the middle and tip of the stream
+    const alongY = rect.top + length * (0.5 + Math.random() * 0.5)
+    p.vx = (side === 'left' ? -1 : 1) * (2 + Math.random() * 4)
+    p.vy = 30 + Math.random() * 30
+    p.gravity = 620
+    p.life = 0.7 + Math.random() * 0.4
+    p.maxLife = p.life
+    p.size = Math.random() < 0.3 ? 2 : 1
+    p.color = effect.config.color
+    p.fadeMode = 'late'
+    this.drawParticle(p)
+    p.g.x = edgeX
+    p.g.y = alongY
+    p.g.alpha = 1
+    p.g.visible = true
+    p.inUse = true
   }
 
   private spawnLiquidDroplet(
