@@ -167,7 +167,7 @@ describe('interactive primitives', () => {
     expect(engine.emitBurst).not.toHaveBeenCalled()
   })
 
-  it('Button primary+juicy attaches ivy with green color', () => {
+  it('Button primary+juicy attaches grass with green color', () => {
     const engine = stubEngine()
     render(
       <EffectsContext.Provider value={engine}>
@@ -178,7 +178,7 @@ describe('interactive primitives', () => {
     )
     expect(engine.attachWithHandle).toHaveBeenCalled()
     const call = (engine.attachWithHandle as ReturnType<typeof vi.fn>).mock.calls[0]
-    expect(call[1]).toBe('ivy')
+    expect(call[1]).toBe('grass')
     expect(call[2]).toEqual(expect.objectContaining({ color: 0x9ae66e }))
   })
 

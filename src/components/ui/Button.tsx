@@ -22,7 +22,7 @@ interface ButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'chi
 //   - default: amber embers rising (buoyancy)
 //   - ghost: no hover effect (kept intentionally muted; click still puffs)
 const HOVER_KIND: Record<ButtonVariant, AttachKind | null> = {
-  primary: 'ivy',
+  primary: 'grass',
   danger: 'drip-pool',
   default: 'embers',
   ghost: null,
@@ -48,7 +48,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   const shouldHover = juicy === true && hoverKind !== null
   useHoverEffect(
     internalRef,
-    hoverKind ?? 'ivy',
+    hoverKind ?? 'grass',
     { color: EFFECT_COLOR[variant] },
     shouldHover,
   )

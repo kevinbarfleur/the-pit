@@ -36,7 +36,7 @@ export type AttachKind =
   | 'sparkle'
   | 'drips'
   | 'drip-pool'
-  | 'ivy'
+  | 'grass'
   | 'embers'
 
 export interface AttachConfig {
@@ -69,6 +69,16 @@ function lighten(color: number, amount: number): number {
   const lg = Math.min(255, Math.round(g + (255 - g) * amount))
   const lb = Math.min(255, Math.round(b + (255 - b) * amount))
   return (lr << 16) | (lg << 8) | lb
+}
+
+function darken(color: number, amount: number): number {
+  const r = (color >> 16) & 0xff
+  const g = (color >> 8) & 0xff
+  const b = color & 0xff
+  const dr = Math.max(0, Math.round(r * (1 - amount)))
+  const dg = Math.max(0, Math.round(g * (1 - amount)))
+  const db = Math.max(0, Math.round(b * (1 - amount)))
+  return (dr << 16) | (dg << 8) | db
 }
 
 // --------------------- pool structures ---------------------
@@ -158,26 +168,41 @@ interface DripState {
   graphic: Graphics
 }
 
-/** One pixel-art tendril growing from a button edge outward and upward. */
-interface IvyTendril {
-  side: 'top' | 'right' | 'bottom' | 'left'
-  originFrac: number // 0..1, placement along the edge
-  angle: number // current growth angle in radians (−π/2 = up, 0 = right)
-  spin: number // radians added per new segment (coiling)
-  upwardBias: number // per-step tilt toward up (0..0.2)
-  wobble: number // per-step random jitter amplitude (0..0.35)
-  segments: Array<{ dx: number; dy: number }>
-  targetLength: number
-  growInterval: number
-  growAcc: number
-  state: 'growing' | 'idle' | 'retracting' | 'dead'
+/**
+ * A tall grass blade. Anchored at an origin on the button's top (or upper
+ * side) edge, growing upward with a gentle natural curve. Every frame its
+ * segments are recomputed by walking up the blade and applying per-segment
+ * wind sway — the whole blade bends like a cantilever, with the top of the
+ * blade displaced more than the base (wind effect scales with height²).
+ */
+interface GrassBlade {
+  side: 'top' | 'left' | 'right'
+  originFrac: number // 0..1 along its host edge
+
+  // Static per-blade shape (set once)
+  targetHeight: number // total segment count the blade wants to reach
+  baseAngle: number // mostly −π/2 with a small horizontal jitter
+  naturalCurve: number // constant per-segment angle drift (slight lean)
   thickness: 1 | 2
-  leafAt: number // segment index for a leaf accent (−1 = none)
+  color: number
+  hasSeed: boolean
+  swayAmplitude: number // how strongly this blade bends in wind
+  windPhase: number // phase offset so the field is not all in sync
+
+  // Animation state
+  currentHeight: number // smoothly interpolated 0..targetHeight
+  growRate: number // segments per second while growing
+  state: 'growing' | 'idle' | 'retracting' | 'dead'
+
+  // Scratch, written each frame
+  tipX: number
+  tipY: number
 }
 
-interface IvyState {
-  tendrils: IvyTendril[]
+interface GrassState {
+  blades: GrassBlade[]
   graphic: Graphics
+  windTime: number
   color: number
 }
 
@@ -219,8 +244,8 @@ interface AttachedEffect {
   enabled: boolean
   // drip-pool-specific state (only set for drip-pool)
   drip?: DripState
-  // ivy-specific state (only set for ivy)
-  ivy?: IvyState
+  // grass-specific state (only set for grass)
+  grass?: GrassState
   // embers-specific state (only set for embers)
   embers?: EmberState
 }
@@ -479,8 +504,8 @@ export class EffectsEngine {
       this.initDripPool(effect)
     }
 
-    if (kind === 'ivy') {
-      this.initIvy(effect)
+    if (kind === 'grass') {
+      this.initGrass(effect)
     }
 
     if (kind === 'embers') {
@@ -526,9 +551,9 @@ export class EffectsEngine {
       effect.drip.graphic.destroy()
       effect.drip = undefined
     }
-    if (effect.ivy) {
-      effect.ivy.graphic.destroy()
-      effect.ivy = undefined
+    if (effect.grass) {
+      effect.grass.graphic.destroy()
+      effect.grass = undefined
     }
     if (effect.embers) {
       for (const en of effect.embers.entities) en.g.destroy()
@@ -628,15 +653,15 @@ export class EffectsEngine {
       effect.lastRect = effect.el.getBoundingClientRect()
       const rect = effect.lastRect
 
-      // drip-pool, ivy and embers all tick regardless of enabled state: they
-      // have drain/retract/fade-out phases that run when enabled=false, and
-      // must follow the button across scrolls during that outro.
+      // drip-pool, grass and embers all tick regardless of enabled state:
+      // they have drain/retract/fade-out phases that run when enabled=false,
+      // and must follow the button across scrolls during that outro.
       if (effect.kind === 'drip-pool') {
         this.tickDripPool(effect, rect, dt)
         continue
       }
-      if (effect.kind === 'ivy') {
-        this.tickIvy(effect, rect, dt)
+      if (effect.kind === 'grass') {
+        this.tickGrass(effect, rect, dt)
         continue
       }
       if (effect.kind === 'embers') {
@@ -1040,165 +1065,191 @@ export class EffectsEngine {
   }
 
   // =========================================================
-  // IVY — pixel tendrils grow from the 4 button edges on hover,
-  //        retract pixel-by-pixel on leave.
+  // GRASS — tall grass blades growing upward from the button's
+  //          top edge and upper corners, bending in the wind.
   // =========================================================
-  private initIvy(effect: AttachedEffect): void {
+  private initGrass(effect: AttachedEffect): void {
     const graphic = new Graphics()
     this.dripLayer.addChild(graphic)
-    const tendrils: IvyTendril[] = []
-    const sides: Array<'top' | 'right' | 'bottom' | 'left'> = ['top', 'right', 'bottom', 'left']
-    for (const side of sides) {
-      // Lush foliage: 7-9 tendrils per side, with the top getting the most
-      // (plants reach upward) and the sides having slightly more than bottom.
-      const count = side === 'top' ? 9 : side === 'bottom' ? 7 : 8
-      for (let i = 0; i < count; i++) {
-        const originFrac = (i + 0.5) / count + (Math.random() - 0.5) * 0.12
+    const blades: GrassBlade[] = []
+    const baseColor = effect.config.color
 
-        // Initial angle anchored perpendicular to the edge with small jitter
-        const jit = (Math.random() - 0.5) * 0.55
-        let initAngle: number
-        if (side === 'top') initAngle = -Math.PI / 2 + jit
-        else if (side === 'right') initAngle = 0 + jit
-        else if (side === 'bottom') initAngle = Math.PI / 2 + jit
-        else initAngle = Math.PI + jit
+    // Palette variants for depth. Without parsing the source color we work
+    // in HSL-ish via lighten() and a manual darken.
+    const darker = darken(baseColor, 0.24)
+    const lighter = lighten(baseColor, 0.22)
 
-        // Upward gravitropism — plants curve toward the sky. Top tendrils
-        // already point up (low bias). Side tendrils curve up over distance.
-        // Bottom tendrils need a strong bias to U-turn back up.
-        let upwardBias: number
-        if (side === 'top') upwardBias = 0.01 + Math.random() * 0.03
-        else if (side === 'bottom') upwardBias = 0.11 + Math.random() * 0.09
-        else upwardBias = 0.06 + Math.random() * 0.06
-
-        // 30% of tendrils coil — constant per-step rotation
-        const spin = Math.random() < 0.3
-          ? (Math.random() < 0.5 ? -1 : 1) * (0.08 + Math.random() * 0.14)
-          : 0
-
-        // Per-step organic jitter
-        const wobble = 0.12 + Math.random() * 0.2
-
-        // Massive length diversity — this is what creates "foisonnement":
-        //   ~30% short shoots (3-6)
-        //   ~50% medium vines (8-17)
-        //   ~20% long creepers (18-30)
-        const r = Math.random()
-        let targetLength: number
-        if (r < 0.3) targetLength = 3 + Math.floor(Math.random() * 4)
-        else if (r < 0.8) targetLength = 8 + Math.floor(Math.random() * 10)
-        else targetLength = 18 + Math.floor(Math.random() * 13)
-
-        // 22% chance of a thicker 2px trunk for the larger vines
-        const thickness: 1 | 2 = Math.random() < 0.22 ? 2 : 1
-
-        const leafAt = targetLength > 5 && Math.random() < 0.6 ? targetLength - 1 : -1
-
-        tendrils.push({
-          side,
-          originFrac: Math.min(0.95, Math.max(0.05, originFrac)),
-          angle: initAngle,
-          spin,
-          upwardBias,
-          wobble,
-          segments: [],
-          targetLength,
-          growInterval: 0.04 + Math.random() * 0.06,
-          growAcc: Math.random() * 0.12, // strongly staggered start for wave-in
-          state: 'growing',
-          thickness,
-          leafAt,
-        })
-      }
+    const pickColor = () => {
+      const r = Math.random()
+      if (r < 0.22) return darker
+      if (r < 0.48) return lighter
+      return baseColor
     }
-    effect.ivy = { tendrils, graphic, color: effect.config.color }
+
+    // Large grass population on the top edge for the dense-field feel.
+    const topCount = 34
+    for (let i = 0; i < topCount; i++) {
+      blades.push(this.buildBlade('top', (i + 0.5) / topCount + (Math.random() - 0.5) * 0.035, pickColor()))
+    }
+
+    // Tufts on the upper 30% of each side edge — small concentrations near
+    // the top corners, as if the field spills over the button's rim.
+    const sideCount = 5
+    for (let i = 0; i < sideCount; i++) {
+      const base = (i + 0.5) / sideCount
+      const frac = base * 0.3
+      blades.push(this.buildBlade('left', frac, pickColor()))
+      blades.push(this.buildBlade('right', frac, pickColor()))
+    }
+
+    effect.grass = { blades, graphic, windTime: Math.random() * Math.PI * 2, color: baseColor }
   }
 
-  private tickIvy(effect: AttachedEffect, rect: DOMRect, dt: number): void {
-    const state = effect.ivy
+  private buildBlade(
+    side: 'top' | 'left' | 'right',
+    originFrac: number,
+    color: number,
+  ): GrassBlade {
+    // Most blades point straight up; side tufts lean slightly outward first
+    // then the wind + natural curve carry them up.
+    let baseAngle = -Math.PI / 2
+    if (side === 'left') baseAngle += -0.25 + (Math.random() - 0.5) * 0.35
+    else if (side === 'right') baseAngle += 0.25 + (Math.random() - 0.5) * 0.35
+    else baseAngle += (Math.random() - 0.5) * 0.4 // top blades get wider jitter
+
+    // Slight natural bend (same direction each segment)
+    const naturalCurve = (Math.random() - 0.5) * 0.035
+
+    // Height distribution: short / medium / tall for field variety.
+    const r = Math.random()
+    let targetHeight: number
+    if (side !== 'top') {
+      targetHeight = 3 + Math.floor(Math.random() * 7) // 3..9 — lower on sides
+    } else if (r < 0.32) targetHeight = 3 + Math.floor(Math.random() * 4) // 3..6
+    else if (r < 0.8) targetHeight = 7 + Math.floor(Math.random() * 8) // 7..14
+    else targetHeight = 15 + Math.floor(Math.random() * 8) // 15..22
+
+    // Taller blades sway more; shorter barely move. Wind amplitude is scaled
+    // again by height² in the tick so the base stays anchored.
+    const swayAmplitude = 0.18 + Math.random() * 0.22
+    const windPhase = Math.random() * Math.PI * 2
+
+    const thickness: 1 | 2 = Math.random() < 0.14 && targetHeight >= 8 ? 2 : 1
+    const hasSeed = targetHeight >= 8 && Math.random() < 0.35
+
+    return {
+      side,
+      originFrac: Math.min(0.98, Math.max(0.02, originFrac)),
+      targetHeight,
+      baseAngle,
+      naturalCurve,
+      thickness,
+      color,
+      hasSeed,
+      swayAmplitude,
+      windPhase,
+      currentHeight: 0,
+      growRate: 22 + Math.random() * 18, // segments per second — quick sprout-in
+      state: 'growing',
+      tipX: 0,
+      tipY: 0,
+    }
+  }
+
+  private tickGrass(effect: AttachedEffect, rect: DOMRect, dt: number): void {
+    const state = effect.grass
     if (!state) return
 
-    for (const t of state.tendrils) {
+    // Advance the wind clock regardless of hover — grass keeps swaying even
+    // as it retracts.
+    state.windTime += dt
+    const gustSlow = Math.sin(state.windTime * 0.9)
+    const gustFast = Math.sin(state.windTime * 2.15 + 1.3)
+
+    // Update growth state + current height for every blade.
+    for (const b of state.blades) {
       if (effect.enabled) {
-        if (t.state === 'retracting' || t.state === 'dead') t.state = 'growing'
-      } else if (t.state === 'growing' || t.state === 'idle') {
-        t.state = 'retracting'
-        t.growAcc = 0
-      }
-
-      if (t.state === 'growing') {
-        t.growAcc += dt
-        while (t.growAcc >= t.growInterval && t.segments.length < t.targetLength) {
-          t.growAcc -= t.growInterval
-
-          // Spin (coiling) applied per segment
-          t.angle += t.spin
-
-          // Upward gravitropism — rotate the angle toward −π/2 (straight up).
-          // Normalize delta to the shortest signed arc.
-          let delta = -Math.PI / 2 - t.angle
-          while (delta > Math.PI) delta -= 2 * Math.PI
-          while (delta < -Math.PI) delta += 2 * Math.PI
-          t.angle += delta * t.upwardBias
-
-          // Random wobble for pixel-art crookedness
-          t.angle += (Math.random() - 0.5) * t.wobble
-
-          const stepDx = Math.cos(t.angle)
-          const stepDy = Math.sin(t.angle)
-          const last = t.segments.length > 0 ? t.segments[t.segments.length - 1] : { dx: 0, dy: 0 }
-          t.segments.push({ dx: last.dx + stepDx, dy: last.dy + stepDy })
+        if (b.state === 'retracting' || b.state === 'dead') b.state = 'growing'
+        if (b.state === 'growing') {
+          b.currentHeight = Math.min(b.targetHeight, b.currentHeight + b.growRate * dt)
+          if (b.currentHeight >= b.targetHeight) b.state = 'idle'
         }
-        if (t.segments.length >= t.targetLength) t.state = 'idle'
-      } else if (t.state === 'retracting') {
-        t.growAcc += dt
-        const retractInterval = t.growInterval * 0.5
-        while (t.growAcc >= retractInterval && t.segments.length > 0) {
-          t.growAcc -= retractInterval
-          t.segments.pop()
+      } else {
+        if (b.state === 'growing' || b.state === 'idle') b.state = 'retracting'
+        if (b.state === 'retracting') {
+          b.currentHeight = Math.max(0, b.currentHeight - b.growRate * 1.3 * dt)
+          if (b.currentHeight <= 0.01) {
+            b.currentHeight = 0
+            b.state = 'dead'
+          }
         }
-        if (t.segments.length === 0) t.state = 'dead'
       }
     }
 
-    // ---- Render (one Graphics, rebuilt each frame) ----
     state.graphic.clear()
 
-    // Pass 1: trunks. Thickness 1 → 1×1 px, thickness 2 → 2×2 px centered.
-    let anyTrunk = false
-    for (const t of state.tendrils) {
-      if (t.segments.length === 0) continue
-      const origin = this.resolveIvyOrigin(t, rect)
-      for (const seg of t.segments) {
-        const x = Math.round(origin.x + seg.dx)
-        const y = Math.round(origin.y + seg.dy)
-        if (t.thickness === 2) state.graphic.rect(x - 1, y - 1, 2, 2)
-        else state.graphic.rect(x, y, 1, 1)
-        anyTrunk = true
-      }
+    // Group blades by color so we can fill all same-color rects in one pass.
+    const byColor = new Map<number, GrassBlade[]>()
+    for (const b of state.blades) {
+      if (b.currentHeight <= 0.1) continue
+      const bucket = byColor.get(b.color)
+      if (bucket) bucket.push(b)
+      else byColor.set(b.color, [b])
     }
-    if (anyTrunk) state.graphic.fill({ color: state.color, alpha: 0.92 })
 
-    // Pass 2: leaves at idle tips (lighter tone, 2×2)
-    let anyLeaf = false
-    for (const t of state.tendrils) {
-      if (t.state !== 'idle' || t.leafAt < 0) continue
-      if (t.segments.length <= t.leafAt) continue
-      const seg = t.segments[t.leafAt]
-      const origin = this.resolveIvyOrigin(t, rect)
-      const x = Math.round(origin.x + seg.dx) - 1
-      const y = Math.round(origin.y + seg.dy) - 1
-      state.graphic.rect(x, y, 2, 2)
-      anyLeaf = true
+    // Main blade pass, one fill per color
+    for (const [col, blades] of byColor) {
+      for (const b of blades) {
+        const drawn = Math.floor(b.currentHeight)
+        if (drawn <= 0) continue
+        const origin = this.resolveGrassOrigin(b, rect)
+        let angle = b.baseAngle
+        let dx = 0
+        let dy = 0
+        for (let i = 0; i < drawn; i++) {
+          angle += b.naturalCurve
+          const hFactor = (i + 1) / b.targetHeight
+          const hSq = hFactor * hFactor
+          // Layered wind: slow gust + fast gust + per-blade oscillation.
+          // Total wind sway = (shared gusts + own phase) × amplitude × height²
+          const sway =
+            (gustSlow * 0.55 +
+              gustFast * 0.25 +
+              Math.sin(state.windTime * 1.6 + b.windPhase) * 0.35) *
+            b.swayAmplitude *
+            hSq
+          const displayAngle = angle + sway
+          dx += Math.cos(displayAngle)
+          dy += Math.sin(displayAngle)
+          const px = Math.round(origin.x + dx)
+          const py = Math.round(origin.y + dy)
+          if (b.thickness === 2) state.graphic.rect(px - 1, py - 1, 2, 2)
+          else state.graphic.rect(px, py, 1, 1)
+
+          if (i === drawn - 1) {
+            b.tipX = px
+            b.tipY = py
+          }
+        }
+      }
+      state.graphic.fill({ color: col, alpha: 0.94 })
     }
-    if (anyLeaf) state.graphic.fill({ color: lighten(state.color, 0.32), alpha: 0.95 })
+
+    // Seed tips — small pale accent on grown blades that have a seed flag.
+    let anySeed = false
+    for (const b of state.blades) {
+      if (!b.hasSeed || b.state !== 'idle') continue
+      if (b.currentHeight < b.targetHeight - 0.5) continue
+      state.graphic.rect(b.tipX - 1, b.tipY - 1, 2, 2)
+      anySeed = true
+    }
+    if (anySeed) state.graphic.fill({ color: 0xcce873, alpha: 0.95 })
   }
 
-  private resolveIvyOrigin(t: IvyTendril, rect: DOMRect): { x: number; y: number } {
-    if (t.side === 'top') return { x: rect.left + rect.width * t.originFrac, y: rect.top }
-    if (t.side === 'bottom') return { x: rect.left + rect.width * t.originFrac, y: rect.bottom }
-    if (t.side === 'left') return { x: rect.left, y: rect.top + rect.height * t.originFrac }
-    return { x: rect.right, y: rect.top + rect.height * t.originFrac }
+  private resolveGrassOrigin(b: GrassBlade, rect: DOMRect): { x: number; y: number } {
+    if (b.side === 'top') return { x: rect.left + rect.width * b.originFrac, y: rect.top }
+    if (b.side === 'left') return { x: rect.left, y: rect.top + rect.height * b.originFrac }
+    return { x: rect.right, y: rect.top + rect.height * b.originFrac }
   }
 
   // =========================================================
@@ -1667,7 +1718,7 @@ const DEFAULT_ATTACH_COLOR: Record<AttachKind, number> = {
   sparkle: COLOR_VIOLET,
   drips: COLOR_BONE,
   'drip-pool': COLOR_RED,
-  ivy: COLOR_GREEN,
+  grass: COLOR_GREEN,
   embers: 0xd4a147, // warm amber — matches button default border
 }
 
@@ -1678,6 +1729,6 @@ const ATTACH_CADENCE: Record<AttachKind, number> = {
   sparkle: 0.8,
   drips: 0.35,
   'drip-pool': 0, // handled via drip simulation
-  ivy: 0, // per-tendril growth intervals
+  grass: 0, // per-blade growth rates
   embers: 0.055, // ~18 ember spawns per second
 }
