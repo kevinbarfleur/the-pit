@@ -60,6 +60,11 @@ export interface AttachConfig {
   heightScale?: number
   /** Multiplier applied to blade count. Default 1. */
   countScale?: number
+  /**
+   * Side-selection for kinds that cascade down only one edge of the
+   * attached element (e.g. `spring`). Defaults to `right` when unset.
+   */
+  side?: 'left' | 'right'
 }
 
 // --------------------- color helpers ---------------------
@@ -391,31 +396,36 @@ interface CoinState {
 }
 
 /**
- * Spring — a continuous flow of water that pours out of an `event-
- * spring` island's pond, runs to the cap's edge, then cascades down
- * past the rock. Drops are spawned at the pond, given an outward
- * velocity along one of a few preset stream directions, and fall
- * under gravity with a short trail. Splash ripples bloom on the pond
- * itself at a slow cadence.
+ * Spring — water overflows the top of the island and cascades down a
+ * single side. Built like `drip-pool`'s top-band + side-stream + drops,
+ * but with only ONE side active and no bottom pool: the cascade just
+ * keeps falling past the rock.
+ *
+ * Components:
+ *  - `topCells`: 1D height field along the top edge (water visible
+ *    above the cap, like a thin shimmering layer about to spill over).
+ *  - `sideLength`: how far down the chosen side the stream has reached.
+ *  - `drops`: detached droplets falling under gravity once they pinch
+ *    off the side stream's tip.
  */
 interface SpringDrop {
-  g: Graphics
   x: number
   y: number
-  vx: number
   vy: number
-  age: number
-  maxAge: number
-  trailX: number[]
-  trailY: number[]
-  trailAcc: number
+  life: number
+  maxLife: number
   inUse: boolean
 }
 
 interface SpringState {
-  ripple: Graphics
+  graphic: Graphics
+  topCells: number[]
+  cellCount: number
+  sideLength: number
+  topFlowAcc: number
+  sideDropAcc: number
   drops: SpringDrop[]
-  spawnAcc: number
+  side: 'left' | 'right'
   time: number
   color: number
 }
@@ -671,6 +681,7 @@ export class EffectsEngine {
       shape: config.shape ?? 'edge',
       heightScale: config.heightScale ?? 1,
       countScale: config.countScale ?? 1,
+      side: config.side ?? 'right',
     }
     const cadence = ATTACH_CADENCE[kind]
     const effect: AttachedEffect = {
@@ -770,8 +781,7 @@ export class EffectsEngine {
       effect.coins = undefined
     }
     if (effect.spring) {
-      effect.spring.ripple.destroy()
-      for (const d of effect.spring.drops) d.g.destroy()
+      effect.spring.graphic.destroy()
       effect.spring = undefined
     }
     this.attached.splice(idx, 1)
@@ -2431,37 +2441,24 @@ export class EffectsEngine {
   }
 
   // =====================================================================
-  // SPRING — water drops pour out of an island's pond, run to the
-  // cap's edge, then fall as cascades. Continuous, never-ending. Used
-  // for `event-spring` islands.
+  // SPRING — water spills off the top of the island and cascades down
+  // a single side, never reaching a pool: it just falls past the rock.
+  // Built from a top-edge height field + one continuous side stream +
+  // pinched-off drops falling under gravity.
   // =====================================================================
   private initSpring(effect: AttachedEffect): void {
-    const ripple = new Graphics()
-    this.dripLayer.addChild(ripple)
-    const poolSize = 64
-    const drops: SpringDrop[] = []
-    for (let i = 0; i < poolSize; i++) {
-      const g = new Graphics()
-      g.visible = false
-      this.dripLayer.addChild(g)
-      drops.push({
-        g,
-        x: 0,
-        y: 0,
-        vx: 0,
-        vy: 0,
-        age: 0,
-        maxAge: 0,
-        trailX: [0, 0, 0],
-        trailY: [0, 0, 0],
-        trailAcc: 0,
-        inUse: false,
-      })
-    }
+    const graphic = new Graphics()
+    this.dripLayer.addChild(graphic)
+    const cellCount = 24
     effect.spring = {
-      ripple,
-      drops,
-      spawnAcc: 0,
+      graphic,
+      topCells: new Array(cellCount).fill(0),
+      cellCount,
+      sideLength: 0,
+      topFlowAcc: 0,
+      sideDropAcc: 0,
+      drops: [],
+      side: effect.config.side,
       time: 0,
       color: effect.config.color,
     }
@@ -2472,160 +2469,147 @@ export class EffectsEngine {
     if (!s) return
     s.time += dt
 
-    // --- Spawn cadence: a steady stream of droplets coming out of
-    // the pond. 35 ms gap → ~28 drops/s, four pre-set angular streams
-    // (left, front-left, front-right, right) so the flow reads as
-    // "rivers off the cap" rather than random spray.
+    const colorLight = lighten(s.color, 0.4)
+    const colorDark = darken(s.color, 0.25)
+
+    // ---------------- TOP BAND ----------------
+    // 1D height field clinging to the top edge of the rect. Always
+    // filling, gentle diffusion, capped — same shape as drip-pool but
+    // a touch taller because we want the water to read as a sheet
+    // covering the top, not just a thin rim.
+    const topMax = 4.5
+    const topK = 0.18
+    const topNext = s.topCells.slice()
+    for (let i = 0; i < s.cellCount; i++) {
+      const left = i > 0 ? s.topCells[i - 1] : s.topCells[i]
+      const right = i < s.cellCount - 1 ? s.topCells[i + 1] : s.topCells[i]
+      topNext[i] = s.topCells[i] + topK * (left + right - 2 * s.topCells[i])
+    }
+    s.topCells = topNext
     if (effect.enabled) {
-      s.spawnAcc += dt
-      const cadence = 0.04
-      while (s.spawnAcc >= cadence) {
-        s.spawnAcc -= cadence
-        this.spawnSpringDrop(s, rect)
+      for (let i = 0; i < s.cellCount; i++) {
+        s.topCells[i] += (3.0 + Math.random() * 1.6) * dt
+      }
+      s.topFlowAcc += dt
+      if (s.topFlowAcc >= 0.08) {
+        s.topFlowAcc = 0
+        const i = Math.floor(Math.random() * s.cellCount)
+        s.topCells[i] += 0.5 + Math.random() * 0.6
+      }
+    } else {
+      for (let i = 0; i < s.cellCount; i++) {
+        s.topCells[i] = Math.max(0, s.topCells[i] - 5 * dt)
       }
     }
+    // Edge taper + cap.
+    for (let i = 0; i < s.cellCount; i++) {
+      let m = topMax
+      if (i < 2) m = Math.min(topMax, 1 + i * 1.5)
+      if (i >= s.cellCount - 2) m = Math.min(topMax, 1 + (s.cellCount - 1 - i) * 1.5)
+      s.topCells[i] = Math.max(0, Math.min(m, s.topCells[i]))
+    }
 
-    const cx = rect.left + rect.width / 2
-    const cy = rect.top + rect.height / 2
+    // ---------------- SIDE STREAM ----------------
+    // The chosen side fills from the top edge downward continuously.
+    // Length is allowed to extend BEYOND rect.height so the cascade
+    // visibly falls past the bottom of the cap.
+    const sideGrow = 220 // px/s
+    const sideRetreat = 280
+    const sideMax = rect.height + 60
+    if (effect.enabled) {
+      s.sideLength = Math.min(sideMax, s.sideLength + sideGrow * dt)
+      // Drops pinch off the tip while it's long enough to read.
+      s.sideDropAcc += dt
+      if (s.sideLength > 14 && s.sideDropAcc >= 0.16) {
+        s.sideDropAcc = 0
+        this.spawnSpringSideDrop(s, rect)
+      }
+    } else {
+      s.sideLength = Math.max(0, s.sideLength - sideRetreat * dt)
+    }
 
-    // --- Pond ripples — slow concentric breathing centred on the pond,
-    // continuously running so the water reads as alive even if all
-    // drops are mid-air. Two rings, brightest in the centre.
-    s.ripple.clear()
-    const colorLight = lighten(s.color, 0.45)
-    const colorDark = darken(s.color, 0.25)
-    const phase1 = (s.time * 0.9) % 1
-    const phase2 = ((s.time * 0.9 + 0.5) % 1)
-    drawRipple(s.ripple, cx, cy, phase1, s.color, colorLight)
-    drawRipple(s.ripple, cx, cy, phase2, s.color, colorLight)
-
-    // --- Drops physics + render.
-    const gravity = 200
+    // ---------------- DROPS ----------------
+    // Each drop falls under gravity past the cap, fades over its life.
+    const gravity = 320
     for (const d of s.drops) {
       if (!d.inUse) continue
-      d.age += dt
-      if (d.age >= d.maxAge) {
+      d.life -= dt
+      if (d.life <= 0) {
         d.inUse = false
-        d.g.visible = false
         continue
       }
-      // Phase 1 — flowing across the cap (small downward accel only).
-      // Phase 2 — falling off the edge (full gravity + slight drag).
-      const offEdge = d.age > 0.45
-      d.vy += (offEdge ? gravity : 30) * dt
-      d.vx *= 0.995
-      d.x += d.vx * dt
+      d.vy += gravity * dt
       d.y += d.vy * dt
-      // Trail — capture position every 35 ms.
-      d.trailAcc += dt
-      if (d.trailAcc >= 0.035) {
-        d.trailAcc -= 0.035
-        d.trailX[2] = d.trailX[1]
-        d.trailY[2] = d.trailY[1]
-        d.trailX[1] = d.trailX[0]
-        d.trailY[1] = d.trailY[0]
-        d.trailX[0] = d.x
-        d.trailY[0] = d.y
-      }
-      // Render.
-      d.g.clear()
-      // Trail (3 stale positions, fading).
-      for (let i = 2; i >= 0; i--) {
-        const tx = d.trailX[i]
-        const ty = d.trailY[i]
-        if (tx === 0 && ty === 0) continue
-        const trailAlpha = 0.32 - i * 0.09
-        if (trailAlpha <= 0) continue
-        d.g.rect(Math.round(tx) - cx - 0.5, Math.round(ty) - cy - 0.5, 1, 1)
-        d.g.fill({ color: colorDark, alpha: trailAlpha })
-      }
-      // Head — 1 px bright cyan.
-      d.g.rect(Math.round(d.x) - cx - 0.5, Math.round(d.y) - cy - 0.5, 1, 1)
-      d.g.fill({ color: colorLight })
-      d.g.x = cx
-      d.g.y = cy
-      d.g.alpha = 1
-      d.g.visible = true
+    }
+
+    // ---------------- RENDER ----------------
+    const g = s.graphic
+    g.clear()
+
+    // Top band — slabs going UP from rect.top by `topCells[i]` px.
+    const cellWidth = rect.width / s.cellCount
+    for (let i = 0; i < s.cellCount; i++) {
+      const h = s.topCells[i]
+      if (h < 0.18) continue
+      const x = rect.left + i * cellWidth
+      const y = rect.top - h
+      const w = Math.max(1, Math.ceil(cellWidth))
+      g.rect(Math.round(x), Math.round(y), w, Math.ceil(h))
+      g.fill({ color: s.color, alpha: 0.88 })
+      // Top sheen
+      g.rect(Math.round(x), Math.round(y), w, 1)
+      g.fill({ color: colorLight, alpha: 0.7 })
+    }
+
+    // Side stream — a vertical 2-wide bar starting at rect.top on the
+    // chosen edge, descending `sideLength` px.
+    if (s.sideLength > 0.4) {
+      const streamX = s.side === 'left' ? rect.left - 2 : rect.right
+      const streamW = 2
+      const streamH = Math.ceil(s.sideLength)
+      const yStart = rect.top
+      g.rect(Math.round(streamX), Math.round(yStart), streamW, streamH)
+      g.fill({ color: s.color, alpha: 0.9 })
+      // Inner bright line
+      const sheenX = s.side === 'left' ? streamX + 1 : streamX
+      g.rect(Math.round(sheenX), Math.round(yStart), 1, streamH)
+      g.fill({ color: colorLight, alpha: 0.65 })
+      // Tip — small darker pixel showing motion at the leading edge.
+      g.rect(Math.round(streamX), Math.round(yStart + streamH), streamW, 1)
+      g.fill({ color: colorDark, alpha: 0.85 })
+    }
+
+    // Drops — single 1×2 px streaks falling.
+    for (const d of s.drops) {
+      if (!d.inUse) continue
+      const t = d.life / d.maxLife
+      const alpha = 0.6 + 0.3 * t
+      g.rect(Math.round(d.x), Math.round(d.y), 1, 2)
+      g.fill({ color: s.color, alpha })
     }
   }
 
-  private spawnSpringDrop(s: SpringState, rect: DOMRect): void {
-    const d = s.drops.find((x) => !x.inUse)
-    if (!d) return
-    const cx = rect.left + rect.width / 2
-    const cy = rect.top + rect.height / 2
-    // 4 stream directions, biased toward the front of the cap so most
-    // water visibly cascades down past the lower edge of the rock.
-    //   −0.6π → front-left (down + left)
-    //   −0.4π → front-right (down + right)
-    //   −0.95π → far left (slight down)
-    //    0.95π → far right (slight down)
-    //
-    // Note: in screen coords +Y is down, so vy > 0 means going forward
-    // off the cap front. The streams have positive vx for right,
-    // negative for left, and a small vy to start so they roll outward.
-    const streamPick = Math.floor(Math.random() * 4)
-    let vx: number, vy: number
-    switch (streamPick) {
-      case 0: // front-left
-        vx = -22 - Math.random() * 8
-        vy = 8 + Math.random() * 4
+  private spawnSpringSideDrop(s: SpringState, rect: DOMRect): void {
+    let drop: SpringDrop | undefined
+    for (const d of s.drops) {
+      if (!d.inUse) {
+        drop = d
         break
-      case 1: // front-right
-        vx = 22 + Math.random() * 8
-        vy = 8 + Math.random() * 4
-        break
-      case 2: // far left
-        vx = -28 - Math.random() * 6
-        vy = -2 + Math.random() * 6
-        break
-      case 3: // far right
-      default:
-        vx = 28 + Math.random() * 6
-        vy = -2 + Math.random() * 6
-        break
+      }
     }
-    // Spawn jitter inside the pond rim (radius ≈ 4 px in screen).
-    const jitterAngle = Math.random() * Math.PI * 2
-    const jitterR = Math.random() * 2.5
-    d.x = cx + Math.cos(jitterAngle) * jitterR
-    d.y = cy + Math.sin(jitterAngle) * jitterR * 0.5
-    d.vx = vx
-    d.vy = vy
-    d.age = 0
-    d.maxAge = 1.6 + Math.random() * 0.6
-    // Seed trail so first frame doesn't streak from (0, 0).
-    for (let i = 0; i < 3; i++) {
-      d.trailX[i] = d.x
-      d.trailY[i] = d.y
+    if (!drop) {
+      if (s.drops.length >= 32) return
+      drop = { x: 0, y: 0, vy: 0, life: 0, maxLife: 0, inUse: false }
+      s.drops.push(drop)
     }
-    d.trailAcc = 0
-    d.inUse = true
-    d.g.visible = true
-  }
-}
-
-/** Draw a single concentric ripple ring expanding from (cx, cy). */
-function drawRipple(
-  g: Graphics,
-  cx: number,
-  cy: number,
-  phase: number,
-  color: number,
-  colorLight: number,
-): void {
-  // Phase 0..1: ring grows from r=2 to r=10, alpha fades out.
-  const r = 2 + phase * 8
-  const alpha = (1 - phase) * 0.5
-  if (alpha < 0.02) return
-  // Build a ring as 16 sample points (poor-man's stroke at low res).
-  const segments = 18
-  for (let i = 0; i < segments; i++) {
-    const a = (i / segments) * Math.PI * 2
-    const x = Math.round(cx + Math.cos(a) * r)
-    const y = Math.round(cy + Math.sin(a) * r * 0.45) // ellipse aspect
-    g.rect(x, y, 1, 1)
-    g.fill({ color: i % 3 === 0 ? colorLight : color, alpha })
+    const streamX = s.side === 'left' ? rect.left - 2 : rect.right
+    const tipY = rect.top + s.sideLength
+    drop.x = streamX + (s.side === 'left' ? -0.5 : 0.5) + (Math.random() - 0.5) * 1.5
+    drop.y = tipY
+    drop.vy = 40 + Math.random() * 50
+    drop.life = 1.2 + Math.random() * 0.6
+    drop.maxLife = drop.life
+    drop.inUse = true
   }
 }
 

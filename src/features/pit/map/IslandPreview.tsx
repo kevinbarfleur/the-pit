@@ -106,15 +106,25 @@ export function IslandPreview({
     const isSpring = type === 'event' && eventVariant === 'spring'
     const kind: AttachKind = isSpring ? 'spring' : TYPE_HOVER[type]
     const color = isSpring ? 0x6ec3d4 : TYPE_COLOR[type]
-    const config: AttachConfig =
-      kind === 'grass'
-        ? { color, shape: 'patch', heightScale: 1, countScale: 8 }
-        : { color }
-    // All effects (grass, godray, coins, etc.) anchor on the ground
-    // area — the single source of truth for "where to put things" on
-    // this island. The ground is centred on the stake's base, so
-    // effects emanate from there automatically.
-    const { id: effectId, detach } = engine.attachWithHandle(cap, kind, config)
+    let config: AttachConfig
+    if (kind === 'grass') {
+      config = { color, shape: 'patch', heightScale: 1, countScale: 8 }
+    } else if (kind === 'spring') {
+      // Pick the cascade side from the id hash so identical previews
+      // stay deterministic. Bit 5 of the hash gives a 50/50 split.
+      let h = 0
+      for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0
+      const side: 'left' | 'right' = ((h >> 5) & 1) === 0 ? 'left' : 'right'
+      config = { color, side }
+    } else {
+      config = { color }
+    }
+    // Spring attaches to the whole island root so its top sheet covers
+    // the cap and its side stream can cascade past the bottom; every
+    // other effect still anchors on the ground area (capZone) so
+    // grass/embers/etc. only spawn on the placeable surface.
+    const attachTarget = kind === 'spring' ? root : cap
+    const { id: effectId, detach } = engine.attachWithHandle(attachTarget, kind, config)
     engine.setEnabled(effectId, effectAlwaysOn)
 
     // Always also react to hover so interactive toggling still works

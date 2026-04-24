@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react'
 import type { CSSProperties } from 'react'
-import type { AttachKind } from '../../../pixi/EffectsEngine'
+import type { AttachConfig, AttachKind } from '../../../pixi/EffectsEngine'
 import { useEffects } from '../../../hooks/useEffects'
 import { usePitUiStore } from '../../../stores/pitUiStore'
 import type { PitNode as PitNodeModel, PitNodeState, PitNodeType } from '../../../game/pit/types'
@@ -118,18 +118,27 @@ export function IslandNode({ node, state, canCommit, style }: IslandNodeProps) {
     const isSpring =
       node.type === 'event' && computeEventVariant(node.id) === 'spring'
     const kind: AttachKind = isSpring ? 'spring' : TYPE_HOVER[node.type]
-    const attachConfig =
-      kind === 'grass'
-        ? {
-            color: TYPE_COLOR[node.type],
-            shape: 'patch' as const,
-            heightScale: 0.8,
-            countScale: 5,
-          }
-        : { color: isSpring ? 0x6ec3d4 : TYPE_COLOR[node.type] }
-    // All effects anchor on the ground area (the capZone div) — the
-    // single source of truth for where props sit on this island.
-    const { id, detach } = engine.attachWithHandle(cap, kind, attachConfig)
+    let attachConfig: AttachConfig
+    if (kind === 'grass') {
+      attachConfig = {
+        color: TYPE_COLOR[node.type],
+        shape: 'patch',
+        heightScale: 0.8,
+        countScale: 5,
+      }
+    } else if (kind === 'spring') {
+      let h = 0
+      for (let i = 0; i < node.id.length; i++) h = (h * 31 + node.id.charCodeAt(i)) | 0
+      const side: 'left' | 'right' = ((h >> 5) & 1) === 0 ? 'left' : 'right'
+      attachConfig = { color: 0x6ec3d4, side }
+    } else {
+      attachConfig = { color: TYPE_COLOR[node.type] }
+    }
+    // Spring needs the full island button as its rect (its top sheet
+    // covers the cap and the side cascade falls past the bottom).
+    // Other effects stay on the capZone (placeable ground surface).
+    const attachTarget = kind === 'spring' ? btn : cap
+    const { id, detach } = engine.attachWithHandle(attachTarget, kind, attachConfig)
     engine.setEnabled(id, false)
 
     const onEnter = () => engine.setEnabled(id, true)

@@ -457,8 +457,8 @@ function drawProps(
   ctx: CanvasRenderingContext2D,
   ground: GroundArea,
   type: PitNodeType,
-  id: string,
-  forceEventVariant?: EventVariant,
+  _id: string,
+  _forceEventVariant?: EventVariant,
 ): void {
   /** Shorthand: project a world-space (x, y, z) onto the sprite. */
   const w = (x: number, y: number, z: number = 0) =>
@@ -479,14 +479,9 @@ function drawProps(
     return
   }
   if (type === 'event') {
-    const variant = forceEventVariant ?? computeEventVariant(id)
-    if (variant === 'spring') {
-      // Pond sits in front of the signpost on the ground plane. The
-      // hover effect (`spring`) anchors here and continuously runs
-      // streams of water drops outward off the cap.
-      const pond = w(0, 4, 0)
-      drawPond(ctx, pond.sx, pond.sy)
-    }
+    // event-spring islands have no static prop — the visible water is
+    // the hover effect itself (top sheet + cascading side stream),
+    // which anchors on the island button.
     return
   }
 }
@@ -917,12 +912,10 @@ function drawCoinStack(ctx: CanvasRenderingContext2D, spotX: number, spotY: numb
 // ---------- pond (event: spring) ----------
 
 /**
- * Tiny pixel-art pond, ~9×4 native, drawn on the ground in front of
- * the signpost on `event-spring` islands. Top-down ellipse with a
- * dark rim, a mid-blue body, lighter shimmer pixels and a couple of
- * white specular flecks. Companion to the `spring` hover effect that
- * pours water out of it.
+ * Tiny pixel-art pond, kept for future use. Currently unused — the
+ * `event-spring` islands rely on the spring hover effect alone.
  */
+// @ts-expect-error retained for upcoming variants
 function drawPond(ctx: CanvasRenderingContext2D, spotX: number, spotY: number): void {
   const W = 11
   const H = 5
