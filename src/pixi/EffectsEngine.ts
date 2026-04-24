@@ -81,6 +81,20 @@ function darken(color: number, amount: number): number {
   return (dr << 16) | (dg << 8) | db
 }
 
+function blendColor(from: number, to: number, t: number): number {
+  const tt = Math.max(0, Math.min(1, t))
+  const fr = (from >> 16) & 0xff
+  const fg = (from >> 8) & 0xff
+  const fb = from & 0xff
+  const tr = (to >> 16) & 0xff
+  const tg = (to >> 8) & 0xff
+  const tb = to & 0xff
+  const r = Math.round(fr + (tr - fr) * tt)
+  const g = Math.round(fg + (tg - fg) * tt)
+  const b = Math.round(fb + (tb - fb) * tt)
+  return (r << 16) | (g << 8) | b
+}
+
 // --------------------- pool structures ---------------------
 
 interface Particle {
@@ -194,13 +208,40 @@ interface GrassBlade {
   growRate: number // segments per second while growing
   state: 'growing' | 'idle' | 'retracting' | 'dead'
 
+  // Retract → detach phase: the blade trembles for `detachDelay` seconds
+  // (wind-sway amplified) then rips off and becomes a DetachedBlade.
+  retractAge: number
+  detachDelay: number
+
   // Scratch, written each frame
   tipX: number
   tipY: number
 }
 
+/**
+ * A blade that has torn off the field and is now a wind-borne fragment.
+ * The shape is frozen at detach time (the segment offsets snapshot include
+ * the wind curve in effect at that moment) and the whole body translates +
+ * rotates rigidly thereafter.
+ */
+interface DetachedBlade {
+  segments: Array<{ dx: number; dy: number }>
+  thickness: 1 | 2
+  color: number
+  // World-space origin of the base pixel (rotation pivot)
+  baseX: number
+  baseY: number
+  angle: number
+  vx: number
+  vy: number
+  angularVel: number
+  life: number
+  maxLife: number
+}
+
 interface GrassState {
   blades: GrassBlade[]
+  detached: DetachedBlade[]
   graphic: Graphics
   windTime: number
   color: number
@@ -1102,7 +1143,13 @@ export class EffectsEngine {
       blades.push(this.buildBlade('right', frac, pickColor()))
     }
 
-    effect.grass = { blades, graphic, windTime: Math.random() * Math.PI * 2, color: baseColor }
+    effect.grass = {
+      blades,
+      detached: [],
+      graphic,
+      windTime: Math.random() * Math.PI * 2,
+      color: baseColor,
+    }
   }
 
   private buildBlade(
@@ -1151,6 +1198,8 @@ export class EffectsEngine {
       currentHeight: 0,
       growRate: 22 + Math.random() * 18, // segments per second — quick sprout-in
       state: 'growing',
+      retractAge: 0,
+      detachDelay: 0,
       tipX: 0,
       tipY: 0,
     }
@@ -1161,26 +1210,103 @@ export class EffectsEngine {
     if (!state) return
 
     // Advance the wind clock regardless of hover — grass keeps swaying even
-    // as it retracts.
+    // as it retracts, and detached fragments are blown by the same wind.
     state.windTime += dt
     const gustSlow = Math.sin(state.windTime * 0.9)
     const gustFast = Math.sin(state.windTime * 2.15 + 1.3)
 
-    // Update growth state + current height for every blade.
+    // ---- Detached fragment physics ---------------------------------------
+    // Reverse iterate so splice during the loop is safe.
+    for (let i = state.detached.length - 1; i >= 0; i--) {
+      const d = state.detached[i]
+      d.life -= dt
+      if (d.life <= 0) {
+        state.detached.splice(i, 1)
+        continue
+      }
+      // Wind carries the fragment laterally (same gusts as the grass field),
+      // gravity pulls it down slowly, drag damps motion + rotation over time.
+      d.vx += (gustSlow * 55 + gustFast * 22) * dt
+      d.vy += 22 * dt
+      d.vx *= 0.988
+      d.vy *= 0.995
+      d.angularVel *= 0.99
+      d.baseX += d.vx * dt
+      d.baseY += d.vy * dt
+      d.angle += d.angularVel * dt
+    }
+
+    // ---- Living blade state updates + detach on retract timeout ---------
     for (const b of state.blades) {
       if (effect.enabled) {
-        if (b.state === 'retracting' || b.state === 'dead') b.state = 'growing'
+        if (b.state === 'retracting' || b.state === 'dead') {
+          b.state = 'growing'
+          b.retractAge = 0
+        }
         if (b.state === 'growing') {
           b.currentHeight = Math.min(b.targetHeight, b.currentHeight + b.growRate * dt)
           if (b.currentHeight >= b.targetHeight) b.state = 'idle'
         }
       } else {
-        if (b.state === 'growing' || b.state === 'idle') b.state = 'retracting'
+        if (b.state === 'growing' || b.state === 'idle') {
+          b.state = 'retracting'
+          b.retractAge = 0
+          // Short blades rip off first (lighter; wind catches them faster)
+          const lengthFactor = 1 - Math.min(1, b.targetHeight / 22)
+          b.detachDelay = 0.08 + lengthFactor * 0.25 + Math.random() * 0.3
+        }
         if (b.state === 'retracting') {
-          b.currentHeight = Math.max(0, b.currentHeight - b.growRate * 1.3 * dt)
-          if (b.currentHeight <= 0.01) {
-            b.currentHeight = 0
+          b.retractAge += dt
+          if (b.retractAge >= b.detachDelay && b.currentHeight > 0.6) {
+            // Snapshot the blade's current shape (with amplified sway at the
+            // moment of detach) and spawn it as a wind-borne fragment.
+            const drawn = Math.floor(b.currentHeight)
+            const origin = this.resolveGrassOrigin(b, rect)
+            const segs: Array<{ dx: number; dy: number }> = []
+            const retractFactor = 1 + 2.2 // matches render amplification at detach time
+            let angle = b.baseAngle
+            let dx = 0
+            let dy = 0
+            for (let i = 0; i < drawn; i++) {
+              angle += b.naturalCurve
+              const hFactor = (i + 1) / b.targetHeight
+              const hSq = hFactor * hFactor
+              const sway =
+                (gustSlow * 0.55 +
+                  gustFast * 0.25 +
+                  Math.sin(state.windTime * 1.6 + b.windPhase) * 0.35) *
+                b.swayAmplitude *
+                hSq *
+                retractFactor
+              const displayAngle = angle + sway
+              dx += Math.cos(displayAngle)
+              dy += Math.sin(displayAngle)
+              segs.push({ dx, dy })
+            }
+
+            // Initial velocity reflects the tip's current motion + wind push
+            const last = segs[drawn - 1]
+            const prev = drawn > 1 ? segs[drawn - 2] : { dx: 0, dy: 0 }
+            const tipDX = last.dx - prev.dx
+            const tipDY = last.dy - prev.dy
+            const windPush = gustSlow * 60 + gustFast * 25
+            const totalLife = 1.6 + Math.random() * 0.9
+            state.detached.push({
+              segments: segs,
+              thickness: b.thickness,
+              color: b.color,
+              baseX: origin.x,
+              baseY: origin.y,
+              angle: 0,
+              vx: tipDX * 22 + windPush * 0.7 + (Math.random() - 0.5) * 14,
+              vy: tipDY * 12 - 10 - Math.random() * 12,
+              angularVel: (Math.random() - 0.5) * Math.PI * 1.3,
+              life: totalLife,
+              maxLife: totalLife,
+            })
+
             b.state = 'dead'
+            b.currentHeight = 0
           }
         }
       }
@@ -1188,7 +1314,7 @@ export class EffectsEngine {
 
     state.graphic.clear()
 
-    // Group blades by color so we can fill all same-color rects in one pass.
+    // ---- Living blade render pass (grouped by colour) -------------------
     const byColor = new Map<number, GrassBlade[]>()
     for (const b of state.blades) {
       if (b.currentHeight <= 0.1) continue
@@ -1197,12 +1323,17 @@ export class EffectsEngine {
       else byColor.set(b.color, [b])
     }
 
-    // Main blade pass, one fill per color
     for (const [col, blades] of byColor) {
       for (const b of blades) {
         const drawn = Math.floor(b.currentHeight)
         if (drawn <= 0) continue
         const origin = this.resolveGrassOrigin(b, rect)
+        // Amplify sway during the tremble phase — blade thrashes as it
+        // weakens, selling the "about to tear off" moment.
+        const retractFactor =
+          b.state === 'retracting' && b.detachDelay > 0
+            ? 1 + Math.min(1, b.retractAge / b.detachDelay) * 2.2
+            : 1
         let angle = b.baseAngle
         let dx = 0
         let dy = 0
@@ -1210,22 +1341,19 @@ export class EffectsEngine {
           angle += b.naturalCurve
           const hFactor = (i + 1) / b.targetHeight
           const hSq = hFactor * hFactor
-          // Layered wind: slow gust + fast gust + per-blade oscillation.
-          // Total wind sway = (shared gusts + own phase) × amplitude × height²
           const sway =
             (gustSlow * 0.55 +
               gustFast * 0.25 +
               Math.sin(state.windTime * 1.6 + b.windPhase) * 0.35) *
             b.swayAmplitude *
-            hSq
-          const displayAngle = angle + sway
-          dx += Math.cos(displayAngle)
-          dy += Math.sin(displayAngle)
+            hSq *
+            retractFactor
+          dx += Math.cos(angle + sway)
+          dy += Math.sin(angle + sway)
           const px = Math.round(origin.x + dx)
           const py = Math.round(origin.y + dy)
           if (b.thickness === 2) state.graphic.rect(px - 1, py - 1, 2, 2)
           else state.graphic.rect(px, py, 1, 1)
-
           if (i === drawn - 1) {
             b.tipX = px
             b.tipY = py
@@ -1235,7 +1363,7 @@ export class EffectsEngine {
       state.graphic.fill({ color: col, alpha: 0.94 })
     }
 
-    // Seed tips — small pale accent on grown blades that have a seed flag.
+    // ---- Seed tips (on grown idle blades) --------------------------------
     let anySeed = false
     for (const b of state.blades) {
       if (!b.hasSeed || b.state !== 'idle') continue
@@ -1244,6 +1372,27 @@ export class EffectsEngine {
       anySeed = true
     }
     if (anySeed) state.graphic.fill({ color: 0xcce873, alpha: 0.95 })
+
+    // ---- Detached fragments render (rotated, dried, faded) --------------
+    // Each fragment gets its own fill: life-dependent alpha + colour blend
+    // from the blade's living colour toward a dry brown.
+    const DRY = 0x8a7034
+    for (const d of state.detached) {
+      const t = d.life / d.maxLife
+      const alpha = t > 0.5 ? 0.9 : t * 1.8 * 0.9
+      const color = blendColor(d.color, DRY, 1 - t)
+      const cosA = Math.cos(d.angle)
+      const sinA = Math.sin(d.angle)
+      for (const seg of d.segments) {
+        const rx = seg.dx * cosA - seg.dy * sinA
+        const ry = seg.dx * sinA + seg.dy * cosA
+        const px = Math.round(d.baseX + rx)
+        const py = Math.round(d.baseY + ry)
+        if (d.thickness === 2) state.graphic.rect(px - 1, py - 1, 2, 2)
+        else state.graphic.rect(px, py, 1, 1)
+      }
+      state.graphic.fill({ color, alpha })
+    }
   }
 
   private resolveGrassOrigin(b: GrassBlade, rect: DOMRect): { x: number; y: number } {
