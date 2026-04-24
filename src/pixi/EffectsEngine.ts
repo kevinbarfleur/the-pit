@@ -58,7 +58,6 @@ const COLOR_DIM = 0x6b6b6b
 const EMBER_HOT_COLOR = 0xffa030 // incandescent orange at spawn
 const EMBER_COOL_COLOR = 0xa23318 // deep cooling red
 const EMBER_DEAD_COLOR = 0x1a0a00 // charred, near-black
-const EMBER_HALO_COLOR = 0xd4703a // warm amber-red for the heat aura
 const EMBER_SMOKE_COLOR = 0x6b6b6b
 const EMBER_SPARK_COLOR = 0xfff0c0
 
@@ -280,9 +279,6 @@ interface EmberEntity {
 
 interface EmberState {
   entities: EmberEntity[]
-  heatGlow: Graphics
-  heatTime: number
-  heatAmp: number
   spawnAcc: number
   smokeAcc: number
   sparkAcc: number
@@ -617,7 +613,6 @@ export class EffectsEngine {
       effect.grass = undefined
     }
     if (effect.embers) {
-      effect.embers.heatGlow.destroy()
       for (const en of effect.embers.entities) en.g.destroy()
       effect.embers = undefined
     }
@@ -1423,18 +1418,16 @@ export class EffectsEngine {
   }
 
   // =========================================================
-  // EMBERS — the button reads as a furnace. A pulsing heat halo
-  //   hugs its silhouette, smoke billows off the top, live
-  //   embers spiral up the flanks with a cooling color ramp
-  //   (bright orange → amber → deep red → carbon) and motion-
-  //   smear trails, and occasional sparks pop out in tight
-  //   cracks. Dying embers sometimes crackle into 2–3 sparks.
+  // EMBERS — smoke billows off the top, live embers spiral up
+  //   the flanks with a cooling color ramp (bright orange →
+  //   amber → deep red → carbon) and motion-smear trails, and
+  //   occasional sparks pop out of the seams. Dying embers
+  //   sometimes crackle into 2–3 sparks. The button itself
+  //   stays unlit — the heat is carried by what's around it.
   // =========================================================
   private initEmbers(effect: AttachedEffect): void {
     const count = 96
     const entities: EmberEntity[] = []
-    const heatGlow = new Graphics()
-    this.embersLayer.addChild(heatGlow)
     for (let i = 0; i < count; i++) {
       const g = new Graphics()
       g.visible = false
@@ -1460,9 +1453,6 @@ export class EffectsEngine {
     }
     effect.embers = {
       entities,
-      heatGlow,
-      heatTime: 0,
-      heatAmp: 0,
       spawnAcc: 0,
       smokeAcc: 0,
       sparkAcc: 0,
@@ -1473,45 +1463,6 @@ export class EffectsEngine {
   private tickEmbers(effect: AttachedEffect, rect: DOMRect, dt: number): void {
     const s = effect.embers
     if (!s) return
-
-    // --- Heat halo: a pulsing amber aura hugging the button silhouette. ---
-    // Two concentric bands breathe at slightly different rates so the edge
-    // feels like convected heat rather than a static glow. The outer band is
-    // weaker and larger; the inner band is tight and brighter.
-    s.heatTime += dt
-    const halo = s.heatGlow
-    halo.clear()
-    // Ramp halo intensity down smoothly when hover ends — instant-off would
-    // feel brittle given how hot the button reads while hovered.
-    const haloTarget = effect.enabled ? 1 : 0
-    const haloApproach = effect.enabled ? 6 : 2.4
-    s.heatAmp += (haloTarget - s.heatAmp) * Math.min(1, haloApproach * dt)
-    const haloAmp = s.heatAmp
-    if (haloAmp > 0.02) {
-      // Steady halo — no pulse. The sensation of "hot" should come from the
-      // embers and smoke behaving, not from the button itself blinking.
-      const outerExpand = 7
-      const innerExpand = 3
-      const outerColor = lighten(EMBER_HALO_COLOR, 0.05)
-      const innerColor = lighten(EMBER_HALO_COLOR, 0.3)
-      halo.rect(
-        rect.left - outerExpand,
-        rect.top - outerExpand,
-        rect.width + outerExpand * 2,
-        rect.height + outerExpand * 2,
-      )
-      halo.fill({ color: outerColor, alpha: 0.1 * haloAmp })
-      halo.rect(
-        rect.left - innerExpand,
-        rect.top - innerExpand,
-        rect.width + innerExpand * 2,
-        rect.height + innerExpand * 2,
-      )
-      halo.fill({ color: innerColor, alpha: 0.22 * haloAmp })
-      // Bottom seam — the button "sits in" a pool of heat.
-      halo.rect(rect.left - 4, rect.bottom - 2, rect.width + 8, 5)
-      halo.fill({ color: EMBER_HOT_COLOR, alpha: 0.28 * haloAmp })
-    }
 
     // --- Spawn (only while hovered) ---
     if (effect.enabled) {
