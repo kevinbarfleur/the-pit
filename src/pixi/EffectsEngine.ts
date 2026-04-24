@@ -1196,11 +1196,11 @@ export class EffectsEngine {
       // grass growing on the visible ground — read as isometric, not as
       // grass growing up from a rectangular edge.
       //
-      // Base count is 40 in patch mode (vs 34+10 on edge) because
+      // Base count is 60 in patch mode (vs 34+10 on edge) because
       // ground-cover needs real density to stop reading as a handful
       // of scattered blades. Callers scale with `countScale` (default
-      // 1 in the config; islands pass 2–3+ to really carpet).
-      const count = Math.max(12, Math.round(40 * countScale))
+      // 1 in the config; islands pass 5+ to actually carpet).
+      const count = Math.max(20, Math.round(60 * countScale))
       for (let i = 0; i < count; i++) {
         const fx = Math.random()
         const fy = Math.random()
