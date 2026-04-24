@@ -1,0 +1,25 @@
+{
+  "enabledPlugins": {
+    "codex@openai-codex": true
+  },
+  "permissions": {
+    "allow": [
+      "Bash(npm run dev)",
+      "Bash(npm run build)",
+      "Bash(npm run typecheck)",
+      "Bash(npm test)",
+      "Bash(npm run routes:gen)",
+      "Bash(npx convex dev)",
+      "Bash(git status)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(grep:*)",
+      "Bash(rg:*)"
+    ]
+  }
+}
