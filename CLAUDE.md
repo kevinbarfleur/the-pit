@@ -9,8 +9,11 @@ Before touching anything, skim:
 - `brainstorming/02-game-loop.md` — macro/micro loops, MVP must-ship
 - `brainstorming/01-research-needs.md` — research priorities (P0/P1/P2)
 - **`brainstorming/research_codex/00-p0-decision-index.md`** — locked P0 decisions from researcher #1
+- **`brainstorming/03-design-system-brief.md`** — design system scope
 
-If a design decision is listed in the index → **follow it**. Don't re-litigate. If the topic is outside the index → ask user or spawn the relevant agent.
+During implementation, **the `/kit` route in the running app is the source of visual truth** for every primitive. If `/kit` disagrees with a markdown doc, `/kit` wins.
+
+If a design decision is listed in an index → **follow it**. Don't re-litigate. If the topic is outside the index → ask user or spawn the relevant agent.
 
 ## Stack (locked)
 
@@ -21,7 +24,7 @@ If a design decision is listed in the index → **follow it**. Don't re-litigate
 - **Motion** — React UI animations
 - **Convex** (deployment `aware-goose-251`, eu-west-1) — auth, state, mutations, actions, cron
 - **Tailwind v4** — via `@tailwindcss/vite`, everything in `src/index.css` (no config file)
-- **Monaspace / JetBrains Mono** — monospace-first terminal aesthetic
+- **JetBrains Mono** (body) + **VT323** (display / retro / kbd / tier labels) + **Caveat** (annotations in `/kit` only) — imported via Google Fonts in `src/index.css`. Monaspace has been abandoned — the Claude Design handoff locked this stack.
 - **Vitest** + **Playwright** — unit + e2e
 
 **Do not add** Zustand state that should be on Convex. **Do not introduce** SSR. **Do not install** an additional UI kit (shadcn, Radix) without asking — we're building the terminal kit ourselves.
@@ -31,7 +34,7 @@ If a design decision is listed in the index → **follow it**. Don't re-litigate
 1. **Active Delve is the core.** Offline = flavor (8h cap, 25% rate, no depth, no boss, no rare/T0 first drops). If a design tempts you to make progression happen offline, push back.
 2. **Server-authoritative.** The client sends intents. The server resolves. No `localStorage.setItem('gold', 1e9)` should ever work.
 3. **Deterministic simulation.** 4Hz fixed tick, `pure-rand` multi-streams, integer/basis-point math. Same seed + same actions → identical snapshot.
-4. **Terminal UI.** Hybrid — DOM/React for most, Pixi for combat. Monospace, box-drawing, limited palette, 14px body floor.
+4. **Pixel-art medieval terminal UI (locked by Claude Design handoff).** Hybrid — DOM/React for chrome, PixiJS for combat arena + optional `juicy` impact feedback. Pixel-imperfect frames via `clip-path` stepped corners, inset chunky shadows, gilded runic accents, drippy ASCII wordmark. 12px body, VT323 for retro display. See `/kit` for the canonical component gallery.
 5. **One boss for now.** Depth over breadth. Working name: The Pit Warden.
 6. **Decorrelated from Le Collecteur de Doses.** Same universe, different project. Don't import Collecteur code.
 
@@ -204,3 +207,6 @@ Use `/research-note <slug>` to scaffold a new note in `brainstorming/research/`.
 - Do not write game state to `localStorage` (dev-only scratch pads are fine).
 - Do not read the Collecteur codebase for ideas without asking; they're different projects.
 - Do not add emojis to source or commits unless the user asks.
+- Do not reintroduce Monaspace — the design ships with JetBrains Mono + VT323 per Claude Design handoff.
+- Do not use `border-radius > 0` anywhere. Rounded feel comes from `╭╮╰╯` glyphs and `clip-path` stepped polygons.
+- Do not use spring/bounce/elastic easings. Linear/step only (see `brainstorming/03-design-system-brief.md` §3.5).

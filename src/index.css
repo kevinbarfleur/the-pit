@@ -1,16 +1,27 @@
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=VT323&family=Caveat:wght@500;700&display=swap');
 @import "tailwindcss";
 
 @theme {
-  --font-mono: "Monaspace Neon", "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+  --font-sans: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+  --font-mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+  --font-display: "VT323", "JetBrains Mono", monospace;
+  --font-annot: "Caveat", cursive;
 
   --color-pit-ink: #0a0a0a;
   --color-pit-ink-2: #111111;
-  --color-pit-bone: #d8cfb8;
+  --color-pit-ink-3: #181818;
+  --color-pit-line: #2a2a2a;
+  --color-pit-line-bright: #3a3a3a;
   --color-pit-dim: #6b6b6b;
+  --color-pit-bone: #d8cfb8;
+  --color-pit-bone-bright: #f2ecd9;
   --color-pit-green: #9ae66e;
   --color-pit-amber: #d4a147;
   --color-pit-red: #d45a5a;
   --color-pit-violet: #9a7bd4;
+  --color-pit-cyan: #6ec3d4;
+  --color-pit-gild: #b58b3a;
+  --color-pit-annot: #d4a147;
 }
 
 html, body, #root {
@@ -19,14 +30,56 @@ html, body, #root {
   min-height: 100dvh;
   background: var(--color-pit-ink);
   color: var(--color-pit-bone);
-  font-family: var(--font-mono);
-  font-variant-ligatures: contextual;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  line-height: 1.45;
+  image-rendering: pixelated;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
 }
 
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
 ::selection {
   background: var(--color-pit-green);
   color: var(--color-pit-ink);
+}
+
+@keyframes pit-blink {
+  50% { opacity: 0; }
+}
+
+/* Reusable "pit background" with vignette + dither. Apply to outer page div. */
+.pit-bg {
+  position: relative;
+  background:
+    radial-gradient(ellipse at 50% 20%, rgba(154, 230, 110, 0.02), transparent 60%),
+    var(--color-pit-ink);
+}
+.pit-bg::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  background:
+    repeating-linear-gradient(0deg, transparent 0 3px, rgba(0, 0, 0, 0.06) 3px 4px),
+    radial-gradient(ellipse at center, transparent 50%, rgba(0, 0, 0, 0.55) 100%);
+}
+.pit-bg > * {
+  position: relative;
+  z-index: 2;
+}
+
+/* CRT scanlines — toggleable via body.pit-scanlines */
+body.pit-scanlines .pit-bg::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 3;
+  background: repeating-linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 0 1px, transparent 1px 3px);
 }
