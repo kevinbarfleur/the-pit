@@ -142,14 +142,13 @@ export class ChainsEngine {
     }
 
     const canvas = this.app.canvas
-    canvas.style.position = 'fixed'
+    // `absolute` instead of `fixed` so the canvas can be layered inside
+    // a DOM stacking context controlled by the consumer (e.g. the Pit
+    // scene's chains-host div). The host is itself positioned to cover
+    // the viewport, so the rendered area matches `resizeTo: window`.
+    canvas.style.position = 'absolute'
     canvas.style.inset = '0'
     canvas.style.pointerEvents = 'none'
-    // Below the PitScene DOM (z-index 750) so chains draw BEHIND the
-    // islands — the player should perceive the chain as running
-    // through / behind the rock, not over the sign post. Still above
-    // the shaft backdrop, and below the EffectsEngine canvas (900).
-    canvas.style.zIndex = '700'
     canvas.style.imageRendering = 'pixelated'
     this.container.appendChild(canvas)
 

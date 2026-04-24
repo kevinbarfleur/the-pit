@@ -4,7 +4,6 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import type { QueryClient } from '@tanstack/react-query'
 import type { ConvexReactClient } from 'convex/react'
 import { EffectsProvider } from '../components/pixi/EffectsProvider'
-import { ChainsProvider } from '../components/pixi/ChainsProvider'
 
 interface RouterContext {
   queryClient: QueryClient
@@ -18,15 +17,13 @@ export const Route = createRootRouteWithContext<RouterContext>()({
 function RootLayout() {
   return (
     <EffectsProvider>
-      <ChainsProvider>
-        <Outlet />
-        {import.meta.env.DEV && (
-          <>
-            <TanStackRouterDevtools position="bottom-right" />
-            <ReactQueryDevtools initialIsOpen={false} />
-          </>
-        )}
-      </ChainsProvider>
+      <Outlet />
+      {import.meta.env.DEV && (
+        <>
+          <TanStackRouterDevtools position="bottom-right" />
+          <ReactQueryDevtools initialIsOpen={false} />
+        </>
+      )}
     </EffectsProvider>
   )
 }

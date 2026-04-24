@@ -24,10 +24,28 @@ import {
   BOSS_EVERY,
   CHUNK_HEIGHT,
   MAX_COLUMNS,
+  STARTING_DEPTH,
   type PitChunk,
   type PitNode,
   type PitNodeType,
 } from './types'
+
+/**
+ * DEBUG scaffolding. For the first few depths of a fresh run we force a
+ * rotation of node types so the player lands on a window that exposes
+ * every unique hover effect (pulse / embers / sparkle / ripple / grass).
+ * Remove or gate behind a flag once visuals stop needing ad-hoc tests.
+ *
+ * Shape: one entry per depth (STARTING_DEPTH..STARTING_DEPTH+N-1). Each
+ * entry is the ordered list of types to assign to the row's nodes (in
+ * column-ascending order). Missing columns fall back to pickType.
+ */
+const FORCED_HOVER_TYPES: Record<number, PitNodeType[]> = {
+  [STARTING_DEPTH]: ['combat'],
+  [STARTING_DEPTH + 1]: ['rest', 'combat', 'shop'],
+  [STARTING_DEPTH + 2]: ['event', 'elite', 'treasure'],
+  [STARTING_DEPTH + 3]: ['cache', 'combat', 'rest'],
+}
 
 // --------------------- seeding ---------------------
 
@@ -164,9 +182,16 @@ export function generateChunkNodes(runSeed: string, chunkIndex: number): PitNode
     const depth = chunkIndex * CHUNK_HEIGHT + rel
     const width = pickWidth(depth, rng)
     const columns = pickColumns(width, rng)
-    for (const col of columns) {
+    const forcedTypes = FORCED_HOVER_TYPES[depth]
+    for (let i = 0; i < columns.length; i++) {
+      const col = columns[i]
       const isBoss = depth > 0 && depth % BOSS_EVERY === 0
-      const type: PitNodeType = isBoss ? 'boss' : pickType(depth, rng.unit())
+      let type: PitNodeType = isBoss ? 'boss' : pickType(depth, rng.unit())
+      // Debug override — guarantee each hover effect is reachable from
+      // the starting position. Does not override boss depths.
+      if (!isBoss && forcedTypes && forcedTypes[i]) {
+        type = forcedTypes[i]
+      }
       nodes.push({
         id: `${depth}:${col}`,
         depth,

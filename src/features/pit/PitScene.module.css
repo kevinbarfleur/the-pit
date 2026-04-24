@@ -1,15 +1,29 @@
 .scene {
   position: fixed;
   inset: 0;
-  /* Explicit z-index so PitScene's DOM content (islands, chrome)
-     stacks ABOVE the ChainsEngine canvas (z-index 700) and below the
-     EffectsEngine canvas (z-index 900). Result: chains pass behind
-     islands; effects (bursts, embers) paint over everything. */
-  z-index: 750;
   background: var(--color-pit-ink);
   color: var(--color-pit-bone);
   overflow: hidden;
   font-family: var(--font-sans);
+  /* Creating an isolated stacking context here scopes the ChainsEngine
+     canvas (z-index 1 via .chainsHost) and the islands (z-index 2 via
+     NodeMap) to this scene. The global-body EffectsEngine canvas at
+     z-index 900 still paints on top. */
+  isolation: isolate;
+}
+
+/*
+ * Host for the ChainsEngine canvas. Positioned absolutely to cover the
+ * entire scene; z-index 1 so it sits above the shaft walls (z-index 0)
+ * but below the islands (NodeMap z-index 2). Result: chains read as
+ * passing through / behind the rock silhouette while still draping
+ * visibly over the background.
+ */
+.chainsHost {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
 }
 
 /*

@@ -1,10 +1,16 @@
 import { useCallback, useEffect } from 'react'
 import { usePitRun } from '../../hooks/usePitRun'
 import { usePitUiStore } from '../../stores/pitUiStore'
+import { ChainsProvider } from '../../components/pixi/ChainsProvider'
 import { PitView } from './map/PitView'
 import { ZoomTransition } from './transition/ZoomTransition'
 import { RoomForType } from './rooms/RoomForType'
 import styles from './PitScene.module.css'
+
+/** DOM id of the element into which the ChainsEngine mounts its canvas.
+ *  Rendered inside the scene so the chains canvas participates in the
+ *  same stacking context as the islands. */
+const CHAINS_HOST_ID = 'pit-chains-host'
 
 /**
  * Top-level orchestrator for `/pit`. Owns the scene state machine and
@@ -53,19 +59,25 @@ export function PitScene() {
 
   return (
     <div className={styles.scene} data-zoom={showTransition ? 'active' : 'idle'}>
-      {showMap && <PitView run={run} />}
-      {showRoom && pendingCommit && (
-        <div className={styles.roomLayer}>
-          <RoomForType type={pendingCommit.nodeType} onExit={startZoomOut} />
-        </div>
-      )}
-      {showTransition && pendingCommit && (
-        <ZoomTransition
-          anchor={pendingCommit.rect}
-          direction={scene === 'zooming-in' ? 'in' : 'out'}
-          onComplete={scene === 'zooming-in' ? onZoomInComplete : onZoomOutComplete}
-        />
-      )}
+      {/* Host for the ChainsEngine canvas. Lives inside the scene's
+          stacking context so chains can sit behind the islands but
+          still draw above the shaft's background walls. */}
+      <div id={CHAINS_HOST_ID} className={styles.chainsHost} aria-hidden="true" />
+      <ChainsProvider mountTargetId={CHAINS_HOST_ID}>
+        {showMap && <PitView run={run} />}
+        {showRoom && pendingCommit && (
+          <div className={styles.roomLayer}>
+            <RoomForType type={pendingCommit.nodeType} onExit={startZoomOut} />
+          </div>
+        )}
+        {showTransition && pendingCommit && (
+          <ZoomTransition
+            anchor={pendingCommit.rect}
+            direction={scene === 'zooming-in' ? 'in' : 'out'}
+            onComplete={scene === 'zooming-in' ? onZoomInComplete : onZoomOutComplete}
+          />
+        )}
+      </ChainsProvider>
     </div>
   )
 }

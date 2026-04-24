@@ -136,24 +136,20 @@ function mulberry32(seed: number) {
 
 type CapVariant = 'round' | 'flat' | 'tall' | 'lumpy'
 type StalVariant = 'spread' | 'cluster' | 'asym' | 'sparse'
-type SignVariant = 'straight' | 'leanLeft' | 'leanRight' | 'pressed'
 
 interface Variants {
   cap: CapVariant
   stal: StalVariant
-  sign: SignVariant
   paletteIdx: number
 }
 
 function pickVariants(hash: number): Variants {
   const caps: CapVariant[] = ['round', 'flat', 'tall', 'lumpy']
   const stals: StalVariant[] = ['spread', 'cluster', 'asym', 'sparse']
-  const signs: SignVariant[] = ['straight', 'leanLeft', 'leanRight', 'pressed']
   return {
     paletteIdx: hash & 0b11,
     cap: caps[(hash >> 4) & 0b11],
     stal: stals[(hash >> 8) & 0b11],
-    sign: signs[(hash >> 12) & 0b11],
   }
 }
 
@@ -174,23 +170,32 @@ export interface SignpostLayout {
   tiltRise: number
 }
 
+/**
+ * Continuous signpost layout. Replaces the old 4-bucket variant picker
+ * with values derived directly from the node id hash — so tilt, x
+ * offset, and y depth all vary across a wide band rather than snapping
+ * to four fixed poses. Each piece of the layout samples its own byte
+ * of the hash so the three axes are effectively independent.
+ *
+ *   tiltRise ∈ [-0.4, 0.4)   — px of horizontal shift per row
+ *   xJitter  ∈ [-3, 3]       — px offset from the centre
+ *   yBase    ∈ [5, 8]        — higher = sits deeper on the cap
+ *   plaqueW  ∈ {11, 12, 13}  — slight width variety
+ */
 export function computeSignpostLayout(id: string): SignpostLayout {
-  const variants = pickVariants(hashId(id))
-  return signpostLayoutForVariant(variants.sign)
-}
-
-function signpostLayoutForVariant(variant: SignVariant): SignpostLayout {
-  switch (variant) {
-    case 'straight':
-      return { plaqueCenterX: 18, plaqueCenterY: 5, plaqueW: 12, plaqueH: 5, tiltRise: 0 }
-    case 'leanLeft':
-      return { plaqueCenterX: 16, plaqueCenterY: 6, plaqueW: 12, plaqueH: 5, tiltRise: -0.25 }
-    case 'leanRight':
-      return { plaqueCenterX: 20, plaqueCenterY: 6, plaqueW: 12, plaqueH: 5, tiltRise: 0.25 }
-    case 'pressed':
-      // Sits lower on the cap, slightly bigger plaque — reads as the sign
-      // post being pounded deeper in.
-      return { plaqueCenterX: 18, plaqueCenterY: 8, plaqueW: 13, plaqueH: 6, tiltRise: 0 }
+  const hash = hashId(id)
+  const tiltUnit = ((hash >> 4) & 0xff) / 256
+  const tiltRise = tiltUnit * 0.8 - 0.4
+  const xJitter = ((hash >> 12) & 0x07) - 3
+  const yBase = 5 + ((hash >> 16) & 0x03)
+  const plaqueW = 11 + (((hash >> 20) & 0x03) % 3)
+  const plaqueH = 5 + (((hash >> 24) & 0x03) === 0 ? 1 : 0) // occasional taller plaque
+  return {
+    plaqueCenterX: 18 + xJitter,
+    plaqueCenterY: yBase,
+    plaqueW,
+    plaqueH,
+    tiltRise,
   }
 }
 
@@ -219,9 +224,10 @@ export function drawIsland(
   const variants = pickVariants(hash)
   const stone = STONE_PALETTES[variants.paletteIdx]
   const plaque = PLAQUE_PALETTE[type]
+  const signpost = computeSignpostLayout(id)
 
   drawCapAndStalactites(ctx, rng, stone, variants.cap, variants.stal)
-  drawSignpost(ctx, variants.sign, plaque)
+  drawSignpost(ctx, signpost, plaque)
   drawShadow(ctx)
 }
 
@@ -421,10 +427,9 @@ function drawStalactite(
 
 function drawSignpost(
   ctx: CanvasRenderingContext2D,
-  variant: SignVariant,
+  layout: SignpostLayout,
   plaque: PlaquePalette,
 ): void {
-  const layout = signpostLayoutForVariant(variant)
   const { plaqueCenterX, plaqueCenterY, plaqueW, plaqueH, tiltRise } = layout
 
   // Stake: from just below the plaque down into the cap, tilt-aligned.
