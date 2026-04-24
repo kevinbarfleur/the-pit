@@ -114,19 +114,32 @@ const ORBIT_POOL_SIZE = 48
 
 // --------------------- attached effect ---------------------
 
-interface DripColumn {
-  xFrac: number // 0..1 within button width
-  length: number // current length in px (below button)
-  breakAt: number // length at which column breaks into a droplet
-  growRate: number // px/s
-  delay: number // poolLevel threshold before growing
-  g: Graphics
-}
-
+/**
+ * DripState models the liquid that pools at a button's bottom edge during hover.
+ *
+ * It is a 1D height field: `cells[i]` is the vertical thickness (in px) of the
+ * liquid directly below column `i`. Each frame while active we inject random
+ * flow at a few indices (simulating overflowing water), spread the energy
+ * laterally via diffusion (surface tension), cap the max thickness, and
+ * randomly pinch off droplets from tall cells.
+ *
+ * When the host element stops being hovered, the whole body begins to fall
+ * with an accelerating velocity (gravity) while fading — occasional droplets
+ * keep breaking off during the fall. Once the body's alpha reaches zero the
+ * cells clear and the state is ready for the next hover.
+ */
 interface DripState {
-  poolLevel: number // 0..1
-  columns: DripColumn[]
-  poolGraphic: Graphics
+  cells: number[]
+  cellCount: number
+  // Drain phase — body-wide translation and velocity when falling off
+  bodyOffset: number
+  bodyVelocity: number
+  bodyAlpha: number
+  // Random detach threshold per cell (refreshed after each pinch)
+  detachMargin: number[]
+  // Throttle for random flow injection
+  flowAcc: number
+  graphic: Graphics
 }
 
 interface AttachedEffect {
@@ -405,36 +418,19 @@ export class EffectsEngine {
   }
 
   private initDripPool(effect: AttachedEffect): void {
-    const poolGraphic = new Graphics()
-    this.dripLayer.addChild(poolGraphic)
-    const columns: DripColumn[] = [
-      {
-        xFrac: 0.16,
-        length: 0,
-        breakAt: 7 + Math.random() * 7,
-        growRate: 10 + Math.random() * 6,
-        delay: 0.25,
-        g: new Graphics(),
-      },
-      {
-        xFrac: 0.5,
-        length: 0,
-        breakAt: 12 + Math.random() * 8, // center accumulates longer
-        growRate: 14 + Math.random() * 6,
-        delay: 0.6, // center must wait for pool to fill
-        g: new Graphics(),
-      },
-      {
-        xFrac: 0.84,
-        length: 0,
-        breakAt: 7 + Math.random() * 7,
-        growRate: 10 + Math.random() * 6,
-        delay: 0.28,
-        g: new Graphics(),
-      },
-    ]
-    for (const c of columns) this.dripLayer.addChild(c.g)
-    effect.drip = { poolLevel: 0, columns, poolGraphic }
+    const graphic = new Graphics()
+    this.dripLayer.addChild(graphic)
+    const cellCount = 28
+    effect.drip = {
+      cells: new Array(cellCount).fill(0),
+      cellCount,
+      bodyOffset: 0,
+      bodyVelocity: 0,
+      bodyAlpha: 1,
+      detachMargin: new Array(cellCount).fill(0).map(() => Math.random() * 3),
+      flowAcc: 0,
+      graphic,
+    }
   }
 
   detach(id: number): void {
@@ -448,8 +444,7 @@ export class EffectsEngine {
       o.g.visible = false
     }
     if (effect.drip) {
-      effect.drip.poolGraphic.destroy()
-      for (const c of effect.drip.columns) c.g.destroy()
+      effect.drip.graphic.destroy()
       effect.drip = undefined
     }
     this.attached.splice(idx, 1)
@@ -589,77 +584,146 @@ export class EffectsEngine {
   }
 
   private tickDripPool(effect: AttachedEffect, rect: DOMRect, dt: number): void {
-    const state = effect.drip
-    if (!state) return
-
-    // Pool fills toward 1 when enabled, drains toward 0 when disabled
-    const target = effect.enabled ? 1 : 0
-    const rate = effect.enabled ? 2.4 : 3.8
-    state.poolLevel += (target - state.poolLevel) * rate * dt
-    if (state.poolLevel < 0.002) state.poolLevel = 0
-    if (state.poolLevel > 0.998) state.poolLevel = 1
-
-    // Draw the pool — small pixelated ellipse-ish hump at center-bottom
+    const s = effect.drip
+    if (!s) return
     const color = effect.config.color
-    const cx = rect.left + rect.width / 2
-    const bottomY = rect.bottom - 1
-    state.poolGraphic.clear()
-    if (state.poolLevel > 0) {
-      const w = Math.max(2, Math.round(3 + state.poolLevel * 6))
-      const innerW = Math.max(1, Math.round(w - 2))
-      // Main hump: 2px tall bar
-      state.poolGraphic.rect(Math.round(cx - w / 2), bottomY, w, 2)
-      state.poolGraphic.fill({ color, alpha: 0.9 })
-      // Upper narrower row giving the "rounded" pixelated cap
-      if (innerW > 0) {
-        state.poolGraphic.rect(Math.round(cx - innerW / 2), bottomY - 1, innerW, 1)
-        state.poolGraphic.fill({ color, alpha: 0.65 })
+
+    const hasBody = s.cells.some((c) => c > 0.1)
+
+    if (effect.enabled) {
+      // If we were mid-drain and hover resumed, let the already-falling body
+      // finish falling (as particles) and reset the field to a fresh state.
+      if (s.bodyOffset > 0.5) {
+        for (let i = 0; i < s.cellCount; i++) {
+          if (s.cells[i] > 1) {
+            this.spawnLiquidDroplet(effect, rect, i, s.cells[i], s.bodyOffset, s.bodyVelocity)
+          }
+        }
+        s.cells.fill(0)
+      }
+      s.bodyOffset = 0
+      s.bodyVelocity = 0
+      s.bodyAlpha = 1
+
+      // 1. Random flow injection — 2-4 bumps per ~60ms, dispersed across width
+      s.flowAcc += dt
+      if (s.flowAcc >= 0.06) {
+        s.flowAcc = 0
+        const injections = 2 + Math.floor(Math.random() * 3)
+        for (let k = 0; k < injections; k++) {
+          const i = Math.floor(Math.random() * s.cellCount)
+          const amount = 0.4 + Math.random() * 1.3
+          s.cells[i] += amount
+          if (i > 0) s.cells[i - 1] += amount * 0.45
+          if (i < s.cellCount - 1) s.cells[i + 1] += amount * 0.45
+        }
+      }
+
+      // 2. Lateral diffusion (surface tension) + gentle center-bias growth
+      const k = 0.2
+      const next = s.cells.slice()
+      const half = s.cellCount / 2
+      for (let i = 0; i < s.cellCount; i++) {
+        const left = i > 0 ? s.cells[i - 1] : s.cells[i]
+        const right = i < s.cellCount - 1 ? s.cells[i + 1] : s.cells[i]
+        next[i] = s.cells[i] + k * (left + right - 2 * s.cells[i])
+        // Weak gravity bias toward center so runoff pools naturally low
+        const centerDist = Math.abs(i - half) / half
+        next[i] += (1 - centerDist) * 0.55 * dt
+      }
+      s.cells = next
+
+      // 3. Cap + random droplet detach from any sufficiently tall cell
+      const maxH = 14
+      for (let i = 0; i < s.cellCount; i++) {
+        if (s.cells[i] > maxH) s.cells[i] = maxH
+        const threshold = 8 + s.detachMargin[i]
+        if (s.cells[i] > threshold) {
+          const pinchProb = (s.cells[i] - threshold) * dt * 2.4
+          if (Math.random() < pinchProb) {
+            this.spawnLiquidDroplet(effect, rect, i, s.cells[i])
+            s.cells[i] = Math.max(0, s.cells[i] - 4.5)
+            s.detachMargin[i] = Math.random() * 3
+          }
+        }
+      }
+    } else if (hasBody) {
+      // Drain: body translates down with gravity, fades, sheds random droplets
+      s.bodyVelocity += 380 * dt
+      s.bodyOffset += s.bodyVelocity * dt
+      s.bodyAlpha = Math.max(0, s.bodyAlpha - dt / 0.9)
+
+      // Keep shedding droplets as the body falls, dispersed
+      if (s.bodyAlpha > 0.2 && Math.random() < dt * 16) {
+        const i = Math.floor(Math.random() * s.cellCount)
+        if (s.cells[i] > 1) {
+          this.spawnLiquidDroplet(effect, rect, i, s.cells[i], s.bodyOffset, s.bodyVelocity)
+          s.cells[i] = Math.max(0, s.cells[i] - 2)
+        }
+      }
+
+      if (s.bodyAlpha <= 0) {
+        s.cells.fill(0)
+        s.bodyOffset = 0
+        s.bodyVelocity = 0
+        s.bodyAlpha = 1
       }
     }
 
-    // Update each drip column
-    for (const col of state.columns) {
-      const canGrow = effect.enabled && state.poolLevel >= col.delay
-      if (canGrow) {
-        col.length += col.growRate * dt
-        if (col.length >= col.breakAt) {
-          this.spawnDripDroplet(effect, col, rect)
-          col.length = 0
-          // randomize next break to avoid uniform cadence
-          col.breakAt = 6 + Math.random() * 14
-        }
-      } else {
-        // Drain: retract the column
-        col.length = Math.max(0, col.length - 90 * dt)
-      }
+    // Draw — single Graphics, two passes (body + specular top pixel)
+    s.graphic.clear()
+    if (!hasBody) return
 
-      // Redraw the column line
-      const colX = rect.left + rect.width * col.xFrac
-      col.g.clear()
-      if (col.length > 0) {
-        const thickness = col.xFrac === 0.5 ? 2 : 1
-        col.g.rect(Math.round(colX - thickness / 2), Math.round(rect.bottom), thickness, Math.round(col.length))
-        col.g.fill({ color, alpha: 0.92 })
-        // A slightly brighter "head" pixel at the leading edge for specular feel
-        if (col.length > 2) {
-          col.g.rect(Math.round(colX - thickness / 2), Math.round(rect.bottom + col.length - 1), thickness, 1)
-          col.g.fill({ color: lighten(color, 0.35), alpha: 1 })
-        }
+    const cellWidth = rect.width / s.cellCount
+    const baseY = rect.bottom + s.bodyOffset
+
+    // Pass 1 — the main liquid body, fills all cells
+    for (let i = 0; i < s.cellCount; i++) {
+      const h = s.cells[i]
+      if (h < 0.15) continue
+      const x = rect.left + i * cellWidth
+      const w = cellWidth + 0.6 // small overdraw avoids pixel gaps between neighboring cells
+      s.graphic.rect(Math.round(x), Math.round(baseY), Math.max(1, Math.round(w)), Math.max(1, Math.round(h)))
+    }
+    s.graphic.fill({ color, alpha: 0.92 * s.bodyAlpha })
+
+    // Pass 2 — 1px specular top row for the "wet" shine
+    if (s.bodyAlpha > 0.3) {
+      for (let i = 0; i < s.cellCount; i++) {
+        const h = s.cells[i]
+        if (h < 1) continue
+        const x = rect.left + i * cellWidth
+        const w = cellWidth + 0.6
+        s.graphic.rect(Math.round(x), Math.round(baseY), Math.max(1, Math.round(w)), 1)
       }
+      s.graphic.fill({ color: lighten(color, 0.42), alpha: 0.9 * s.bodyAlpha })
     }
   }
 
-  private spawnDripDroplet(effect: AttachedEffect, col: DripColumn, rect: DOMRect): void {
+  private spawnLiquidDroplet(
+    effect: AttachedEffect,
+    rect: DOMRect,
+    cellIndex: number,
+    thickness: number,
+    yOffset = 0,
+    inheritVy = 0,
+  ): void {
     const p = this.pickFreeParticle()
     if (!p) return
-    const x = rect.left + rect.width * col.xFrac + (Math.random() - 0.5) * 2
-    const y = rect.bottom + col.length
-    p.vx = (Math.random() - 0.5) * 3
-    p.vy = 40 + Math.random() * 30
-    p.gravity = 620
-    p.life = 0.9 + Math.random() * 0.5
+    const s = effect.drip
+    if (!s) return
+    const cellWidth = rect.width / s.cellCount
+    const cx = rect.left + cellIndex * cellWidth + cellWidth / 2
+    const jitterX = (Math.random() - 0.5) * cellWidth * 0.8
+    const x = cx + jitterX
+    const y = rect.bottom + yOffset + thickness
+    p.vx = (Math.random() - 0.5) * 6
+    p.vy = inheritVy + 20 + Math.random() * 40
+    p.gravity = 600
+    p.life = 0.8 + Math.random() * 0.5
     p.maxLife = p.life
-    p.size = col.xFrac === 0.5 ? (Math.random() < 0.6 ? 2 : 3) : Math.random() < 0.4 ? 2 : 1
+    // Big thick cells drop bigger globs
+    p.size = thickness > 9 ? (Math.random() < 0.55 ? 2 : 3) : Math.random() < 0.45 ? 2 : 1
     p.color = effect.config.color
     p.fadeMode = 'late'
     this.drawParticle(p)
