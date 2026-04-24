@@ -1,0 +1,41 @@
+.island {
+  position: relative;
+  display: block;
+  image-rendering: pixelated;
+  animation: islandFloat 2.4s steps(1) infinite;
+}
+
+.canvas {
+  position: absolute;
+  inset: 0;
+  image-rendering: pixelated;
+  -ms-interpolation-mode: nearest-neighbor;
+}
+
+.capZone {
+  position: absolute;
+  pointer-events: none;
+}
+
+.glyph {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  line-height: 1;
+  color: rgba(0, 0, 0, 0.92);
+  text-shadow:
+    1px 0 0 rgba(255, 255, 255, 0.22),
+    0 -1px 0 rgba(255, 255, 255, 0.18);
+  pointer-events: none;
+  z-index: 2;
+}
+
+@keyframes islandFloat {
+  0% { transform: translateY(0); }
+  25% { transform: translateY(-1px); }
+  50% { transform: translateY(-2px); }
+  75% { transform: translateY(-1px); }
+  100% { transform: translateY(0); }
+}
