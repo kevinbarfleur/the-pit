@@ -35,25 +35,39 @@ Concevoir et maintenir l'UI de **The Pit** dans un style terminal-hybride :
 - `src/index.css` — tokens actuels (`@theme`)
 - `brainstorming/01-research-needs.md` — items D1–D6
 
+## Décision arrêtée (D1 research) — Hybrid Terminal
+
+**Pas de strict ASCII.** Le MVP est **hybrid terminal** :
+
+| Couche | Quoi | Tech |
+|---|---|---|
+| Navigation, panels, inventory, upgrades, logs, tooltips, modals | Terminal structure (ASCII panels, box-drawing) | DOM / React |
+| Combat visualization, damage numbers, enemy intent effects, loot bursts, hit flashes | Pixel/sprite accents (32×32 ou 48×48) | PixiJS |
+
+**Langage terminal** appliqué systématiquement :
+- Box panels avec bordures single-line.
+- Modals importants avec double-line flavor borders.
+- Logs = timestamped terminal output.
+- Progress bars text-first, pas glossy meters.
+- Cards = terminal blocks bordés avec rarity glyphs + tags.
+
+**Visual rule** : structure terminal, usabilité moderne, pixel art accents limités. Si un élément semble naturel dans Warp/Zed/k9s *et* fit un dungeon roguelite → on est dans la cible.
+
 ## Références canon
 
+### Cogmind (high-end terminal)
+- Terminal UI animé, lisible, combat-rich. Best-in-class.
+- À copier : grid discipline, particles intégrées, logs riches, color-coded state.
+
+### Loop Hero / Cultist Simulator (hybrid readability)
+- ASCII + pixel sprites. Cards, text, symbolic assets. Clarté > fidelité.
+
 ### Warp.dev / Zed
-- Monospace partout mais avec vrais boutons, vraies animations, vraies couleurs.
-- Ligatures activées (font-variant-ligatures: contextual).
-- Layout dense mais aéré — on ne remplit pas l'écran.
+- Monospace partout mais vrais boutons, animations, couleurs.
+- Ligatures activées (`font-variant-ligatures: contextual`).
 
-### Caves of Qud / Cogmind
-- Grid pur de glyphes.
-- Feedback visuel via color flashes + glyph swaps, pas de particules.
-- Tooltips textuels denses, acceptables car monospace.
-
-### Loop Hero
-- ASCII + pixel sprites hybride. Rétro assumé.
-- Une unique palette "sépia/sombre" qui donne l'identité.
-
-### Cultist Simulator
-- Typo = personnage. Le serif tapé machine = narratif.
-- Pas de "UI" évidente — des cartes et du texte.
+### Dwarf Fortress (tileset coexistence)
+- ASCII logic + tile/pixel representation coexistent. Pas obligatoire de choisir.
 
 ## Tokens design (V0)
 
@@ -108,15 +122,36 @@ Utilise single par défaut, double pour emphasize (modals, boss), round pour mom
 - **Flicker** (subtle phosphor) sur events rares uniquement (crit, drop légendaire). 2-3 frames.
 - **Glow** via `text-shadow` léger sur les couleurs accents, pas sur le bone.
 
-## Hiérarchie typographique
+## Hiérarchie typographique (D2 research)
 
 | Usage | Monaspace variant | Size | Weight |
 |---|---|---|---|
-| Screen title / boss name | Xenon (wide) | 24-32px | Bold |
-| Section header | Neon (normal) | 16-18px | Medium |
-| Body / stats | Neon | 14px | Regular |
-| Meta / timestamps | Argon (slightly tapered) | 12px | Regular, opacity 0.6 |
-| Tooltip | Neon | 13px | Regular |
+| Splash / title | Xenon | 24px | Bold |
+| Panel headings / modal titles | Krypton (ou Neon bold) | 20px | Bold |
+| Important values / selected node / card title (detail) | Neon | 16px | Medium |
+| Default body / tables / card text / logs | **Neon** (primaire) | 14px | Regular |
+| Timestamps / hotkeys / short tags / metadata | Argon | 12px | Regular, opacity 0.6 |
+| Narrative / event flavor | Argon | 14-16px | Regular italic |
+| Item names / rare callouts | Xenon (parcimonieux) | variable | — |
+
+**À éviter** : Radon pour core UI — réserve-le à du flavor corrompu/handwritten testé.
+**Body floor** : **14px** desktop. 12px pour labels/timestamps uniquement.
+
+### Line-height (D2)
+- Tables/logs denses : 1.25–1.35
+- Paragraphes/event text : 1.45–1.6
+- Buttons/cards : 1.2–1.35
+
+### Letter-spacing
+- Default : 0
+- Small caps / labels : 0.02em–0.06em
+- Jamais de wide tracking sur le body
+
+### CSS
+- Activer `font-variant-numeric: tabular-nums` sur les stats.
+- **Désactiver les ligatures** dans les stats tables si elles cassent l'alignement.
+- Tester les glyphs box-drawing tôt — pas tous les monospace alignent identiquement.
+- Body text **WCAG AA 4.5:1** minimum.
 
 ## Layout principles
 

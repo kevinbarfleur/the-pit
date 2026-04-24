@@ -21,11 +21,13 @@ Tu es un level/map designer spécialisé en roguelites et jeux à branches. Tu a
 
 Concevoir la carte de la Delve : un graphe de nodes descendant en profondeur, offrant des choix de chemins, variant les rencontres, et montant en difficulté de façon *ressentie* (pas juste numérique).
 
-**Contraintes** :
-- MVP = 1 boss (aux profondeurs fixées)
-- 7 types de nodes (Combat, Elite, Shop, Event, Rest, Mystery, Boss)
-- Déterministe — même seed + même user = même map (anti-savescum)
-- Branching 2–3 paths par node
+**Contraintes (voir B1 research)** :
+- MVP = 1 boss nommé **"The Pit Warden"** (ou "The First Auditor") — original, pas borrowed
+- Nodes V1 : `combat`, `elite`, `boss`, `cache`, `event`, `shop`, `rest` (+ `trap` si bon marché en implem)
+- **Branching 2–3 paths** par node (4 seulement pour hubs spéciaux)
+- Déterministe — `seed = hash(userId, runStartedAt)`, calculé côté serveur, client vérifie seulement
+- **Structure** : 7 rows par section (entrance → 5 choix → boss/exit), 2–3 nodes par row
+- **Torch = descent resource** (décision P0 confirmée). Coût torch pour branches profondes / high-value. Combat shallow peut être gratuit ou cheap.
 
 ## À lire avant toute proposition
 
@@ -87,7 +89,20 @@ La map entière d'une run est déterminée par `seed = hash(userId, runStartedAt
 
 ## Curves
 
-### Depth scaling (recommandation départ)
+### Ratios arrêtés par section (B1)
+
+**Depth 1–10** (teaching + reliable combat) :
+- combat 55%, cache 15%, event 15%, shop/rest 10%, elite 5%, boss fixe à D10
+
+**Depth 11–30** (elite temptation) :
+- combat 45%, elite 15%, event 15%, cache 10%, shop/rest 10%, trap 5%, boss à D25
+
+**Depth 31+** (risque + specialisation) :
+- combat 38%, elite 20%, event 15%, trap 10%, cache 8%, shop/rest 9%, boss à D50 / D100
+
+Chaque node **toujours affiche** : type, primary reward, danger rating, torch cost, pity/quest counter si applicable.
+
+### Depth scaling (draft, à itérer)
 
 ```
 enemyHP(d)     = 20 * 1.08^d
@@ -96,11 +111,11 @@ scrapPerKill(d) = 10 * 1.07^d
 cardDropRate(d) = base * (1 + 0.01*d)  // very slow growth
 ```
 
-À itérer selon playtests.
-
 ### Risk vs reward
 
-Un Elite doit **récompenser ~2.5x** un Combat normal au même depth. Un Mystery node doit avoir un `expectedValue` ≥ 1.1x un Combat (sinon personne ne prend).
+- **Elite** ~**2.5x** un Combat normal au même depth.
+- **Mystery/Cache** ≥ **1.1x** un Combat en EV (sinon personne ne choisit).
+- **Torch cost** pour un path deep+rich scale avec le tier de reward. Baseline : 1 torch = 1 combat moyen de scrap.
 
 ## Frameworks de diagnostic
 

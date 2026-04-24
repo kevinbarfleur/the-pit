@@ -7,9 +7,10 @@
 Before touching anything, skim:
 - `README.md` — stack, scripts, layout
 - `brainstorming/02-game-loop.md` — macro/micro loops, MVP must-ship
-- `brainstorming/01-research-needs.md` — open questions classified P0/P1/P2
+- `brainstorming/01-research-needs.md` — research priorities (P0/P1/P2)
+- **`brainstorming/research_codex/00-p0-decision-index.md`** — locked P0 decisions from researcher #1
 
-If a design question is open in `01-research-needs.md`, **don't guess** — ask the user or spawn the `pit-idle-designer` agent to research it.
+If a design decision is listed in the index → **follow it**. Don't re-litigate. If the topic is outside the index → ask user or spawn the relevant agent.
 
 ## Stack (locked)
 
@@ -27,23 +28,38 @@ If a design question is open in `01-research-needs.md`, **don't guess** — ask 
 
 ## Design pillars (locked)
 
-1. **Active Delve is the core.** Offline = flavor (capped, 50% rate). If a design tempts you to make progression happen offline, push back.
-2. **Server-authoritative.** The client asks Convex "I want to open node X". The server resolves. No `localStorage.setItem('gold', 1e9)` should ever work.
-3. **Terminal UI.** Monospace, box-drawing, limited palette, subtle CRT hints. Think Loop Hero × Warp.dev × Caves of Qud, not Bootstrap.
-4. **One boss for now.** Depth over breadth.
-5. **Decorrelated from Le Collecteur de Doses.** Same universe, different project. Don't import Collecteur code.
+1. **Active Delve is the core.** Offline = flavor (8h cap, 25% rate, no depth, no boss, no rare/T0 first drops). If a design tempts you to make progression happen offline, push back.
+2. **Server-authoritative.** The client sends intents. The server resolves. No `localStorage.setItem('gold', 1e9)` should ever work.
+3. **Deterministic simulation.** 4Hz fixed tick, `pure-rand` multi-streams, integer/basis-point math. Same seed + same actions → identical snapshot.
+4. **Terminal UI.** Hybrid — DOM/React for most, Pixi for combat. Monospace, box-drawing, limited palette, 14px body floor.
+5. **One boss for now.** Depth over breadth. Working name: The Pit Warden.
+6. **Decorrelated from Le Collecteur de Doses.** Same universe, different project. Don't import Collecteur code.
 
-## Open questions (don't decide alone)
+## P0 decisions (locked) — from `brainstorming/research_codex/`
 
-See `brainstorming/01-research-needs.md` "Open questions" section. When work touches one, flag it in the PR/commit and ask the user. Current blockers:
+| Question | Decision |
+|---|---|
+| **Prestige V1** | No. Schema hooks only: `seasonStats`, `legacyBonuses`, `resetCount = 0` |
+| **Descent resource** | Yes — `torch`. Gates deep active runs, not casual check-ins |
+| **Card upgrade path** | Store duplicates as `shards` from day 1. Fuse-to-level ships later without migration |
+| **Terminal aesthetic** | Hybrid — DOM/React for UI, Pixi for combat. ASCII containers + 32/48px sprites |
+| **Offline** | Cap 8h, rate 25% of active baseline. Common shards only. No depth/boss/rare/T0 first drops |
+| **Tick frequency** | **4Hz** (250ms). No 10Hz. Render at rAF. No Convex writes per tick |
+| **Boss identity** | Original — working name `The Pit Warden` or `The First Auditor`. No borrowed PoE names |
+| **RNG library** | `pure-rand` (pure, immutable). Multi-stream: `combatRng`, `lootRng`, `mapRng`, `eventRng` |
+| **Integer math** | Basis points (10000 = 100%) for all durable probabilities and meters |
+| **Tagline** | *An idle roguelite where every descent writes your economy* |
 
-- Prestige yes/no
-- Descent resource (torches) yes/no
-- Card upgrade path (fuse vs +level)
-- Pixel sprites yes/no
-- Offline cap & rate exact values
-- Tick frequency
-- Boss identity
+Full context in `brainstorming/research_codex/00-p0-decision-index.md` and the per-item notes.
+
+## Still open (ask user / spawn agents)
+
+- Exact cost ratios per category (A1 frames the ranges: 1.07-1.10 / 1.13-1.17 / 1.22-1.30)
+- Starter deck composition (8 T3 cards, TBD)
+- Sound / audio direction (E3, P2)
+- Co-op / async social features (F3, P2)
+- CRT phosphor intensity (D6, P1)
+- Saison 1 boss kit (once Pit Warden is drafted)
 
 ## Directory layout
 
@@ -100,22 +116,64 @@ brainstorming/
 - Palette tokens live in `@theme`. Stick to `pit-ink`, `pit-bone`, `pit-dim`, `pit-green`, `pit-amber`, `pit-red`, `pit-violet`. Adding a color = ask.
 - Animations: prefer linear/step easings for UI, stay away from springs and bounces. That's the "wrong app" vibe.
 
-### Tests
-- Unit test pure game logic in `src/game/`. Don't unit test React render trees.
-- Playwright for critical flows only (login, first delve, camp shop). Not for every component.
+### Tests (non-negotiable for gameplay code)
+
+RPG affix systems bug in **interactions**, not single effects. We use a layered strategy:
+
+| Layer | Tool | Where |
+|---|---|---|
+| Unit (happy path + edges) | Vitest | Every pure function in `src/game/` |
+| **Property-based** | **fast-check** | Every formula with > 2 inputs. Every keyword interaction. |
+| Invariant (full sim) | Vitest | Engine rules (HP ≥ 0, meter ∈ [0, 10000], resources conserved) |
+| Fuzz | fast-check 10k+ | Nightly / pre-release |
+| Snapshot | Vitest | Reference scenarios (boss fight, run to D10) |
+| Re-simulation | Vitest | Client/server parity |
+| Regression | Vitest | Every bug → red test first, then fix |
+
+**Rules**:
+- **fast-check for any formula with > 2 inputs.** Humans don't think of edge cases; property tests do.
+- Don't unit test React render trees.
+- Playwright for critical flows only (login, first delve, camp shop).
+- A bug found = a test written first. Then the fix.
+- Every `skip()` needs a GitHub issue + dated TODO.
+
+Always spawn **`pit-test-engineer`** when adding game logic. It writes the test plan *before* the code.
 
 ### Commits
-- Present-tense, imperative, lowercase: `feat: add depth scaling formula`, `fix(convex): validate delve intent`.
+- Present-tense, imperative, lowercase: `feat(combat): add keyword interaction table`, `fix(convex): reject mutations with stale stateVersion`.
+- Scope is optional but useful: `combat`, `delve`, `convex`, `ux`, `rng`, `loot`, etc.
 - Keep subject <72 chars. Wrap body at 80.
-- No "WIP" on main.
+- No "WIP" on dev or main. No `--amend` after push unless branch is personal.
+- No `--no-verify` without explicit user approval.
 
-## Workflow
+## Branch workflow (locked)
 
-1. **Design question touching an open item** → spawn `pit-idle-designer` to research, write a note to `brainstorming/research/`, flag for user review.
-2. **New gameplay feature** → write pure logic in `src/game/` first, test it, then wire UI.
-3. **New Convex table or mutation** → update `convex/schema.ts`, add the mutation, regenerate types (`npm run convex:dev` does this live).
-4. **New route** → create file in `src/routes/`, `npm run routes:gen` generates the tree (dev server does this automatically).
-5. **Before commit** → `npm run typecheck && npm test && npm run build`. Don't skip.
+```
+main      ← stable only. PRs from dev only. Tagged releases.
+ └── dev  ← integration. Default branch for all new work today.
+      ├── feature/<slug>    e.g. feature/delve-map-renderer
+      ├── fix/<slug>        e.g. fix/combat-tick-drift
+      └── refactor/<slug>   e.g. refactor/rng-streams
+```
+
+**Rules**:
+- **Never commit to `main` directly.** Even a one-line fix goes through dev → main.
+- **Pre-MVP phase**: we work mostly on `dev`. Feature branches once we split gameplay by domain.
+- **Feature branches are short-lived** (< 5 days ideally). Split if longer.
+- **Merge dev → main** only when dev is clean: 0 skip, 0 URGENT TODO, typecheck + test + build + Playwright smoke pass.
+- Prefer rebase on personal branches, merge-commits into dev/main for traceability.
+
+When in doubt, spawn **`pit-workflow-orchestrator`** — it has the exact procedures and checklists.
+
+## Workflow (per task)
+
+1. **Design question touching a P0 decision** → follow the decision. Don't re-litigate.
+2. **Design question in "Still open"** → ask user or spawn the relevant `pit-*` agent to research. Output goes to `brainstorming/research/`.
+3. **New gameplay feature** → spawn `pit-test-engineer` for the plan, write pure logic in `src/game/` with tests, then wire UI.
+4. **New Convex table/mutation** → update `convex/schema.ts`, add the mutation with `actionId`/`stateVersion` guards, `npm run convex:dev` regenerates types.
+5. **New route** → `/new-route <path>` or create manually, then `npm run routes:gen`.
+6. **Before commit** → `npm run typecheck && npm test && npm run build`. Non-negotiable.
+7. **PR** → `feature/*` → `dev`. Use the workflow orchestrator's PR template.
 
 ## When to defer to agents
 
@@ -125,12 +183,18 @@ brainstorming/
 - **Terminal UI, typography, palette** → `pit-terminal-ux`
 - **Convex schema, server-authoritative patterns, anti-cheat** → `pit-convex-architect`
 - **Loot tables, drop rates, pity** → `pit-loot-tuner`
+- **Test strategy, property-based, affix interactions** → `pit-test-engineer`
+- **Git workflow, branches, PRs, releases** → `pit-workflow-orchestrator`
 
 Each agent is in `.claude/agents/`. Spawn with `Agent(subagent_type: "pit-*")`.
 
-## Research skill
+Convex-specific skills (from `npx convex ai-files install`) live in `.agents/skills/` — read `AGENTS.md` for the convex guardrails.
 
-Use `/research-note <topic>` to scaffold a new research note in `brainstorming/research/`. Fill it with findings (Exa MCP preferred for web research — see global CLAUDE.md).
+## Research
+
+Researcher #1 (Codex pass) delivered the P0 batch in `brainstorming/research_codex/`. Treat those notes as authoritative for the decisions listed above. A researcher #2 pass is expected to refine P1 items.
+
+Use `/research-note <slug>` to scaffold a new note in `brainstorming/research/`. Fill it with findings (Exa MCP preferred — see global CLAUDE.md).
 
 ## Do not
 

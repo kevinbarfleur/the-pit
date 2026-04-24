@@ -38,33 +38,37 @@ Vérifie systématiquement avec `Glob` avant d'affirmer qu'un fichier existe.
 
 ## Boîte à outils
 
-### Formules de coût exponentiel
+### Formules de coût exponentiel (voir A1 research)
 
 ```
 cost(n) = base * ratio^n
 ```
 
-| Ratio | Feel | Exemples |
+**Correction factuelle** : Cookie Clicker utilise 1.15, pas 1.07. Pour The Pit, trois ratios selon le rôle :
+
+| Ratio | Usage | Exemples |
 |---|---|---|
-| 1.07 | Très doux | Cookie Clicker buildings |
-| 1.15 | Standard | OGame buildings, Melvor skills |
-| 1.30 | Abrupt | NGU late game |
-| ≥1.50 | Hard wall | Prestige gates |
+| **1.07–1.10** | QoL, repeatables peu impactants | "+1% crit chance minor", tutorial ramp |
+| **1.13–1.17** | Core base upgrades | Passives principales de Camp |
+| **1.22–1.30** | Late / prestige-like / sinks optionnels | Gates narratifs, cosmétiques lourds |
 
-**Choix par défaut pour The Pit** : 1.15 pour passives de Camp, 1.07 pour incréments fins (stats card), 1.50+ pour paliers narratifs (nouveau slot de carte).
+**Ne pas balancer via coût brut** — balancer via `nextCost / activeIncomePerSecond`. C'est la métrique qui importe.
 
-### Temps-vers-prochain-upgrade (TTNU)
-
-Les joueurs tolèrent ces TTNU médian à chaque stade :
+### Temps-vers-prochain-upgrade (TTNU) — valeurs arrêtées (A1)
 
 | Stade | TTNU typique | Commentaire |
 |---|---|---|
-| Early (0–30min) | 5–15s | Quasi-continu, apprentissage |
-| Mid (30min–5h) | 30s–2min | Décisions stratégiques |
-| Late (5h–20h) | 5–15min | Planification |
-| Endgame (20h+) | 30min–2h | Prestige loop compense |
+| Tutorial | 10–30s | Quasi-continu, apprentissage |
+| Early | 30–90s | Décisions stratégiques light |
+| Early-mid | 2–5min | Multiples goals parallèles |
+| Mid | 8–20min | Mais pas UN seul objectif — le joueur a le choix |
+| Late MVP | 30–60min | Pour gates majeurs, jamais comme seule option |
 
-Si TTNU > 2x le TTNU précédent stage → tu as un soft wall qui va faire partir les joueurs.
+Si TTNU > 2x le TTNU précédent stage **sans alternative** → soft wall qui vire les joueurs.
+
+### Upgrade schema (A1)
+
+Chaque upgrade row définit : `id`, `baseCost`, `costRatio`, `maxLevel`, `effectFormula`, `expectedPaybackSeconds`, `unlockDepth`, `sinkType`.
 
 ### Decision density
 
@@ -77,27 +81,38 @@ Cible **une décision significative toutes les 30–60s**. Une "décision" =
 
 Une action mécanique (appuyer sur une touche, regarder un tick) n'est **pas** une décision.
 
-### Offline progression (rappel)
+### Offline progression — valeurs arrêtées (A4)
 
-- Rate : 50% par défaut (upgradable via skill "Depth Mastery" jusqu'à 80%)
-- Cap : 4h de base, extensible à 12h max
-- Pas de Delve offline (seulement passive scrap mining + drops rares rares)
-- Welcome-back screen = summary agrégé, pas event-par-event
+- **Cap** : 8h de base
+- **Rate** : 25% du active baseline (gold/scrap)
+- **No card progression** sauf common shards. Pas de first-copy rare/T0 offline.
+- **No depth progression**, **no boss progression**, **no combat**.
+- **Upgrades offline** à débloquer plus tard :
+  - `Bedroll` — cap 8h → 12h
+  - `Signal Lantern` — cap 12h → 16h
+  - `Scavenger Contract` — common shard rate +10% relative
+- **Welcome-back** = modal (`The Pit settled while you were gone.`) + entrée dans le terminal log persistent. Modal dismissible fast, CTA `Descend` + `Review Log`.
+- **Authoritative** côté serveur : `min(serverNow - lastProcessedAt, cap) * rate`.
 
 ### Soft walls vs Hard walls
 
 - **Soft wall** : cost scaling qui ralentit naturellement. C'est OK.
 - **Hard wall** : "vous ne pouvez pas avancer sans X". C'est à utiliser avec **parcimonie** et toujours télégraphié. Exemple acceptable : "Boss requires depth 10 key" → le joueur sait pourquoi.
 
-### Prestige (si jamais on en ajoute)
+### Prestige — décision arrêtée (index 00)
 
-Critères pour garder un prestige sain :
-1. **Premier prestige < 4h** de jeu (sinon le joueur ne le verra jamais)
-2. **Accélère le replay** — les runs post-prestige sont ~2-3x plus rapides
-3. **Nouveau contenu débloqué** à chaque palier (pas juste des multiplicateurs)
-4. **Permanents qui comptent** — un bonus permanent doit être *senti*, pas +0.3%
+**V1 = pas de prestige loop.** On ne design pas autour de l'ascension.
 
-Note : V1 sans prestige, mais on peut baker des hooks (user_id | ascension_level = 0).
+Hooks de schema à baker **dès maintenant** pour éviter une migration future :
+- `seasonStats` (counters, dernière saison)
+- `legacyBonuses` (record vide pour l'instant)
+- `resetCount: 0`
+
+Si on réintroduit prestige plus tard, critères de sanité :
+1. Premier prestige < 4h de jeu
+2. Replay post-prestige ~2–3x plus rapide
+3. Nouveau contenu à chaque palier, pas juste des multiplicateurs
+4. Permanents *sentis*, pas +0.3%
 
 ## Frameworks de diagnostic
 

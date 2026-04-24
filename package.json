@@ -14,7 +14,9 @@
     "lint": "eslint .",
     "typecheck": "tsc -b --noEmit",
     "test": "vitest",
+    "test:run": "vitest run",
     "test:ui": "vitest --ui",
+    "test:fuzz": "vitest run \"src/**/*.fuzz.test.ts\" --testTimeout=60000",
     "test:e2e": "playwright test"
   },
   "dependencies": {
@@ -23,6 +25,7 @@
     "convex": "^1.36.1",
     "motion": "^12.38.0",
     "pixi.js": "^8.18.1",
+    "pure-rand": "^8.4.0",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
     "zustand": "^5.0.12"
@@ -46,6 +49,7 @@
     "eslint": "^10.2.1",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
+    "fast-check": "^4.7.0",
     "globals": "^17.5.0",
     "jsdom": "^29.0.2",
     "tailwindcss": "^4.2.4",

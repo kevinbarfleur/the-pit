@@ -35,60 +35,65 @@ Concevoir les tables de loot de **The Pit** :
 
 ## Frameworks
 
-### Rarity curve standard (V1 recommendation)
+### Rarity par source — valeurs arrêtées (A5 research)
 
-| Tier | Probabilité par drop | Couleur | Usage |
-|---|---|---|---|
-| T3 (common) | 60% | dim/bone | starter / filler |
-| T2 (uncommon) | 25% | green | reliable builds |
-| T1 (rare) | 12% | amber | build-defining |
-| T0 (legendary) | 3% | violet | chase / run-defining |
+| Source | T3 | T2 | T1 | T0 |
+|---|---|---|---|---|
+| **Trash** | 78% | 21% | 1% | 0% |
+| **Elite** | 45% | 42% | 12% | 1% (si eligible) |
+| **Boss** | 0% | 45% | 45% | **10% OU** deterministic first-clear unique |
+| **Event** | custom table, pas global | | | |
 
-**Calibration initiale** : un joueur moyen devrait voir son premier T0 autour de sa 30e run (~5h de jeu).
+**Premier T0 moyen** : ~30e run (~5h de jeu). Premier clear du boss = card nommée **garanti**.
 
-### Drop rate par source
+### Drops per kill
 
-| Source | Items/kill | Rarity boost |
+| Source | Items/kill | Notes |
 |---|---|---|
-| Trash mob | 0.3 (= 1 tous les ~3) | baseline |
-| Elite | 1.2 | +10% T1/T0 |
-| Mini-boss (avant boss) | 2.5 | +25% T1/T0 |
-| Boss | 4-6 guaranteed + 1 unique slot | T0 unique table |
+| Trash mob | 0.3 baseline | T3 majoritaire, small T2 chance |
+| Named trash family | 0.5 | T3/T2 matching enemy identity |
+| Elite | 1.2 | Baseline T2, meaningful T1 chance |
+| Boss | 4–6 guaranteed + 1 unique slot | deterministic first clear |
 
-### Pity systems (anti-dry-streak)
+### Pity mechanics — décisions arrêtées (A5)
 
-**PRD (pseudo-random distribution)** — probabilité croît à chaque échec :
+**Pity groups séparés** tracked par save :
+- `eliteRare` — après **6 elite rewards sans T1+**, sharply boost T1 weight. Après **8**, guarantee T1+.
+- `bossUnique` — boss first clear garantit une card nommée, puis weighted repeats.
+- `archetypeKeyCard` — pity dédié pour les cards clé d'un archetype (évite dry streak build-breaking).
+
+**Présentation** : pity **diégétique ou caché**. Formulation `the pit grows restless` plutôt qu'un meter `7/8 rare pity`, sauf si on lean full transparency.
+
+**PRD (Dota 2 style)** pour les rares génériques — probability cumule jusqu'au hit puis reset. Table cValue :
+
+| Target P | cValue |
+|---|---|
+| 0.05 | 0.0204 |
+| 0.10 | 0.0465 |
+| 0.25 | 0.1435 |
+| 0.50 | 0.3455 |
+
+**Règle** : PRD par défaut pour les rares. True random pour les communes.
+
+### Smart loot — ratio arrêté (A5)
+
+| Pool | Ratio | Source |
+|---|---|---|
+| **Current build tags** | 60% | keywords/tags actifs dans le deck équipé |
+| **Adjacent synergy tags** | 30% | tags liés sémantiquement (ex: Burn ↔ Ignite) |
+| **Wild / off-archetype** | 10% | découverte, préserve surprises |
+
+**Règle** : un 100% smart = solved builds. Un 0% smart = frustrant pour 8 slots. Le 60/30/10 préserve les deux.
+
+### Magic Find — formule arrêtée (A5)
+
+**Diminishing returns** pour empêcher de casser l'économie en stackant MF :
 
 ```ts
-// Dota 2 style: if true rate is 10%, use P=0.0155
-// Then each miss, P += 0.0155 until hit, then reset.
+effectiveMF = mf / (100 + mf)  // asymptote à 1
 ```
 
-Avantage : sensation de "due" pour une rare. Variance réduite.
-
-**Hard pity** — à la Genshin : après N drops sans T0, le N+1 est T0 garanti.
-- V1 : soft pity à 40 drops, hard pity à 60.
-
-**Soft pity** — après seuil, le taux T0 augmente linéairement.
-
-### Smart loot
-
-Diablo 3 post-patch (2014) : 75% des drops sont filtrés pour la classe du joueur. Réduit le wasted loot.
-
-**Pour The Pit** :
-- Un joueur avec build "Strength" → bias vers cartes avec keyword Strength, Burn, Lifesteal.
-- Un joueur avec build "Dodge/Foresight" → bias vers cartes defense.
-- Pas 100% — ~60% smart, 40% random (préserve le wildcard).
-
-### Magic Find / Luck scaling
-
-Via passives du Camp ("Pact" tree).
-
-```
-baseDropRate(tier) * (1 + magicFind/100)  // capped
-```
-
-Cap le bonus T0 à +300% (soit 12% au lieu de 3%) — sinon l'économie se casse.
+**Usage** : MF ajoute des rolls extra common/uncommon shards et shift modestement les odds T1. **Pas** de multiplicateur brut sur T0 — c'est capé implicitement par la formule.
 
 ### Drop tables — format
 
