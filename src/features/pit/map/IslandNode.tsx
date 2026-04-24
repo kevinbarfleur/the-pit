@@ -119,7 +119,7 @@ export function IslandNode({ node, state, canCommit, style }: IslandNodeProps) {
             color: TYPE_COLOR[node.type],
             shape: 'patch' as const,
             heightScale: 0.8,
-            countScale: 1.65,
+            countScale: 2.2,
           }
         : { color: TYPE_COLOR[node.type] }
     const { id, detach } = engine.attachWithHandle(cap, kind, attachConfig)

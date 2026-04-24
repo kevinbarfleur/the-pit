@@ -96,7 +96,7 @@ export function IslandPreview({
     const color = TYPE_COLOR[type]
     const config: AttachConfig =
       kind === 'grass'
-        ? { color, shape: 'patch', heightScale: 1, countScale: 2.1 }
+        ? { color, shape: 'patch', heightScale: 1, countScale: 3 }
         : { color }
     const { id: effectId, detach } = engine.attachWithHandle(cap, kind, config)
     engine.setEnabled(effectId, effectAlwaysOn)

@@ -1195,7 +1195,12 @@ export class EffectsEngine {
       // surface of an island cap, producing a pixel-art patch of short
       // grass growing on the visible ground — read as isometric, not as
       // grass growing up from a rectangular edge.
-      const count = Math.max(4, Math.round(20 * countScale))
+      //
+      // Base count is 40 in patch mode (vs 34+10 on edge) because
+      // ground-cover needs real density to stop reading as a handful
+      // of scattered blades. Callers scale with `countScale` (default
+      // 1 in the config; islands pass 2–3+ to really carpet).
+      const count = Math.max(12, Math.round(40 * countScale))
       for (let i = 0; i < count; i++) {
         const fx = Math.random()
         const fy = Math.random()
@@ -1239,32 +1244,39 @@ export class EffectsEngine {
     heightScale: number = 1,
     originFracY?: number,
   ): GrassBlade {
-    // Most blades point straight up; side tufts lean slightly outward first
-    // then the wind + natural curve carry them up. Patch blades get a
-    // modest jitter — they should stand up but not perfectly parallel.
-    let baseAngle = -Math.PI / 2
-    if (side === 'left') baseAngle += -0.25 + (Math.random() - 0.5) * 0.35
-    else if (side === 'right') baseAngle += 0.25 + (Math.random() - 0.5) * 0.35
-    else if (side === 'patch') baseAngle += (Math.random() - 0.5) * 0.28
-    else baseAngle += (Math.random() - 0.5) * 0.4 // top blades get wider jitter
-
-    const naturalCurve = (Math.random() - 0.5) * 0.035
-
-    // Height distribution. Patch mode caps the upper end so an isometric
-    // tuft doesn't grow taller than its host rock. Every mode is then
-    // multiplied by `heightScale` before rounding.
+    // Height distribution must come before the angle so 'patch' blades
+    // can lean more when they are ground-cover height.
     const r = Math.random()
     let rawHeight: number
     if (side === 'patch') {
-      // Short but visible: 5..12 engine pixels. Earlier 2..6 × 0.45
-      // heightScale rounded to 1–3 px which read as dust, not grass.
-      rawHeight = 5 + Math.floor(Math.random() * 8)
+      // Three tiers so a patch reads as a carpet, not a thin scatter:
+      //   65% ground cover (2..4 px)  — short, dense, the tapis
+      //   25% medium    (5..8 px)   — regular blades that pop out
+      //   10% tall accent (9..12 px) — a few spikes standing proud
+      const tier = Math.random()
+      if (tier < 0.65) rawHeight = 2 + Math.floor(Math.random() * 3)
+      else if (tier < 0.9) rawHeight = 5 + Math.floor(Math.random() * 4)
+      else rawHeight = 9 + Math.floor(Math.random() * 4)
     } else if (side !== 'top') {
       rawHeight = 3 + Math.floor(Math.random() * 7)
     } else if (r < 0.32) rawHeight = 3 + Math.floor(Math.random() * 4)
     else if (r < 0.8) rawHeight = 7 + Math.floor(Math.random() * 8)
     else rawHeight = 15 + Math.floor(Math.random() * 8)
     const targetHeight = Math.max(1, Math.round(rawHeight * heightScale))
+
+    // Most blades point straight up; side tufts lean slightly outward first
+    // then the wind + natural curve carry them up. Patch ground-cover
+    // leans much more (low grass sprouts at angles); patch accents stand
+    // up straighter.
+    let baseAngle = -Math.PI / 2
+    if (side === 'left') baseAngle += -0.25 + (Math.random() - 0.5) * 0.35
+    else if (side === 'right') baseAngle += 0.25 + (Math.random() - 0.5) * 0.35
+    else if (side === 'patch') {
+      const lean = rawHeight <= 4 ? 0.65 : 0.28
+      baseAngle += (Math.random() - 0.5) * lean
+    } else baseAngle += (Math.random() - 0.5) * 0.4
+
+    const naturalCurve = (Math.random() - 0.5) * 0.035
 
     // Taller blades sway more; shorter barely move. Wind amplitude is scaled
     // again by height² in the tick so the base stays anchored.
