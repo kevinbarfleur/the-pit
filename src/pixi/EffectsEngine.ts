@@ -408,9 +408,13 @@ interface CoinState {
 interface SpringDrop {
   x: number
   y: number
+  vx: number
   vy: number
   life: number
   maxLife: number
+  /** 'splash' = short-lived overflow particle near the rim,
+   *  'fall'   = long-lived droplet falling off the cascade.       */
+  kind: 'splash' | 'fall'
   inUse: boolean
 }
 
@@ -425,6 +429,7 @@ interface SpringState {
   /** Length of the side cascade stream in px (rim point → falling). */
   cascadeLength: number
   cascadeAcc: number
+  splashAcc: number
   drops: SpringDrop[]
   side: 'left' | 'right'
   time: number
@@ -2469,6 +2474,7 @@ export class EffectsEngine {
       cascadeRimIndex: bestIdx,
       cascadeLength: 0,
       cascadeAcc: 0,
+      splashAcc: 0,
       drops: [],
       side: effect.config.side,
       time: 0,
@@ -2484,20 +2490,30 @@ export class EffectsEngine {
     const colorLight = lighten(s.color, 0.45)
     const colorDark = darken(s.color, 0.3)
 
-    // Pond ellipse occupies ~92% of the rect (rect comes in as the
-    // ground placeable zone). Centred at the rect's centre.
+    // Pond ellipse — sized to clearly fit INSIDE the placeable
+    // ground zone (rect). 64% of the rect on X and Y so the rim
+    // overflow tongues + splash particles still stay inside the
+    // visible cap surface.
     const cx = rect.left + rect.width / 2
     const cy = rect.top + rect.height / 2
-    const ellRx = rect.width * 0.46
-    const ellRy = rect.height * 0.46
+    const ellRx = rect.width * 0.32
+    const ellRy = rect.height * 0.32
 
-    // ---------- LIVING SURFACE: ripple field ----------
-    // `rimCells[i]` holds an extra "swell" amount in px applied
-    // outward at angle `i / N × 2π`. Each cell breathes on its own
-    // sine, and a slow lateral diffusion smooths neighbours so the
-    // overall outline reads as a wavy living rim instead of jagged
-    // independent peaks.
+    // Per-rim-cell static angular jitter (radius offset) generates
+    // the irregular outline of the pond — hashed off the cell index
+    // so the silhouette is stable per island, never a clean ellipse.
+    const baseRimJitter = (i: number): number => {
+      const a = (i / s.rimCellCount) * Math.PI * 2
+      return (
+        Math.sin(a * 3 + 0.7) * 0.55 +
+        Math.sin(a * 5 + 1.9) * 0.35 +
+        Math.sin(a * 8 + 3.1) * 0.22
+      )
+    }
+
+    // ---------- LIVING SURFACE: ripple field + splashes ----------
     const N = s.rimCellCount
+    // Lateral diffusion smooths neighbour swells.
     const next = s.rimCells.slice()
     const k = 0.18
     for (let i = 0; i < N; i++) {
@@ -2509,20 +2525,42 @@ export class EffectsEngine {
     if (effect.enabled) {
       for (let i = 0; i < N; i++) {
         const a = (i / N) * Math.PI * 2
-        // Three overlapping sines + a small noise injection so each rim
-        // point breathes without the whole ring pulsing in unison.
+        // Wave field: three travelling waves + a noise jitter on top of
+        // the static jitter, so the pond's outline is irregular AND
+        // alive (constantly moving).
         const w =
-          Math.sin(s.time * 1.3 + a * 2) * 0.55 +
-          Math.sin(s.time * 2.1 + a * 3 + 0.7) * 0.32 +
-          Math.sin(s.time * 0.7 + a * 5 + 1.4) * 0.18
-        s.rimCells[i] = w + (Math.random() - 0.5) * 0.18
+          Math.sin(s.time * 1.3 + a * 2) * 0.6 +
+          Math.sin(s.time * 2.1 + a * 3 + 0.7) * 0.4 +
+          Math.sin(s.time * 0.7 + a * 5 + 1.4) * 0.25
+        s.rimCells[i] = w + (Math.random() - 0.5) * 0.3
       }
-      // Boost the cascade-origin cell so it sits visibly higher than
-      // the rest — that's the rim point overflowing the most.
-      const surge = 1.6 + 0.5 * Math.sin(s.time * 2.7)
+      // Cascade origin gets a constant heavy surge.
+      const surge = 1.8 + 0.6 * Math.sin(s.time * 2.7)
       s.rimCells[s.cascadeRimIndex] += surge
     } else {
       for (let i = 0; i < N; i++) s.rimCells[i] *= 1 - dt * 4
+    }
+
+    // Spawn splash particles wherever a rim cell crests above ~1.0 —
+    // that's the water bumping against itself and overflowing.
+    if (effect.enabled) {
+      s.splashAcc += dt
+      const splashCadence = 0.045
+      while (s.splashAcc >= splashCadence) {
+        s.splashAcc -= splashCadence
+        // Pick the cell with the biggest swell among a random sample.
+        let pick = -1
+        let bestS = 0.4
+        for (let t = 0; t < 6; t++) {
+          const idx = Math.floor(Math.random() * N)
+          const sw = s.rimCells[idx]
+          if (sw > bestS) {
+            bestS = sw
+            pick = idx
+          }
+        }
+        if (pick >= 0) this.spawnSpringSplash(s, rect, pick, baseRimJitter(pick))
+      }
     }
 
     // ---------- CASCADE STREAM (chosen side) ----------
@@ -2549,8 +2587,17 @@ export class EffectsEngine {
         d.inUse = false
         continue
       }
-      d.vy += gravity * dt
-      d.y += d.vy * dt
+      // Splash particles get full XY ballistics with a slight drag,
+      // falling drops just keep accelerating downward.
+      if (d.kind === 'splash') {
+        d.vx *= 0.95
+        d.vy += gravity * 0.6 * dt
+        d.x += d.vx * dt
+        d.y += d.vy * dt
+      } else {
+        d.vy += gravity * dt
+        d.y += d.vy * dt
+      }
     }
 
     // ---------- RENDER ----------
@@ -2582,25 +2629,22 @@ export class EffectsEngine {
       g.fill({ color: 0xffffff, alpha: 0.55 })
     }
 
-    // 2) Living rim — at every angle the rim pixel is offset OUTWARD
-    //    by `rimCells[i]` px, so when a swell rises high enough the
-    //    rim visibly overflows past the ellipse outline. Drawn as
-    //    short tongues of water (1-3 px tall) extending from the
-    //    base ellipse to the swell offset.
+    // 2) Living rim — outline made irregular by the static jitter,
+    //    PLUS a swell that pushes pixels outward so the water
+    //    visibly bulges and overflows where the wave is highest.
     for (let i = 0; i < N; i++) {
       const a = (i / N) * Math.PI * 2
-      const baseX = cx + Math.cos(a) * ellRx
-      const baseY = cy + Math.sin(a) * ellRy
+      const staticOffset = baseRimJitter(i) // ±~1.1 px irregular outline
+      const baseX = cx + Math.cos(a) * (ellRx + staticOffset)
+      const baseY = cy + Math.sin(a) * (ellRy + staticOffset)
       const swell = Math.max(0, s.rimCells[i])
       const tipX = baseX + Math.cos(a) * swell
       const tipY = baseY + Math.sin(a) * swell
-      // Plot every pixel along the segment from base to tip.
       const steps = Math.max(1, Math.ceil(swell + 1))
       for (let k2 = 0; k2 <= steps; k2++) {
         const tt = steps === 0 ? 0 : k2 / steps
         const px = Math.round(baseX + (tipX - baseX) * tt)
         const py = Math.round(baseY + (tipY - baseY) * tt)
-        // Outer tip is a brighter highlight; inner is the body colour.
         const isTip = k2 >= steps - 0
         g.rect(px, py, 1, 1)
         g.fill({ color: isTip && swell > 0.6 ? colorLight : s.color, alpha: 0.95 })
@@ -2633,14 +2677,77 @@ export class EffectsEngine {
       g.fill({ color: colorDark, alpha: 0.85 })
     }
 
-    // 4) Free drops — 1×2 px streaks falling under gravity.
+    // 4) Free drops — splash pixels (1×1) bouncing around the rim
+    //    and falling drops (1×2 streaks) descending past the cascade.
     for (const d of s.drops) {
       if (!d.inUse) continue
       const t = d.life / d.maxLife
-      const alpha = 0.6 + 0.3 * t
-      g.rect(Math.round(d.x), Math.round(d.y), 1, 2)
-      g.fill({ color: s.color, alpha })
+      const alpha = 0.55 + 0.35 * t
+      if (d.kind === 'splash') {
+        g.rect(Math.round(d.x), Math.round(d.y), 1, 1)
+        // Splash pixels get a brighter colour so they pop against
+        // the body — they're foam, not bulk water.
+        const c = t > 0.65 ? colorLight : s.color
+        g.fill({ color: c, alpha })
+      } else {
+        g.rect(Math.round(d.x), Math.round(d.y), 1, 2)
+        g.fill({ color: s.color, alpha })
+      }
     }
+  }
+
+  /**
+   * Spawn a splash particle near the rim cell that just crested.
+   * The particle gets an outward + slightly upward velocity so it
+   * reads as water bumping against itself and bursting up at the
+   * overflow point.
+   */
+  private spawnSpringSplash(
+    s: SpringState,
+    rect: DOMRect,
+    rimIdx: number,
+    rimStaticOffset: number,
+  ): void {
+    let drop: SpringDrop | undefined
+    for (const d of s.drops) {
+      if (!d.inUse) {
+        drop = d
+        break
+      }
+    }
+    if (!drop) {
+      if (s.drops.length >= 64) return
+      drop = {
+        x: 0,
+        y: 0,
+        vx: 0,
+        vy: 0,
+        life: 0,
+        maxLife: 0,
+        kind: 'splash',
+        inUse: false,
+      }
+      s.drops.push(drop)
+    }
+    const cx = rect.left + rect.width / 2
+    const cy = rect.top + rect.height / 2
+    const ellRx = rect.width * 0.32
+    const ellRy = rect.height * 0.32
+    const a = (rimIdx / s.rimCellCount) * Math.PI * 2
+    const baseR = Math.max(ellRx, ellRy) + rimStaticOffset
+    const baseX = cx + Math.cos(a) * (ellRx + rimStaticOffset)
+    const baseY = cy + Math.sin(a) * (ellRy + rimStaticOffset)
+    drop.x = baseX + (Math.random() - 0.5) * 0.7
+    drop.y = baseY + (Math.random() - 0.5) * 0.7
+    // Outward radial velocity + slight upward kick (jostling water).
+    const speedOut = 14 + Math.random() * 16
+    drop.vx = Math.cos(a) * speedOut + (Math.random() - 0.5) * 12
+    drop.vy = Math.sin(a) * speedOut + (Math.random() - 0.5) * 10 - 6
+    drop.life = 0.45 + Math.random() * 0.35
+    drop.maxLife = drop.life
+    drop.kind = 'splash'
+    drop.inUse = true
+    void baseR
   }
 
   private spawnSpringSideDrop(s: SpringState, rect: DOMRect): void {
@@ -2652,22 +2759,33 @@ export class EffectsEngine {
       }
     }
     if (!drop) {
-      if (s.drops.length >= 32) return
-      drop = { x: 0, y: 0, vy: 0, life: 0, maxLife: 0, inUse: false }
+      if (s.drops.length >= 64) return
+      drop = {
+        x: 0,
+        y: 0,
+        vx: 0,
+        vy: 0,
+        life: 0,
+        maxLife: 0,
+        kind: 'fall',
+        inUse: false,
+      }
       s.drops.push(drop)
     }
     const cx = rect.left + rect.width / 2
     const cy = rect.top + rect.height / 2
-    const ellRx = rect.width * 0.46
-    const ellRy = rect.height * 0.46
+    const ellRx = rect.width * 0.32
+    const ellRy = rect.height * 0.32
     const aCasc = (s.cascadeRimIndex / s.rimCellCount) * Math.PI * 2
     const originX = cx + Math.cos(aCasc) * ellRx
     const originY = cy + Math.sin(aCasc) * ellRy
     drop.x = originX + (Math.random() - 0.5) * 2.5
     drop.y = originY + s.cascadeLength
+    drop.vx = 0
     drop.vy = 50 + Math.random() * 60
     drop.life = 1.0 + Math.random() * 0.6
     drop.maxLife = drop.life
+    drop.kind = 'fall'
     drop.inUse = true
   }
 }
