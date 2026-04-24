@@ -2123,14 +2123,13 @@ export class EffectsEngine {
   // =====================================================================
   private initGodray(effect: AttachedEffect): void {
     const graphic = new Graphics()
-    // Live on the ambient layer so it paints behind the particle bursts.
     this.ambientLayer.addChild(graphic)
-    const rayCount = 10
+    const rayCount = 18
     const rays: GodraySpec[] = []
     for (let i = 0; i < rayCount; i++) {
       rays.push({
         angle: (i / rayCount) * Math.PI * 2,
-        length: 22 + Math.random() * 16, // 22..38 px
+        length: 55 + Math.random() * 35, // 55..90 px — reach well past the island
         phase: Math.random() * Math.PI * 2,
       })
     }
@@ -2147,48 +2146,61 @@ export class EffectsEngine {
     const s = effect.godray
     if (!s) return
     s.time += dt
-    s.rotation += dt * 0.35 // slow rotation
+    s.rotation += dt * 0.28 // slow rotation
 
     const cx = rect.left + rect.width / 2
     const cy = rect.top + rect.height / 2
     const g = s.graphic
     g.clear()
 
-    const colorLight = lighten(s.color, 0.45)
-    const colorDark = darken(s.color, 0.1)
+    const colorLight = lighten(s.color, 0.55)
+    const colorMid = lighten(s.color, 0.2)
+    const colorDark = darken(s.color, 0.15)
 
+    // --- Outer halo: two concentric soft squares that wrap the whole
+    // island in warm light. Breathes at a slower rate than the rays.
+    const haloBreathe = 0.75 + 0.25 * Math.sin(s.time * 2.1)
+    const outerR = 48
+    g.rect(Math.round(cx) - outerR, Math.round(cy) - outerR, outerR * 2, outerR * 2)
+    g.fill({ color: s.color, alpha: 0.08 * haloBreathe })
+    const midR = 28
+    g.rect(Math.round(cx) - midR, Math.round(cy) - midR, midR * 2, midR * 2)
+    g.fill({ color: colorMid, alpha: 0.16 * haloBreathe })
+    const innerR = 16
+    g.rect(Math.round(cx) - innerR, Math.round(cy) - innerR, innerR * 2, innerR * 2)
+    g.fill({ color: colorLight, alpha: 0.22 * haloBreathe })
+
+    // --- Rays: dense pip trails radiating outward.
     for (const ray of s.rays) {
       const a = ray.angle + s.rotation
-      const pulse = 0.45 + 0.55 * (0.5 + 0.5 * Math.sin(s.time * 3.2 + ray.phase))
+      const pulse = 0.55 + 0.45 * (0.5 + 0.5 * Math.sin(s.time * 3.2 + ray.phase))
       const len = ray.length * pulse
       const dx = Math.cos(a)
       const dy = Math.sin(a)
 
-      // Step along the ray, 2 px at a time. Each step is a square pip;
-      // size tapers from 2 at base to 1 at tip. Color tapers from
-      // bright rim at base toward mid at tip. Alpha tapers to zero.
-      const steps = Math.max(4, Math.round(len / 2))
-      for (let i = 1; i < steps; i++) {
+      // Step 1 px along the ray so the beam reads as a solid rod of
+      // light rather than a dotted trail.
+      const steps = Math.max(8, Math.round(len))
+      for (let i = 2; i < steps; i++) {
         const t = i / steps
-        const r = i * 2
+        const r = i
         const x = Math.round(cx + dx * r)
         const y = Math.round(cy + dy * r)
-        const size = t < 0.35 ? 2 : 1
-        const alpha = (1 - t) * 0.75 * pulse
-        if (alpha < 0.05) continue
-        const color = t < 0.4 ? colorLight : t < 0.75 ? s.color : colorDark
+        const size = t < 0.2 ? 3 : t < 0.5 ? 2 : 1
+        const alpha = Math.pow(1 - t, 1.4) * pulse
+        if (alpha < 0.06) continue
+        const color = t < 0.3 ? colorLight : t < 0.7 ? s.color : colorDark
         g.rect(x - size / 2, y - size / 2, size, size)
         g.fill({ color, alpha })
       }
     }
 
-    // Central halo — a small bright square at the source so the rays
-    // feel anchored, not just floating.
-    const halo = 0.7 + 0.3 * Math.sin(s.time * 4)
+    // --- Central bright core so rays feel emitted, not just floating.
+    const core = 0.7 + 0.3 * Math.sin(s.time * 4)
+    g.rect(Math.round(cx) - 4, Math.round(cy) - 4, 8, 8)
+    g.fill({ color: colorLight, alpha: 0.45 * core })
     g.rect(Math.round(cx) - 2, Math.round(cy) - 2, 4, 4)
-    g.fill({ color: colorLight, alpha: 0.55 * halo })
-    g.rect(Math.round(cx) - 1, Math.round(cy) - 1, 2, 2)
-    g.fill({ color: 0xffffff, alpha: 0.7 * halo })
+    g.fill({ color: 0xffffff, alpha: 0.65 * core })
   }
 
   // =====================================================================
@@ -2197,7 +2209,7 @@ export class EffectsEngine {
   // signals "shop" at a glance.
   // =====================================================================
   private initCoins(effect: AttachedEffect): void {
-    const count = 4
+    const count = 8
     const entities: CoinEntity[] = []
     for (let i = 0; i < count; i++) {
       const g = new Graphics()
@@ -2205,8 +2217,8 @@ export class EffectsEngine {
       entities.push({
         g,
         angle: (i / count) * Math.PI * 2,
-        angularVel: 0.7 + Math.random() * 0.4,
-        radius: 16 + Math.random() * 6, // 16..22 px
+        angularVel: 0.8 + Math.random() * 0.5,
+        radius: 26 + Math.random() * 8, // 26..34 px — wide enough to read
         bobPhase: Math.random() * Math.PI * 2,
       })
     }
@@ -2225,31 +2237,52 @@ export class EffectsEngine {
     const cx = rect.left + rect.width / 2
     const cy = rect.top + rect.height / 2
 
-    const colorLight = lighten(s.color, 0.35)
-    const colorDark = darken(s.color, 0.35)
+    const colorLight = lighten(s.color, 0.5)
+    const colorMid = lighten(s.color, 0.1)
+    const colorDark = darken(s.color, 0.4)
 
     for (const c of s.entities) {
       c.angle += c.angularVel * dt
-      const bob = Math.round(Math.sin(s.time * 3 + c.bobPhase) * 1.5)
-      // Elliptical orbit (y squashed) for a top-down isometric feel.
+      const bob = Math.round(Math.sin(s.time * 2.8 + c.bobPhase) * 2)
+      // Elliptical orbit (y squashed to ~45%) for a top-down feel.
       const x = cx + Math.cos(c.angle) * c.radius
-      const y = cy + Math.sin(c.angle) * c.radius * 0.38 + bob
+      const y = cy + Math.sin(c.angle) * c.radius * 0.45 + bob
 
       c.g.clear()
-      // 2×2 gold pip with one brighter highlight pixel.
-      c.g.rect(0, 0, 2, 2)
+      // 4×4 gold coin with shading: dark outline + mid fill + bright
+      // top highlight + white specular pixel. Rotation is faked via
+      // the bob phase — every few frames the coin "flips" (shrinks in
+      // x to read as an edge-on view).
+      const flip = Math.abs(Math.sin(c.angle * 2 + c.bobPhase))
+      const w = flip < 0.25 ? 2 : 4 // 2 during the edge-on frame
+      const h = 4
+      const offX = -Math.floor(w / 2)
+      const offY = -Math.floor(h / 2)
+      // outline
+      c.g.rect(offX, offY, w, h)
       c.g.fill({ color: colorDark })
-      c.g.rect(0, 0, 2, 1)
+      // mid fill (1 px inset)
+      if (w > 2) {
+        c.g.rect(offX + 1, offY + 1, w - 2, h - 2)
+        c.g.fill({ color: colorMid })
+      }
+      // top highlight row
+      c.g.rect(offX + 1, offY + 1, Math.max(1, w - 2), 1)
       c.g.fill({ color: s.color })
-      c.g.rect(0, 0, 1, 1)
+      // specular pixel
+      c.g.rect(offX + 1, offY + 1, 1, 1)
       c.g.fill({ color: colorLight })
-      c.g.x = Math.round(x) - 1
-      c.g.y = Math.round(y) - 1
+      // sparkle white pixel on full-face coins
+      if (w === 4) {
+        c.g.rect(offX + 2, offY + 1, 1, 1)
+        c.g.fill({ color: 0xffffff })
+      }
+      c.g.x = Math.round(x)
+      c.g.y = Math.round(y)
 
-      // Dim the coins that are behind (sin(angle) < 0 = back of the
-      // ellipse in top-down projection) so the orbit reads as 3D.
+      // Back-of-orbit dimming so the 3D read is clear.
       const behind = Math.sin(c.angle)
-      c.g.alpha = behind < 0 ? 0.35 : 1
+      c.g.alpha = behind < 0 ? 0.45 : 1
     }
   }
 }
