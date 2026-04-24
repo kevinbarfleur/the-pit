@@ -42,74 +42,143 @@ export const CAP_TOP_ANCHOR_CSS = CAP_Y_TOP_BASE * 2 + 2
 export const CAP_BOTTOM_ANCHOR_CSS = CAP_Y_BOTTOM_BASE * 2 - 2
 
 // =====================================================================
-// GROUND AMÉNAGEABLE — single source of truth for "where to put stuff"
+// ISLAND WORLD SPACE — a small 3D coord system for the island
+// =====================================================================
+//
+// The island is a 3D scene: a flat stone disc with a vertical sign
+// post planted in it and objects resting on its surface. Trying to
+// position those objects in 2D sprite pixels means guessing the
+// projection every time and second-guessing centring. The fix is a
+// tiny proper world-coordinate system, projected to the sprite once.
+//
+// Axes (origin = the pixel where the stake meets the ground):
+//   +X → right
+//   +Y → forward (toward the viewer / downward on screen)
+//   +Z → up
+//
+// Projection (top-down with depth foreshortening):
+//   screenX = originX + worldX
+//   screenY = originY + worldY × DEPTH_FORESHORTEN − worldZ
+//
+// With DEPTH_FORESHORTEN = 0.5 one world unit of depth prints as a
+// half pixel on screen — a classic 2:1 top-down view.
+//
+// Consequence:
+//   - "Place a chest 4 units to the left, 1 unit forward": world
+//     (−4, 1, 0). The projection picks the correct pixel.
+//   - "Place a coin stack 3 units in front": world (0, 3, 0).
+//   - "Make the signpost 5 units tall": plaque at z=8, stake from
+//     z=0 to z=5 (the decor code already does this implicitly; we
+//     don't need to touch it).
+//
+// Anything on the ground plane shares z=0. Anything standing up has
+// z > 0. The foreshortening is uniform so every object gets its
+// perspective right for free.
 // =====================================================================
 
+/** 1 world depth unit prints as this many px vertically. */
+export const DEPTH_FORESHORTEN = 0.5
+
 /**
- * The rectangular zone on top of the cap where the player's eye
- * expects props to live: directly under the signpost, on the cap's
- * visible surface, clear of the stalactites underneath.
+ * The placement zone that props and hover effects live in. Contains
+ * both the world-space definition (origin + ellipse radii) and the
+ * derived screen-space axis-aligned bounding box used by the DOM
+ * capZone div and the Pixi effect rect.
  *
- * All coordinates are in NATIVE pixels (0..ISLAND_W, 0..ISLAND_H).
- * Callers that need CSS pixels multiply by the desired scale.
+ * Every coordinate here is in NATIVE sprite pixels. Callers that
+ * render in CSS scale the values to their own SCALE.
  */
 export interface GroundArea {
-  /** Centre of the habitable zone, directly under the stake. */
-  centerX: number
-  centerY: number
-  /** Axis-aligned bounds (inclusive top-left, exclusive bottom-right). */
+  // World origin — pixel position of (0, 0, 0) on the sprite.
+  originX: number
+  originY: number
+  // World-space half-extents of the habitable ellipse on z = 0.
+  radiusX: number
+  radiusY: number
+  // Derived screen AABB enclosing the ellipse + the signpost rising
+  // out of the origin. Used for the DOM capZone and for effects that
+  // need a rect.
   left: number
   right: number
   top: number
   bottom: number
   width: number
   height: number
+  // Legacy aliases for callers that still think in AABB centre terms.
+  // `centerX` is the world origin X; `centerY` is the AABB centre.
+  centerX: number
+  centerY: number
 }
 
 /**
- * Derive the habitable zone for a given island id.
+ * Project a point in island world space (x, y, z) to native sprite
+ * pixels. Use this to place anything that belongs on the island — no
+ * hand-computed `ground.centerX + 4` arithmetic should survive.
+ */
+export function worldToScreen(
+  space: { originX: number; originY: number },
+  x: number,
+  y: number,
+  z: number = 0,
+): { sx: number; sy: number } {
+  return {
+    sx: Math.round(space.originX + x),
+    sy: Math.round(space.originY + y * DEPTH_FORESHORTEN - z),
+  }
+}
+
+/**
+ * Compute the island's ground area in world + screen space.
  *
- * The ground is deliberately shifted **upward** relative to the earlier
- * version. User feedback: the previous ground sat entirely under the
- * stake's bottom, which made the whole habitable zone feel like it
- * was centred on the middle of the island globally rather than on the
- * top of the cap where the signpost is planted.
+ * World-space definition:
+ *   - origin = pixel where the stake meets the ground (stake base),
+ *     including the signpost's tilt offset so leaning panels still
+ *     place the world origin under their visible base.
+ *   - radiusX = 9, radiusY = 9 world units. A roughly circular
+ *     placement ellipse on z=0 that fits on the cap.
  *
- * New rule: the ground spans from the **top of the plaque** down to a
- * few pixels past the stake's base. This means the signpost sits in
- * the **upper portion** of the ground (centre of signpost ≈ a bit
- * above centre of ground), which matches "le panneau presque au
- * milieu de la zone aménageable ou légèrement un peu plus en haut".
- *
- * Props (`drawProps`) continue to be positioned relative to
- * `ground.bottom` so they land on the visible cap surface just under
- * the stake, never floating up into the plaque.
- *
- * `centerX` tracks the **visual base of the stake** (plaque centre
- * plus the same tilt offset `drawSignpost` uses), so tilted panels
- * still get their ground right under the stake's root.
+ * Screen AABB (left/right/top/bottom):
+ *   - horizontal: origin ± radiusX.
+ *   - bottom: origin.y + radiusY × DEPTH_FORESHORTEN
+ *             (the front edge of the ground plane, in screen px).
+ *   - top: top of the signpost plaque. Including the signpost makes
+ *     the AABB reach from the plaque down to the front of the
+ *     ground, so the user's rule "panneau presque au milieu, ou
+ *     légèrement plus haut" is satisfied automatically: the panel
+ *     naturally sits in the upper portion of this AABB.
  */
 export function computeGroundArea(id: string): GroundArea {
   const sp = computeSignpostLayout(id)
   const stakeBottomLocalY = Math.floor(sp.plaqueH / 2) + 5
   const stakeBottomAbsY = sp.plaqueCenterY + stakeBottomLocalY
   const stakeBaseOffsetX = Math.round(stakeBottomLocalY * sp.tiltRise)
-  const centerX = sp.plaqueCenterX + stakeBaseOffsetX
+  const originX = sp.plaqueCenterX + stakeBaseOffsetX
+  const originY = stakeBottomAbsY
+  const radiusX = 9
+  const radiusY = 9
   const plaqueTopAbsY = sp.plaqueCenterY - Math.floor(sp.plaqueH / 2)
-  const top = Math.max(0, plaqueTopAbsY)
-  const bottom = Math.min(CAP_Y_BOTTOM_BASE - 2, stakeBottomAbsY + 6)
-  const halfW = 9
-  const left = centerX - halfW
-  const right = centerX + halfW
+
+  const left = originX - radiusX
+  const right = originX + radiusX
+  const top = Math.max(0, plaqueTopAbsY - 1)
+  const bottom = Math.min(
+    CAP_Y_BOTTOM_BASE - 1,
+    Math.round(originY + radiusY * DEPTH_FORESHORTEN),
+  )
+
   return {
-    centerX,
-    centerY: Math.round((top + bottom) / 2),
+    originX,
+    originY,
+    radiusX,
+    radiusY,
     left,
     right,
     top,
     bottom,
     width: right - left,
     height: bottom - top,
+    centerX: originX,
+    centerY: Math.round((top + bottom) / 2),
   }
 }
 
@@ -339,20 +408,28 @@ function drawProps(
   ground: GroundArea,
   type: PitNodeType,
 ): void {
+  /** Shorthand: project a world-space (x, y, z) onto the sprite. */
+  const w = (x: number, y: number, z: number = 0) =>
+    worldToScreen(ground, x, y, z)
+
   if (type === 'treasure') {
-    // Props sit in the lower part of the ground, just below the stake
-    // base — the "visible surface" of the cap where loot would
-    // realistically rest. Positions are derived from ground.bottom so
-    // they move together with the ground if we ever resize it.
-    const chestY = ground.bottom - 4
-    const stackY = ground.bottom - 2
-    drawTreasureChest(ctx, ground.centerX - 4, chestY)
-    drawTreasureChest(ctx, ground.centerX + 4, chestY)
-    drawCoinStack(ctx, ground.centerX, stackY)
+    // Compact hoard, read left-to-right:
+    //  - left chest at world (−4, 2, 0) — 4 units to the left, 2
+    //    forward of the stake, resting on the ground.
+    //  - right chest at world (+4, 2, 0).
+    //  - coin stack at (0, 5, 0) — further forward and dead centre.
+    const chestLeft = w(-4, 2, 0)
+    const chestRight = w(4, 2, 0)
+    const stack = w(0, 5, 0)
+    drawTreasureChest(ctx, chestLeft.sx, chestLeft.sy)
+    drawTreasureChest(ctx, chestRight.sx, chestRight.sy)
+    drawCoinStack(ctx, stack.sx, stack.sy)
     return
   }
   if (type === 'shop') {
-    drawCoinStack(ctx, ground.centerX, ground.bottom - 2)
+    // Single coin pile in front of the sign post at world (0, 3, 0).
+    const stack = w(0, 3, 0)
+    drawCoinStack(ctx, stack.sx, stack.sy)
     return
   }
 }
