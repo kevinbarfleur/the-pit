@@ -2504,12 +2504,11 @@ export class EffectsEngine {
     const colorDark = darken(s.color, 0.3)
 
     const cx = rect.left + rect.width / 2
-    // Pond sits a bit lower in the placeable zone — the user's eye
-    // wants the basin closer to the centre / front of the cap, not
-    // hugging the very top of the ground rect.
     const cy = rect.top + rect.height * 0.62
-    const ellRx = rect.width * 0.32
-    const ellRy = rect.height * 0.32
+    // Basin compressed vertically — wider but flatter so it really
+    // reads as a top-down pool sunk into the rock, not a sphere.
+    const ellRx = rect.width * 0.34
+    const ellRy = rect.height * 0.18
     const lipAngle = (s.cascadeIdx / s.cellCount) * Math.PI * 2
     const lipDirX = s.side === 'left' ? -1 : 1
     const lipDirY = 0
@@ -2617,52 +2616,51 @@ export class EffectsEngine {
       g.fill({ color: colorDark, alpha: 0.92 })
     }
 
-    // 4) Lip — a chunky 6-px-wide overflow ledge bulging outward
-    // from the basin edge on the chosen side. Pulses slightly so
-    // the player sees that THIS is where the water leaves.
+    // 4) Lip — a heavy chunky overflow ledge bulging outward from
+    // the basin's chosen edge. Now ~3× wider than before.
     const lipPulse = Math.sin(s.time * 4) * 0.6 + 2.2
-    const lipW = 6
-    const lipH = Math.round(2 + lipPulse)
+    const lipW = 14
+    const lipH = Math.round(3 + lipPulse)
     const lipX = Math.round(lipBaseX) - Math.floor(lipW / 2) + (s.side === 'left' ? -1 : 0)
     g.rect(lipX, Math.round(lipBaseY), lipW, lipH)
     g.fill({ color: s.color, alpha: 0.96 })
+    // Top sheen across the whole lip width.
     g.rect(lipX + 1, Math.round(lipBaseY), lipW - 2, 1)
     g.fill({ color: colorLight, alpha: 0.85 })
-    // Side shadow on the under-lip — sells the volume of overflow.
+    // Under-lip dark seam selling the volume.
     g.rect(lipX, Math.round(lipBaseY) + lipH - 1, lipW, 1)
     g.fill({ color: colorDark, alpha: 0.6 })
 
-    // 5) Falling cascade column — wider at the BASE than at the lip.
-    // Each drop's age (life consumed) drives a horizontal spread:
-    // young drops near the lip stay tight; old drops flying far
-    // below the cap have drifted outward + kept their own jitter,
-    // so the column flares out into a wider plume the further it
-    // falls — same way a real waterfall broadens as it disperses.
-    const lipCx = lipBaseX + lipDirX * 1
+    // 5) Falling cascade column — ~3× thicker than before. Each
+    // drop now renders as a 6-9 px wide strip that flares with age.
     for (const d of s.drops) {
       if (!d.inUse) continue
       const t = 1 - d.life / d.maxLife // 0 at spawn, 1 at death
-      // Push drops outward over time so the bottom of the column is
-      // physically wider than the top, regardless of their initial vx.
-      const flare = lipDirX * t * t * 6
+      // Outward drift so the column flares wider as it falls.
+      const flare = lipDirX * t * t * 8
       const x = Math.round(d.x + flare)
       const y = Math.round(d.y)
       const speed = Math.abs(d.vy)
       const streakLen = speed > 240 ? 4 : speed > 160 ? 3 : speed > 90 ? 2 : 1
-      // Body width also widens slightly with age — 2 → 3 px.
-      const w = t > 0.55 ? 3 : 2
-      g.rect(x, y, w, streakLen)
-      g.fill({ color: s.color, alpha: 0.92 })
-      // Inner highlight (1 px brighter)
-      g.rect(x, y, 1, streakLen)
+      // Body width widens with age — 6 → 9 px.
+      const w = t > 0.65 ? 9 : t > 0.3 ? 7 : 6
+      const xStart = x - Math.floor(w / 2)
+      g.rect(xStart, y, w, streakLen)
+      g.fill({ color: s.color, alpha: 0.9 })
+      // Bright inner core (2 px) so the column has visible depth.
+      g.rect(xStart + Math.floor(w / 2) - 1, y, 2, streakLen)
       g.fill({ color: colorLight, alpha: 0.7 })
-      // Trailing dark pixel for motion-blur depth on fast drops.
+      // Dark side-edge pixels giving the column a 3D shading cue.
+      g.rect(xStart, y, 1, streakLen)
+      g.fill({ color: colorDark, alpha: 0.55 })
+      g.rect(xStart + w - 1, y, 1, streakLen)
+      g.fill({ color: colorDark, alpha: 0.55 })
+      // Trailing dark band on fast drops for motion-blur depth.
       if (speed > 180) {
-        g.rect(x, y + streakLen, w, 1)
+        g.rect(xStart, y + streakLen, w, 1)
         g.fill({ color: colorDark, alpha: 0.5 })
       }
     }
-    void lipCx
   }
 
   /**
