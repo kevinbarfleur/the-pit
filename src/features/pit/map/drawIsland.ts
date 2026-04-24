@@ -155,24 +155,33 @@ export function computeGroundArea(id: string): GroundArea {
   const originX = sp.plaqueCenterX + stakeBaseOffsetX
   const originY = stakeBottomAbsY
 
-  // Read the same cap geometry the decor uses so the ground tracks
-  // the actual silhouette, not a guess.
+  // The placeable zone is a **disc** on the world ground plane (z=0).
+  // Its world radius follows the cap's horizontal extent (`radiusBase`)
+  // but NOT its `aspect` — aspect stretches the drawn cap vertically
+  // to fake tall/flat variants, it does not describe the top surface.
+  //
+  // Projected through `DEPTH_FORESHORTEN` (0.5), a world disc becomes
+  // a 2:1 flat screen ellipse — wider than tall, exactly the shape
+  // the eye expects for a round top seen from a slight tilt. This is
+  // what matches the "ovale compressé en haut et en bas" the user
+  // describes.
   const hash = hashId(id)
   const variants = pickVariants(hash)
   const capGeom = capGeometry(variants.cap)
-  const INSET = 0.78
-  const screenRx = capGeom.radiusBase * INSET
-  const screenRy = capGeom.radiusBase * capGeom.aspect * INSET
-  const radiusX = screenRx
-  const radiusY = screenRy / DEPTH_FORESHORTEN
+  const INSET = 0.82
+  const worldRadius = capGeom.radiusBase * INSET
+  const radiusX = worldRadius
+  const radiusY = worldRadius
+  const screenRx = radiusX
+  const screenRy = radiusY * DEPTH_FORESHORTEN
 
-  const plaqueTopAbsY = sp.plaqueCenterY - Math.floor(sp.plaqueH / 2)
+  // AABB is strictly the ground ellipse's bounds — no signpost
+  // inclusion. The ground must stay the flat oval the user described;
+  // including the plaque stretched the rect vertically and caused
+  // grass / effects to spawn in the signpost area.
   const left = Math.round(originX - screenRx)
   const right = Math.round(originX + screenRx)
-  const top = Math.max(
-    0,
-    Math.min(plaqueTopAbsY - 1, Math.round(originY - screenRy)),
-  )
+  const top = Math.max(0, Math.round(originY - screenRy))
   const bottom = Math.min(
     CAP_Y_BOTTOM_BASE - 1,
     Math.round(originY + screenRy),

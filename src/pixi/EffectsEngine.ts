@@ -1269,13 +1269,12 @@ export class EffectsEngine {
     const countScale = effect.config.countScale
 
     if (effect.config.shape === 'patch') {
-      // Area distribution: blades scatter randomly across the rect. To
-      // avoid the "square of grass" silhouette the user flagged, we
-      // reject any (fx, fy) that falls outside an irregular ellipse
-      // inscribed in the rect. The ellipse is slightly wider than tall
-      // (×1.75 y-weight) to hug the top surface of a cap, and each
-      // rejection test adds a small angle-dependent noise so the
-      // boundary reads as organic dirt, not a perfect ellipse.
+      // Area distribution: blades scatter randomly across the rect. We
+      // reject any (fx, fy) outside an irregular ellipse inscribed in
+      // the rect. The ellipse is a circle in *normalised* coords (so
+      // it naturally takes the rect's own aspect — wide rects produce
+      // wide ovals, flat rects produce flat ovals). Angle-dependent
+      // noise keeps the boundary organic.
       const targetCount = Math.max(20, Math.round(60 * countScale))
       let placed = 0
       let attempts = 0
@@ -1287,8 +1286,10 @@ export class EffectsEngine {
         const dx = fx - 0.5
         const dy = fy - 0.5
         const angle = Math.atan2(dy, dx)
-        const boundary = 0.225 + 0.04 * Math.sin(angle * 5)
-        const distSq = dx * dx + dy * dy * 1.75
+        // Normalised-circle rejection (no aspect weighting): the rect
+        // already carries the desired screen shape from the caller.
+        const boundary = 0.235 + 0.035 * Math.sin(angle * 5)
+        const distSq = dx * dx + dy * dy
         if (distSq > boundary) continue
         blades.push(this.buildBlade('patch', fx, pickColor(), heightScale, fy))
         placed++
