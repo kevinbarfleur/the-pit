@@ -1,10 +1,3 @@
-/*
- * Thin container styling for the island button. The visual of the
- * island itself is painted in `drawIsland` onto the inner <canvas>, so
- * this file only concerns layout, hit-target, float animation, and
- * state-driven filters.
- */
-
 .island {
   position: absolute;
   top: 50%;
@@ -33,35 +26,52 @@
   position: absolute;
   inset: 0;
   image-rendering: pixelated;
-  /* No smoothing — let the browser scale up the tiny bitmap one pixel
-     at a time. */
   -ms-interpolation-mode: nearest-neighbor;
 }
 
 /*
- * Glyph overlay drawn in HTML — rendered atop the canvas and scales
- * with the CSS font metric (not the pixel art). VT323 at 20px reads
- * well over the 64-px upscaled sprite.
+ * Glyph sits on top of the plaque. The plaque is drawn in the canvas
+ * at y≈0..5 native (10 px CSS tall). Glyph floats slightly below the
+ * plaque top and uses a small font so it fits inside.
  */
 .glyph {
   position: absolute;
-  top: 8px;
+  top: -1px;
   left: 0;
   right: 0;
   text-align: center;
   font-family: var(--font-display);
-  font-size: 22px;
+  font-size: 12px;
   line-height: 1;
-  color: rgba(0, 0, 0, 0.85);
+  color: rgba(0, 0, 0, 0.9);
   text-shadow:
-    1px 0 0 rgba(255, 255, 255, 0.35),
-    0 -1px 0 rgba(255, 255, 255, 0.3);
+    1px 0 0 rgba(255, 255, 255, 0.25),
+    0 -1px 0 rgba(255, 255, 255, 0.2);
   pointer-events: none;
   z-index: 1;
 }
 
-/* Step-keyframed bob — four frames per period, ±2 px.
- * Step(1) easing is the only acceptable one per project rules. */
+/*
+ * Chevron that floats above the plaque to mark the player's current
+ * island. Bobs on a step-keyframed animation — no drop-shadow, no
+ * halo (user specifically asked those be removed).
+ */
+.currentMarker {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -14px;
+  text-align: center;
+  font-family: var(--font-display);
+  font-size: 14px;
+  line-height: 1;
+  color: var(--color-pit-green);
+  text-shadow: 1px 1px 0 #000;
+  pointer-events: none;
+  animation: currentBob 0.9s steps(1) infinite;
+  z-index: 2;
+}
+
 @keyframes islandFloat {
   0% { transform: translate(-50%, -50%); }
   25% { transform: translate(-50%, calc(-50% - 1px)); }
@@ -70,17 +80,13 @@
   100% { transform: translate(-50%, -50%); }
 }
 
-/* --- State modifiers ----------------------------------------------- */
+@keyframes currentBob {
+  0% { transform: translateY(0); }
+  50% { transform: translateY(-2px); }
+  100% { transform: translateY(0); }
+}
 
-.island[data-state='current'] {
-  filter: drop-shadow(0 0 10px rgba(154, 230, 110, 0.55));
-}
-.island[data-state='current'] .glyph {
-  color: var(--color-pit-green);
-  text-shadow:
-    0 0 6px rgba(154, 230, 110, 0.6),
-    1px 1px 0 #000;
-}
+/* --- State modifiers ---------------------------------------------- */
 
 .island[data-state='cleared'] {
   opacity: 0.78;

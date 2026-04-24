@@ -5,7 +5,13 @@ import { useEffects } from '../../../hooks/useEffects'
 import { useHoverEffect } from '../../../hooks/useHoverEffect'
 import { usePitUiStore } from '../../../stores/pitUiStore'
 import type { PitNode as PitNodeModel, PitNodeState, PitNodeType } from '../../../game/pit/types'
-import { drawIsland, ISLAND_H, ISLAND_W } from './drawIsland'
+import {
+  CAP_BOTTOM_ANCHOR_CSS,
+  CAP_TOP_ANCHOR_CSS,
+  ISLAND_H,
+  ISLAND_W,
+  drawIsland,
+} from './drawIsland'
 import styles from './IslandNode.module.css'
 
 interface IslandNodeProps {
@@ -15,13 +21,6 @@ interface IslandNodeProps {
   style?: CSSProperties
 }
 
-/**
- * CSS upscale multiplier. The island is rendered at its native
- * ISLAND_W × ISLAND_H pixel dimensions on a canvas, then scaled up by
- * this factor via `image-rendering: pixelated`. Blowing it up from the
- * internal resolution preserves every pixel edge — this is what sells
- * the terminal pixel-art DNA.
- */
 const SCALE = 2
 
 const TYPE_GLYPH: Record<PitNodeType, string> = {
@@ -58,13 +57,22 @@ const TYPE_COLOR: Record<PitNodeType, number> = {
 }
 
 /**
- * Floating pixel-art island node.
+ * Floating pixel-art stone island with a sign post planted on top.
  *
- * Renders a bitmap-per-island on a small 2D canvas at native pixel
- * resolution (ISLAND_W × ISLAND_H), then upscales via CSS. This keeps
- * every pixel hard-edged and lets `drawIsland` control the palette and
- * dithering directly — unlike the earlier clip-path approach which
- * relied on GPU anti-aliasing and didn't read as pixel art.
+ * The stone itself stays neutral-grey (picked from a palette of four
+ * tonal variants by id hash). The activity is signalled by a tiny
+ * coloured plaque on a stake — that's what makes the map readable
+ * without every island turning the viewport into a fruit salad.
+ *
+ * The current-island marker is a chevron ▼ that floats above the
+ * plaque and bobs — replaces the previous green drop-shadow halo,
+ * which the user found visually noisy.
+ *
+ * Chain anchors are exposed via `data-anchor-cap-top-px` and
+ * `data-anchor-cap-bottom-px` (CSS pixels, relative to the button's
+ * top edge). These are the y-offsets of the cap's top and bottom,
+ * respectively — NOT the stalactite tips — so chains tie visually to
+ * the island body rather than to its broken dangling edges.
  */
 export function IslandNode({ node, state, canCommit, style }: IslandNodeProps) {
   const ref = useRef<HTMLButtonElement | null>(null)
@@ -73,8 +81,6 @@ export function IslandNode({ node, state, canCommit, style }: IslandNodeProps) {
   const setHoveredId = usePitUiStore((s) => s.setHoveredId)
   const startZoomIn = usePitUiStore((s) => s.startZoomIn)
 
-  // Draw once per (id, type). State changes are handled in CSS (filter,
-  // opacity) without a full repaint — faster and stable visually.
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
@@ -112,8 +118,6 @@ export function IslandNode({ node, state, canCommit, style }: IslandNodeProps) {
     })
   }
 
-  // Stagger the float animation per-id so a cluster doesn't breathe in
-  // unison. Hash a short deterministic delay from the node id.
   const floatDelay = useMemo(() => {
     let h = 0
     for (let i = 0; i < node.id.length; i++) h = (h * 31 + node.id.charCodeAt(i)) | 0
@@ -131,8 +135,8 @@ export function IslandNode({ node, state, canCommit, style }: IslandNodeProps) {
       data-state={state}
       data-type={node.type}
       data-island-id={node.id}
-      data-anchor-top={50}
-      data-anchor-bottom={50}
+      data-anchor-cap-top-px={CAP_TOP_ANCHOR_CSS}
+      data-anchor-cap-bottom-px={CAP_BOTTOM_ANCHOR_CSS}
       disabled={!canCommit}
       onMouseEnter={() => setHoveredId(node.id)}
       onMouseLeave={() => setHoveredId(null)}
@@ -156,7 +160,9 @@ export function IslandNode({ node, state, canCommit, style }: IslandNodeProps) {
         height={ISLAND_H}
         style={{ width: `${w}px`, height: `${h}px` }}
       />
+      {/* Glyph rendered over the plaque via HTML for crisp VT323. */}
       <span className={styles.glyph}>{TYPE_GLYPH[node.type]}</span>
+      {state === 'current' && <span className={styles.currentMarker}>▼</span>}
     </button>
   )
 }

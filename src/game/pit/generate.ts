@@ -206,15 +206,25 @@ export function linkRows(
   if (rowA.length === 0 || rowB.length === 0) return
   const rng = cursor(runSeed, (depthA << 8) ^ 0x9e3779b1)
 
-  // Pass 1 — each parent picks 1–3 adjacent children.
+  // Pass 1 — each parent picks 1–3 children, prioritising its own
+  // column first, then ±1. This is the key to readable chains: a node
+  // at column 0 connects primarily to column 0 below, which reads as a
+  // straight vertical drop rather than diagonal spaghetti. Ties (e.g.
+  // same-distance children when a parent is at column 1) break by
+  // column ascending so the algorithm is fully deterministic — no
+  // shuffle, so the layout stays stable across regeneration.
   for (const a of rowA) {
     const candidates = rowB.filter((b) => Math.abs(b.column - a.column) <= 1)
     const pool = candidates.length > 0 ? candidates : [closestByColumn(rowB, a.column)]
-    const n = chooseNumChildren(rng, pool.length)
-    // Shuffle deterministically and take the first n.
-    const shuffled = shuffleStable(pool, rng)
+    const sorted = pool.slice().sort((x, y) => {
+      const dx = Math.abs(x.column - a.column)
+      const dy = Math.abs(y.column - a.column)
+      if (dx !== dy) return dx - dy
+      return x.column - y.column
+    })
+    const n = chooseNumChildren(rng, sorted.length)
     for (let i = 0; i < n; i++) {
-      a.linksDown.push(shuffled[i].id)
+      a.linksDown.push(sorted[i].id)
     }
   }
 
@@ -238,15 +248,6 @@ function chooseNumChildren(rng: ReturnType<typeof cursor>, maxAvailable: number)
   return Math.min(n, Math.max(1, maxAvailable))
 }
 
-/** In-place-free shuffle seeded by the supplied rng (Fisher-Yates). */
-function shuffleStable<T>(list: T[], rng: ReturnType<typeof cursor>): T[] {
-  const out = list.slice()
-  for (let i = out.length - 1; i > 0; i--) {
-    const j = rng.int(i + 1)
-    ;[out[i], out[j]] = [out[j], out[i]]
-  }
-  return out
-}
 
 function closestByColumn(row: PitNode[], col: number): PitNode {
   let best = row[0]

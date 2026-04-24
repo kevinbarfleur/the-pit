@@ -58,14 +58,18 @@ export function ChainLayer({ run }: ChainLayerProps) {
         if (!fromEl || !toEl) continue
         const fromRect = fromEl.getBoundingClientRect()
         const toRect = toEl.getBoundingClientRect()
-        const fromAnchor = Number(fromEl.dataset.anchorBottom ?? 50) / 100
-        const toAnchor = Number(toEl.dataset.anchorTop ?? 50) / 100
+        // Anchors are y-offsets (CSS px) from the button's top to the
+        // cap's base (bottom) / top. Chains tie into the body of the
+        // rock — never into the tip of the dangling stalactites, which
+        // looked detached.
+        const fromAnchorY = Number(fromEl.dataset.anchorCapBottomPx ?? fromRect.height)
+        const toAnchorY = Number(toEl.dataset.anchorCapTopPx ?? 0)
         specs.push({
           id: `${pair.fromId}->${pair.toId}`,
-          fromX: fromRect.left + fromRect.width * fromAnchor,
-          fromY: fromRect.bottom - 2,
-          toX: toRect.left + toRect.width * toAnchor,
-          toY: toRect.top + 2,
+          fromX: fromRect.left + fromRect.width / 2,
+          fromY: fromRect.top + fromAnchorY,
+          toX: toRect.left + toRect.width / 2,
+          toY: toRect.top + toAnchorY,
           state: pair.state(run),
         })
       }
