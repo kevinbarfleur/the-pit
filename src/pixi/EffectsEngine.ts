@@ -2455,14 +2455,17 @@ export class EffectsEngine {
     const graphic = new Graphics()
     this.dripLayer.addChild(graphic)
     const cellCount = 32
-    // Static per-cell jitter — gives the rim its irregular outline.
+    // Static per-cell jitter — much stronger now (~±3 px) so the
+    // pond's silhouette is unmistakably lumpy / dug into the rock,
+    // not a clean ellipse.
     const topNoise: number[] = []
     for (let i = 0; i < cellCount; i++) {
       const a = (i / cellCount) * Math.PI * 2
       const noise =
-        Math.sin(a * 3 + 0.7) * 0.7 +
-        Math.sin(a * 5 + 1.9) * 0.5 +
-        Math.sin(a * 8 + 3.1) * 0.3
+        Math.sin(a * 3 + 0.7) * 1.6 +
+        Math.sin(a * 5 + 1.9) * 0.9 +
+        Math.sin(a * 7 + 3.1) * 0.5 +
+        Math.sin(a * 11 + 4.7) * 0.35
       topNoise.push(noise)
     }
     // Cascade origin = rim cell aligned with chosen side.
@@ -2533,9 +2536,12 @@ export class EffectsEngine {
     // hitting the void below the cap.
     if (effect.enabled) {
       s.flowAcc += dt
-      const cadence = 0.022 // 45 spawns/s
+      const cadence = 0.018 // ≈55 spawns/s
       while (s.flowAcc >= cadence) {
         s.flowAcc -= cadence
+        // Spawn 3 drops at once to thicken the column noticeably.
+        this.spawnSpringRimDrop(s, rect, lipBaseX, lipBaseY, lipDirX)
+        this.spawnSpringRimDrop(s, rect, lipBaseX, lipBaseY, lipDirX)
         this.spawnSpringRimDrop(s, rect, lipBaseX, lipBaseY, lipDirX)
       }
     }
@@ -2559,30 +2565,50 @@ export class EffectsEngine {
     const g = s.graphic
     g.clear()
 
-    // 1) Pond body — solid ellipse fill, slightly inset so the rim
-    // outline reads as raised.
-    fillEllipse(g, cx, cy, ellRx - 1, ellRy - 1, s.color, 0.9)
+    // 1) Pond body — solid irregular shape. Instead of a fixed
+    // ellipse fill we scanline-fill the SAME jittered silhouette
+    // used by the rim outline, so the body reads as the carved
+    // basin (lumpy outline, no clean ellipse trace).
+    fillJitteredEllipse(g, cx, cy, ellRx, ellRy, s.topNoise, s.color, 0.92)
 
-    // 2) Surface highlights — thin wobbling stripe + 3 specular flecks.
-    const stripeY = cy - ellRy * 0.45
-    for (let dx = -ellRx + 2; dx <= ellRx - 2; dx += 1) {
+    // Inner shadow — top half of the basin gets a darker rim band
+    // so the pond visibly sinks INTO the rock rather than sitting
+    // on top of it. Drawn as 2 px tucked under the upper rim.
+    for (let i = 0; i < N; i++) {
+      const a = (i / N) * Math.PI * 2
+      // Only the upper half (y < 0).
+      if (Math.sin(a) > -0.15) continue
+      const r_x = ellRx + s.topNoise[i] - 1
+      const r_y = ellRy + s.topNoise[i] - 1
+      const x = Math.round(cx + Math.cos(a) * r_x)
+      const y = Math.round(cy + Math.sin(a) * r_y)
+      g.rect(x, y, 1, 1)
+      g.fill({ color: 0x000000, alpha: 0.4 })
+      g.rect(x, y + 1, 1, 1)
+      g.fill({ color: colorDark, alpha: 0.55 })
+    }
+
+    // 2) Surface highlights — stripe stays low INSIDE the body,
+    // not at the very top, so the basin feels deep.
+    const stripeY = cy - ellRy * 0.3
+    for (let dx = -ellRx + 3; dx <= ellRx - 3; dx += 1) {
       const t = Math.abs(dx) / ellRx
-      if (t > 0.85) continue
+      if (t > 0.78) continue
       const wob = Math.sin(s.time * 2.1 + dx * 0.7) * 0.5
       g.rect(Math.round(cx + dx), Math.round(stripeY + wob), 1, 1)
-      g.fill({ color: colorLight, alpha: 0.5 * (1 - t) })
+      g.fill({ color: colorLight, alpha: 0.4 * (1 - t) })
     }
     for (let k2 = 0; k2 < 3; k2++) {
       const ang = s.time * 0.6 + k2 * 2.1
-      const fx = Math.cos(ang) * ellRx * 0.55
-      const fy = Math.sin(ang * 1.3) * ellRy * 0.4
+      const fx = Math.cos(ang) * ellRx * 0.45
+      const fy = Math.sin(ang * 1.3) * ellRy * 0.35
       g.rect(Math.round(cx + fx), Math.round(cy + fy), 1, 1)
       g.fill({ color: 0xffffff, alpha: 0.55 })
     }
 
     // 3) Outline — pond rim drawn with the static jitter so the
-    // silhouette is irregular (NO live spray everywhere — just the
-    // outline of the body).
+    // silhouette is irregular. Bottom half darker (cap shadow);
+    // top half darker still (basin sunk into rock).
     for (let i = 0; i < N; i++) {
       const a = (i / N) * Math.PI * 2
       const r_x = ellRx + s.topNoise[i]
@@ -2590,33 +2616,41 @@ export class EffectsEngine {
       const x = Math.round(cx + Math.cos(a) * r_x)
       const y = Math.round(cy + Math.sin(a) * r_y)
       g.rect(x, y, 1, 1)
-      g.fill({ color: colorDark, alpha: 0.85 })
+      g.fill({ color: colorDark, alpha: 0.92 })
     }
 
-    // 4) Lip — a fat 3-px thick downward bulge of water at the
-    // cascade origin, animated with a slow vertical pulse so it
-    // reads as the constant overflow point.
-    const lipPulse = Math.sin(s.time * 4) * 0.5 + 1.5
-    const lipW = 4
+    // 4) Lip — a chunky 6-px-wide overflow ledge bulging outward
+    // from the basin edge on the chosen side. Pulses slightly so
+    // the player sees that THIS is where the water leaves.
+    const lipPulse = Math.sin(s.time * 4) * 0.6 + 2.2
+    const lipW = 6
     const lipH = Math.round(2 + lipPulse)
     const lipX = Math.round(lipBaseX) - Math.floor(lipW / 2) + (s.side === 'left' ? -1 : 0)
     g.rect(lipX, Math.round(lipBaseY), lipW, lipH)
-    g.fill({ color: s.color, alpha: 0.95 })
-    g.rect(lipX + 1, Math.round(lipBaseY), 2, 1)
+    g.fill({ color: s.color, alpha: 0.96 })
+    g.rect(lipX + 1, Math.round(lipBaseY), lipW - 2, 1)
     g.fill({ color: colorLight, alpha: 0.85 })
+    // Side shadow on the under-lip — sells the volume of overflow.
+    g.rect(lipX, Math.round(lipBaseY) + lipH - 1, lipW, 1)
+    g.fill({ color: colorDark, alpha: 0.6 })
 
-    // 5) Falling cascade column — drops drawn as 1×3 streaks for a
-    // strong vertical motion blur. They cluster near the lip's X
-    // because they all spawn there with low horizontal velocity.
+    // 5) Falling cascade column — wider, denser. Each drop now
+    // renders as a 2×N streak (twice as thick) and the 3-spawn
+    // burst at every cadence gives the column real visual weight.
     for (const d of s.drops) {
       if (!d.inUse) continue
       const speed = Math.abs(d.vy)
-      const streakLen = speed > 200 ? 3 : speed > 120 ? 2 : 1
+      const streakLen = speed > 240 ? 4 : speed > 160 ? 3 : speed > 90 ? 2 : 1
+      g.rect(Math.round(d.x), Math.round(d.y), 2, streakLen)
+      g.fill({ color: s.color, alpha: 0.92 })
+      // Inner highlight column (1 px brighter)
       g.rect(Math.round(d.x), Math.round(d.y), 1, streakLen)
-      g.fill({ color: s.color, alpha: 0.9 })
-      // Bright tip pixel
-      g.rect(Math.round(d.x), Math.round(d.y), 1, 1)
-      g.fill({ color: colorLight, alpha: 0.9 })
+      g.fill({ color: colorLight, alpha: 0.7 })
+      // Trailing dark pixel for fast drops to add motion blur depth.
+      if (speed > 180) {
+        g.rect(Math.round(d.x), Math.round(d.y) + streakLen, 2, 1)
+        g.fill({ color: colorDark, alpha: 0.5 })
+      }
     }
   }
 
@@ -2653,12 +2687,12 @@ export class EffectsEngine {
       }
       s.drops.push(drop)
     }
-    // Three columns of jitter so the column has visible width.
-    const col = Math.floor(Math.random() * 3) - 1
-    drop.x = lipBaseX + col + lipDirX * 1
+    // Five columns of jitter so the cascade column is visibly wide.
+    const col = Math.floor(Math.random() * 5) - 2
+    drop.x = lipBaseX + col + lipDirX * 2
     drop.y = lipBaseY + 1 + Math.random() * 1.5
-    drop.vx = lipDirX * (4 + Math.random() * 6) + (Math.random() - 0.5) * 4
-    drop.vy = 25 + Math.random() * 35
+    drop.vx = lipDirX * (4 + Math.random() * 6) + (Math.random() - 0.5) * 5
+    drop.vy = 25 + Math.random() * 45
     drop.life = 1.6 + Math.random() * 0.7
     drop.maxLife = drop.life
     drop.inUse = true
@@ -2668,9 +2702,10 @@ export class EffectsEngine {
 
 /**
  * Filled axis-aligned ellipse drawn pixel-by-pixel on the supplied
- * Graphics. Used by the spring water body so the pond reads as a
- * solid disc instead of an outlined ring.
+ * Graphics. Kept as a generic helper for future effects (currently
+ * the spring uses `fillJitteredEllipse` instead).
  */
+// @ts-expect-error retained for future effects
 function fillEllipse(
   g: Graphics,
   cx: number,
@@ -2692,6 +2727,70 @@ function fillEllipse(
     if (xb <= xa) continue
     void x0
     void x1
+    g.rect(xa, y, xb - xa, 1)
+    g.fill({ color, alpha })
+  }
+}
+
+/**
+ * Filled "jittered" ellipse. Walks around the angular range and
+ * computes a per-angle radius offset by sampling the supplied
+ * `jitter` array (the same array used to draw an irregular outline
+ * elsewhere). Each scan-line then samples the radius at the cell
+ * whose angle is closest. Result: a basin shape with visibly lumpy
+ * silhouette, not a clean ellipse.
+ */
+function fillJitteredEllipse(
+  g: Graphics,
+  cx: number,
+  cy: number,
+  rx: number,
+  ry: number,
+  jitter: number[],
+  color: number,
+  alpha: number,
+): void {
+  const N = jitter.length
+  const samples = 96
+  // Pre-compute (angle, max-radius) samples around the ring.
+  const radii: { x: number; y: number }[] = []
+  for (let s = 0; s < samples; s++) {
+    const a = (s / samples) * Math.PI * 2
+    const cellIdx =
+      ((Math.round((a / (Math.PI * 2)) * N) % N) + N) % N
+    const j = jitter[cellIdx]
+    radii.push({
+      x: Math.cos(a) * (rx + j),
+      y: Math.sin(a) * (ry + j),
+    })
+  }
+  const maxR = Math.ceil(Math.max(rx, ry) + 4)
+  const y0 = Math.floor(cy - maxR)
+  const y1 = Math.ceil(cy + maxR)
+  for (let y = y0; y <= y1; y++) {
+    let minX = Infinity
+    let maxX = -Infinity
+    // For each row, find the leftmost and rightmost x that the
+    // jittered boundary covers. Sample the polygon by stepping
+    // through the radii pairs.
+    for (let s = 0; s < samples; s++) {
+      const a = (s / samples) * Math.PI * 2
+      const b = ((s + 1) / samples) * Math.PI * 2
+      const yA = cy + radii[s].y
+      const yB = cy + radii[(s + 1) % samples].y
+      // Skip segments that don't cross this row.
+      if ((yA - y) * (yB - y) > 0 && Math.abs(yA - y) > 0.5 && Math.abs(yB - y) > 0.5) continue
+      const t = yB === yA ? 0 : (y - yA) / (yB - yA)
+      if (t < 0 || t > 1) continue
+      const xs = cx + radii[s].x + (radii[(s + 1) % samples].x - radii[s].x) * t
+      if (xs < minX) minX = xs
+      if (xs > maxX) maxX = xs
+      void a
+      void b
+    }
+    if (!isFinite(minX) || !isFinite(maxX) || maxX <= minX) continue
+    const xa = Math.round(minX)
+    const xb = Math.round(maxX)
     g.rect(xa, y, xb - xa, 1)
     g.fill({ color, alpha })
   }
