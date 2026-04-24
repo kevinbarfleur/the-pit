@@ -2504,15 +2504,13 @@ export class EffectsEngine {
     const colorDark = darken(s.color, 0.3)
 
     const cx = rect.left + rect.width / 2
-    const cy = rect.top + rect.height / 2
+    // Pond sits a bit lower in the placeable zone — the user's eye
+    // wants the basin closer to the centre / front of the cap, not
+    // hugging the very top of the ground rect.
+    const cy = rect.top + rect.height * 0.62
     const ellRx = rect.width * 0.32
     const ellRy = rect.height * 0.32
-    // The "lip" is one fixed point on the rim where ALL the overflow
-    // pours. We don't drop pixels from every angle — the cascade is
-    // a coherent column, not a sphere of spray.
     const lipAngle = (s.cascadeIdx / s.cellCount) * Math.PI * 2
-    // Vertical-only side: clamp to right or left horizontal vector
-    // so the cascade falls at the cap's side, not at the back.
     const lipDirX = s.side === 'left' ? -1 : 1
     const lipDirY = 0
     const lipBaseX = cx + lipDirX * ellRx
@@ -2634,24 +2632,37 @@ export class EffectsEngine {
     g.rect(lipX, Math.round(lipBaseY) + lipH - 1, lipW, 1)
     g.fill({ color: colorDark, alpha: 0.6 })
 
-    // 5) Falling cascade column — wider, denser. Each drop now
-    // renders as a 2×N streak (twice as thick) and the 3-spawn
-    // burst at every cadence gives the column real visual weight.
+    // 5) Falling cascade column — wider at the BASE than at the lip.
+    // Each drop's age (life consumed) drives a horizontal spread:
+    // young drops near the lip stay tight; old drops flying far
+    // below the cap have drifted outward + kept their own jitter,
+    // so the column flares out into a wider plume the further it
+    // falls — same way a real waterfall broadens as it disperses.
+    const lipCx = lipBaseX + lipDirX * 1
     for (const d of s.drops) {
       if (!d.inUse) continue
+      const t = 1 - d.life / d.maxLife // 0 at spawn, 1 at death
+      // Push drops outward over time so the bottom of the column is
+      // physically wider than the top, regardless of their initial vx.
+      const flare = lipDirX * t * t * 6
+      const x = Math.round(d.x + flare)
+      const y = Math.round(d.y)
       const speed = Math.abs(d.vy)
       const streakLen = speed > 240 ? 4 : speed > 160 ? 3 : speed > 90 ? 2 : 1
-      g.rect(Math.round(d.x), Math.round(d.y), 2, streakLen)
+      // Body width also widens slightly with age — 2 → 3 px.
+      const w = t > 0.55 ? 3 : 2
+      g.rect(x, y, w, streakLen)
       g.fill({ color: s.color, alpha: 0.92 })
-      // Inner highlight column (1 px brighter)
-      g.rect(Math.round(d.x), Math.round(d.y), 1, streakLen)
+      // Inner highlight (1 px brighter)
+      g.rect(x, y, 1, streakLen)
       g.fill({ color: colorLight, alpha: 0.7 })
-      // Trailing dark pixel for fast drops to add motion blur depth.
+      // Trailing dark pixel for motion-blur depth on fast drops.
       if (speed > 180) {
-        g.rect(Math.round(d.x), Math.round(d.y) + streakLen, 2, 1)
+        g.rect(x, y + streakLen, w, 1)
         g.fill({ color: colorDark, alpha: 0.5 })
       }
     }
+    void lipCx
   }
 
   /**
