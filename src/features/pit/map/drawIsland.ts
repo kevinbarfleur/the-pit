@@ -390,9 +390,49 @@ function drawStalactites(
       break
     }
   }
+  // Before drawing, clamp every stalactite so its full width fits within
+  // the cap's actual silhouette at its base. The spec positions don't
+  // know about the rock's deformation — a stalactite placed at x=31
+  // would render fine if the cap were a rectangle but pokes out into
+  // empty space when the cap narrows there. We probe a pixel row just
+  // above the bottom edge to get the real silhouette span, then either
+  // shift the stalactite inward until it fits or drop it.
+  const probeY = capBottom - 2
+  const row =
+    probeY >= 0 && probeY < ISLAND_H
+      ? ctx.getImageData(0, probeY, ISLAND_W, 1).data
+      : null
+  const xIsOpaque = (x: number): boolean => {
+    if (!row) return true
+    if (x < 0 || x >= ISLAND_W) return false
+    return row[x * 4 + 3] > 0
+  }
+  const fits = (x: number, w: number): boolean => {
+    const half = Math.floor(w / 2)
+    for (let dx = -half; dx <= half; dx++) {
+      if (!xIsOpaque(x + dx)) return false
+    }
+    return true
+  }
+
   for (const s of specs) {
     if (s.x < 2 || s.x > ISLAND_W - 2) continue
-    drawStalactite(ctx, s.x, capBottom - 1, s.w, s.h, stone)
+    let x = s.x
+    if (!fits(x, s.w)) {
+      // Try nudging inward / outward by up to 4 px.
+      let placed = false
+      for (let offset = 1; offset <= 4 && !placed; offset++) {
+        if (fits(x - offset, s.w)) {
+          x = x - offset
+          placed = true
+        } else if (fits(x + offset, s.w)) {
+          x = x + offset
+          placed = true
+        }
+      }
+      if (!placed) continue
+    }
+    drawStalactite(ctx, x, capBottom - 1, s.w, s.h, stone)
   }
 }
 
