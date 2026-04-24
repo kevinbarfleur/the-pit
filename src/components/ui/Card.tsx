@@ -1,5 +1,7 @@
+import { useRef } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import { Tier, type TierLevel } from './Tier'
+import { useAttachedEffect } from '../../hooks/useAttachedEffect'
 import styles from './Card.module.css'
 
 interface CardProps {
@@ -31,9 +33,15 @@ export function Card({
   style,
   children,
 }: CardProps) {
+  const ref = useRef<HTMLDivElement | null>(null)
+
+  // T0 cards get a subtle violet sparkle field as long as they're mounted.
+  useAttachedEffect(ref, 'sparkle', {}, tier === 0)
+
   const hasHeader = tier !== undefined || slot !== undefined
   return (
     <div
+      ref={ref}
       className={`${styles.card} ${selected ? styles.selected : ''} ${rare ? styles.rare : ''} ${className ?? ''}`.trim()}
       style={style}
     >

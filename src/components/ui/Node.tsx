@@ -1,4 +1,6 @@
+import { useRef } from 'react'
 import type { HTMLAttributes, ReactNode } from 'react'
+import { useAttachedEffect } from '../../hooks/useAttachedEffect'
 import styles from './Node.module.css'
 
 export type NodeVariant = 'normal' | 'now' | 'elite' | 'boss' | 'locked'
@@ -9,6 +11,12 @@ interface NodeProps extends HTMLAttributes<HTMLDivElement> {
 }
 
 export function Node({ variant = 'normal', className, children, ...rest }: NodeProps) {
+  const ref = useRef<HTMLDivElement | null>(null)
+
+  // Auto-attach ambient effects for notable node variants.
+  useAttachedEffect(ref, 'ripple', {}, variant === 'now')
+  useAttachedEffect(ref, 'pulse', {}, variant === 'boss')
+
   const variantClass =
     variant === 'now'
       ? styles.now
@@ -20,7 +28,7 @@ export function Node({ variant = 'normal', className, children, ...rest }: NodeP
             ? styles.locked
             : ''
   return (
-    <div className={`${styles.node} ${variantClass} ${className ?? ''}`.trim()} {...rest}>
+    <div ref={ref} className={`${styles.node} ${variantClass} ${className ?? ''}`.trim()} {...rest}>
       {children}
     </div>
   )

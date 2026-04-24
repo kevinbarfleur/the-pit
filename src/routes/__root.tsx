@@ -3,7 +3,7 @@ import { TanStackRouterDevtools } from '@tanstack/react-router-devtools'
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import type { QueryClient } from '@tanstack/react-query'
 import type { ConvexReactClient } from 'convex/react'
-import { ImpactLayerProvider } from '../components/pixi/ImpactLayerProvider'
+import { EffectsProvider } from '../components/pixi/EffectsProvider'
 
 interface RouterContext {
   queryClient: QueryClient
@@ -16,7 +16,7 @@ export const Route = createRootRouteWithContext<RouterContext>()({
 
 function RootLayout() {
   return (
-    <ImpactLayerProvider>
+    <EffectsProvider>
       <Outlet />
       {import.meta.env.DEV && (
         <>
@@ -24,6 +24,6 @@ function RootLayout() {
           <ReactQueryDevtools initialIsOpen={false} />
         </>
       )}
-    </ImpactLayerProvider>
+    </EffectsProvider>
   )
 }

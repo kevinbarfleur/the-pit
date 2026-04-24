@@ -20,7 +20,21 @@ import {
   Tier,
   Topbar,
 } from './index'
-import { ImpactContext } from '../pixi/ImpactLayerProvider'
+import { EffectsContext } from '../pixi/EffectsProvider'
+import type { EffectsEngine } from '../../pixi/EffectsEngine'
+
+function stubEngine(overrides: Partial<EffectsEngine> = {}): EffectsEngine {
+  const base = {
+    emitBurst: vi.fn(),
+    emitShockwave: vi.fn(),
+    emitDrip: vi.fn(),
+    attach: vi.fn(() => () => {}),
+    attachWithHandle: vi.fn(() => ({ id: 1, detach: () => {} })),
+    setEnabled: vi.fn(),
+    detach: vi.fn(),
+  }
+  return { ...base, ...overrides } as unknown as EffectsEngine
+}
 
 describe('layout primitives', () => {
   it('PixelFrame renders title + children + corners', () => {
@@ -126,31 +140,43 @@ describe('interactive primitives', () => {
     expect(btn).toBeDisabled()
   })
 
-  it('Button juicy calls the impact emitter on pointerdown', () => {
-    const emit = vi.fn()
+  it('Button juicy calls emitBurst with variant on pointerdown', () => {
+    const engine = stubEngine()
     render(
-      <ImpactContext.Provider value={emit}>
+      <EffectsContext.Provider value={engine}>
         <Button juicy variant="primary">
           descend
         </Button>
-      </ImpactContext.Provider>,
+      </EffectsContext.Provider>,
     )
     const btn = screen.getByText('descend').closest('button') as HTMLButtonElement
     fireEvent.pointerDown(btn, { clientX: 42, clientY: 64 })
-    expect(emit).toHaveBeenCalledTimes(1)
-    expect(emit).toHaveBeenCalledWith({ x: 42, y: 64, color: '#9ae66e' })
+    expect(engine.emitBurst).toHaveBeenCalledTimes(1)
+    expect(engine.emitBurst).toHaveBeenCalledWith({ x: 42, y: 64, variant: 'primary' })
   })
 
-  it('Button without juicy does NOT call impact emitter', () => {
-    const emit = vi.fn()
+  it('Button without juicy does NOT call emitBurst', () => {
+    const engine = stubEngine()
     render(
-      <ImpactContext.Provider value={emit}>
+      <EffectsContext.Provider value={engine}>
         <Button>cold</Button>
-      </ImpactContext.Provider>,
+      </EffectsContext.Provider>,
     )
     const btn = screen.getByText('cold').closest('button') as HTMLButtonElement
     fireEvent.pointerDown(btn, { clientX: 10, clientY: 20 })
-    expect(emit).not.toHaveBeenCalled()
+    expect(engine.emitBurst).not.toHaveBeenCalled()
+  })
+
+  it('Button primary+juicy attaches a hover aura via the engine', () => {
+    const engine = stubEngine()
+    render(
+      <EffectsContext.Provider value={engine}>
+        <Button juicy variant="primary">
+          descend
+        </Button>
+      </EffectsContext.Provider>,
+    )
+    expect(engine.attachWithHandle).toHaveBeenCalled()
   })
 
   it('Input renders with icon and cursor', () => {

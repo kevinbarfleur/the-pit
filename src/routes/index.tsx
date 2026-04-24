@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
+import { useAttachedEffect } from '../hooks/useAttachedEffect'
 import styles from './index.module.css'
 
 export const Route = createFileRoute('/')({
@@ -30,10 +31,17 @@ const MENU_ITEMS = [
 
 function TitlePage() {
   const [selected, setSelected] = useState<string>('new')
+  const wordmarkRef = useRef<HTMLPreElement | null>(null)
+
+  // Real Pixi drops falling from the wordmark's glyphs. Continuous.
+  useAttachedEffect(wordmarkRef, 'drips')
+
   return (
     <main className={styles.page}>
       <div className={styles.body}>
-        <pre className={styles.wordmark}>{PIT_ASCII}</pre>
+        <pre ref={wordmarkRef} className={styles.wordmark}>
+          {PIT_ASCII}
+        </pre>
         <div className={styles.tagline}>"every descent writes your economy"</div>
         <div className={styles.menu}>
           {MENU_ITEMS.map((it) => (

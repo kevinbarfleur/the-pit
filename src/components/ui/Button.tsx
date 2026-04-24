@@ -1,6 +1,7 @@
-import { forwardRef } from 'react'
+import { forwardRef, useRef } from 'react'
 import type { ButtonHTMLAttributes, PointerEvent, ReactNode } from 'react'
-import { useImpact } from '../../hooks/useImpact'
+import { useEffects } from '../../hooks/useEffects'
+import { useHoverAura } from '../../hooks/useHoverAura'
 import styles from './Button.module.css'
 
 export type ButtonVariant = 'default' | 'primary' | 'danger' | 'ghost'
@@ -13,18 +14,16 @@ interface ButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'chi
   children: ReactNode
 }
 
-const VARIANT_COLOR: Record<ButtonVariant, string> = {
-  default: '#b58b3a',
-  primary: '#9ae66e',
-  danger: '#d45a5a',
-  ghost: '#d8cfb8',
-}
-
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
   { variant = 'default', size = 'md', juicy, className, onPointerDown, children, ...rest },
   ref,
 ) {
-  const emit = useImpact()
+  const engine = useEffects()
+  const internalRef = useRef<HTMLButtonElement | null>(null)
+
+  // Hover aura only on primary juicy buttons — one accent per view rule
+  const shouldAura = juicy === true && variant === 'primary'
+  useHoverAura(internalRef, {}, shouldAura)
 
   const variantClass =
     variant === 'primary'
@@ -38,19 +37,25 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   const sizeClass = size === 'sm' ? styles.sm : size === 'lg' ? styles.lg : ''
 
   const handlePointerDown = (event: PointerEvent<HTMLButtonElement>) => {
-    if (juicy && emit) {
-      emit({
+    if (juicy && engine) {
+      engine.emitBurst({
         x: event.clientX,
         y: event.clientY,
-        color: VARIANT_COLOR[variant],
+        variant,
       })
     }
     onPointerDown?.(event)
   }
 
+  const setRefs = (node: HTMLButtonElement | null) => {
+    internalRef.current = node
+    if (typeof ref === 'function') ref(node)
+    else if (ref) (ref as React.MutableRefObject<HTMLButtonElement | null>).current = node
+  }
+
   return (
     <button
-      ref={ref}
+      ref={setRefs}
       type={rest.type ?? 'button'}
       className={`${styles.btn} ${variantClass} ${sizeClass} ${className ?? ''}`.trim()}
       onPointerDown={handlePointerDown}
