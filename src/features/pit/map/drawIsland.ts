@@ -66,41 +66,38 @@ export interface GroundArea {
   height: number
 }
 
-/** Native-pixel height of the habitable band. Small enough that props
- *  stay visibly clustered around the base of the signpost rather than
- *  spread across the whole cap. */
-const GROUND_HEIGHT = 13
-
 /**
  * Derive the habitable zone for a given island id.
  *
- * `centerX` tracks the **visual base of the stake**, not just the
- * plaque's centre — that's crucial for tilted signposts. A panel with
- * `tiltRise = +0.3` leans right, so each row of its stake is drawn
- * offset by `round(row × tiltRise)` in `drawSignpost`. The stake's
- * bottom pixel (5 rows below the plaque's centre) lands at
- * `plaqueCenterX + round(5 × tiltRise)`, not at `plaqueCenterX`. If
- * the ground used the raw centre, a leaning panel would have its
- * hoard / grass / effects drift to the opposite side of where the
- * player visually expects the panel to be planted.
+ * The ground is deliberately shifted **upward** relative to the earlier
+ * version. User feedback: the previous ground sat entirely under the
+ * stake's bottom, which made the whole habitable zone feel like it
+ * was centred on the middle of the island globally rather than on the
+ * top of the cap where the signpost is planted.
  *
- * `top` sits just below the stake's visual bottom so nothing on the
- * ground overlaps the sign post itself. `bottom` is bounded to
- * `top + GROUND_HEIGHT` rather than the cap's extreme bottom — this
- * keeps props tightly clustered around the signpost base, avoiding
- * the "grass spread all the way to the stalactites" look.
+ * New rule: the ground spans from the **top of the plaque** down to a
+ * few pixels past the stake's base. This means the signpost sits in
+ * the **upper portion** of the ground (centre of signpost ≈ a bit
+ * above centre of ground), which matches "le panneau presque au
+ * milieu de la zone aménageable ou légèrement un peu plus en haut".
+ *
+ * Props (`drawProps`) continue to be positioned relative to
+ * `ground.bottom` so they land on the visible cap surface just under
+ * the stake, never floating up into the plaque.
+ *
+ * `centerX` tracks the **visual base of the stake** (plaque centre
+ * plus the same tilt offset `drawSignpost` uses), so tilted panels
+ * still get their ground right under the stake's root.
  */
 export function computeGroundArea(id: string): GroundArea {
   const sp = computeSignpostLayout(id)
-  // Local (relative-to-plaque) Y of the stake's bottom pixel.
   const stakeBottomLocalY = Math.floor(sp.plaqueH / 2) + 5
   const stakeBottomAbsY = sp.plaqueCenterY + stakeBottomLocalY
-  // Tilt shift of that bottom pixel — same rule drawSignpost uses
-  // when it paints the stake so the ground lands exactly under it.
   const stakeBaseOffsetX = Math.round(stakeBottomLocalY * sp.tiltRise)
   const centerX = sp.plaqueCenterX + stakeBaseOffsetX
-  const top = stakeBottomAbsY + 1
-  const bottom = Math.min(top + GROUND_HEIGHT, CAP_Y_BOTTOM_BASE - 2)
+  const plaqueTopAbsY = sp.plaqueCenterY - Math.floor(sp.plaqueH / 2)
+  const top = Math.max(0, plaqueTopAbsY)
+  const bottom = Math.min(CAP_Y_BOTTOM_BASE - 2, stakeBottomAbsY + 6)
   const halfW = 9
   const left = centerX - halfW
   const right = centerX + halfW
@@ -343,17 +340,19 @@ function drawProps(
   type: PitNodeType,
 ): void {
   if (type === 'treasure') {
-    // A compact mound: two chests slightly flanking centre on the
-    // upper ground band, a coin stack tucked in front below.
-    const rowY = ground.centerY - 2
-    const stackY = ground.centerY + 3
-    drawTreasureChest(ctx, ground.centerX - 4, rowY)
-    drawTreasureChest(ctx, ground.centerX + 4, rowY)
+    // Props sit in the lower part of the ground, just below the stake
+    // base — the "visible surface" of the cap where loot would
+    // realistically rest. Positions are derived from ground.bottom so
+    // they move together with the ground if we ever resize it.
+    const chestY = ground.bottom - 4
+    const stackY = ground.bottom - 2
+    drawTreasureChest(ctx, ground.centerX - 4, chestY)
+    drawTreasureChest(ctx, ground.centerX + 4, chestY)
     drawCoinStack(ctx, ground.centerX, stackY)
     return
   }
   if (type === 'shop') {
-    drawCoinStack(ctx, ground.centerX, ground.centerY + 1)
+    drawCoinStack(ctx, ground.centerX, ground.bottom - 2)
     return
   }
 }
