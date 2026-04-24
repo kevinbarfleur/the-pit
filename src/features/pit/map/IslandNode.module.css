@@ -29,38 +29,39 @@
   -ms-interpolation-mode: nearest-neighbor;
 }
 
-/*
- * Glyph sits on top of the plaque. The plaque is drawn in the canvas
- * at y≈0..5 native (10 px CSS tall). Glyph floats slightly below the
- * plaque top and uses a small font so it fits inside.
- */
-.glyph {
+/* Invisible zone matched to the cap's silhouette. Hover effects spawn
+ * on this rect, not on the full button — that way embers and grass
+ * stay within the rock body. */
+.capZone {
   position: absolute;
-  top: -1px;
-  left: 0;
-  right: 0;
-  text-align: center;
-  font-family: var(--font-display);
-  font-size: 12px;
-  line-height: 1;
-  color: rgba(0, 0, 0, 0.9);
-  text-shadow:
-    1px 0 0 rgba(255, 255, 255, 0.25),
-    0 -1px 0 rgba(255, 255, 255, 0.2);
   pointer-events: none;
-  z-index: 1;
 }
 
 /*
- * Chevron that floats above the plaque to mark the player's current
- * island. Bobs on a step-keyframed animation — no drop-shadow, no
- * halo (user specifically asked those be removed).
+ * Glyph rendered over the plaque. Positioned in CSS px by IslandNode
+ * based on the signpost layout exposed by drawIsland. Font size is
+ * clamped small enough to fit inside a 24×10 CSS plaque; rotation
+ * inherits from the signpost tilt so the glyph tilts with the sign.
  */
+.glyph {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-size: 10px;
+  line-height: 1;
+  color: rgba(0, 0, 0, 0.9);
+  text-shadow:
+    1px 0 0 rgba(255, 255, 255, 0.22),
+    0 -1px 0 rgba(255, 255, 255, 0.18);
+  pointer-events: none;
+  z-index: 2;
+}
+
 .currentMarker {
   position: absolute;
-  left: 0;
-  right: 0;
-  top: -14px;
+  width: 12px;
   text-align: center;
   font-family: var(--font-display);
   font-size: 14px;
@@ -69,7 +70,7 @@
   text-shadow: 1px 1px 0 #000;
   pointer-events: none;
   animation: currentBob 0.9s steps(1) infinite;
-  z-index: 2;
+  z-index: 3;
 }
 
 @keyframes islandFloat {

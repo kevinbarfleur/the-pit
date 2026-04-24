@@ -1,6 +1,11 @@
 .scene {
   position: fixed;
   inset: 0;
+  /* Explicit z-index so PitScene's DOM content (islands, chrome)
+     stacks ABOVE the ChainsEngine canvas (z-index 700) and below the
+     EffectsEngine canvas (z-index 900). Result: chains pass behind
+     islands; effects (bursts, embers) paint over everything. */
+  z-index: 750;
   background: var(--color-pit-ink);
   color: var(--color-pit-bone);
   overflow: hidden;

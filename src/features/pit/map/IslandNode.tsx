@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef } from 'react'
 import type { CSSProperties } from 'react'
 import type { AttachKind } from '../../../pixi/EffectsEngine'
 import { useEffects } from '../../../hooks/useEffects'
-import { useHoverEffect } from '../../../hooks/useHoverEffect'
 import { usePitUiStore } from '../../../stores/pitUiStore'
 import type { PitNode as PitNodeModel, PitNodeState, PitNodeType } from '../../../game/pit/types'
 import {
@@ -10,6 +9,7 @@ import {
   CAP_TOP_ANCHOR_CSS,
   ISLAND_H,
   ISLAND_W,
+  computeSignpostLayout,
   drawIsland,
 } from './drawIsland'
 import styles from './IslandNode.module.css'
@@ -59,28 +59,32 @@ const TYPE_COLOR: Record<PitNodeType, number> = {
 /**
  * Floating pixel-art stone island with a sign post planted on top.
  *
- * The stone itself stays neutral-grey (picked from a palette of four
- * tonal variants by id hash). The activity is signalled by a tiny
- * coloured plaque on a stake — that's what makes the map readable
- * without every island turning the viewport into a fruit salad.
- *
- * The current-island marker is a chevron ▼ that floats above the
- * plaque and bobs — replaces the previous green drop-shadow halo,
- * which the user found visually noisy.
- *
- * Chain anchors are exposed via `data-anchor-cap-top-px` and
- * `data-anchor-cap-bottom-px` (CSS pixels, relative to the button's
- * top edge). These are the y-offsets of the cap's top and bottom,
- * respectively — NOT the stalactite tips — so chains tie visually to
- * the island body rather than to its broken dangling edges.
+ * Structure:
+ *   <button>
+ *     <canvas/>           — bitmap: cap + stalactites + signpost
+ *     <div capZone/>      — invisible, sized to the cap only. Used as
+ *                           the spawn target for hover effects so
+ *                           embers/grass stay inside the rock's
+ *                           silhouette rather than covering the whole
+ *                           rect (which would include the stalactite
+ *                           gap).
+ *     <span glyph/>       — HTML overlay positioned over the plaque
+ *                           so it follows every signpost variant.
+ *     <span currentMarker/> — chevron bobbing above the plaque for the
+ *                             player's current island.
+ *   </button>
  */
 export function IslandNode({ node, state, canCommit, style }: IslandNodeProps) {
   const ref = useRef<HTMLButtonElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
+  const capZoneRef = useRef<HTMLDivElement | null>(null)
   const engine = useEffects()
   const setHoveredId = usePitUiStore((s) => s.setHoveredId)
   const startZoomIn = usePitUiStore((s) => s.startZoomIn)
 
+  const signpost = useMemo(() => computeSignpostLayout(node.id), [node.id])
+
+  // Draw the bitmap once per (id, type). State changes are handled in CSS.
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
@@ -90,14 +94,38 @@ export function IslandNode({ node, state, canCommit, style }: IslandNodeProps) {
     drawIsland(ctx, node.id, node.type)
   }, [node.id, node.type])
 
+  // Hover effect binding — attached to the invisible cap-zone div, not
+  // the whole button, so the effect spawns follow the rock's silhouette
+  // and don't bleed over the signpost or the gap above the stalactites.
+  // Pointer events still listen on the button so the hover triggers
+  // cover the full visual.
   const hoverEnabled =
     state !== 'locked' && state !== 'bypassed' && state !== 'current'
-  useHoverEffect(
-    ref,
-    TYPE_HOVER[node.type],
-    { color: TYPE_COLOR[node.type] },
-    hoverEnabled,
-  )
+  useEffect(() => {
+    if (!engine || !hoverEnabled) return
+    const btn = ref.current
+    const cap = capZoneRef.current
+    if (!btn || !cap) return
+
+    const { id, detach } = engine.attachWithHandle(cap, TYPE_HOVER[node.type], {
+      color: TYPE_COLOR[node.type],
+    })
+    engine.setEnabled(id, false)
+
+    const onEnter = () => engine.setEnabled(id, true)
+    const onLeave = () => engine.setEnabled(id, false)
+    btn.addEventListener('pointerenter', onEnter)
+    btn.addEventListener('pointerleave', onLeave)
+    btn.addEventListener('focus', onEnter)
+    btn.addEventListener('blur', onLeave)
+    return () => {
+      btn.removeEventListener('pointerenter', onEnter)
+      btn.removeEventListener('pointerleave', onLeave)
+      btn.removeEventListener('focus', onEnter)
+      btn.removeEventListener('blur', onLeave)
+      detach()
+    }
+  }, [engine, hoverEnabled, node.type])
 
   const handleClick = () => {
     if (!canCommit) return
@@ -126,6 +154,19 @@ export function IslandNode({ node, state, canCommit, style }: IslandNodeProps) {
 
   const w = ISLAND_W * SCALE
   const h = ISLAND_H * SCALE
+
+  // Plaque centre + size in CSS px, for the HTML glyph / chevron overlays.
+  const plaqueLeftCss = (signpost.plaqueCenterX - signpost.plaqueW / 2) * SCALE
+  const plaqueTopCss = (signpost.plaqueCenterY - signpost.plaqueH / 2) * SCALE
+  const plaqueWCss = signpost.plaqueW * SCALE
+  const plaqueHCss = signpost.plaqueH * SCALE
+  const tiltDeg = (Math.atan(signpost.tiltRise) * 180) / Math.PI
+
+  // Cap zone — native pixel 2..34 horizontal, 10..34 vertical — in CSS.
+  const capZoneTopCss = 10 * SCALE
+  const capZoneHeightCss = 24 * SCALE
+  const capZoneLeftCss = 2 * SCALE
+  const capZoneWidthCss = 32 * SCALE
 
   return (
     <button
@@ -160,9 +201,44 @@ export function IslandNode({ node, state, canCommit, style }: IslandNodeProps) {
         height={ISLAND_H}
         style={{ width: `${w}px`, height: `${h}px` }}
       />
-      {/* Glyph rendered over the plaque via HTML for crisp VT323. */}
-      <span className={styles.glyph}>{TYPE_GLYPH[node.type]}</span>
-      {state === 'current' && <span className={styles.currentMarker}>▼</span>}
+      {/* Invisible cap zone — drives effect spawn area. */}
+      <div
+        ref={capZoneRef}
+        className={styles.capZone}
+        style={{
+          top: `${capZoneTopCss}px`,
+          left: `${capZoneLeftCss}px`,
+          width: `${capZoneWidthCss}px`,
+          height: `${capZoneHeightCss}px`,
+        }}
+        aria-hidden="true"
+      />
+      {/* Glyph overlay, positioned over the signpost plaque. Tilt
+          follows the signpost's pose so the glyph stays legible
+          regardless of the variant. */}
+      <span
+        className={styles.glyph}
+        style={{
+          left: `${plaqueLeftCss}px`,
+          top: `${plaqueTopCss}px`,
+          width: `${plaqueWCss}px`,
+          height: `${plaqueHCss}px`,
+          transform: `rotate(${tiltDeg.toFixed(1)}deg)`,
+        }}
+      >
+        {TYPE_GLYPH[node.type]}
+      </span>
+      {state === 'current' && (
+        <span
+          className={styles.currentMarker}
+          style={{
+            left: `${(signpost.plaqueCenterX * SCALE) - 6}px`,
+            top: `${plaqueTopCss - 12}px`,
+          }}
+        >
+          ▼
+        </span>
+      )}
     </button>
   )
 }

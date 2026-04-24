@@ -145,9 +145,11 @@ export class ChainsEngine {
     canvas.style.position = 'fixed'
     canvas.style.inset = '0'
     canvas.style.pointerEvents = 'none'
-    // Below the EffectsEngine canvas (zIndex 900) but above the DOM map,
-    // so chains draw on top of the shaft background but under sparks.
-    canvas.style.zIndex = '800'
+    // Below the PitScene DOM (z-index 750) so chains draw BEHIND the
+    // islands — the player should perceive the chain as running
+    // through / behind the rock, not over the sign post. Still above
+    // the shaft backdrop, and below the EffectsEngine canvas (900).
+    canvas.style.zIndex = '700'
     canvas.style.imageRendering = 'pixelated'
     this.container.appendChild(canvas)
 
