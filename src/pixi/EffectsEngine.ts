@@ -2163,8 +2163,6 @@ export class EffectsEngine {
     s.time += dt
     s.rotation += dt * 0.32
 
-    // Centre on the attach element — callers put this on the chest's
-    // own zone, so the rays look like they emanate from the treasure.
     const cx = rect.left + rect.width / 2
     const cy = rect.top + rect.height / 2
     const g = s.graphic
@@ -2174,37 +2172,46 @@ export class EffectsEngine {
     const colorMid = lighten(s.color, 0.2)
     const colorDark = darken(s.color, 0.15)
 
-    // Compact halo stack — scaled to hug the chest rather than the whole
-    // island. Breathes slower than the rays.
-    const haloBreathe = 0.75 + 0.25 * Math.sin(s.time * 2.1)
-    const outerR = 22
-    g.rect(Math.round(cx) - outerR, Math.round(cy) - outerR, outerR * 2, outerR * 2)
-    g.fill({ color: s.color, alpha: 0.1 * haloBreathe })
-    const midR = 14
-    g.rect(Math.round(cx) - midR, Math.round(cy) - midR, midR * 2, midR * 2)
-    g.fill({ color: colorMid, alpha: 0.18 * haloBreathe })
-    const innerR = 8
-    g.rect(Math.round(cx) - innerR, Math.round(cy) - innerR, innerR * 2, innerR * 2)
-    g.fill({ color: colorLight, alpha: 0.28 * haloBreathe })
+    // Scale the halo + ray lengths with the attached rect so a big
+    // hoard zone gets a big wash of light and a small single chest
+    // gets a tighter glow. Base metric is the rect's longer side.
+    const spotSize = Math.max(rect.width, rect.height)
+    const haloScale = Math.max(1, spotSize / 36) // 1 at a standard 36-px spot, more on bigger
+    const rayScale = haloScale
 
-    // Rays start at a minimum radius of 4 px so the chest itself isn't
-    // covered — the beam emanates from the chest, not through it.
-    const innerSkip = 4
+    // Halo stack — three concentric squares, brightest in the centre.
+    // Alphas raised from the previous pass so "the hoard glows" reads
+    // strongly even before you notice individual rays.
+    const haloBreathe = 0.8 + 0.2 * Math.sin(s.time * 2.1)
+    const outerR = Math.round(46 * haloScale)
+    g.rect(Math.round(cx) - outerR, Math.round(cy) - outerR, outerR * 2, outerR * 2)
+    g.fill({ color: s.color, alpha: 0.14 * haloBreathe })
+    const midR = Math.round(28 * haloScale)
+    g.rect(Math.round(cx) - midR, Math.round(cy) - midR, midR * 2, midR * 2)
+    g.fill({ color: colorMid, alpha: 0.24 * haloBreathe })
+    const innerR = Math.round(16 * haloScale)
+    g.rect(Math.round(cx) - innerR, Math.round(cy) - innerR, innerR * 2, innerR * 2)
+    g.fill({ color: colorLight, alpha: 0.36 * haloBreathe })
+
+    // Rays start at a minimum radius matching the hoard's silhouette so
+    // the beams read as emanating from behind / around the objects,
+    // never covering them.
+    const innerSkip = Math.max(5, Math.round(spotSize * 0.35))
     for (const ray of s.rays) {
       const a = ray.angle + s.rotation
       const pulse = 0.55 + 0.45 * (0.5 + 0.5 * Math.sin(s.time * 3.2 + ray.phase))
-      const len = ray.length * pulse
+      const len = ray.length * pulse * rayScale
       const dx = Math.cos(a)
       const dy = Math.sin(a)
 
-      const steps = Math.max(8, Math.round(len))
+      const steps = Math.max(10, Math.round(len))
       for (let i = innerSkip; i < steps; i++) {
         const t = i / steps
         const r = i
         const x = Math.round(cx + dx * r)
         const y = Math.round(cy + dy * r)
         const size = t < 0.25 ? 2 : 1
-        const alpha = Math.pow(1 - t, 1.3) * pulse
+        const alpha = Math.pow(1 - t, 1.25) * pulse
         if (alpha < 0.06) continue
         const color = t < 0.3 ? colorLight : t < 0.7 ? s.color : colorDark
         g.rect(x - size / 2, y - size / 2, size, size)

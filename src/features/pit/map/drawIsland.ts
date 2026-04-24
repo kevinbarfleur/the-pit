@@ -228,19 +228,40 @@ export function drawIsland(
 
   drawCapAndStalactites(ctx, rng, stone, variants.cap, variants.stal)
   drawSignpost(ctx, signpost, plaque)
-  // Treasure islands get a tiny chest planted next to the sign post —
-  // communicates "loot on this rock" at a glance, independent of the
-  // godray hover aura. Side (left/right of the plaque) picked off the
-  // hash so the scene stays stable.
+  // Treasure islands get a whole mini hoard: two small chests flanking
+  // a centre pile of coins. All sit on the cap's visible surface below
+  // the signpost. The godray hover effect anchors on the bounding box
+  // of this hoard so the wash of light feels emitted from the treasure
+  // itself.
   if (type === 'treasure') {
-    const spot = computeIslandSpot(id, 'treasure')!
-    drawChest(ctx, spot.x, spot.y)
+    const hoard = treasureHoardLayout()
+    drawSmallChest(ctx, hoard.leftChestX, hoard.rowY)
+    drawSmallChest(ctx, hoard.rightChestX, hoard.rowY)
+    drawCoinStack(ctx, hoard.stackX, hoard.stackY)
   }
   if (type === 'shop') {
     const spot = computeIslandSpot(id, 'shop')!
     drawCoinStack(ctx, spot.x, spot.y)
   }
   drawShadow(ctx)
+}
+
+/** Static layout of the treasure hoard. Placed in the wider half of
+ *  the cap's bottom band; two chests flank a central coin stack. */
+function treasureHoardLayout(): {
+  leftChestX: number
+  rightChestX: number
+  rowY: number
+  stackX: number
+  stackY: number
+} {
+  return {
+    leftChestX: 8,
+    rightChestX: 28,
+    rowY: 22,
+    stackX: 18,
+    stackY: 26,
+  }
 }
 
 /**
@@ -257,22 +278,34 @@ export function computeIslandSpot(
   id: string,
   type: PitNodeType,
 ): { x: number; y: number; w: number; h: number } | null {
-  if (type !== 'treasure' && type !== 'shop') return null
-  const hash = hashId(id)
-  const signpost = computeSignpostLayout(id)
-  const onRight = ((hash >> 28) & 1) === 0
-  const side = onRight ? 1 : -1
-  const cx = Math.round(signpost.plaqueCenterX + side * (signpost.plaqueW / 2 + 3))
-  const top = Math.round(signpost.plaqueCenterY + signpost.plaqueH / 2 + 2)
   if (type === 'treasure') {
-    const W = 7
-    const H = 5
+    // Bounding rect of the whole hoard (two chests + centre coin
+    // stack). The godray hover anchors here so the halo covers every
+    // shiny object on the cap, not just a single chest.
+    const h = treasureHoardLayout()
+    const left = h.leftChestX - 4
+    const right = h.rightChestX + 4
+    const top = h.rowY - 3
+    const bottom = h.stackY + 2
+    return {
+      x: (left + right) / 2,
+      y: (top + bottom) / 2,
+      w: right - left,
+      h: bottom - top,
+    }
+  }
+  if (type === 'shop') {
+    const hash = hashId(id)
+    const signpost = computeSignpostLayout(id)
+    const onRight = ((hash >> 28) & 1) === 0
+    const side = onRight ? 1 : -1
+    const cx = Math.round(signpost.plaqueCenterX + side * (signpost.plaqueW / 2 + 3))
+    const top = Math.round(signpost.plaqueCenterY + signpost.plaqueH / 2 + 2)
+    const W = 6
+    const H = 4
     return { x: cx, y: top + Math.floor(H / 2), w: W, h: H }
   }
-  // shop
-  const W = 6
-  const H = 4
-  return { x: cx, y: top + Math.floor(H / 2), w: W, h: H }
+  return null
 }
 
 // ---------- cap + stalactites ----------
@@ -569,66 +602,42 @@ function drawShadow(ctx: CanvasRenderingContext2D): void {
  * gold strap + lock so it reads unambiguously as loot even at small
  * sizes.
  */
-function drawChest(ctx: CanvasRenderingContext2D, spotX: number, spotY: number): void {
-  const CHEST_W = 7
-  const CHEST_H = 5
-  const x0 = spotX - Math.floor(CHEST_W / 2)
-  const top = spotY - Math.floor(CHEST_H / 2)
-
-  // Skip entirely if the chest would fall outside the canvas.
-  if (x0 < 1 || x0 + CHEST_W > ISLAND_W - 1) return
-  if (top + CHEST_H > ISLAND_H - 2) return
+/**
+ * Small chest, 5×4 native — two of these flank the centre coin stack
+ * on treasure islands. Warm wood body + gold lid strap + tiny keyhole.
+ */
+function drawSmallChest(ctx: CanvasRenderingContext2D, spotX: number, spotY: number): void {
+  const W = 5
+  const H = 4
+  const x0 = spotX - Math.floor(W / 2)
+  const top = spotY - Math.floor(H / 2)
+  if (x0 < 1 || x0 + W > ISLAND_W - 1) return
+  if (top + H > ISLAND_H - 2) return
 
   const OUTLINE = '#1e1206'
-  const WOOD_DARK = '#4a2810'
   const WOOD_MID = '#6a3c18'
   const WOOD_LIGHT = '#8a5624'
   const GOLD_DARK = '#8a6020'
   const GOLD_MID = '#d4a040'
   const GOLD_LIGHT = '#f4d078'
 
-  // Lid (top band) + body. The lid is 2 rows with a gold strap through
-  // its middle and a tiny lock square on the front.
-  //
-  //  Row 0 : outline top ____________
-  //  Row 1 : wood lid + gold rim     \
-  //  Row 2 : gold strap + lock        } chest
-  //  Row 3 : wood body                /
-  //  Row 4 : outline bottom _________/
-  for (let dy = 0; dy < CHEST_H; dy++) {
-    for (let dx = 0; dx < CHEST_W; dx++) {
+  for (let dy = 0; dy < H; dy++) {
+    for (let dx = 0; dx < W; dx++) {
       const x = x0 + dx
       const y = top + dy
       if (x < 0 || x >= ISLAND_W || y < 0 || y >= ISLAND_H) continue
-
       let color: string
-      const onSideEdge = dx === 0 || dx === CHEST_W - 1
+      const onSideEdge = dx === 0 || dx === W - 1
       const onTopEdge = dy === 0
-      const onBotEdge = dy === CHEST_H - 1
-      if (onSideEdge || onTopEdge || onBotEdge) {
-        color = OUTLINE
-      } else if (dy === 1) {
-        // Lid row — light wood + one-pixel gold rim at the top.
-        color = dx === 1 ? WOOD_DARK : WOOD_LIGHT
-      } else if (dy === 2) {
-        // Gold strap running across the middle, with a lock square at centre.
-        const isLock = dx === Math.floor(CHEST_W / 2)
-        if (isLock) color = GOLD_DARK
-        else color = dx === 1 ? GOLD_DARK : dx === CHEST_W - 2 ? GOLD_DARK : GOLD_MID
-      } else {
-        // Body row — darker wood.
-        color = dx === 1 ? WOOD_DARK : WOOD_MID
-      }
-      plot(ctx, x, y, color)
+      const onBotEdge = dy === H - 1
+      if (onSideEdge || onTopEdge || onBotEdge) color = OUTLINE
+      else if (dy === 1) color = dx === 1 ? GOLD_MID : GOLD_DARK
+      else color = dx === 1 ? WOOD_LIGHT : WOOD_MID
+    plot(ctx, x, y, color)
     }
   }
-
-  // Lock keyhole — single dark pixel dead centre of the strap.
-  const lockX = x0 + Math.floor(CHEST_W / 2)
-  plot(ctx, lockX, top + 2, OUTLINE)
-  // Gold highlight pips — sells the metal sheen.
-  plot(ctx, x0 + 1, top + 2, GOLD_LIGHT)
-  plot(ctx, x0 + CHEST_W - 2, top + 2, GOLD_LIGHT)
+  // Small lock pip.
+  plot(ctx, x0 + Math.floor(W / 2), top + 1, GOLD_LIGHT)
 }
 
 // ---------- coin stack (shop) ----------
