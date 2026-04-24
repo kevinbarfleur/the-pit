@@ -1,16 +1,29 @@
 /**
  * Pixel-per-pixel renderer for a floating stone island.
  *
- * Each island is a combination of four orthogonal variants — cap
- * shape, stalactite pattern, signpost pose, and stone palette — all
- * picked deterministically from the node id. Combined with the
- * per-id deformation rng, this produces 256+ visibly distinct
- * silhouettes across the map.
+ * **Architecture: décor vs. ground aménageable.**
  *
- * The signpost (stake + plaque) is drawn in the canvas too, with
- * pixel-perfect tilt. The glyph that identifies the node type is
- * rendered as an HTML overlay positioned by `computeSignpostLayout`
- * (so it follows every pose variant without re-drawing the font).
+ * An island has two conceptually distinct layers. Adding anything new
+ * to an island should never touch the décor layer.
+ *
+ *   1. DÉCOR (décor) — cap shape, palette, stalactites, signpost, drop
+ *      shadow. Frozen per id; every deterministic choice is made in
+ *      `drawCapAndStalactites` / `drawSignpost` / `drawShadow`.
+ *
+ *   2. GROUND aménageable (habitable surface) — the flat "top" of the
+ *      cap, where we place props (chests, coin stacks, future plants,
+ *      torches, …) and anchor hover effects (grass, godray, coins, …).
+ *      Described by a `GroundArea` struct computed once via
+ *      `computeGroundArea(id)` from the signpost's position and the
+ *      cap's geometry. All props take a `GroundArea` and position
+ *      themselves relative to its centre — which sits at the base of
+ *      the stake. No prop ever uses raw canvas coordinates.
+ *
+ * Consequence: to add a new prop on the island (say, a torch for the
+ * shop type), define a `drawXxx(ctx, ground)` helper and call it from
+ * `drawProps`. The prop will automatically follow the signpost's per-
+ * id X/Y jitter, stay within the visible cap band, and pick up the
+ * same hover anchor as every other effect.
  */
 
 import type { PitNodeType } from '../../../game/pit/types'
@@ -27,6 +40,64 @@ export const CAP_TOP_ANCHOR_CSS = CAP_Y_TOP_BASE * 2 + 2
 /** CSS y-offset of the chain bottom anchor — glued to the cap's base
  *  (before the stalactites) so chains tie into the body of the rock. */
 export const CAP_BOTTOM_ANCHOR_CSS = CAP_Y_BOTTOM_BASE * 2 - 2
+
+// =====================================================================
+// GROUND AMÉNAGEABLE — single source of truth for "where to put stuff"
+// =====================================================================
+
+/**
+ * The rectangular zone on top of the cap where the player's eye
+ * expects props to live: directly under the signpost, on the cap's
+ * visible surface, clear of the stalactites underneath.
+ *
+ * All coordinates are in NATIVE pixels (0..ISLAND_W, 0..ISLAND_H).
+ * Callers that need CSS pixels multiply by the desired scale.
+ */
+export interface GroundArea {
+  /** Centre of the habitable zone, directly under the stake. */
+  centerX: number
+  centerY: number
+  /** Axis-aligned bounds (inclusive top-left, exclusive bottom-right). */
+  left: number
+  right: number
+  top: number
+  bottom: number
+  width: number
+  height: number
+}
+
+/**
+ * Derive the habitable zone for a given island id.
+ *
+ * - `centerX` follows `plaqueCenterX` exactly so the ground tracks the
+ *   signpost's horizontal jitter (±3 px).
+ * - `top` sits just below the stake's bottom (the panel's root in the
+ *   ground). Anything above this y would overlap the sign post.
+ * - `bottom` caps a few px before the cap's visible bottom so props
+ *   don't clash with the stalactite row.
+ * - `width` is clamped symmetrically around `centerX` and always fits
+ *   inside the cap silhouette's widest horizontal extent.
+ */
+export function computeGroundArea(id: string): GroundArea {
+  const sp = computeSignpostLayout(id)
+  const stakeBottom = sp.plaqueCenterY + Math.floor(sp.plaqueH / 2) + 5
+  const top = stakeBottom + 1
+  const bottom = CAP_Y_BOTTOM_BASE - 2
+  const halfW = 10
+  const centerX = sp.plaqueCenterX
+  const left = centerX - halfW
+  const right = centerX + halfW
+  return {
+    centerX,
+    centerY: Math.round((top + bottom) / 2),
+    left,
+    right,
+    top,
+    bottom,
+    width: right - left,
+    height: bottom - top,
+  }
+}
 
 // ---------------------------------------------------------------------
 // Stone palettes
@@ -225,66 +296,48 @@ export function drawIsland(
   const stone = STONE_PALETTES[variants.paletteIdx]
   const plaque = PLAQUE_PALETTE[type]
   const signpost = computeSignpostLayout(id)
+  const ground = computeGroundArea(id)
 
+  // --- DÉCOR ---
   drawCapAndStalactites(ctx, rng, stone, variants.cap, variants.stal)
   drawSignpost(ctx, signpost, plaque)
-  // Treasure islands get a whole mini hoard: two small chests flanking
-  // a centre pile of coins. All sit on the cap's visible surface below
-  // the signpost. The godray hover effect anchors on the bounding box
-  // of this hoard so the wash of light feels emitted from the treasure
-  // itself.
-  if (type === 'treasure') {
-    const hoard = treasureHoardLayout(id)
-    drawTreasureChest(ctx, hoard.leftChestX, hoard.rowY)
-    drawTreasureChest(ctx, hoard.rightChestX, hoard.rowY)
-    drawCoinStack(ctx, hoard.stackX, hoard.stackY)
-  }
-  if (type === 'shop') {
-    const spot = computeIslandSpot(id, 'shop')!
-    drawCoinStack(ctx, spot.x, spot.y)
-  }
+
+  // --- GROUND PROPS ---
+  drawProps(ctx, ground, type)
+
+  // --- SHADOW (decor, last so it sits over the underside) ---
   drawShadow(ctx)
 }
 
 /**
- * Static layout of the treasure hoard, **anchored under the signpost**
- * rather than at the geometric centre of the island.
+ * Dispatch entry point for everything drawn on top of the ground — the
+ * place where we iterate on visuals going forward. Every branch takes
+ * the same `GroundArea` so props always sit at the foot of the
+ * signpost regardless of the island's pose variant.
  *
- * The signpost has a per-id X jitter (±3 native px) and a Y depth
- * variant (plaqueCenterY 5..8). If the hoard used fixed coordinates,
- * islands whose plaque leans left or sits high would end up with a
- * hoard floating away from the signpost's base. Here we derive:
- *
- *  - center X = plaqueCenterX (so the pile always sits right under
- *    the panel, regardless of the jitter)
- *  - row Y = bottom of the stake + 6 px (chests rest on the "ground"
- *    at the foot of the signpost, not halfway up the cap)
- *  - stack Y = row Y + 5 (coin stack is in the foreground, below the
- *    chests)
- *
- * All values are clamped so they stay within the visible cap band.
+ * Positions are expressed as offsets from `ground.centerX` / `centerY`,
+ * which is the pixel right under the stake. A prop that wants to sit
+ * strictly under the panel writes `ground.centerX` / `ground.centerY`;
+ * a chest on the left side of the pile writes `ground.centerX - 4`.
  */
-function treasureHoardLayout(id: string): {
-  leftChestX: number
-  rightChestX: number
-  rowY: number
-  stackX: number
-  stackY: number
-} {
-  const sp = computeSignpostLayout(id)
-  // Bottom of the stake in native px — that's the signpost's "base".
-  const stakeBottom = sp.plaqueCenterY + Math.floor(sp.plaqueH / 2) + 5
-  // Chests sit on the ground right at the foot of the stake.
-  const rowY = stakeBottom + 6
-  // Coin stack tucked in front of the chest row.
-  const stackY = rowY + 5
-  const cx = sp.plaqueCenterX
-  return {
-    leftChestX: cx - 4,
-    rightChestX: cx + 4,
-    rowY,
-    stackX: cx,
-    stackY,
+function drawProps(
+  ctx: CanvasRenderingContext2D,
+  ground: GroundArea,
+  type: PitNodeType,
+): void {
+  if (type === 'treasure') {
+    // A compact mound: two chests slightly flanking centre on the
+    // upper ground band, a coin stack tucked in front below.
+    const rowY = ground.centerY - 2
+    const stackY = ground.centerY + 3
+    drawTreasureChest(ctx, ground.centerX - 4, rowY)
+    drawTreasureChest(ctx, ground.centerX + 4, rowY)
+    drawCoinStack(ctx, ground.centerX, stackY)
+    return
+  }
+  if (type === 'shop') {
+    drawCoinStack(ctx, ground.centerX, ground.centerY + 1)
+    return
   }
 }
 
@@ -298,38 +351,19 @@ function treasureHoardLayout(id: string): {
  * Returns native-pixel coordinates of the centre of the spot and its
  * dimensions. Callers scale these by the island's CSS SCALE.
  */
+/**
+ * Deprecated indirection kept only for API compatibility while callers
+ * migrate. Every new caller should use `computeGroundArea(id)` and
+ * position relative to its centre. This helper now simply returns the
+ * ground rect for islands that need a spot anchor (godray / coins).
+ */
 export function computeIslandSpot(
   id: string,
   type: PitNodeType,
 ): { x: number; y: number; w: number; h: number } | null {
-  if (type === 'treasure') {
-    // Bounding rect of the whole compact mound. Used by godray as
-    // its anchor so the halo wraps the pile rather than floating
-    // somewhere else on the cap.
-    const h = treasureHoardLayout(id)
-    const left = h.leftChestX - 4
-    const right = h.rightChestX + 4
-    const top = h.rowY - 3
-    const bottom = h.stackY + 3
-    return {
-      x: (left + right) / 2,
-      y: (top + bottom) / 2,
-      w: right - left,
-      h: bottom - top,
-    }
-  }
-  if (type === 'shop') {
-    const hash = hashId(id)
-    const signpost = computeSignpostLayout(id)
-    const onRight = ((hash >> 28) & 1) === 0
-    const side = onRight ? 1 : -1
-    const cx = Math.round(signpost.plaqueCenterX + side * (signpost.plaqueW / 2 + 3))
-    const top = Math.round(signpost.plaqueCenterY + signpost.plaqueH / 2 + 2)
-    const W = 6
-    const H = 4
-    return { x: cx, y: top + Math.floor(H / 2), w: W, h: H }
-  }
-  return null
+  if (type !== 'treasure' && type !== 'shop') return null
+  const g = computeGroundArea(id)
+  return { x: g.centerX, y: g.centerY, w: g.width, h: g.height }
 }
 
 // ---------- cap + stalactites ----------

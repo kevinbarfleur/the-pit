@@ -9,7 +9,7 @@ import {
   CAP_TOP_ANCHOR_CSS,
   ISLAND_H,
   ISLAND_W,
-  computeIslandSpot,
+  computeGroundArea,
   computeSignpostLayout,
   drawIsland,
 } from './drawIsland'
@@ -79,16 +79,12 @@ export function IslandNode({ node, state, canCommit, style }: IslandNodeProps) {
   const ref = useRef<HTMLButtonElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const capZoneRef = useRef<HTMLDivElement | null>(null)
-  const spotZoneRef = useRef<HTMLDivElement | null>(null)
   const engine = useEffects()
   const setHoveredId = usePitUiStore((s) => s.setHoveredId)
   const startZoomIn = usePitUiStore((s) => s.startZoomIn)
 
   const signpost = useMemo(() => computeSignpostLayout(node.id), [node.id])
-  const spot = useMemo(
-    () => computeIslandSpot(node.id, node.type),
-    [node.id, node.type],
-  )
+  const ground = useMemo(() => computeGroundArea(node.id), [node.id])
 
   // Draw the bitmap once per (id, type). State changes are handled in CSS.
   useEffect(() => {
@@ -116,7 +112,6 @@ export function IslandNode({ node, state, canCommit, style }: IslandNodeProps) {
     if (!engine || !hoverEnabled) return
     const btn = ref.current
     const cap = capZoneRef.current
-    const spotEl = spotZoneRef.current
     if (!btn || !cap) return
 
     const kind = TYPE_HOVER[node.type]
@@ -129,11 +124,9 @@ export function IslandNode({ node, state, canCommit, style }: IslandNodeProps) {
             countScale: 5,
           }
         : { color: TYPE_COLOR[node.type] }
-    // godray / coins anchor on the island's pixel-art spot (chest /
-    // coin stack) when it exists.
-    const attachTarget =
-      (kind === 'godray' || kind === 'coins') && spotEl ? spotEl : cap
-    const { id, detach } = engine.attachWithHandle(attachTarget, kind, attachConfig)
+    // All effects anchor on the ground area (the capZone div) — the
+    // single source of truth for where props sit on this island.
+    const { id, detach } = engine.attachWithHandle(cap, kind, attachConfig)
     engine.setEnabled(id, false)
 
     const onEnter = () => engine.setEnabled(id, true)
@@ -189,16 +182,12 @@ export function IslandNode({ node, state, canCommit, style }: IslandNodeProps) {
   // Effect anchor zone — the **visible top surface of the cap**, used
   // as a patch-distribution area for grass (and as an origin for other
   // radiating effects). The island is drawn in an isometric-looking
-  // style, with the top of the rock reading as a slab of ground you
-  // could plant a panel into; this zone is that slab. Grass scatters
-  // across its area as short blades, reading as a tuft of grass
-  // growing on the ground rather than a spray coming off a button's
-  // edge. Embers, sparkle, ripple and pulse then all radiate from the
-  // centre of this slab, which sits under the signpost.
-  const capZoneTopCss = 11 * SCALE // just below the cap's highest pixel
-  const capZoneHeightCss = 10 * SCALE // thin slab of visible top surface
-  const capZoneLeftCss = 7 * SCALE
-  const capZoneWidthCss = 22 * SCALE
+  // capZone == ground area. Single source of truth for prop placement
+  // AND effect spawn anchor (see computeGroundArea in drawIsland.ts).
+  const capZoneTopCss = ground.top * SCALE
+  const capZoneHeightCss = ground.height * SCALE
+  const capZoneLeftCss = ground.left * SCALE
+  const capZoneWidthCss = ground.width * SCALE
 
   return (
     <button
@@ -245,19 +234,6 @@ export function IslandNode({ node, state, canCommit, style }: IslandNodeProps) {
         }}
         aria-hidden="true"
       />
-      {spot && (
-        <div
-          ref={spotZoneRef}
-          className={styles.capZone}
-          style={{
-            top: `${(spot.y - spot.h / 2) * SCALE}px`,
-            left: `${(spot.x - spot.w / 2) * SCALE}px`,
-            width: `${spot.w * SCALE}px`,
-            height: `${spot.h * SCALE}px`,
-          }}
-          aria-hidden="true"
-        />
-      )}
       {/* Glyph overlay, positioned over the signpost plaque. Tilt
           follows the signpost's pose so the glyph stays legible
           regardless of the variant. */}

@@ -6,7 +6,7 @@ import type { PitNodeType } from '../../../game/pit/types'
 import {
   ISLAND_H,
   ISLAND_W,
-  computeIslandSpot,
+  computeGroundArea,
   computeSignpostLayout,
   drawIsland,
 } from './drawIsland'
@@ -74,11 +74,10 @@ export function IslandPreview({
   const rootRef = useRef<HTMLDivElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const capZoneRef = useRef<HTMLDivElement | null>(null)
-  const spotZoneRef = useRef<HTMLDivElement | null>(null)
   const engine = useEffects()
 
   const signpost = useMemo(() => computeSignpostLayout(id), [id])
-  const spot = useMemo(() => computeIslandSpot(id, type), [id, type])
+  const ground = useMemo(() => computeGroundArea(id), [id])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -93,7 +92,6 @@ export function IslandPreview({
     if (!engine) return
     const root = rootRef.current
     const cap = capZoneRef.current
-    const spotEl = spotZoneRef.current
     if (!root || !cap) return
 
     const kind = TYPE_HOVER[type]
@@ -102,13 +100,11 @@ export function IslandPreview({
       kind === 'grass'
         ? { color, shape: 'patch', heightScale: 1, countScale: 8 }
         : { color }
-    // godray and coins anchor on the island's pixel-art "spot" (chest
-    // for treasure, coin stack for shop) so the effect reads as
-    // emanating from that object rather than from the centre of the
-    // island. Everything else still uses the generic cap zone.
-    const attachTarget =
-      (kind === 'godray' || kind === 'coins') && spotEl ? spotEl : cap
-    const { id: effectId, detach } = engine.attachWithHandle(attachTarget, kind, config)
+    // All effects (grass, godray, coins, etc.) anchor on the ground
+    // area — the single source of truth for "where to put things" on
+    // this island. The ground is centred on the stake's base, so
+    // effects emanate from there automatically.
+    const { id: effectId, detach } = engine.attachWithHandle(cap, kind, config)
     engine.setEnabled(effectId, effectAlwaysOn)
 
     // Always also react to hover so interactive toggling still works
@@ -129,12 +125,12 @@ export function IslandPreview({
   const w = ISLAND_W * scale
   const h = ISLAND_H * scale
 
-  // capZone covers the isometric top surface of the cap — same layout
-  // rule as IslandNode. Coordinates scale with the preview's SCALE.
-  const capZoneTopCss = 11 * scale
-  const capZoneHeightCss = 10 * scale
-  const capZoneLeftCss = 7 * scale
-  const capZoneWidthCss = 22 * scale
+  // capZone == ground area. Single source of truth for prop placement
+  // AND effect spawn anchor (see computeGroundArea in drawIsland.ts).
+  const capZoneTopCss = ground.top * scale
+  const capZoneHeightCss = ground.height * scale
+  const capZoneLeftCss = ground.left * scale
+  const capZoneWidthCss = ground.width * scale
 
   // Plaque centre in CSS px for the glyph overlay.
   const plaqueLeftCss = (signpost.plaqueCenterX - signpost.plaqueW / 2) * scale
@@ -169,19 +165,6 @@ export function IslandPreview({
         }}
         aria-hidden="true"
       />
-      {spot && (
-        <div
-          ref={spotZoneRef}
-          className={styles.capZone}
-          style={{
-            top: `${(spot.y - spot.h / 2) * scale}px`,
-            left: `${(spot.x - spot.w / 2) * scale}px`,
-            width: `${spot.w * scale}px`,
-            height: `${spot.h * scale}px`,
-          }}
-          aria-hidden="true"
-        />
-      )}
       <span
         className={styles.glyph}
         style={{
