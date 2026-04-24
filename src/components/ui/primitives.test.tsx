@@ -167,7 +167,7 @@ describe('interactive primitives', () => {
     expect(engine.emitBurst).not.toHaveBeenCalled()
   })
 
-  it('Button primary+juicy attaches a hover aura via the engine', () => {
+  it('Button juicy attaches a drip-pool with variant-matched color', () => {
     const engine = stubEngine()
     render(
       <EffectsContext.Provider value={engine}>
@@ -177,6 +177,22 @@ describe('interactive primitives', () => {
       </EffectsContext.Provider>,
     )
     expect(engine.attachWithHandle).toHaveBeenCalled()
+    const call = (engine.attachWithHandle as ReturnType<typeof vi.fn>).mock.calls[0]
+    expect(call[1]).toBe('drip-pool')
+    expect(call[2]).toEqual(expect.objectContaining({ color: 0x9ae66e }))
+  })
+
+  it('Button danger+juicy uses the red drip color', () => {
+    const engine = stubEngine()
+    render(
+      <EffectsContext.Provider value={engine}>
+        <Button juicy variant="danger">
+          retreat
+        </Button>
+      </EffectsContext.Provider>,
+    )
+    const call = (engine.attachWithHandle as ReturnType<typeof vi.fn>).mock.calls[0]
+    expect(call[2]).toEqual(expect.objectContaining({ color: 0xd45a5a }))
   })
 
   it('Input renders with icon and cursor', () => {

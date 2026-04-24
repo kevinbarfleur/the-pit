@@ -29,7 +29,7 @@ export interface DripOptions {
   size?: number
 }
 
-export type AttachKind = 'aura' | 'ripple' | 'pulse' | 'sparkle' | 'drips'
+export type AttachKind = 'aura' | 'ripple' | 'pulse' | 'sparkle' | 'drips' | 'drip-pool'
 
 export interface AttachConfig {
   color?: number
@@ -51,6 +51,16 @@ const BURST_COLORS: Record<BurstVariant, number> = {
   danger: COLOR_RED,
   default: COLOR_GILD,
   ghost: COLOR_DIM,
+}
+
+function lighten(color: number, amount: number): number {
+  const r = (color >> 16) & 0xff
+  const g = (color >> 8) & 0xff
+  const b = color & 0xff
+  const lr = Math.min(255, Math.round(r + (255 - r) * amount))
+  const lg = Math.min(255, Math.round(g + (255 - g) * amount))
+  const lb = Math.min(255, Math.round(b + (255 - b) * amount))
+  return (lr << 16) | (lg << 8) | lb
 }
 
 // --------------------- pool structures ---------------------
@@ -104,6 +114,21 @@ const ORBIT_POOL_SIZE = 48
 
 // --------------------- attached effect ---------------------
 
+interface DripColumn {
+  xFrac: number // 0..1 within button width
+  length: number // current length in px (below button)
+  breakAt: number // length at which column breaks into a droplet
+  growRate: number // px/s
+  delay: number // poolLevel threshold before growing
+  g: Graphics
+}
+
+interface DripState {
+  poolLevel: number // 0..1
+  columns: DripColumn[]
+  poolGraphic: Graphics
+}
+
 interface AttachedEffect {
   id: number
   el: HTMLElement
@@ -118,6 +143,8 @@ interface AttachedEffect {
   rippleAcc: number
   // disabled flag (soft-disable without detach, e.g. hover off)
   enabled: boolean
+  // drip-pool-specific state (only set for drip-pool)
+  drip?: DripState
 }
 
 let nextEffectId = 1
@@ -134,6 +161,7 @@ export class EffectsEngine {
   private ringsLayer = new Container()
   private orbitLayer = new Container()
   private ambientLayer = new Container()
+  private dripLayer = new Container()
   private ready = false
   private disposed = false
 
@@ -167,6 +195,7 @@ export class EffectsEngine {
     this.container.appendChild(canvas)
 
     this.app.stage.addChild(this.ambientLayer)
+    this.app.stage.addChild(this.dripLayer)
     this.app.stage.addChild(this.particlesLayer)
     this.app.stage.addChild(this.orbitLayer)
     this.app.stage.addChild(this.ringsLayer)
@@ -366,9 +395,46 @@ export class EffectsEngine {
       this.initOrbit(effect)
     }
 
+    if (kind === 'drip-pool') {
+      this.initDripPool(effect)
+    }
+
     this.attached.push(effect)
 
     return { id, detach: () => this.detach(id) }
+  }
+
+  private initDripPool(effect: AttachedEffect): void {
+    const poolGraphic = new Graphics()
+    this.dripLayer.addChild(poolGraphic)
+    const columns: DripColumn[] = [
+      {
+        xFrac: 0.16,
+        length: 0,
+        breakAt: 7 + Math.random() * 7,
+        growRate: 10 + Math.random() * 6,
+        delay: 0.25,
+        g: new Graphics(),
+      },
+      {
+        xFrac: 0.5,
+        length: 0,
+        breakAt: 12 + Math.random() * 8, // center accumulates longer
+        growRate: 14 + Math.random() * 6,
+        delay: 0.6, // center must wait for pool to fill
+        g: new Graphics(),
+      },
+      {
+        xFrac: 0.84,
+        length: 0,
+        breakAt: 7 + Math.random() * 7,
+        growRate: 10 + Math.random() * 6,
+        delay: 0.28,
+        g: new Graphics(),
+      },
+    ]
+    for (const c of columns) this.dripLayer.addChild(c.g)
+    effect.drip = { poolLevel: 0, columns, poolGraphic }
   }
 
   detach(id: number): void {
@@ -380,6 +446,11 @@ export class EffectsEngine {
       o.inUse = false
       o.effectId = -1
       o.g.visible = false
+    }
+    if (effect.drip) {
+      effect.drip.poolGraphic.destroy()
+      for (const c of effect.drip.columns) c.g.destroy()
+      effect.drip = undefined
     }
     this.attached.splice(idx, 1)
   }
@@ -509,8 +580,94 @@ export class EffectsEngine {
           // orbit logic handled in tickOrbits via lastRect
           break
         }
+        case 'drip-pool': {
+          this.tickDripPool(effect, rect, dt)
+          break
+        }
       }
     }
+  }
+
+  private tickDripPool(effect: AttachedEffect, rect: DOMRect, dt: number): void {
+    const state = effect.drip
+    if (!state) return
+
+    // Pool fills toward 1 when enabled, drains toward 0 when disabled
+    const target = effect.enabled ? 1 : 0
+    const rate = effect.enabled ? 2.4 : 3.8
+    state.poolLevel += (target - state.poolLevel) * rate * dt
+    if (state.poolLevel < 0.002) state.poolLevel = 0
+    if (state.poolLevel > 0.998) state.poolLevel = 1
+
+    // Draw the pool — small pixelated ellipse-ish hump at center-bottom
+    const color = effect.config.color
+    const cx = rect.left + rect.width / 2
+    const bottomY = rect.bottom - 1
+    state.poolGraphic.clear()
+    if (state.poolLevel > 0) {
+      const w = Math.max(2, Math.round(3 + state.poolLevel * 6))
+      const innerW = Math.max(1, Math.round(w - 2))
+      // Main hump: 2px tall bar
+      state.poolGraphic.rect(Math.round(cx - w / 2), bottomY, w, 2)
+      state.poolGraphic.fill({ color, alpha: 0.9 })
+      // Upper narrower row giving the "rounded" pixelated cap
+      if (innerW > 0) {
+        state.poolGraphic.rect(Math.round(cx - innerW / 2), bottomY - 1, innerW, 1)
+        state.poolGraphic.fill({ color, alpha: 0.65 })
+      }
+    }
+
+    // Update each drip column
+    for (const col of state.columns) {
+      const canGrow = effect.enabled && state.poolLevel >= col.delay
+      if (canGrow) {
+        col.length += col.growRate * dt
+        if (col.length >= col.breakAt) {
+          this.spawnDripDroplet(effect, col, rect)
+          col.length = 0
+          // randomize next break to avoid uniform cadence
+          col.breakAt = 6 + Math.random() * 14
+        }
+      } else {
+        // Drain: retract the column
+        col.length = Math.max(0, col.length - 90 * dt)
+      }
+
+      // Redraw the column line
+      const colX = rect.left + rect.width * col.xFrac
+      col.g.clear()
+      if (col.length > 0) {
+        const thickness = col.xFrac === 0.5 ? 2 : 1
+        col.g.rect(Math.round(colX - thickness / 2), Math.round(rect.bottom), thickness, Math.round(col.length))
+        col.g.fill({ color, alpha: 0.92 })
+        // A slightly brighter "head" pixel at the leading edge for specular feel
+        if (col.length > 2) {
+          col.g.rect(Math.round(colX - thickness / 2), Math.round(rect.bottom + col.length - 1), thickness, 1)
+          col.g.fill({ color: lighten(color, 0.35), alpha: 1 })
+        }
+      }
+    }
+  }
+
+  private spawnDripDroplet(effect: AttachedEffect, col: DripColumn, rect: DOMRect): void {
+    const p = this.pickFreeParticle()
+    if (!p) return
+    const x = rect.left + rect.width * col.xFrac + (Math.random() - 0.5) * 2
+    const y = rect.bottom + col.length
+    p.vx = (Math.random() - 0.5) * 3
+    p.vy = 40 + Math.random() * 30
+    p.gravity = 620
+    p.life = 0.9 + Math.random() * 0.5
+    p.maxLife = p.life
+    p.size = col.xFrac === 0.5 ? (Math.random() < 0.6 ? 2 : 3) : Math.random() < 0.4 ? 2 : 1
+    p.color = effect.config.color
+    p.fadeMode = 'late'
+    this.drawParticle(p)
+    p.g.x = x
+    p.g.y = y
+    p.g.alpha = 1
+    p.g.visible = true
+    p.inUse = true
   }
 
   private tickAmbient(dt: number): void {
@@ -799,6 +956,7 @@ const DEFAULT_ATTACH_COLOR: Record<AttachKind, number> = {
   pulse: COLOR_RED,
   sparkle: COLOR_VIOLET,
   drips: COLOR_BONE,
+  'drip-pool': COLOR_RED,
 }
 
 const ATTACH_CADENCE: Record<AttachKind, number> = {
@@ -807,4 +965,5 @@ const ATTACH_CADENCE: Record<AttachKind, number> = {
   pulse: 0.42,
   sparkle: 0.8,
   drips: 0.35,
+  'drip-pool': 0, // handled via column growth
 }
