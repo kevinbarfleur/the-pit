@@ -162,11 +162,25 @@ export function IslandNode({ node, state, canCommit, style }: IslandNodeProps) {
   const plaqueHCss = signpost.plaqueH * SCALE
   const tiltDeg = (Math.atan(signpost.tiltRise) * 180) / Math.PI
 
-  // Cap zone — native pixel 2..34 horizontal, 10..34 vertical — in CSS.
+  // Cap zone — a thin horizontal band at the very top of the cap.
+  //
+  // Why not the full cap rect: effects like `grass` spawn on the top
+  // edge of their attached element. If the zone is the full cap rect
+  // (roughly 64 CSS wide, 48 tall), blades anchor all along a 64-px
+  // horizontal span — much wider than the cap's actual silhouette at
+  // its widest point (~36 CSS). The blades then grow upward from
+  // positions that sit outside the rock, which reads as grass floating
+  // over empty space.
+  //
+  // Instead we crop the spawn target to a narrow band (native x=9..27,
+  // y=10..13) that traces the top of the cap in its widest region.
+  // Grass, embers and sparkle now all radiate from within the rock's
+  // silhouette. Side tufts become negligible because the zone is only
+  // a few CSS pixels tall.
   const capZoneTopCss = 10 * SCALE
-  const capZoneHeightCss = 24 * SCALE
-  const capZoneLeftCss = 2 * SCALE
-  const capZoneWidthCss = 32 * SCALE
+  const capZoneHeightCss = 3 * SCALE
+  const capZoneLeftCss = 9 * SCALE
+  const capZoneWidthCss = 18 * SCALE
 
   return (
     <button
