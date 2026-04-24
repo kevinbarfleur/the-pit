@@ -1,0 +1,26 @@
+.tier {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: var(--color-pit-dim);
+  text-shadow: 1px 1px 0 #000;
+  font-family: var(--font-sans);
+}
+
+.t0 {
+  color: var(--color-pit-violet);
+  text-shadow:
+    1px 1px 0 #000,
+    0 0 6px rgba(154, 123, 212, 0.5);
+}
+
+.t1 {
+  color: var(--color-pit-amber);
+}
+
+.t2 {
+  color: var(--color-pit-green);
+}
+
+.t3 {
+  color: var(--color-pit-bone);
+}

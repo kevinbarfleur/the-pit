@@ -1,0 +1,71 @@
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  background: var(--color-pit-ink-3);
+  color: var(--color-pit-bone);
+  font-size: 11px;
+  line-height: 1;
+  position: relative;
+  clip-path: polygon(
+    2px 0,
+    calc(100% - 2px) 0,
+    100% 2px,
+    100% calc(100% - 2px),
+    calc(100% - 2px) 100%,
+    2px 100%,
+    0 calc(100% - 2px),
+    0 2px
+  );
+  box-shadow:
+    inset 0 0 0 1px var(--color-pit-line-bright),
+    inset 2px 2px 0 rgba(255, 255, 255, 0.02),
+    2px 2px 0 rgba(0, 0, 0, 0.6);
+}
+
+.g {
+  color: var(--color-pit-green);
+  box-shadow:
+    inset 0 0 0 1px rgba(154, 230, 110, 0.35),
+    inset 2px 2px 0 rgba(154, 230, 110, 0.05),
+    2px 2px 0 rgba(0, 0, 0, 0.6);
+}
+
+.a {
+  color: var(--color-pit-amber);
+  box-shadow:
+    inset 0 0 0 1px rgba(212, 161, 71, 0.4),
+    inset 2px 2px 0 rgba(212, 161, 71, 0.05),
+    2px 2px 0 rgba(0, 0, 0, 0.6);
+}
+
+.r {
+  color: var(--color-pit-red);
+  box-shadow:
+    inset 0 0 0 1px rgba(212, 90, 90, 0.4),
+    inset 2px 2px 0 rgba(212, 90, 90, 0.05),
+    2px 2px 0 rgba(0, 0, 0, 0.6);
+}
+
+.v {
+  color: var(--color-pit-violet);
+  box-shadow:
+    inset 0 0 0 1px rgba(154, 123, 212, 0.45),
+    inset 2px 2px 0 rgba(154, 123, 212, 0.05),
+    2px 2px 0 rgba(0, 0, 0, 0.6);
+}
+
+.c {
+  color: var(--color-pit-cyan);
+  box-shadow:
+    inset 0 0 0 1px rgba(110, 195, 212, 0.4),
+    inset 2px 2px 0 rgba(110, 195, 212, 0.05),
+    2px 2px 0 rgba(0, 0, 0, 0.6);
+}
+
+.dot {
+  width: 6px;
+  height: 6px;
+  background: currentColor;
+}

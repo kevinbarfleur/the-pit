@@ -1,0 +1,14 @@
+.heraldry {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.05;
+  color: var(--color-pit-gild);
+  text-align: center;
+  white-space: pre;
+  margin: 0 0 14px;
+  text-shadow:
+    0 0 1px rgba(212, 161, 71, 0.8),
+    0 0 10px rgba(212, 161, 71, 0.18),
+    1px 1px 0 #000;
+  opacity: 0.95;
+}

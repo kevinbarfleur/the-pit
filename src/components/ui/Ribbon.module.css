@@ -1,0 +1,18 @@
+.ribbon {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--color-pit-gild);
+  letter-spacing: 0.05em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  text-shadow: 1px 1px 0 #000;
+  margin: 6px 0;
+}
+
+.text {
+  text-transform: uppercase;
+  color: var(--color-pit-bone-bright);
+  padding: 0 2px;
+}

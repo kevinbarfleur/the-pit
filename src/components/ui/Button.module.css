@@ -1,0 +1,141 @@
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px;
+  background: var(--color-pit-ink-3);
+  color: var(--color-pit-bone);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  cursor: pointer;
+  position: relative;
+  border: none;
+  box-shadow:
+    inset 0 0 0 1px var(--color-pit-line-bright),
+    inset 2px 2px 0 rgba(255, 255, 255, 0.04),
+    inset -2px -2px 0 rgba(0, 0, 0, 0.6),
+    2px 2px 0 rgba(0, 0, 0, 0.8);
+  clip-path: polygon(
+    2px 0,
+    calc(100% - 2px) 0,
+    100% 2px,
+    100% calc(100% - 2px),
+    calc(100% - 2px) 100%,
+    2px 100%,
+    0 calc(100% - 2px),
+    0 2px
+  );
+  text-shadow: 1px 1px 0 #000;
+  letter-spacing: 0.03em;
+  user-select: none;
+}
+
+.btn::before,
+.btn::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  width: 3px;
+  height: 1px;
+  background: var(--color-pit-gild);
+  opacity: 0.5;
+}
+.btn::before {
+  left: 2px;
+}
+.btn::after {
+  right: 2px;
+}
+
+.btn:hover {
+  background: #1c1c1c;
+}
+
+.btn:active {
+  transform: translate(1px, 1px);
+  box-shadow:
+    inset 0 0 0 1px var(--color-pit-line-bright),
+    inset 2px 2px 0 rgba(0, 0, 0, 0.4),
+    inset -2px -2px 0 rgba(0, 0, 0, 0.6),
+    1px 1px 0 rgba(0, 0, 0, 0.8);
+}
+
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--color-pit-cyan);
+  outline-offset: 2px;
+}
+
+.bracket {
+  color: var(--color-pit-gild);
+}
+
+/* Variants */
+
+.primary {
+  color: var(--color-pit-green);
+  background: rgba(154, 230, 110, 0.08);
+  box-shadow:
+    inset 0 0 0 1px var(--color-pit-green),
+    inset 2px 2px 0 rgba(154, 230, 110, 0.12),
+    inset -2px -2px 0 rgba(0, 0, 0, 0.5),
+    2px 2px 0 rgba(0, 0, 0, 0.8);
+}
+.primary::before,
+.primary::after {
+  background: var(--color-pit-green);
+  opacity: 0.7;
+}
+.primary:hover {
+  background: rgba(154, 230, 110, 0.14);
+}
+
+.danger {
+  color: var(--color-pit-red);
+  background: rgba(212, 90, 90, 0.06);
+  box-shadow:
+    inset 0 0 0 1px var(--color-pit-red),
+    inset 2px 2px 0 rgba(212, 90, 90, 0.08),
+    inset -2px -2px 0 rgba(0, 0, 0, 0.5),
+    2px 2px 0 rgba(0, 0, 0, 0.8);
+}
+.danger::before,
+.danger::after {
+  background: var(--color-pit-red);
+  opacity: 0.7;
+}
+.danger:hover {
+  background: rgba(212, 90, 90, 0.12);
+}
+
+.ghost {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px transparent;
+}
+.ghost::before,
+.ghost::after {
+  display: none;
+}
+.ghost:hover {
+  box-shadow: inset 0 0 0 1px var(--color-pit-line);
+}
+
+/* Sizes */
+
+.lg {
+  padding: 12px 24px;
+  font-size: 13px;
+}
+
+.sm {
+  padding: 3px 10px;
+  font-size: 11px;
+}
+.sm::before,
+.sm::after {
+  top: 1px;
+}

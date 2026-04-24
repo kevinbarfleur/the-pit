@@ -1,0 +1,95 @@
+/* Pixel-art medieval frame — clip-path stepped corners + runic accents */
+
+.pf {
+  position: relative;
+  background: var(--color-pit-ink-2);
+  padding: 22px 22px 18px;
+  font-family: var(--font-sans);
+  box-shadow:
+    inset 0 0 0 1px var(--color-pit-line-bright),
+    inset 3px 3px 0 rgba(255, 255, 255, 0.025),
+    inset -3px -3px 0 rgba(0, 0, 0, 0.6),
+    4px 4px 0 rgba(0, 0, 0, 0.85);
+  clip-path: polygon(
+    6px 0,
+    calc(100% - 6px) 0,
+    100% 6px,
+    100% calc(100% - 6px),
+    calc(100% - 6px) 100%,
+    6px 100%,
+    0 calc(100% - 6px),
+    0 6px
+  );
+  background-image:
+    repeating-linear-gradient(0deg, transparent 0 3px, rgba(255, 255, 255, 0.012) 3px 4px),
+    radial-gradient(circle at 20% 30%, rgba(212, 161, 71, 0.03), transparent 50%);
+}
+
+.raised {
+  background-color: var(--color-pit-ink-3);
+}
+
+.gild {
+  box-shadow:
+    inset 0 0 0 1px var(--color-pit-gild),
+    inset 3px 3px 0 rgba(212, 161, 71, 0.08),
+    inset -3px -3px 0 rgba(0, 0, 0, 0.6),
+    4px 4px 0 rgba(0, 0, 0, 0.85);
+}
+
+.corner {
+  position: absolute;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-pit-gild);
+  opacity: 0.85;
+  pointer-events: none;
+  letter-spacing: 0;
+  line-height: 1;
+  text-shadow: 1px 1px 0 #000;
+}
+.cornerTL { top: 2px; left: 4px; }
+.cornerTR { top: 2px; right: 4px; }
+.cornerBL { bottom: 2px; left: 4px; }
+.cornerBR { bottom: 2px; right: 4px; }
+
+.rune {
+  position: absolute;
+  color: var(--color-pit-gild);
+  opacity: 0.55;
+  font-size: 10px;
+  pointer-events: none;
+  line-height: 1;
+  text-shadow: 1px 1px 0 #000;
+}
+.runeTL { top: 8px; left: 14px; }
+.runeTR { top: 8px; right: 14px; }
+.runeBL { bottom: 8px; left: 14px; }
+.runeBR { bottom: 8px; right: 14px; }
+
+.title {
+  font-family: var(--font-display);
+  font-size: 16px;
+  color: var(--color-pit-gild);
+  letter-spacing: 0.08em;
+  margin: -4px 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  text-shadow: 1px 1px 0 #000;
+}
+.titleText {
+  text-transform: uppercase;
+  color: var(--color-pit-bone-bright);
+}
+.titleRight {
+  margin-left: auto;
+  color: var(--color-pit-dim);
+  font-size: 11px;
+  font-family: var(--font-sans);
+}
+
+.inner {
+  position: relative;
+  z-index: 1;
+}

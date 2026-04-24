@@ -1,0 +1,26 @@
+.divider {
+  height: 3px;
+  background: repeating-linear-gradient(
+    90deg,
+    var(--color-pit-line) 0 2px,
+    transparent 2px 4px
+  );
+}
+
+.single {
+  height: 1px;
+  background: var(--color-pit-line);
+}
+
+.double {
+  height: 5px;
+  background:
+    linear-gradient(var(--color-pit-line), var(--color-pit-line)) 0 0 / 100% 1px no-repeat,
+    linear-gradient(var(--color-pit-line), var(--color-pit-line)) 0 100% / 100% 1px no-repeat;
+}
+
+.vertical {
+  width: 1px;
+  height: 100%;
+  background: var(--color-pit-line);
+}

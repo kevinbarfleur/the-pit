@@ -1,0 +1,27 @@
+.row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 7px 12px;
+  border-bottom: 1px dashed var(--color-pit-line);
+  font-size: 12px;
+  position: relative;
+}
+
+.row:hover {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.sel {
+  background: rgba(154, 230, 110, 0.05);
+  box-shadow:
+    inset 3px 0 0 var(--color-pit-green),
+    inset 0 0 0 1px rgba(154, 230, 110, 0.15);
+}
+.sel::before {
+  content: '▸';
+  position: absolute;
+  left: 2px;
+  color: var(--color-pit-green);
+  font-size: 10px;
+}
