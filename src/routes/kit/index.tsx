@@ -61,8 +61,8 @@ function KitIndex() {
           <Link to="/kit/camp" className={styles.navLink}>
             /kit/camp
           </Link>
-          <Link to="/kit/delve" className={styles.navLink}>
-            /kit/delve
+          <Link to="/pit" className={styles.navLink}>
+            /pit
           </Link>
           <Link to="/kit/combat" className={styles.navLink}>
             /kit/combat
@@ -398,7 +398,7 @@ function KitIndex() {
               <Menubar
                 active="D"
                 items={[
-                  { key: 'D', label: 'Delve' },
+                  { key: 'D', label: 'Pit' },
                   { key: 'P', label: 'Passives' },
                   { key: 'C', label: 'Cards' },
                   { key: 'S', label: 'Shop' },

@@ -1,0 +1,86 @@
+.panel {
+  grid-column: 3;
+  position: relative;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow: auto;
+  background: var(--color-pit-ink-2);
+  border-left: 1px solid var(--color-pit-line);
+}
+
+.blurb {
+  color: var(--color-pit-bone);
+  font-family: var(--font-display);
+  font-size: 16px;
+  line-height: 1.2;
+  opacity: 0.88;
+}
+
+.stats {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+  gap: 8px;
+}
+
+.row[data-muted='true'] .statValue {
+  color: var(--color-pit-amber);
+}
+
+.statLabel {
+  color: var(--color-pit-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.statValue {
+  color: var(--color-pit-bone);
+  font-family: var(--font-sans);
+}
+
+.legendLabel {
+  font-size: 10px;
+  color: var(--color-pit-dim);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+
+.legend {
+  font-size: 11px;
+  line-height: 1.8;
+  color: var(--color-pit-bone);
+  opacity: 0.85;
+}
+
+.commitHint {
+  font-size: 12px;
+  color: var(--color-pit-bone);
+}
+
+.locked {
+  color: var(--color-pit-dim);
+  font-style: italic;
+}
+
+.kbd {
+  display: inline-block;
+  padding: 1px 6px;
+  font-family: var(--font-display);
+  font-size: 12px;
+  background: #000;
+  color: var(--color-pit-gild);
+  border: 1px solid var(--color-pit-line-bright);
+  border-radius: 0;
+  text-shadow: 1px 1px 0 #000;
+}

@@ -1,0 +1,42 @@
+.root {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: 80px 1fr 300px;
+  overflow: hidden;
+  transition: opacity 120ms linear;
+}
+
+.root[data-fade='out'] {
+  /* Chrome (depth gauge + right panel + shaft walls) fades while the map
+     itself is transformed by <ZoomTransition>. Only the content needs to
+     survive until scene='in-node'. */
+  opacity: 1;
+}
+
+.shaft {
+  position: relative;
+  overflow: hidden;
+  /* Subtle vertical vignette that reads as "pit walls in low torchlight". */
+  background:
+    linear-gradient(
+      to right,
+      rgba(0, 0, 0, 0.75) 0%,
+      rgba(0, 0, 0, 0) 12%,
+      rgba(0, 0, 0, 0) 88%,
+      rgba(0, 0, 0, 0.75) 100%
+    ),
+    linear-gradient(
+      to bottom,
+      rgba(10, 10, 10, 0) 0%,
+      rgba(10, 10, 10, 0) 65%,
+      rgba(10, 10, 10, 0.9) 100%
+    );
+}
+
+.shaftInner {
+  position: absolute;
+  inset: 0;
+  /* The inner stack is what camera-follow translates. */
+  will-change: transform;
+}

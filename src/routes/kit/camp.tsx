@@ -27,7 +27,7 @@ function CampWireframe() {
       <Menubar
         active="D"
         items={[
-          { key: 'D', label: 'Delve' },
+          { key: 'D', label: 'Pit' },
           { key: 'P', label: 'Passives' },
           { key: 'C', label: 'Cards' },
           { key: 'S', label: 'Shop' },

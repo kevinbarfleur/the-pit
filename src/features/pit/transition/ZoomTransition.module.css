@@ -1,0 +1,13 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 25;
+  /* Dark fade that eats pointer events while the zoom runs. */
+  background: radial-gradient(
+    ellipse at center,
+    rgba(0, 0, 0, 0) 0%,
+    rgba(0, 0, 0, 0.35) 60%,
+    rgba(0, 0, 0, 0.72) 100%
+  );
+  pointer-events: auto;
+}

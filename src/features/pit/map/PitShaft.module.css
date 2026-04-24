@@ -1,0 +1,39 @@
+.shaft {
+  position: absolute;
+  inset: 0;
+  grid-column: 1 / -1;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    /* left wall: vertical brick stripes */
+    repeating-linear-gradient(
+      to bottom,
+      rgba(60, 50, 40, 0.12) 0 8px,
+      rgba(30, 25, 20, 0.12) 8px 16px
+    ) left top / 64px 100% no-repeat,
+    repeating-linear-gradient(
+      to bottom,
+      rgba(60, 50, 40, 0.12) 0 8px,
+      rgba(30, 25, 20, 0.12) 8px 16px
+    ) right top / 64px 100% no-repeat,
+    /* bottom haze */
+    radial-gradient(
+      ellipse at 50% 120%,
+      rgba(90, 60, 40, 0.22),
+      transparent 60%
+    );
+  image-rendering: pixelated;
+}
+
+.shaft::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    /* stepped rivet pattern at 14px intervals */
+    radial-gradient(circle, rgba(150, 120, 80, 0.12) 1px, transparent 1.6px)
+      0 0 / 18px 18px,
+    /* dark top shadow so the player feels they're below the surface */
+    linear-gradient(to bottom, rgba(0, 0, 0, 0.65), transparent 30%);
+  mix-blend-mode: multiply;
+}

@@ -279,12 +279,12 @@ describe('nav primitives', () => {
         active="D"
         onSelect={onSelect}
         items={[
-          { key: 'D', label: 'Delve' },
+          { key: 'D', label: 'Pit' },
           { key: 'P', label: 'Passives' },
         ]}
       />,
     )
-    expect(screen.getByText('Delve')).toBeInTheDocument()
+    expect(screen.getByText('Pit')).toBeInTheDocument()
     expect(screen.getByText('Passives')).toBeInTheDocument()
     fireEvent.click(screen.getByText('Passives'))
     expect(onSelect).toHaveBeenCalledWith('P')
