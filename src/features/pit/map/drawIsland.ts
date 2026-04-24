@@ -130,22 +130,22 @@ export function worldToScreen(
 /**
  * Compute the island's ground area in world + screen space.
  *
- * World-space definition:
- *   - origin = pixel where the stake meets the ground (stake base),
- *     including the signpost's tilt offset so leaning panels still
- *     place the world origin under their visible base.
- *   - radiusX = 9, radiusY = 9 world units. A roughly circular
- *     placement ellipse on z=0 that fits on the cap.
+ * The ground ellipse is **shaped by the cap itself** — same base
+ * radius, same aspect ratio — so the placeable zone always matches
+ * the visible top silhouette of the island rather than a fixed value.
+ * Tall caps get a taller ellipse, flat caps a flatter one, lumpy
+ * caps inherit their wider base radius.
  *
- * Screen AABB (left/right/top/bottom):
- *   - horizontal: origin ± radiusX.
- *   - bottom: origin.y + radiusY × DEPTH_FORESHORTEN
- *             (the front edge of the ground plane, in screen px).
- *   - top: top of the signpost plaque. Including the signpost makes
- *     the AABB reach from the plaque down to the front of the
- *     ground, so the user's rule "panneau presque au milieu, ou
- *     légèrement plus haut" is satisfied automatically: the panel
- *     naturally sits in the upper portion of this AABB.
+ *   screen ellipse = 0.78 × cap screen ellipse
+ *                   (slight inset so props stay visibly inside)
+ *
+ * World radii are reverse-projected from the screen ellipse so a
+ * world-space query ("is this point inside the placeable zone?")
+ * always matches the visual.
+ *
+ * AABB runs from the top of the signpost down to the front of the
+ * ground ellipse, which satisfies "panneau presque au milieu, ou
+ * légèrement plus haut" automatically.
  */
 export function computeGroundArea(id: string): GroundArea {
   const sp = computeSignpostLayout(id)
@@ -154,16 +154,28 @@ export function computeGroundArea(id: string): GroundArea {
   const stakeBaseOffsetX = Math.round(stakeBottomLocalY * sp.tiltRise)
   const originX = sp.plaqueCenterX + stakeBaseOffsetX
   const originY = stakeBottomAbsY
-  const radiusX = 9
-  const radiusY = 9
-  const plaqueTopAbsY = sp.plaqueCenterY - Math.floor(sp.plaqueH / 2)
 
-  const left = originX - radiusX
-  const right = originX + radiusX
-  const top = Math.max(0, plaqueTopAbsY - 1)
+  // Read the same cap geometry the decor uses so the ground tracks
+  // the actual silhouette, not a guess.
+  const hash = hashId(id)
+  const variants = pickVariants(hash)
+  const capGeom = capGeometry(variants.cap)
+  const INSET = 0.78
+  const screenRx = capGeom.radiusBase * INSET
+  const screenRy = capGeom.radiusBase * capGeom.aspect * INSET
+  const radiusX = screenRx
+  const radiusY = screenRy / DEPTH_FORESHORTEN
+
+  const plaqueTopAbsY = sp.plaqueCenterY - Math.floor(sp.plaqueH / 2)
+  const left = Math.round(originX - screenRx)
+  const right = Math.round(originX + screenRx)
+  const top = Math.max(
+    0,
+    Math.min(plaqueTopAbsY - 1, Math.round(originY - screenRy)),
+  )
   const bottom = Math.min(
     CAP_Y_BOTTOM_BASE - 1,
-    Math.round(originY + radiusY * DEPTH_FORESHORTEN),
+    Math.round(originY + screenRy),
   )
 
   return {
