@@ -2,36 +2,31 @@ import { defineSchema, defineTable } from 'convex/server'
 import { v } from 'convex/values'
 
 /**
- * V2 schema — perpetual descent.
+ * V3 schema — Twitch OAuth obligatoire.
  *
  * The Pit has no "runs". A player picks up wherever they left off and
  * keeps going deeper, forever. The profile is the only persistent
  * state: where the player currently stands, the deepest point they've
  * reached, and the resources they've accumulated along the way.
  *
- *  - `players`  : one row per device (UUID stored in localStorage).
- *  - `profiles` : single source of truth for the descent. Mutated as
- *    the player progresses (`updateDepth`) and when rewards land
- *    (later, when combat ships).
+ *  - `players`     : one row per Twitch identity. Created on first OAuth login.
+ *  - `profiles`    : single source of truth for the descent. 1:1 with players.
+ *  - `sessions`    : opaque session tokens (hash only). Issued at OAuth completion.
+ *  - `oauthStates` : ephemeral CSRF nonces for the OAuth round-trip.
  */
 export default defineSchema({
   players: defineTable({
-    anonId: v.string(),
-    displayName: v.string(),
+    twitchUserId: v.string(),
+    twitchDisplayName: v.string(),
+    twitchAvatarUrl: v.optional(v.string()),
     createdAt: v.number(),
     lastSeenAt: v.number(),
-  }).index('by_anon', ['anonId']),
+  }).index('by_twitch', ['twitchUserId']),
 
   profiles: defineTable({
     playerId: v.id('players'),
-    /** The depth the player currently stands at. Resumes here when
-     *  they re-enter the pit. */
     currentDepth: v.number(),
-    /** Farthest depth ever reached. Equal to `currentDepth` until
-     *  retreat mechanics introduce divergence. */
     deepestDepth: v.number(),
-    /** Persistent seed for the procedural map — same descent across
-     *  sessions means the same nodes. */
     seed: v.string(),
     totalGold: v.number(),
     totalScrap: v.number(),
@@ -39,4 +34,21 @@ export default defineSchema({
     torchCapacity: v.number(),
     updatedAt: v.number(),
   }).index('by_player', ['playerId']),
+
+  sessions: defineTable({
+    playerId: v.id('players'),
+    sessionTokenHash: v.string(),
+    twitchAccessToken: v.string(),
+    twitchRefreshToken: v.string(),
+    twitchTokenExpiresAt: v.number(),
+    expiresAt: v.number(),
+    createdAt: v.number(),
+  })
+    .index('by_token_hash', ['sessionTokenHash'])
+    .index('by_player', ['playerId']),
+
+  oauthStates: defineTable({
+    state: v.string(),
+    expiresAt: v.number(),
+  }).index('by_state', ['state']),
 })

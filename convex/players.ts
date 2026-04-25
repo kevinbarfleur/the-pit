@@ -1,40 +1,48 @@
-import { mutation } from './_generated/server'
+import { internalMutation, query } from './_generated/server'
 import { v } from 'convex/values'
 
 /**
- * Resolve (or bootstrap) the player row + profile for a given anonId.
+ * Player rows are created server-side only, by the OAuth callback in
+ * `convex/auth/twitch.ts`. The client never inserts.
  *
- * Idempotent: subsequent calls just bump `lastSeenAt`. The first call
- * creates the player + a fresh `profiles` row at depth 0 with a stable
- * seed, so the procedural pit graph is consistent across sessions.
+ * `findOrCreateFromTwitch` is idempotent: subsequent OAuth completions for
+ * the same `twitchUserId` just refresh the cached display name + avatar +
+ * `lastSeenAt`. The first completion also seeds the `profiles` row at
+ * depth 0 with a stable map seed (same descent across sessions).
  */
-export const getOrCreateByAnonId = mutation({
-  args: { anonId: v.string() },
-  handler: async (ctx, { anonId }) => {
+export const findOrCreateFromTwitch = internalMutation({
+  args: {
+    twitchUserId: v.string(),
+    twitchDisplayName: v.string(),
+    twitchAvatarUrl: v.optional(v.string()),
+  },
+  handler: async (ctx, { twitchUserId, twitchDisplayName, twitchAvatarUrl }) => {
     const now = Date.now()
     const existing = await ctx.db
       .query('players')
-      .withIndex('by_anon', (q) => q.eq('anonId', anonId))
+      .withIndex('by_twitch', (q) => q.eq('twitchUserId', twitchUserId))
       .unique()
 
     if (existing) {
-      await ctx.db.patch(existing._id, { lastSeenAt: now })
-      return { playerId: existing._id, displayName: existing.displayName }
+      await ctx.db.patch(existing._id, {
+        twitchDisplayName,
+        twitchAvatarUrl,
+        lastSeenAt: now,
+      })
+      return existing._id
     }
 
-    const suffix = anonId.replace(/-/g, '').slice(0, 4).toUpperCase()
-    const displayName = `Descender ${suffix}`
-
     const playerId = await ctx.db.insert('players', {
-      anonId,
-      displayName,
+      twitchUserId,
+      twitchDisplayName,
+      twitchAvatarUrl,
       createdAt: now,
       lastSeenAt: now,
     })
 
     // Seed for the procedural map. Stable across sessions so the same
     // descent reveals the same shape every time.
-    const seed = anonId.replace(/-/g, '').slice(0, 12)
+    const seed = twitchUserId.padStart(12, '0').slice(0, 12)
 
     await ctx.db.insert('profiles', {
       playerId,
@@ -48,6 +56,23 @@ export const getOrCreateByAnonId = mutation({
       updatedAt: now,
     })
 
-    return { playerId, displayName }
+    return playerId
+  },
+})
+
+/**
+ * Public read of the player's display info, by id. Used by the topbar
+ * after the session resolves to a player.
+ */
+export const getPublicById = query({
+  args: { playerId: v.id('players') },
+  handler: async (ctx, { playerId }) => {
+    const player = await ctx.db.get(playerId)
+    if (!player) return null
+    return {
+      playerId: player._id,
+      twitchDisplayName: player.twitchDisplayName,
+      twitchAvatarUrl: player.twitchAvatarUrl,
+    }
   },
 })

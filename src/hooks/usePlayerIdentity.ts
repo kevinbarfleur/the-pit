@@ -1,8 +1,5 @@
-import { useEffect, useState } from 'react'
-import { useMutation } from 'convex/react'
-import { api } from '../../convex/_generated/api'
 import type { Id } from '../../convex/_generated/dataModel'
-import { useAnonId } from './useAnonId'
+import { useSession } from './useSession'
 
 interface PlayerIdentity {
   playerId: Id<'players'> | null
@@ -11,38 +8,16 @@ interface PlayerIdentity {
 
 /**
  * Resolves the player identity (Convex `playerId` + display name) for the
- * current device. On mount, fires `getOrCreateByAnonId` once and caches
- * the result. While the round-trip is in flight, returns nulls — callers
- * should render a "loading…" state.
- *
- * The mutation is idempotent (it just bumps `lastSeenAt` for existing
- * rows), so accidental double-fires from React strict-mode are harmless.
+ * current session. Twitch OAuth is mandatory (cf. PRD-01) — there is no
+ * anonymous path. Returns nulls while the session is still loading or
+ * when the user is signed out; the AuthGuard makes the latter impossible
+ * for any route past `/auth`.
  */
 export function usePlayerIdentity(): PlayerIdentity {
-  const anonId = useAnonId()
-  const getOrCreate = useMutation(api.players.getOrCreateByAnonId)
-  const [identity, setIdentity] = useState<PlayerIdentity>({
-    playerId: null,
-    displayName: null,
-  })
-
-  useEffect(() => {
-    let cancelled = false
-    getOrCreate({ anonId })
-      .then((result) => {
-        if (cancelled) return
-        setIdentity({
-          playerId: result.playerId,
-          displayName: result.displayName,
-        })
-      })
-      .catch((err) => {
-        console.error('[usePlayerIdentity] getOrCreateByAnonId failed', err)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [anonId, getOrCreate])
-
-  return identity
+  const { session } = useSession()
+  if (!session) return { playerId: null, displayName: null }
+  return {
+    playerId: session.playerId,
+    displayName: session.twitchDisplayName,
+  }
 }
