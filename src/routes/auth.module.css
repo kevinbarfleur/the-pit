@@ -1,0 +1,22 @@
+.cta {
+  margin-top: 56px;
+  display: flex;
+  justify-content: center;
+}
+
+.hint {
+  margin-top: 18px;
+  color: var(--color-pit-dim);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  font-family: var(--font-sans);
+  text-transform: uppercase;
+}
+
+.error {
+  margin-top: 18px;
+  color: #d45a5a;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  font-family: var(--font-sans);
+}
