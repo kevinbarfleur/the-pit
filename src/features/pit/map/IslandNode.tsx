@@ -5,8 +5,8 @@ import { useEffects } from '../../../hooks/useEffects'
 import { usePitUiStore } from '../../../stores/pitUiStore'
 import type { PitNode as PitNodeModel, PitNodeState, PitNodeType } from '../../../game/pit/types'
 import {
-  CAP_BOTTOM_ANCHOR_CSS,
-  CAP_TOP_ANCHOR_CSS,
+  CAP_BOTTOM_ANCHOR_NATIVE,
+  CAP_TOP_ANCHOR_NATIVE,
   ISLAND_H,
   ISLAND_W,
   computeCapBounds,
@@ -24,7 +24,12 @@ interface IslandNodeProps {
   style?: CSSProperties
 }
 
-const SCALE = 2
+/** CSS upscale factor on the real Pit map. The island canvas is
+ *  ISLAND_W × ISLAND_H native (36 × 56) — at SCALE 3 that's
+ *  108 × 168 CSS, which keeps the new pixel-art details (chests,
+ *  hoard, signpost variants, pond, cascade) readable while still
+ *  fitting under the current ROW_HEIGHT = 200. */
+const SCALE = 3
 
 const TYPE_GLYPH: Record<PitNodeType, string> = {
   combat: '⚔',
@@ -209,8 +214,8 @@ export function IslandNode({ node, state, canCommit, style }: IslandNodeProps) {
       data-state={state}
       data-type={node.type}
       data-island-id={node.id}
-      data-anchor-cap-top-px={CAP_TOP_ANCHOR_CSS}
-      data-anchor-cap-bottom-px={CAP_BOTTOM_ANCHOR_CSS}
+      data-anchor-cap-top-px={CAP_TOP_ANCHOR_NATIVE * SCALE}
+      data-anchor-cap-bottom-px={CAP_BOTTOM_ANCHOR_NATIVE * SCALE}
       disabled={!canCommit}
       onMouseEnter={() => setHoveredId(node.id)}
       onMouseLeave={() => setHoveredId(null)}

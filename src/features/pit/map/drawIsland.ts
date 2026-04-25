@@ -35,11 +35,10 @@ export const ISLAND_H = 56
 /** Layout bands (native px, from the canvas top). */
 const CAP_Y_TOP_BASE = 10
 const CAP_Y_BOTTOM_BASE = 34
-/** CSS y-offset (at scale 2) of the chain top anchor. */
-export const CAP_TOP_ANCHOR_CSS = CAP_Y_TOP_BASE * 2 + 2
-/** CSS y-offset of the chain bottom anchor — glued to the cap's base
- *  (before the stalactites) so chains tie into the body of the rock. */
-export const CAP_BOTTOM_ANCHOR_CSS = CAP_Y_BOTTOM_BASE * 2 - 2
+/** Native-pixel y of the chain top anchor (cap top).  */
+export const CAP_TOP_ANCHOR_NATIVE = CAP_Y_TOP_BASE + 1
+/** Native-pixel y of the chain bottom anchor (cap base, above stalactites). */
+export const CAP_BOTTOM_ANCHOR_NATIVE = CAP_Y_BOTTOM_BASE - 1
 
 // =====================================================================
 // ISLAND WORLD SPACE — a small 3D coord system for the island
