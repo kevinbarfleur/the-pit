@@ -53,6 +53,8 @@ export const findOrCreateFromTwitch = internalMutation({
       totalScrap: 0,
       totalShards: 0,
       torchCapacity: 5,
+      torchCurrent: 5,
+      bossesKilled: 0,
       updatedAt: now,
     })
 

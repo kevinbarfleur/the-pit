@@ -1,0 +1,23 @@
+.shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  background: var(--color-pit-ink-3, #0c0c10);
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 2px;
+  border: 1px solid var(--color-pit-line);
+  image-rendering: pixelated;
+  display: block;
+}

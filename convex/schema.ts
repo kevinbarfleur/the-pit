@@ -31,7 +31,20 @@ export default defineSchema({
     totalGold: v.number(),
     totalScrap: v.number(),
     totalShards: v.number(),
+    /** Cap of torch slots. Tunable via passives later. V1 = 5. */
     torchCapacity: v.number(),
+    /** Live torch count [0, torchCapacity]. Decremented on retreat
+     *  (PRD-05) and on boss death (PRD-08). Refilled at rest nodes
+     *  + offline regen. V1 spawns at full.
+     *
+     *  Optional in the schema so legacy profile rows (created before
+     *  PRD-02 added the field) deploy without manual data wipe. The
+     *  client coerces `undefined → torchCapacity` at read time. */
+    torchCurrent: v.optional(v.number()),
+    /** Boss kill counter. Used by App Shell to gate the Leaderboard
+     *  tab (PRD-02 progressive disclosure). PRD-08 increments.
+     *  Optional for the same legacy-row reason as `torchCurrent`. */
+    bossesKilled: v.optional(v.number()),
     updatedAt: v.number(),
   }).index('by_player', ['playerId']),
 

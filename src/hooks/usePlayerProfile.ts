@@ -10,6 +10,8 @@ export interface PlayerProfile {
   totalScrap: number
   totalShards: number
   torchCapacity: number
+  torchCurrent: number
+  bossesKilled: number
 }
 
 /**
@@ -33,5 +35,8 @@ export function usePlayerProfile(
     totalScrap: profile.totalScrap,
     totalShards: profile.totalShards,
     torchCapacity: profile.torchCapacity,
+    // Legacy rows (pre-PRD-02) lack these fields — treat as full torch + zero kills.
+    torchCurrent: profile.torchCurrent ?? profile.torchCapacity,
+    bossesKilled: profile.bossesKilled ?? 0,
   }
 }
