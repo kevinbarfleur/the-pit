@@ -105,23 +105,13 @@ export function IslandNode({ node, state, canCommit, style }: IslandNodeProps) {
     drawIsland(ctx, node.id, node.type)
   }, [node.id, node.type])
 
-  // Hover effect binding — attached to the invisible cap-zone div, not
-  // the whole button, so the effect spawns follow the rock's silhouette
-  // and don't bleed over the signpost or the gap above the stalactites.
-  // Pointer events still listen on the button so the hover triggers
-  // cover the full visual.
-  //
-  // For grass specifically, we switch to the `patch` distribution +
-  // compress blade heights so the visual reads as a short isometric
-  // patch of grass on the cap's top surface (rather than tall blades
-  // growing from a rectangle edge, which is the button-style default).
-  const hoverEnabled =
-    state !== 'locked' && state !== 'bypassed' && state !== 'current'
+  // Effect binding — every island runs its hover effect from mount.
+  // No more hover gating, no more disable on locked / bypassed / cleared.
+  // Player feedback: every animation should be visible from the start.
   useEffect(() => {
-    if (!engine || !hoverEnabled) return
-    const btn = ref.current
+    if (!engine) return
     const cap = capZoneRef.current
-    if (!btn || !cap) return
+    if (!cap) return
 
     const isSpring =
       node.type === 'event' && computeEventVariant(node.id) === 'spring'
@@ -142,24 +132,10 @@ export function IslandNode({ node, state, canCommit, style }: IslandNodeProps) {
     } else {
       attachConfig = { color: TYPE_COLOR[node.type] }
     }
-    // All effects (spring included) anchor on the ground capZone.
     const { id, detach } = engine.attachWithHandle(cap, kind, attachConfig)
-    engine.setEnabled(id, false)
-
-    const onEnter = () => engine.setEnabled(id, true)
-    const onLeave = () => engine.setEnabled(id, false)
-    btn.addEventListener('pointerenter', onEnter)
-    btn.addEventListener('pointerleave', onLeave)
-    btn.addEventListener('focus', onEnter)
-    btn.addEventListener('blur', onLeave)
-    return () => {
-      btn.removeEventListener('pointerenter', onEnter)
-      btn.removeEventListener('pointerleave', onLeave)
-      btn.removeEventListener('focus', onEnter)
-      btn.removeEventListener('blur', onLeave)
-      detach()
-    }
-  }, [engine, hoverEnabled, node.type])
+    engine.setEnabled(id, true)
+    return () => detach()
+  }, [engine, node.type, node.id])
 
   const handleClick = () => {
     if (!canCommit) return
