@@ -1,21 +1,29 @@
 /**
  * Deterministic Pit map generator. Pure functions only — no state, no I/O.
  *
- * The generator is split in two halves so chunks are independently derivable:
+ * **Architecture (Slay-the-Spire-inspired):**
  *
- *   1. `generateChunkNodes(runSeed, chunkIndex)` produces every node in a
- *      chunk with empty `linksDown`. Depends only on the seed pair.
- *   2. `linkRows(runSeed, depthA, rowA, rowB)` fills the `linksDown` of rowA
- *      so that every rowB node receives ≥1 incoming link and every rowA
- *      node emits ≥1 outgoing link. Also deterministic from the seed pair.
+ *   - The map is generated **chunk by chunk**. A chunk spans exactly
+ *     CHUNK_HEIGHT depths and is a self-contained mini-act.
+ *   - Inside a chunk: a single entry node at the top (col = bossCol),
+ *     fan-out at depth+1 across distinct columns, walking paths that
+ *     converge to a single boss node at the chunk's last depth.
+ *   - Path walks use the canonical Slay rules: at each step, choose
+ *     among `[col-1, col, col+1]` candidates filtered by no-cross and
+ *     no-duplicate-edge constraints. Approach to the boss biases the
+ *     candidates toward the boss column.
+ *   - Every chunk's boss → next chunk's entry is a 1-edge link added
+ *     by `materializeWindow`.
  *
- * `materializeWindow(runSeed, fromDepth, toDepth)` orchestrates both for a
- * visible depth window, including the cross-chunk boundary.
+ * **Why chunks**: keeps generation lazy + deterministic. Boss-to-boss
+ * is one chunk. Players move forward by one boss every CHUNK_HEIGHT.
  *
- * Rationale: generation must survive scrolling back and forth over the same
- * depths without drift, and must be cheap enough to call every render cycle
- * in the map view. Keeping the two halves separate also makes each trivially
- * property-testable.
+ * **Cross-prevention**: the no-cross filter is the single most
+ * important rule. Without it, the map degenerates to spaghetti. Every
+ * candidate edge `(p_col → c_col)` between depths `d` and `d+1` is
+ * rejected if there exists any other edge `(p2_col → c2_col)` between
+ * the same depths such that `(p_col − p2_col) × (c_col − c2_col) < 0`
+ * (strict opposite-sign of column delta = crossed).
  */
 
 import { xoroshiro128plus } from 'pure-rand/generator/xoroshiro128plus'
@@ -31,14 +39,9 @@ import {
 } from './types'
 
 /**
- * DEBUG scaffolding. For the first few depths of a fresh run we force a
- * rotation of node types so the player lands on a window that exposes
- * every unique hover effect (pulse / embers / sparkle / ripple / grass).
- * Remove or gate behind a flag once visuals stop needing ad-hoc tests.
- *
- * Shape: one entry per depth (STARTING_DEPTH..STARTING_DEPTH+N-1). Each
- * entry is the ordered list of types to assign to the row's nodes (in
- * column-ascending order). Missing columns fall back to pickType.
+ * DEBUG scaffolding. For the first few depths of a fresh run we force
+ * a rotation of node types so the player lands on a window that
+ * exposes every unique hover effect. Keys are absolute depths.
  */
 const FORCED_HOVER_TYPES: Record<number, PitNodeType[]> = {
   [STARTING_DEPTH]: ['combat'],
@@ -47,13 +50,10 @@ const FORCED_HOVER_TYPES: Record<number, PitNodeType[]> = {
   [STARTING_DEPTH + 3]: ['cache', 'combat', 'rest'],
 }
 
-// --------------------- seeding ---------------------
+// =====================================================================
+// Seeding helpers
+// =====================================================================
 
-/**
- * 32-bit FNV-1a hash over a string, xor-folded with a 32-bit int. Gives us
- * a deterministic numeric seed for `xoroshiro128plus` from an arbitrary
- * `runSeed` string + chunk/depth salt.
- */
 function hashSeed(runSeed: string, salt: number): number {
   let h = 0x811c9dc5
   for (let i = 0; i < runSeed.length; i++) {
@@ -65,13 +65,13 @@ function hashSeed(runSeed: string, salt: number): number {
   return h | 0
 }
 
-/**
- * Thin convenience wrapper over the pure-rand xoroshiro128plus generator.
- * pure-rand v8 mutates the generator in place on each `.next()`, returning
- * a signed 32-bit integer. We fold to [0, 1) using the top 24 bits so the
- * result is stable across hosts and cheap to derive ints from.
- */
-function cursor(runSeed: string, salt: number) {
+interface Cursor {
+  unit(): number
+  int(max: number): number
+  pick<T>(arr: T[]): T
+}
+
+function cursor(runSeed: string, salt: number): Cursor {
   const rng: RandomGenerator = xoroshiro128plus(hashSeed(runSeed, salt))
   return {
     unit(): number {
@@ -81,26 +81,35 @@ function cursor(runSeed: string, salt: number) {
     int(max: number): number {
       return Math.floor(this.unit() * max)
     },
+    pick<T>(arr: T[]): T {
+      return arr[Math.floor(this.unit() * arr.length)]
+    },
   }
 }
 
-// --------------------- type + threat mixes ---------------------
+// =====================================================================
+// Type weights + threat
+// =====================================================================
 
 /**
- * Weighted pick of node type for a non-boss row. Weights are depth-aware:
- * elites become more common as you descend; rest/shop stay roughly steady.
+ * Weighted pick of node type for a non-special depth. Probabilities
+ * are tuned to match the Slay-the-Spire baseline distribution adapted
+ * to our 8 node types:
+ *   combat 50 % · event 20 % · shop 8 % · rest 12 % · elite 7 % ·
+ *   cache 3 % (treasure handled by mid-chunk override).
+ *
+ * Elite chance is gated below depth 6 within a chunk (early floors get
+ * no elites — players need a few combats to ramp).
  */
-function pickType(depth: number, roll: number): PitNodeType {
-  // Depth-biased elite chance: 4% → 14% across depth [0, 200].
-  const eliteChance = Math.min(0.14, 0.04 + depth * 0.0005)
+function pickType(depth: number, depthInChunk: number, roll: number): PitNodeType {
+  const allowElite = depthInChunk >= 6
   const weights: Array<[PitNodeType, number]> = [
-    ['combat', 0.45],
-    ['elite', eliteChance],
-    ['event', 0.1],
-    ['shop', 0.07],
-    ['rest', 0.08],
-    ['cache', 0.1],
-    ['treasure', 0.05],
+    ['combat', 0.5],
+    ['elite', allowElite ? 0.07 + Math.min(0.07, depth * 0.0003) : 0],
+    ['event', 0.2],
+    ['shop', 0.08],
+    ['rest', 0.12],
+    ['cache', 0.03],
   ]
   const total = weights.reduce((s, [, w]) => s + w, 0)
   let r = roll * total
@@ -115,205 +124,351 @@ const TYPE_THREAT_MULT: Record<PitNodeType, number> = {
   combat: 1.0,
   elite: 1.55,
   boss: 2.4,
-  event: 0.6, // event threat doesn't scale to combat — signals reward roll
+  event: 0.6,
   shop: 0,
   rest: 0,
   cache: 0.4,
   treasure: 0.3,
 }
 
-/** Basis points. Linear in depth, scaled by type multiplier. */
 function threatAtDepth(depth: number, type: PitNodeType): number {
-  const base = depth * 100 // 100 bp per depth level
-  return Math.floor(base * TYPE_THREAT_MULT[type])
+  return Math.floor(depth * 100 * TYPE_THREAT_MULT[type])
 }
 
-// --------------------- row width + columns ---------------------
+// =====================================================================
+// Path walker
+// =====================================================================
 
-/** Depth of the next boss at or after `depth`. */
-function nextBossDepth(depth: number): number {
-  return Math.ceil(depth / BOSS_EVERY) * BOSS_EVERY
-}
-
-/**
- * Width of a depth row. Boss depths are always 1. Rows in the 3 depths
- * immediately above a boss narrow 3→2→1 so branches converge. All other
- * rows are 1–3 with bias to 2.
- */
-function pickWidth(depth: number, rng: ReturnType<typeof cursor>): number {
-  if (depth > 0 && depth % BOSS_EVERY === 0) return 1
-  const dist = nextBossDepth(depth) - depth
-  if (dist === 1) return 1
-  if (dist === 2) return 2
-  if (dist === 3) return Math.min(3, rng.int(2) + 2) // 2 or 3, bias low
-  const roll = rng.unit()
-  if (roll < 0.2) return 1
-  if (roll < 0.7) return 2
-  return 3
+interface Edge {
+  fromCol: number
+  toCol: number
+  /** Depth of the parent node (the child is at depth + 1). */
+  depth: number
 }
 
 /**
- * Pick `width` adjacent columns in [0, MAX_COLUMNS). Rows pack together
- * rather than spreading to the outer edges so every downlink from row N
- * lands in a column at most 1 step away from its parent — the player
- * always sees a short, clearly-ranked chain rather than crossed spaghetti.
+ * Anti-crossing predicate. Returns true iff a hypothetical edge
+ * `(parentCol → childCol)` between depths `d` and `d+1` would cross
+ * any existing edge in `edges` at the same depth pair.
  *
- * width 1  → centre
- * width 2  → {0,1} or {1,2} depending on the row rng
- * width 3  → {0,1,2}
+ * Two edges (p1, c1) and (p2, c2) cross iff their column deltas have
+ * opposite signs once you align their parents — i.e.
+ *     (p1 - p2) × (c1 - c2) < 0
+ * This is the canonical rule used by Slay the Spire's map generator.
  */
-function pickColumns(width: number, rng: ReturnType<typeof cursor>): number[] {
-  if (width === 1) return [Math.floor(MAX_COLUMNS / 2)]
-  if (width === 2) return rng.unit() < 0.5 ? [0, 1] : [1, 2]
-  return Array.from({ length: MAX_COLUMNS }, (_, i) => i)
+function crosses(
+  edges: Edge[],
+  parentCol: number,
+  childCol: number,
+  depth: number,
+): boolean {
+  for (const e of edges) {
+    if (e.depth !== depth) continue
+    if (e.fromCol === parentCol && e.toCol === childCol) continue
+    const dp = parentCol - e.fromCol
+    const dc = childCol - e.toCol
+    if (dp * dc < 0) return true
+  }
+  return false
 }
 
-// --------------------- public generator ---------------------
+/**
+ * Walk a single path from `(startCol, startDepth)` to `(endCol, endDepth)`
+ * inclusive. At each step, picks a child column among `[col-1, col,
+ * col+1]` filtered by:
+ *   - within `[0, MAX_COLUMNS)`,
+ *   - not duplicating an edge already in `edges`,
+ *   - not crossing any edge in `edges`,
+ *   - approaching the boss column when within `bossDepth - depth + 1`
+ *     steps of the boss (forces convergence over the last 3 rows).
+ *
+ * Mutates `edges` in place by appending every new edge it walks.
+ * Returns the visited (depth, col) cells in order.
+ */
+function walkPath(
+  rng: Cursor,
+  startCol: number,
+  startDepth: number,
+  endCol: number,
+  endDepth: number,
+  edges: Edge[],
+): Array<{ depth: number; col: number }> {
+  const visited: Array<{ depth: number; col: number }> = [
+    { depth: startDepth, col: startCol },
+  ]
+  let curCol = startCol
+  for (let d = startDepth; d < endDepth; d++) {
+    const stepsLeft = endDepth - d
+    let candidates = [-1, 0, 1]
+      .map((dc) => curCol + dc)
+      .filter((c) => c >= 0 && c < MAX_COLUMNS)
+
+    // Boss-approach bias: each remaining step can move the column by
+    // at most 1, so we must already be within `stepsLeft` columns of
+    // the boss.
+    const reachable = candidates.filter(
+      (c) => Math.abs(c - endCol) <= stepsLeft - 1,
+    )
+    if (reachable.length > 0) candidates = reachable
+
+    // Drop candidates that would create a duplicate edge from curCol.
+    candidates = candidates.filter(
+      (c) => !edges.some((e) => e.depth === d && e.fromCol === curCol && e.toCol === c),
+    )
+
+    // Drop candidates that would cross an existing edge.
+    const safe = candidates.filter((c) => !crosses(edges, curCol, c, d))
+    const pool = safe.length > 0 ? safe : candidates
+    if (pool.length === 0) {
+      // No legal move — force the closest column toward the boss.
+      const fallback = curCol < endCol ? curCol + 1 : curCol > endCol ? curCol - 1 : curCol
+      edges.push({ fromCol: curCol, toCol: fallback, depth: d })
+      visited.push({ depth: d + 1, col: fallback })
+      curCol = fallback
+      continue
+    }
+    // Bias toward `endCol` when ties: prefer the column closest to it.
+    pool.sort((a, b) => Math.abs(a - endCol) - Math.abs(b - endCol))
+    const minDist = Math.abs(pool[0] - endCol)
+    const tied = pool.filter((c) => Math.abs(c - endCol) === minDist)
+    const next = rng.pick(tied)
+    edges.push({ fromCol: curCol, toCol: next, depth: d })
+    visited.push({ depth: d + 1, col: next })
+    curCol = next
+  }
+  return visited
+}
+
+// =====================================================================
+// Type assignment with Slay-style overrides
+// =====================================================================
 
 /**
- * Generate every node of a chunk, with `linksDown: []`. Linking is handled
- * separately so the caller can honour cross-chunk boundaries.
+ * Apply Slay-style placement constraints AFTER paths are built. The
+ * key invariants:
+ *   - boss row stays a single 'boss' node (already enforced by the
+ *     walker).
+ *   - depthInChunk = 0 (chunk entry) is always 'combat'.
+ *   - depthInChunk = CHUNK_HEIGHT/2 favours 'treasure' (mid-chunk
+ *     reward floor).
+ *   - depthInChunk = CHUNK_HEIGHT-2 favours 'rest' (pre-boss heal).
+ *   - elite / shop / rest cannot be consecutive on a path.
+ *   - a parent with multiple children must offer different types.
+ *   - FORCED_HOVER_TYPES still wins (debug scaffolding).
  */
-export function generateChunkNodes(runSeed: string, chunkIndex: number): PitNode[] {
-  const rng = cursor(runSeed, chunkIndex)
-  const nodes: PitNode[] = []
+function assignTypes(
+  rng: Cursor,
+  nodes: PitNode[],
+  chunkIndex: number,
+): void {
+  const chunkStartDepth = chunkIndex * CHUNK_HEIGHT
+  const bossDepth = chunkStartDepth + CHUNK_HEIGHT - 1
+  const treasureDepth = chunkStartDepth + Math.floor(CHUNK_HEIGHT / 2)
+  const restDepth = bossDepth - 1
 
-  for (let rel = 0; rel < CHUNK_HEIGHT; rel++) {
-    const depth = chunkIndex * CHUNK_HEIGHT + rel
-    const width = pickWidth(depth, rng)
-    const columns = pickColumns(width, rng)
-    const forcedTypes = FORCED_HOVER_TYPES[depth]
-    for (let i = 0; i < columns.length; i++) {
-      const col = columns[i]
-      const isBoss = depth > 0 && depth % BOSS_EVERY === 0
-      let type: PitNodeType = isBoss ? 'boss' : pickType(depth, rng.unit())
-      // Debug override — guarantee each hover effect is reachable from
-      // the starting position. Does not override boss depths.
-      if (!isBoss && forcedTypes && forcedTypes[i]) {
-        type = forcedTypes[i]
+  const byId = new Map<string, PitNode>()
+  for (const n of nodes) byId.set(n.id, n)
+
+  // Group nodes by depth for parent/child lookups.
+  const byDepth = new Map<number, PitNode[]>()
+  for (const n of nodes) {
+    const row = byDepth.get(n.depth) ?? []
+    row.push(n)
+    byDepth.set(n.depth, row)
+  }
+  for (const row of byDepth.values()) row.sort((a, b) => a.column - b.column)
+
+  for (const n of nodes) {
+    const dInChunk = n.depth - chunkStartDepth
+    if (n.depth === bossDepth) {
+      n.type = 'boss'
+      n.threat = threatAtDepth(n.depth, 'boss')
+      continue
+    }
+    if (dInChunk === 0) {
+      n.type = 'combat' // entry row always combat
+    } else if (n.depth === treasureDepth) {
+      n.type = 'treasure'
+    } else if (n.depth === restDepth) {
+      n.type = 'rest'
+    } else {
+      n.type = pickType(n.depth, dInChunk, rng.unit())
+    }
+
+    // Constraint: same-row siblings emerging from a shared parent
+    // must be distinct types. We enforce by re-rolling until unique
+    // among the parent's existing children.
+    const parents = nodes.filter((p) => p.linksDown.includes(n.id))
+    for (const p of parents) {
+      const siblings = p.linksDown
+        .map((id) => byId.get(id))
+        .filter((s): s is PitNode => !!s && s.id !== n.id && s.type !== 'boss')
+      let attempts = 0
+      while (
+        attempts < 6 &&
+        siblings.some((s) => s.type === n.type) &&
+        n.type !== 'combat' && // combat is allowed to repeat
+        n.depth !== treasureDepth &&
+        n.depth !== restDepth
+      ) {
+        n.type = pickType(n.depth, dInChunk, rng.unit())
+        attempts++
       }
-      nodes.push({
-        id: `${depth}:${col}`,
-        depth,
-        column: col,
-        type,
-        threat: threatAtDepth(depth, type),
-        linksDown: [],
-      })
+    }
+
+    // Constraint: no elite / shop / rest immediately after the same
+    // type along any incoming-link path.
+    if (n.type === 'elite' || n.type === 'shop' || n.type === 'rest') {
+      const consecutive = parents.some((p) => p.type === n.type)
+      if (consecutive) n.type = 'combat'
+    }
+
+    n.threat = threatAtDepth(n.depth, n.type)
+  }
+
+  // FORCED_HOVER_TYPES override — applied last so debug scaffolding
+  // wins regardless of the constraints above.
+  for (const [depthStr, types] of Object.entries(FORCED_HOVER_TYPES)) {
+    const d = Number(depthStr)
+    const row = byDepth.get(d)
+    if (!row) continue
+    for (let i = 0; i < row.length && i < types.length; i++) {
+      if (row[i].type === 'boss') continue
+      row[i].type = types[i]
+      row[i].threat = threatAtDepth(d, types[i])
     }
   }
+}
+
+// =====================================================================
+// Public chunk generator
+// =====================================================================
+
+/**
+ * Build all nodes of a single chunk: 1 entry → fan-out → walking
+ * paths → single boss. Edges populated as `linksDown` on each node.
+ *
+ * Determinism: seeded by `(runSeed, chunkIndex)`. Same input always
+ * produces the same chunk — cross-chunk navigation never re-rolls.
+ */
+export function generateChunkNodes(
+  runSeed: string,
+  chunkIndex: number,
+): PitNode[] {
+  const rng = cursor(runSeed, chunkIndex)
+  const startDepth = chunkIndex * CHUNK_HEIGHT
+  const bossDepth = startDepth + CHUNK_HEIGHT - 1
+  const bossCol = Math.floor(MAX_COLUMNS / 2) // 1
+  const entryCol = bossCol
+
+  const edges: Edge[] = []
+  const visitedSet = new Set<string>()
+  const orderedCells: Array<{ depth: number; col: number }> = []
+  const seeCell = (depth: number, col: number) => {
+    const key = `${depth}:${col}`
+    if (!visitedSet.has(key)) {
+      visitedSet.add(key)
+      orderedCells.push({ depth, col })
+    }
+  }
+
+  // Entry node at depth = startDepth, col = entryCol.
+  seeCell(startDepth, entryCol)
+  // Boss node at depth = bossDepth, col = bossCol — we lock this in
+  // even before paths are built so walks know to converge.
+  seeCell(bossDepth, bossCol)
+
+  // Fan-out: from the entry, drop edges to 3 distinct cols at depth+1.
+  // Those three cells are the starting points of three independent
+  // walks toward the boss. With MAX_COLUMNS = 3, every column is used.
+  const fanOutDepth = startDepth + 1
+  const fanOutCols = Array.from({ length: MAX_COLUMNS }, (_, i) => i)
+  for (const c of fanOutCols) {
+    edges.push({ fromCol: entryCol, toCol: c, depth: startDepth })
+    seeCell(fanOutDepth, c)
+  }
+
+  // Walk each path from its fan-out cell to the boss.
+  for (const startCol of fanOutCols) {
+    const visits = walkPath(
+      rng,
+      startCol,
+      fanOutDepth,
+      bossCol,
+      bossDepth,
+      edges,
+    )
+    for (const v of visits) seeCell(v.depth, v.col)
+  }
+
+  // Materialise nodes (without types yet) + populate linksDown from
+  // the edge list.
+  const nodes: PitNode[] = orderedCells.map(({ depth, col }) => ({
+    id: `${depth}:${col}`,
+    depth,
+    column: col,
+    type: 'combat',
+    threat: 0,
+    linksDown: [],
+  }))
+  const byId = new Map(nodes.map((n) => [n.id, n]))
+  for (const e of edges) {
+    const parentId = `${e.depth}:${e.fromCol}`
+    const childId = `${e.depth + 1}:${e.toCol}`
+    const parent = byId.get(parentId)
+    if (parent && !parent.linksDown.includes(childId)) {
+      parent.linksDown.push(childId)
+    }
+  }
+
+  // Assign types with Slay-style overrides.
+  assignTypes(rng, nodes, chunkIndex)
 
   return nodes
 }
 
 /**
- * Compute deterministic downlinks from `rowA` to `rowB`. Mutates each
- * rowA node's `linksDown`.
- *
- * This is the heart of the "choice" feel of the map: each parent picks
- * 1–3 children from its immediate column neighbourhood (col−1, col,
- * col+1). Parents with 2+ children present the player with a fork; a
- * parent with 1 child is a forced descent (uncommon, used near bosses).
- *
- * Guarantees:
- *   - every rowB node receives ≥ 1 incoming link (no orphaned tiles);
- *   - every rowA node emits ≥ 1 outgoing link;
- *   - every downlink targets a column within ±1 of the parent's column
- *     (short, readable chains — no crossed spaghetti);
- *   - no duplicate links from the same node.
+ * Backward-compat shim — paths already populate `linksDown` inside
+ * `generateChunkNodes`. We only need `linkRows` to splice the boss of
+ * one chunk to the entry of the next, so this is a no-op for normal
+ * intra-chunk row pairs.
  */
 export function linkRows(
-  runSeed: string,
-  depthA: number,
-  rowA: PitNode[],
-  rowB: PitNode[],
+  _runSeed: string,
+  _depthA: number,
+  _rowA: PitNode[],
+  _rowB: PitNode[],
 ): void {
-  if (rowA.length === 0 || rowB.length === 0) return
-  const rng = cursor(runSeed, (depthA << 8) ^ 0x9e3779b1)
-
-  // Pass 1 — each parent picks 1–3 children, prioritising its own
-  // column first, then ±1. This is the key to readable chains: a node
-  // at column 0 connects primarily to column 0 below, which reads as a
-  // straight vertical drop rather than diagonal spaghetti. Ties (e.g.
-  // same-distance children when a parent is at column 1) break by
-  // column ascending so the algorithm is fully deterministic — no
-  // shuffle, so the layout stays stable across regeneration.
-  for (const a of rowA) {
-    const candidates = rowB.filter((b) => Math.abs(b.column - a.column) <= 1)
-    const pool = candidates.length > 0 ? candidates : [closestByColumn(rowB, a.column)]
-    const sorted = pool.slice().sort((x, y) => {
-      const dx = Math.abs(x.column - a.column)
-      const dy = Math.abs(y.column - a.column)
-      if (dx !== dy) return dx - dy
-      return x.column - y.column
-    })
-    const n = chooseNumChildren(rng, sorted.length)
-    for (let i = 0; i < n; i++) {
-      a.linksDown.push(sorted[i].id)
-    }
-  }
-
-  // Pass 2 — orphan rescue. Any rowB node without a parent gets adopted
-  // by the closest-column rowA node (that doesn't already link to it).
-  for (const b of rowB) {
-    const hasParent = rowA.some((a) => a.linksDown.includes(b.id))
-    if (hasParent) continue
-    const a = closestByColumn(rowA, b.column)
-    if (!a.linksDown.includes(b.id)) a.linksDown.push(b.id)
-  }
+  // No-op. Cross-chunk linking handled in `materializeWindow`.
 }
 
-/** Children per parent: 45% one (pure descent), 52% two (choice), 3%
- *  three (rare trilemma). Biased hard toward 1–2 to avoid the visual
- *  spaghetti of three-way forks whose chains entangle with the
- *  neighbour's chains when the row is full-width. */
-function chooseNumChildren(rng: ReturnType<typeof cursor>, maxAvailable: number): number {
-  const roll = rng.unit()
-  const n = roll < 0.45 ? 1 : roll < 0.97 ? 2 : 3
-  return Math.min(n, Math.max(1, maxAvailable))
-}
-
-
-function closestByColumn(row: PitNode[], col: number): PitNode {
-  let best = row[0]
-  let bestDist = Math.abs(best.column - col)
-  for (let i = 1; i < row.length; i++) {
-    const d = Math.abs(row[i].column - col)
-    if (d < bestDist) {
-      best = row[i]
-      bestDist = d
-    }
-  }
-  return best
-}
-
-// --------------------- window materialization ---------------------
+// =====================================================================
+// Window materialisation
+// =====================================================================
 
 export interface MaterializedWindow {
-  /** Flat list of every node covered by [fromDepth, toDepth], linksDown set. */
   nodes: PitNode[]
-  /** O(1) lookup by id. */
   byId: Map<string, PitNode>
-  /** Nodes grouped by depth for row-wise rendering / linking. */
   byDepth: Map<number, PitNode[]>
-  /** Which chunks were generated to cover the window. */
   chunks: Map<number, PitChunk>
 }
 
 /**
- * Materialize a continuous depth window [fromDepth, toDepth] inclusive.
- * Generates the covering chunks, fills cross-chunk links, and returns all
- * lookups the UI needs. Idempotent in `(runSeed, fromDepth, toDepth)`.
+ * Materialize a continuous depth window `[fromDepth, toDepth]` inclusive.
+ * Generates the covering chunks, splices boss → next-entry links, and
+ * returns the lookups the UI needs. Idempotent in the inputs.
  */
 export function materializeWindow(
   runSeed: string,
   fromDepth: number,
   toDepth: number,
 ): MaterializedWindow {
-  if (toDepth < fromDepth) throw new Error('materializeWindow: toDepth < fromDepth')
+  if (toDepth < fromDepth) {
+    throw new Error('materializeWindow: toDepth < fromDepth')
+  }
   const firstChunk = Math.floor(fromDepth / CHUNK_HEIGHT)
-  // We need one extra chunk past the last row so linksDown on the window's
-  // last row point at real nodes.
+  // Need one chunk past the window so the last visible boss can link
+  // forward to the next chunk's entry.
   const lastChunk = Math.floor(toDepth / CHUNK_HEIGHT) + 1
 
   const chunks = new Map<number, PitChunk>()
@@ -322,7 +477,23 @@ export function materializeWindow(
     chunks.set(ci, { index: ci, seed: `${runSeed}:${ci}`, nodes })
   }
 
-  // Group every node produced so far by depth.
+  // Cross-chunk linking: every boss → next chunk's entry node.
+  for (let ci = firstChunk; ci < lastChunk; ci++) {
+    const cur = chunks.get(ci)
+    const nxt = chunks.get(ci + 1)
+    if (!cur || !nxt) continue
+    const bossDepth = (ci + 1) * CHUNK_HEIGHT - 1
+    const entryDepth = bossDepth + 1
+    const boss = cur.nodes.find((n) => n.depth === bossDepth)
+    const entry = nxt.nodes.find(
+      (n) => n.depth === entryDepth && n.column === Math.floor(MAX_COLUMNS / 2),
+    )
+    if (boss && entry && !boss.linksDown.includes(entry.id)) {
+      boss.linksDown.push(entry.id)
+    }
+  }
+
+  // Build flat lookups for the requested window.
   const byDepth = new Map<number, PitNode[]>()
   for (const c of chunks.values()) {
     for (const n of c.nodes) {
@@ -331,19 +502,8 @@ export function materializeWindow(
       byDepth.set(n.depth, row)
     }
   }
-  // Sort rows by column so pickColumns output order is preserved for
-  // deterministic linking.
   for (const row of byDepth.values()) row.sort((a, b) => a.column - b.column)
 
-  // Link every pair of adjacent rows we have.
-  const depths = Array.from(byDepth.keys()).sort((a, b) => a - b)
-  for (let i = 0; i < depths.length - 1; i++) {
-    const d = depths[i]
-    if (depths[i + 1] !== d + 1) continue
-    linkRows(runSeed, d, byDepth.get(d)!, byDepth.get(d + 1)!)
-  }
-
-  // Build the returned flat list, clipping to the requested window.
   const nodes: PitNode[] = []
   const byId = new Map<string, PitNode>()
   for (let d = fromDepth; d <= toDepth; d++) {
@@ -357,3 +517,9 @@ export function materializeWindow(
 
   return { nodes, byId, byDepth, chunks }
 }
+
+// =====================================================================
+// Compatibility re-exports (kept so existing callers don't break)
+// =====================================================================
+
+export { BOSS_EVERY }

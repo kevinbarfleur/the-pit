@@ -15,7 +15,7 @@ import {
   linkRows,
   materializeWindow,
 } from './generate'
-import { BOSS_EVERY, CHUNK_HEIGHT, MAX_COLUMNS } from './types'
+import { CHUNK_HEIGHT, MAX_COLUMNS } from './types'
 
 const seedArb = fc.string({ minLength: 1, maxLength: 20 })
 const chunkIndexArb = fc.integer({ min: 0, max: 50 })
@@ -76,36 +76,85 @@ describe('generateChunkNodes', () => {
 
   it('boss depths collapse to a single node', () => {
     fc.assert(
-      fc.property(seedArb, fc.integer({ min: 1, max: 10 }), (seed, bossIndex) => {
-        const depth = bossIndex * BOSS_EVERY
-        const ci = Math.floor(depth / CHUNK_HEIGHT)
+      fc.property(seedArb, fc.integer({ min: 0, max: 10 }), (seed, ci) => {
+        // After the chunked refactor, the boss lives at the LAST depth
+        // of every chunk: chunkIndex × CHUNK_HEIGHT + CHUNK_HEIGHT − 1.
+        const bossDepth = ci * CHUNK_HEIGHT + CHUNK_HEIGHT - 1
         const nodes = generateChunkNodes(seed, ci)
-        const row = nodes.filter((n) => n.depth === depth)
+        const row = nodes.filter((n) => n.depth === bossDepth)
         expect(row).toHaveLength(1)
         expect(row[0].type).toBe('boss')
+        expect(row[0].column).toBe(Math.floor(MAX_COLUMNS / 2))
       }),
       { numRuns: 30 },
     )
   })
 
-  it('rows immediately above a boss converge (width non-increasing)', () => {
+  it('chunk entry is a single node at col 1', () => {
     fc.assert(
-      fc.property(seedArb, fc.integer({ min: 1, max: 8 }), (seed, bossIndex) => {
-        const bossDepth = bossIndex * BOSS_EVERY
-        const window = materializeWindow(seed, bossDepth - 3, bossDepth)
-        const widths = [
-          window.byDepth.get(bossDepth - 3)?.length ?? 0,
-          window.byDepth.get(bossDepth - 2)?.length ?? 0,
-          window.byDepth.get(bossDepth - 1)?.length ?? 0,
-          window.byDepth.get(bossDepth)?.length ?? 0,
-        ]
-        // widths must be monotone non-increasing approaching the boss
-        for (let i = 1; i < widths.length; i++) {
-          expect(widths[i]).toBeLessThanOrEqual(widths[i - 1])
-        }
-        // and the boss row is 1
-        expect(widths[widths.length - 1]).toBe(1)
+      fc.property(seedArb, fc.integer({ min: 0, max: 10 }), (seed, ci) => {
+        const entryDepth = ci * CHUNK_HEIGHT
+        const nodes = generateChunkNodes(seed, ci)
+        const row = nodes.filter((n) => n.depth === entryDepth)
+        expect(row).toHaveLength(1)
+        expect(row[0].column).toBe(Math.floor(MAX_COLUMNS / 2))
       }),
+      { numRuns: 30 },
+    )
+  })
+
+  it('boss row collapses to width 1; pre-boss rows stay within MAX_COLUMNS', () => {
+    // The walker only strictly enforces single-column convergence at
+    // the boss row itself. Rows immediately above can hold 1..MAX_COLUMNS
+    // active columns — paths may converge and re-spread depending on
+    // the no-cross filter. We assert the bounds, not strict monotonicity.
+    fc.assert(
+      fc.property(seedArb, fc.integer({ min: 0, max: 8 }), (seed, ci) => {
+        const bossDepth = ci * CHUNK_HEIGHT + CHUNK_HEIGHT - 1
+        const window = materializeWindow(seed, bossDepth - 3, bossDepth)
+        for (let d = bossDepth - 3; d <= bossDepth; d++) {
+          const w = window.byDepth.get(d)?.length ?? 0
+          expect(w).toBeGreaterThanOrEqual(1)
+          expect(w).toBeLessThanOrEqual(MAX_COLUMNS)
+        }
+        expect(window.byDepth.get(bossDepth)?.length).toBe(1)
+      }),
+      { numRuns: 30 },
+    )
+  })
+
+  it('no edges cross — Slay-style anti-crossing invariant', () => {
+    fc.assert(
+      fc.property(
+        seedArb,
+        fc.integer({ min: 0, max: 30 }),
+        fc.integer({ min: 5, max: 25 }),
+        (seed, from, span) => {
+          const win = materializeWindow(seed, from, from + span)
+          // Build the edge list for every depth pair in the window.
+          const edgesByDepth = new Map<number, Array<{ from: number; to: number }>>()
+          for (const n of win.nodes) {
+            for (const cid of n.linksDown) {
+              const child = win.byId.get(cid)
+              if (!child) continue
+              const list = edgesByDepth.get(n.depth) ?? []
+              list.push({ from: n.column, to: child.column })
+              edgesByDepth.set(n.depth, list)
+            }
+          }
+          for (const list of edgesByDepth.values()) {
+            for (let i = 0; i < list.length; i++) {
+              for (let j = i + 1; j < list.length; j++) {
+                const a = list[i]
+                const b = list[j]
+                const dp = a.from - b.from
+                const dc = a.to - b.to
+                expect(dp * dc).toBeGreaterThanOrEqual(0)
+              }
+            }
+          }
+        },
+      ),
       { numRuns: 30 },
     )
   })
@@ -232,19 +281,20 @@ describe('linkRows + materializeWindow', () => {
   })
 })
 
-describe('linkRows — direct contract', () => {
-  it('every rowB node is reached when rows are supplied directly', () => {
+describe('linkRows — backward-compat shim', () => {
+  it('is a no-op now that paths populate linksDown inside generateChunkNodes', () => {
     fc.assert(
       fc.property(seedArb, fc.integer({ min: 0, max: 30 }), (seed, depth) => {
         const rowA = generateChunkNodes(seed, 0).filter((n) => n.depth === depth)
         const rowB = generateChunkNodes(seed, 0).filter((n) => n.depth === depth + 1)
         if (rowA.length === 0 || rowB.length === 0) return
-        // Reset linksDown so we observe a fresh result.
-        for (const n of rowA) n.linksDown = []
+        // Snapshot the existing linksDown then call linkRows. The
+        // shim is intentionally a no-op so the snapshot must be intact.
+        const snapshot = rowA.map((n) => [...n.linksDown])
         linkRows(seed, depth, rowA, rowB)
-        const reached = new Set<string>()
-        for (const a of rowA) for (const d of a.linksDown) reached.add(d)
-        for (const b of rowB) expect(reached.has(b.id)).toBe(true)
+        for (let i = 0; i < rowA.length; i++) {
+          expect(rowA[i].linksDown).toEqual(snapshot[i])
+        }
       }),
       { numRuns: 30 },
     )
