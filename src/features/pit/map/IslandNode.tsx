@@ -3,7 +3,11 @@ import type { CSSProperties } from 'react'
 import type { AttachConfig, AttachKind } from '../../../pixi/EffectsEngine'
 import { useEffects } from '../../../hooks/useEffects'
 import { usePitUiStore } from '../../../stores/pitUiStore'
+import type { PitRun } from '../../../hooks/usePitRun'
 import type { PitNode as PitNodeModel, PitNodeState, PitNodeType } from '../../../game/pit/types'
+import { CharacterSprite } from '../../characters/CharacterSprite'
+import { MERCHANT } from '../../../game/characters/defs/merchant'
+import { NodePopover } from './NodePopover'
 import {
   CAP_BOTTOM_ANCHOR_NATIVE,
   CAP_TOP_ANCHOR_NATIVE,
@@ -21,6 +25,7 @@ interface IslandNodeProps {
   node: PitNodeModel
   state: PitNodeState
   canCommit: boolean
+  run: PitRun
   style?: CSSProperties
 }
 
@@ -82,7 +87,7 @@ const TYPE_COLOR: Record<PitNodeType, number> = {
  *                             player's current island.
  *   </button>
  */
-export function IslandNode({ node, state, canCommit, style }: IslandNodeProps) {
+export function IslandNode({ node, state, canCommit, run, style }: IslandNodeProps) {
   const ref = useRef<HTMLButtonElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const capZoneRef = useRef<HTMLDivElement | null>(null)
@@ -90,6 +95,9 @@ export function IslandNode({ node, state, canCommit, style }: IslandNodeProps) {
   const engine = useEffects()
   const setHoveredId = usePitUiStore((s) => s.setHoveredId)
   const startZoomIn = usePitUiStore((s) => s.startZoomIn)
+  // Subscribe with a memoised boolean — only this island re-renders
+  // when its hover flag flips, not every island in the map.
+  const isHovered = usePitUiStore((s) => s.hoveredId === node.id)
 
   const signpost = useMemo(() => computeSignpostLayout(node.id), [node.id])
   const ground = useMemo(() => computeGroundArea(node.id), [node.id])
@@ -110,6 +118,9 @@ export function IslandNode({ node, state, canCommit, style }: IslandNodeProps) {
   // Player feedback: every animation should be visible from the start.
   useEffect(() => {
     if (!engine) return
+    // Shop islands carry the merchant NPC — that's the visual signal,
+    // no need to layer the gold/coins shower on top.
+    if (node.type === 'shop') return
     const cap = capZoneRef.current
     if (!cap) return
 
@@ -238,6 +249,23 @@ export function IslandNode({ node, state, canCommit, style }: IslandNodeProps) {
         }}
         aria-hidden="true"
       />
+      {/* Shop island gets a tiny rigged merchant standing on the cap.
+          Offset horizontally from the signpost so the two don't sit
+          dead-aligned — the merchant reads as "in front" of the post. */}
+      {node.type === 'shop' && (
+        <CharacterSprite
+          def={MERCHANT}
+          width={capZoneWidthCss}
+          height={Math.max(48, capZoneHeightCss + 48)}
+          scale={3}
+          anchorY={0.95}
+          className={styles.merchant}
+          style={{
+            left: `${capZoneLeftCss + 16}px`,
+            top: `${capZoneTopCss - 40}px`,
+          }}
+        />
+      )}
       {/* Glyph overlay, positioned over the signpost plaque. Tilt
           follows the signpost's pose so the glyph stays legible
           regardless of the variant. */}
@@ -264,6 +292,7 @@ export function IslandNode({ node, state, canCommit, style }: IslandNodeProps) {
           ▼
         </span>
       )}
+      {isHovered && <NodePopover node={node} run={run} />}
     </button>
   )
 }

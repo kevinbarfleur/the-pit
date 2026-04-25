@@ -1,9 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react'
 import type { PitRun } from '../../../hooks/usePitRun'
 import { DepthGauge } from './DepthGauge'
-import { NodeDetailPanel } from './NodeDetailPanel'
 import { NodeMap } from './NodeMap'
-import { PitShaft } from './PitShaft'
 import { ChainLayer } from './ChainLayer'
 import styles from './PitView.module.css'
 
@@ -15,7 +13,7 @@ import styles from './PitView.module.css'
  * cleared ground behind.
  */
 
-export const ROW_HEIGHT = 200
+export const ROW_HEIGHT = 300
 /** Fraction of the viewport where the current node is pinned vertically. */
 const CAMERA_ANCHOR_FRAC = 0.55
 
@@ -41,14 +39,6 @@ export function PitView({ run }: PitViewProps) {
 
   return (
     <div className={styles.root} id="pit-map-root">
-      <PitShaft />
-      <DepthGauge
-        currentDepth={run.currentDepth}
-        minDepth={minDepth}
-        maxDepth={maxDepth}
-        cameraOffset={cameraOffset}
-        rowHeight={ROW_HEIGHT}
-      />
       <div className={styles.shaft} ref={shaftRef}>
         <div
           className={styles.shaftInner}
@@ -67,8 +57,14 @@ export function PitView({ run }: PitViewProps) {
             rowHeight={ROW_HEIGHT}
           />
         </div>
+        <DepthGauge
+          currentDepth={run.currentDepth}
+          minDepth={minDepth}
+          maxDepth={maxDepth}
+          cameraOffset={cameraOffset}
+          rowHeight={ROW_HEIGHT}
+        />
       </div>
-      <NodeDetailPanel run={run} />
     </div>
   )
 }

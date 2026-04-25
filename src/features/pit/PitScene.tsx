@@ -1,5 +1,9 @@
-import { useCallback, useEffect } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
+import { useNavigate } from '@tanstack/react-router'
 import { usePitRun } from '../../hooks/usePitRun'
+import { usePlayerIdentity } from '../../hooks/usePlayerIdentity'
+import { usePlayerProfile } from '../../hooks/usePlayerProfile'
+import { useDepthSync } from '../../hooks/useRunLifecycle'
 import { usePitUiStore } from '../../stores/pitUiStore'
 import { ChainsProvider } from '../../components/pixi/ChainsProvider'
 import { PitView } from './map/PitView'
@@ -7,19 +11,26 @@ import { ZoomTransition } from './transition/ZoomTransition'
 import { RoomForType } from './rooms/RoomForType'
 import styles from './PitScene.module.css'
 
-/** DOM id of the element into which the ChainsEngine mounts its canvas.
- *  Rendered inside the scene so the chains canvas participates in the
- *  same stacking context as the islands. */
 const CHAINS_HOST_ID = 'pit-chains-host'
 
 /**
  * Top-level orchestrator for `/pit`. Owns the scene state machine and
  * routes rendering between the map, the zoom transition, and the node
- * rooms. Deliberately a single mount point — no TanStack sub-routes — so
- * the zoom transition can blend the map and the room without a route swap.
+ * rooms.
+ *
+ * Convex wiring (perpetual descent): on mount we boot the local run
+ * state from the player's persistent `seed` + `currentDepth` and let
+ * `usePitRun` take over. As the player commits deeper, `useDepthSync`
+ * pushes the new depth back to the profile — there is no run lifecycle,
+ * just a continuous progress signal. Escape returns to the hub without
+ * any "end" mutation; the next visit picks up exactly where we left.
  */
 export function PitScene() {
+  const navigate = useNavigate()
+  const identity = usePlayerIdentity()
+  const profile = usePlayerProfile(identity.playerId)
   const run = usePitRun()
+
   const scene = usePitUiStore((s) => s.scene)
   const pendingCommit = usePitUiStore((s) => s.pendingCommit)
   const cancelTransition = usePitUiStore((s) => s.cancelTransition)
@@ -27,16 +38,35 @@ export function PitScene() {
   const returnToPit = usePitUiStore((s) => s.returnToPit)
   const startZoomOut = usePitUiStore((s) => s.startZoomOut)
 
-  // Escape key cancels a pending zoom / triggers room exit.
+  // Boot the local run state from the player's persistent seed +
+  // currentDepth exactly once per mount. `run.start` is a reducer
+  // dispatch; firing it again on the same seed would reset progress,
+  // so guard with a ref.
+  const startedRef = useRef(false)
+  useEffect(() => {
+    if (startedRef.current) return
+    if (!profile) return
+    run.start(profile.seed, profile.currentDepth)
+    startedRef.current = true
+  }, [profile, run])
+
+  useDepthSync(identity.playerId, run.currentDepth)
+
+  const handleExit = useCallback(() => {
+    void navigate({ to: '/' })
+  }, [navigate])
+
+  // Escape: cancel transition / leave room / leave map.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return
       if (scene === 'zooming-in') cancelTransition()
       else if (scene === 'in-node') startZoomOut()
+      else if (scene === 'pit') handleExit()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [scene, cancelTransition, startZoomOut])
+  }, [scene, cancelTransition, startZoomOut, handleExit])
 
   const onZoomInComplete = useCallback(() => {
     if (!pendingCommit) return
@@ -59,9 +89,6 @@ export function PitScene() {
 
   return (
     <div className={styles.scene} data-zoom={showTransition ? 'active' : 'idle'}>
-      {/* Host for the ChainsEngine canvas. Lives inside the scene's
-          stacking context so chains can sit behind the islands but
-          still draw above the shaft's background walls. */}
       <div id={CHAINS_HOST_ID} className={styles.chainsHost} aria-hidden="true" />
       <ChainsProvider mountTargetId={CHAINS_HOST_ID}>
         {showMap && <PitView run={run} />}
@@ -78,6 +105,16 @@ export function PitScene() {
           />
         )}
       </ChainsProvider>
+      {scene === 'pit' && (
+        <button
+          type="button"
+          className={styles.exitBtn}
+          onClick={handleExit}
+          data-pit-chrome
+        >
+          ← surface <span className={styles.exitKbd}>esc</span>
+        </button>
+      )}
     </div>
   )
 }

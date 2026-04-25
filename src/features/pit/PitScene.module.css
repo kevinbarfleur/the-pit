@@ -47,3 +47,36 @@
   justify-content: center;
   pointer-events: auto;
 }
+
+.exitBtn {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 40;
+  padding: 6px 12px;
+  background: var(--color-pit-ink-2);
+  border: 1px solid var(--color-pit-line);
+  color: var(--color-pit-bone);
+  font-family: var(--font-display);
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.exitBtn:hover {
+  border-color: var(--color-pit-gild);
+  color: var(--color-pit-bone-bright);
+}
+
+.exitKbd {
+  display: inline-block;
+  padding: 1px 6px;
+  font-size: 11px;
+  background: var(--color-pit-ink);
+  color: var(--color-pit-gild);
+  border: 1px solid var(--color-pit-line-bright);
+}

@@ -37,6 +37,7 @@ export function NodeMap({ run, minDepth, maxDepth, rowHeight }: NodeMapProps) {
                 node={node}
                 state={run.nodeState(node)}
                 canCommit={run.canCommit(node)}
+                run={run}
                 style={{
                   left: `${columnToPercent(node.column)}%`,
                 }}

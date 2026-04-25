@@ -38,3 +38,15 @@
   height: 2px;
   background: var(--color-pit-green);
 }
+
+.dim {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.soon {
+  color: var(--color-pit-dim);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}

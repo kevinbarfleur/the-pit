@@ -1,13 +1,39 @@
-.panel {
-  grid-column: 3;
-  position: relative;
-  padding: 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  overflow: auto;
+.popover {
+  position: absolute;
+  bottom: calc(100% + 12px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: 240px;
+  pointer-events: none;
+  z-index: 5;
+  /* Subtle entrance — step easing only, per project rule. */
+  animation: popoverIn 120ms steps(2) both;
+}
+
+.popover::after {
+  /* Tiny pixel-art "tail" pointing down to the island. */
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  margin-left: -3px;
+  width: 6px;
+  height: 6px;
   background: var(--color-pit-ink-2);
   border-left: 1px solid var(--color-pit-line);
+  border-bottom: 1px solid var(--color-pit-line);
+  transform: rotate(-45deg);
+}
+
+@keyframes popoverIn {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 4px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
 }
 
 .blurb {
@@ -54,13 +80,6 @@
   letter-spacing: 0.08em;
   text-transform: uppercase;
   margin-bottom: 6px;
-}
-
-.legend {
-  font-size: 11px;
-  line-height: 1.8;
-  color: var(--color-pit-bone);
-  opacity: 0.85;
 }
 
 .commitHint {

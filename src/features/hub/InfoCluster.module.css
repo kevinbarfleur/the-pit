@@ -1,0 +1,66 @@
+/*
+ * Runic info container orbiting the central CTA. Wraps a PixelFrame so
+ * the corners + runes are inherited directly (┏╍ ╍┓ ┗╍ ╍┛ + ◈ × 4).
+ *
+ * Polar placement: rotate to angle, push outward by radius, rotate
+ * back to upright. A per-cluster `--tilt` rotates the frame a few
+ * degrees off-axis so the five clusters don't read as a clean stamped
+ * pattern — wanted: deliberate hand-drawn imperfection.
+ *
+ * `--angle`, `--radius`, `--tilt` are injected per instance via inline
+ * style on the wrapper div.
+ */
+
+.cluster {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 200px;
+  pointer-events: none;
+  z-index: 3;
+  transform:
+    translate(-50%, -50%)
+    rotate(var(--angle))
+    translate(0, calc(var(--radius) * -1))
+    rotate(calc(var(--angle) * -1))
+    rotate(var(--tilt));
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  text-align: center;
+  padding: 4px 8px;
+}
+
+.glyph {
+  font-size: 28px;
+  line-height: 1;
+  color: var(--color-pit-gild);
+  margin-bottom: 2px;
+  text-shadow: 1px 1px 0 #000;
+}
+
+.label {
+  font-size: 12px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--color-pit-dim);
+  font-family: var(--font-sans);
+}
+
+.value {
+  font-size: 26px;
+  font-family: var(--font-display);
+  letter-spacing: 0.08em;
+  color: var(--color-pit-bone-bright);
+  text-shadow: 1px 1px 0 #000;
+}
+
+.toneGild   .value { color: var(--color-pit-gild); }
+.toneAmber  .value { color: var(--color-pit-amber); }
+.toneViolet .value { color: var(--color-pit-violet); }
+.toneRed    .value { color: var(--color-pit-red); }
+.toneCyan   .value { color: var(--color-pit-cyan); }

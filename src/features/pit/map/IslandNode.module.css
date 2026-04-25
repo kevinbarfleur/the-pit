@@ -37,6 +37,15 @@
   pointer-events: none;
 }
 
+/* Pixi-rendered NPC layered on top of the island art. Positioning is
+ * driven by inline style — left/top come from the cap zone so the
+ * figure's feet rest on the visible rock surface. */
+.merchant {
+  position: absolute;
+  pointer-events: none;
+  z-index: 2;
+}
+
 /*
  * Glyph rendered over the plaque. Positioned in CSS px by IslandNode
  * based on the signpost layout exposed by drawIsland. Font size is
