@@ -74,11 +74,36 @@ Moteur de combat tick-based 4Hz avec action meters par carte/intent, ressource F
 
 ## Technical approach
 
-### Réuse existant
+> **Lire d'abord [`REUSE-INVENTORY.md`](./REUSE-INVENTORY.md) §1, §4, §5.1, §6, §7, §9.**
 
-- `src/pixi/CharacterEngine.ts` — sprite animations idle/attack/hurt déjà câblés
-- `src/game/characters/defs/*` — 12 enemy defs (HP, sprite, anims) prêts à utiliser
-- `src/game/characters/types.ts` — types character
+### Réuse existant (chemins exacts)
+
+**Pixi rigging** :
+- `src/pixi/CharacterEngine.ts` — animations idle/attack/hurt déjà câblées. Utiliser `triggerState(char, 'attack')` au tick de hit hero, `triggerState(char, 'hurt')` au tick où l'ennemi prend des dégâts. Constantes `ATTACK_DURATION=35`, `HURT_DURATION=30` à respecter pour timing visuel. **Ne pas réécrire de state machine animation.**
+- `src/game/characters/types.ts` — `CharacterDef`, `CharacterInstance`, `CharacterState`. Types fixes.
+- 12 character defs (`src/game/characters/defs/*.ts`) — bestiaire V1. Chaque def = enemy potentiel. Le combat doit charger un def selon `nodeId` (mapping à définir, ex : `D001-D005 = dummy + zombie`, `D006-D010 = bandit + skeleton`, etc.).
+- `src/features/characters/CharacterSprite.tsx` — wrapper React qui mount un `CharacterEngine` instance. **Réutiliser pour rendre hero ET enemy in-combat**, ne pas créer un nouveau composant pixi.
+
+**Effets visuels** (`src/pixi/EffectsEngine.ts` — cf. `REUSE-INVENTORY.md` §5.1) :
+- `emitBurst({ x, y, variant })` au moment du hit (variant = mood narratif : `danger` pour hit puissant, `default` pour hit standard, `primary` pour heal/regen).
+- `shockwave({ x, y, color, size })` au crit (élargit l'impact visuellement).
+- `drip({ x, y, color, count })` pour effet sang sur les hits ennemis (variant drip-pool en attache déjà ; ici utiliser le `drip` one-shot).
+- **Ne pas réécrire de système de particules à la main.** L'engine a déjà 320 particles pool, 48 ring pool, etc.
+
+**UI atoms** (`src/components/ui/*` — cf. §1, §1.1 mood narratif) :
+- `Bar.tsx` / `SegBar.tsx` — HP bars hero+enemy, Focus orb, action meters par carte.
+- `Pill.tsx` — affichage stats compactes en combat (Focus actuel, dmg next hit, etc.).
+- `Tier.tsx` — affichage rareté carte qui trigger.
+- `Button.tsx` — actions volontaires en combat. **Mood narratif** :
+  - `Focus burst` (Espace, conso 50 Focus) → `variant="danger"` (engager violence/perte). Gros CTA juicy.
+  - `Retreat` → `variant="danger"` (perdre torche, engagement avec violence/peur).
+  - `Pause / Resume` → `variant="ghost"` (neutre, navigation).
+  - `Speed x1/x2/x4` (cf. PRD-12) → `variant="default"` (embers ambient).
+- `Card.tsx` / `PixelFrame.tsx` — encadrement du stage de combat.
+
+**Hooks** :
+- `useEffects()` (`src/hooks/useEffects.ts`) — pour appeler burst/shockwave/drip au tick de hit.
+- `useAttachedEffect()` — pour attacher un effet continu sur le sprite (ex : ennemi qui brûle = `attach(spriteEl, 'embers', { color: 0xff6633 })`).
 
 ### À créer
 
@@ -92,16 +117,23 @@ Moteur de combat tick-based 4Hz avec action meters par carte/intent, ressource F
     log: CombatEvent[]
   }
   ```
-- `src/game/pit/combat/engine.ts` : `tick(state, hero, enemy, dt) → state'`. Pure function, déterministe.
-- `src/game/pit/combat/damage.ts` : pure functions damage compute + crit roll
-- `src/game/pit/combat/rng.ts` : seeded RNG (mulberry32 ou xorshift) pour reproductibilité
-- `src/components/pit/CombatStage.tsx` : composant React qui drive le RAF loop, render hero/enemy sprites
-- `src/components/pit/MeterBar.tsx` : barre meter visuelle
-- `src/components/pit/IntentDisplay.tsx` : affiche intent enemy
-- `src/components/pit/FocusOrb.tsx` : orb Focus UI
+- `src/game/pit/combat/engine.ts` — `tick(state, hero, enemy, dt) → state'`. Pure function, déterministe. **Pas de side effect** ; l'I/O Pixi est appelée dans le composant React qui consomme le state.
+- `src/game/pit/combat/damage.ts` — pure functions damage compute + crit roll.
+- `src/game/pit/combat/rng.ts` — **utiliser `pure-rand`** déjà installé (cf. `src/game/pit/generate.ts` qui s'en sert via `xoroshiro128plus`). Ne pas ajouter une nouvelle lib RNG.
+- `src/features/pit/rooms/CombatRoom.tsx` — **remplir le stub existant** (pas créer un nouveau component à côté). Il monte :
+  - Hero `CharacterSprite` (def `hero` cf. PRD-03)
+  - Enemy `CharacterSprite` (def chargé selon node)
+  - HP bars (`<Bar>` × 2)
+  - Focus orb (`<SegBar>` ou nouveau `<FocusOrb>` si vraiment nécessaire — sinon SegBar custom)
+  - Action meters par carte équipée (`<Bar>` × 4)
+  - Intent display enemy (composer `<Pill>` + `<Tier>` ou créer `IntentDisplay.tsx` si besoin de logique spécifique)
+  - Buttons : Focus burst, Retreat, Speed (cf. mood narratif ci-dessus)
+- `src/features/pit/rooms/EliteRoom.tsx` + `BossRoom.tsx` — étendre le même pattern que `CombatRoom` avec multi-intents pour boss (PRD-08).
 - `convex/combat.ts` :
-  - `validateCombat(playerId, seed, combatLogHash)` mutation
-  - Re-run pure engine côté serveur, compare hash, persists outcome (cf. PRD-07 pour loot)
+  - `startCombat(nodeId)` mutation — génère seed, retourne combat init state.
+  - `validateCombat(playerId, seed, combatLogHash)` mutation — re-run pure engine, compare hash, persists outcome.
+
+> ❌ **Ne pas créer** `CombatStage.tsx` séparé si `CombatRoom.tsx` peut héberger la logique. La séparation Stage/Room ajoute un niveau d'indirection sans gain.
 
 ### RAF loop
 

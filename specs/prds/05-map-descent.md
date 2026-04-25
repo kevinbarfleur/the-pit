@@ -87,27 +87,81 @@ Boss floors (D10, D25 V1) sont visuellement différents même de loin :
 
 ## Technical approach
 
-### Réuse existant
+> **Lire d'abord [`REUSE-INVENTORY.md`](./REUSE-INVENTORY.md) §1, §2, §5.1, §5.2, §6, §7, §9.**
+>
+> ⚠️ **Le pit map est l'élément le plus avancé du repo. Aucun composant ne doit être réécrit. Tout PRD-05 = câblage des rooms + replay + retreat.**
 
-- `src/game/pit/generate.ts` — map gen chunk-based, déterministe seedé
-- `src/game/pit/types.ts` — node types & states
-- `src/game/pit/rewardScale.ts` — scaling rewards par depth
-- `src/pixi/ChainsEngine.ts` — chains visuelles entre nodes (V1 inchangé)
-- `src/components/pixi/ChainsProvider.tsx` — provider engine
-- `src/hooks/usePitRun.ts` — déjà câble seed + currentDepth
-- `src/hooks/useChains.ts` — utilise chains engine
+### Réuse existant (chemins exacts)
+
+**Game logic pure** (`src/game/pit/`) — algos critiques, ne pas refaire :
+- `src/game/pit/generate.ts` — map gen chunk-based, déterministe seedé. Anti-crossing strict + path walking + convergence boss déjà implémentés et **fuzz-testés** (`generate.fuzz.test.ts`). **Ne pas modifier la logique core ; étendre via params si besoin.**
+- `src/game/pit/types.ts` — `PitNode`, `PitNodeType` (8), `PitNodeState` (6), `PitChunk`, `PitRunState`, `PitGraph`, constantes `CHUNK_HEIGHT=20`, `MAX_COLUMNS=3`, `STARTING_DEPTH=50`, `BOSS_EVERY=20`. **Source de vérité types.**
+- `src/game/pit/rewardScale.ts` — `rewardScaleBp(depth)` + `farmRewardScaleBp(currentDepth, nodeDepth)` (×0.4 ≈ `10000 − 600×Δ` clamped). Fuzz-testé. **Ne pas réimplémenter** une nouvelle fonction de dégradation.
+
+**Pit feature components** (`src/features/pit/`) — colonne vertébrale :
+- `src/features/pit/PitScene.tsx` + `.module.css` — orchestrateur scene state machine `pit / zooming-in / in-node`. **Cœur du gameplay.** Étendre pour gérer retreat, replay confirm, mais ne pas remplacer.
+- `src/features/pit/map/PitView.tsx` + `.module.css` — viewport vertical, materialise window de chunks. **Gère déjà le lazy-loading** des chunks visibles.
+- `src/features/pit/map/NodeMap.tsx` + `.module.css` — grid 3 colonnes par depth, rendu IslandNode. **Layout déjà défini.**
+- `src/features/pit/map/IslandNode.tsx` + `.module.css` — bouton îlot avec hover effect mappé par node type :
+  ```
+  combat   → 'pulse'      elite    → 'embers'
+  boss     → 'embers'     event    → 'sparkle'
+  shop     → 'coins'      rest     → 'grass'
+  cache    → 'sparkle'    treasure → 'godray'
+  ```
+  **Mapping déjà câblé. Ne pas réécrire.**
+- `src/features/pit/map/drawIsland.ts` — projection 3D iso world→screen + jitter déterministe par id + rendu pixel-art cap/signpost/décor. **Algo custom, ne pas refaire.**
+- `src/features/pit/map/NodePopover.tsx` + `.module.css` — popover inline détails (type/threat/links). PRD-06 (threat tier) viendra étendre cet existing popover, pas créer un autre.
+- `src/features/pit/map/IslandPreview.tsx` + `.module.css` — tooltip détaillé îlot.
+- `src/features/pit/map/DepthGauge.tsx` + `.module.css` — barre latérale depth + ticks milestones. PRD-08 (boss markers D10/D25/D50/D100) ajoute des ticks ici, pas un autre composant.
+- `src/features/pit/map/ChainLayer.tsx` — sync chains entre nodes via `ChainsEngine`. PRD-05 garde tel quel.
+
+**Transitions** :
+- `src/features/pit/transition/ZoomTransition.tsx` + `.module.css` — animation continue map ↔ room. **À conserver. Pas un swap de route ; c'est un zoom.** (cf. memoire user : "zoom continu, pas un swap de route".)
+
+**Rooms** (`src/features/pit/rooms/`) :
+- `src/features/pit/rooms/RoomForType.tsx` — dispatcher par `PitNodeType` → CombatRoom / EventRoom / ShopRoom / RestRoom / CacheRoom / TreasureRoom / EliteRoom / BossRoom. **Branchement déjà fait** ; PRD-05 = remplir les stubs (avec PRD-04 pour combat).
+- `src/features/pit/rooms/RoomStub.tsx` + `.module.css` — layout générique room vide. Réutiliser comme base des rooms peu interactives V1 (event, shop, rest, cache stubs).
+- Stubs : `CombatRoom.tsx` (PRD-04), `EliteRoom.tsx` (PRD-04+08), `BossRoom.tsx` (PRD-04+08), `EventRoom.tsx`, `ShopRoom.tsx`, `RestRoom.tsx`, `CacheRoom.tsx`, `TreasureRoom.tsx`. **Remplir, pas créer en parallèle.**
+
+**Pixi engines** :
+- `src/pixi/ChainsEngine.ts` — Verlet rope, catenary, GRAVITY=600, DAMPING=0.985, ITERATIONS=12. **Ne pas réécrire.** Variants visuels (cap-hugging cascade, spring/event-spring) déjà supportés.
+- `src/pixi/EffectsEngine.ts` — pour boss telegraph (glow), confirmation popups (sparkle/coins selon mood), retreat effect (drips au moment du wipe). Utiliser `attach(spriteEl, kind, config)` ou `emitBurst`/`shockwave`. Listing complet des `AttachKind` dans `REUSE-INVENTORY.md` §5.1.
+
+**Hooks** :
+- `src/hooks/usePitRun.ts` — state local de la run : `start(seed, depth)`, `commit(node)`, `registerClear()`, expose `window` (MaterializedWindow) + `currentDepth`. **À étendre** pour gérer replay re-engage (déplace `currentDepth` vers le node clear) et retreat (-1 floor, -1 torch).
+- `src/hooks/useRunLifecycle.ts` / `useDepthSync` — déjà push depth → Convex throttled.
+- `src/hooks/useChains.ts` — sync chain specs.
+- `src/hooks/useEffects.ts` — pour boss glow / replay popup mood.
+
+**UI atoms** (`src/components/ui/*` — cf. §1, §1.1 mood narratif) :
+- `Button.tsx` — actions sur popovers. **Mood narratif** :
+  - `Engage` (descend dans node combat/elite/boss) → `variant="danger"` (sang). Engager avec violence.
+  - `Engage` (descend dans node rest) → `variant="primary"` (herbe). Mood vie/calme.
+  - `Engage` (treasure/event/shop) → `variant="default"` (embers ambient).
+  - `Replay (loot ×0.4)` → `variant="danger"` (re-engager violence).
+  - `Retreat` → `variant="danger"` (perdre torche, mood violence/peur).
+  - `Confirm popup actions` → `variant="ghost"` pour cancel ; mood-matched pour confirm.
+- `Pill.tsx`, `Tier.tsx` — affichage threat/tier dans popover (cf. PRD-06).
+- `PixelFrame.tsx`, `Card.tsx`, `Panel.tsx` — encadrement popovers.
+
+**Convex** :
+- `convex/schema.ts` — étendre avec table `node_states`.
+- `convex/profiles.ts` — `updateDepth` (monotone) déjà présent. Ajouter mutation pour retreat (decrement guarded by torch).
 
 ### À créer
 
-- `src/components/pit/PitMap.tsx` (refait) : container scroll vertical, render NodeMap + ChainLayer
-- `src/components/pit/NodeView.tsx` : un node visuel, selon state + type
-- `src/components/pit/ReplayConfirmDialog.tsx` : popup confirmation re-engage
-- `src/components/pit/ReplayModifierBadge.tsx` : badge modifier sur node replay
-- `src/game/pit/replayModifiers.ts` : logique des 3 modifiers
+- `src/game/pit/replayModifiers.ts` — logique 3 modifiers V1 (`swift`, `armored`, `hollow`), depth-seeded.
+- `src/components/pit/ReplayConfirmDialog.tsx` — popup confirmation re-engage. Composer `<PixelFrame>` + `<Card>` + `<Pill>` + `<Button>`. **Pas de styles custom from scratch.**
 - `convex/nodeStates.ts` :
-  - `getNodeStates(playerId, chunkIdx)` query
-  - `markNodeCleared(playerId, nodeId, modifier?)` mutation
-- Étend schema (`convex/schema.ts`) : table `node_states`
+  - `getNodeStates(playerId, chunkIdx)` query.
+  - `markNodeCleared(playerId, nodeId, modifier?)` mutation.
+
+> ❌ **Ne pas créer** :
+> - `PitMap.tsx` (existe sous le nom `PitView.tsx` + `NodeMap.tsx`)
+> - `NodeView.tsx` (existe sous le nom `IslandNode.tsx`)
+> - `ReplayModifierBadge.tsx` séparé (intégrer le badge dans `NodePopover.tsx` existant)
+> - Aucun nouveau composant pit map ; étendre les existants.
 
 ### Pre-conditions
 

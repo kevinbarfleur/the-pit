@@ -57,32 +57,40 @@ Avatar Twitch fetched + cached côté client, fallback silhouette si erreur.
 
 ## Technical approach
 
-### Réuse existant
+> **Lire d'abord [`REUSE-INVENTORY.md`](./REUSE-INVENTORY.md) §1, §6, §9.** Tout composant existant doit être étendu, pas dupliqué.
 
-- `src/hooks/usePlayerProfile.ts` (déjà câblé Convex query — adapter pour playerId via session)
-- `convex/players.ts` (insert/get player — adapter pour Twitch lookup)
-- `convex/profiles.ts` (getByPlayer query, updateDepth mutation)
-- `convex/schema.ts` (players + profiles tables — modif pour twitchUserId requis)
+### Réuse existant (chemins exacts)
+
+- `convex/schema.ts` — étendre `players` (ajouter `twitchUserId`, `twitchDisplayName`, `twitchAvatarUrl`) + ajouter table `sessions`. Garder `profiles` actuel + l'étendre.
+- `convex/players.ts` — refactor `getOrCreateByAnonId` → `findByTwitchUserId` + `createFromTwitchProfile` (server-side only).
+- `convex/profiles.ts` — `getByPlayer` query, `updateDepth` mutation : conserver, brancher au playerId resolved depuis session.
+- `src/hooks/usePlayerProfile.ts` — conserver l'API `(playerId) → Profile | null`. Le `playerId` viendra de `useSession()` au lieu de `useAnonId()`.
+- `src/hooks/usePlayerIdentity.ts` — refactor : retire le path anonId, branche sur le hook `useSession` (à créer).
+- `src/hooks/useRunLifecycle.ts` / `useDepthSync` — inchangés, ils prennent déjà un `playerId`.
+- `src/routes/title.tsx` + `src/routes/title.module.css` — **réutiliser le layout / mood / ASCII art** comme base de `/auth`. Ne pas refaire un écran from scratch.
+- `src/components/ui/Button.tsx` — utiliser pour le CTA OAuth. **Variant `danger` (mood "engage with the pit", drip-pool sanglant)** car connecter à Twitch = entrer dans le danger ; cf. `REUSE-INVENTORY.md` §1.1. `juicy={true}`.
+- `src/components/ui/{PixelFrame, Pill, Footer, Heraldry, Ribbon}.tsx` — chrome de la page `/auth`.
+- `EffectsProvider` / `ChainsProvider` (déjà montés `__root.tsx`) — disponibles dans la page `/auth` aussi (pour ambiance), pas besoin de re-monter.
 
 ### À supprimer
 
-- `src/hooks/useAnonId.ts` (obsolète)
-- `src/hooks/usePlayerIdentity.ts` anonId path (refactor pour Twitch session uniquement)
-- Tout localStorage UUID logic
+- `src/hooks/useAnonId.ts` (obsolète — auth obligatoire override anon).
+- Tout call `useAnonId()` dans le code (audit grep avant suppression — `usePlayerIdentity.ts` au minimum, vérifier aussi `useRunLifecycle.ts`).
+- Toute logique localStorage UUID liée à l'identité.
 
 ### À ajouter
 
 - `convex/auth/twitch.ts` :
-  - `startTwitchOAuth()` action — retourne URL d'autorisation
-  - `completeTwitchOAuth(code, state)` action — exchange code, fetch user, find-or-create players row, set session cookie
-  - `getSession()` query — retourne session valide ou null
-  - `logout()` mutation — invalide session
-  - Refresh token rotation server-side
-- `convex/middleware/requireAuth.ts` — wrapper toutes les mutations/queries protégées
-- `src/routes/auth.tsx` — page login dédiée
-- `src/components/auth/TwitchLoginButton.tsx` — bouton CTA OAuth
-- `src/hooks/useSession.ts` — hook qui exposes current session (twitchDisplayName, avatarUrl)
-- `src/components/auth/AuthGuard.tsx` — composant qui redirect `/auth` si pas de session
+  - `startTwitchOAuth()` action — retourne URL d'autorisation Twitch (Helix `/oauth2/authorize`).
+  - `completeTwitchOAuth(code, state)` action — exchange code, fetch user (`/helix/users`), find-or-create `players` row, crée `sessions` row, set session cookie.
+  - `getSession()` query — retourne session valide ou null (driven par cookie côté serveur).
+  - `logout()` mutation — invalide session.
+  - Refresh token rotation server-side (cron Convex hourly).
+- `convex/middleware/requireAuth.ts` — wrapper toutes les mutations/queries protégées (resolve `playerId` depuis session cookie).
+- `src/routes/auth.tsx` (nouveau) — page login dédiée. **Utiliser `<PixelFrame>` + `<Button variant="danger" juicy>` + layout calqué sur `title.tsx`.**
+- `src/components/auth/TwitchLoginButton.tsx` — wrapper `<Button variant="danger" juicy>` + icône Twitch + label `Connect with Twitch`. **Pas un nouveau composant bouton from scratch.**
+- `src/hooks/useSession.ts` — hook qui expose `{ playerId, twitchDisplayName, twitchAvatarUrl, isAuthenticated, logout() }`.
+- `src/components/auth/AuthGuard.tsx` — composant wrapper qui redirect `/auth` si pas de session. Monté dans `__root.tsx` autour des routes protégées.
 
 ### Pre-conditions à respecter
 

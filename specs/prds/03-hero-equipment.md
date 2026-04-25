@@ -75,12 +75,29 @@ Tooltip détaillé sur hover de chaque stat.
 
 ## Technical approach
 
-### Réuse existant
+> **Lire d'abord [`REUSE-INVENTORY.md`](./REUSE-INVENTORY.md) §1, §4.**
 
-- `src/pixi/CharacterEngine.ts` — sprite state machine idle/attack/hurt déjà rigé
-- `src/game/characters/types.ts` — types character rigging déjà définis
-- `src/game/characters/palette.ts` — palettes existantes
-- `src/game/characters/defs/*` — 12 enemy defs disponibles, peut servir de modèle pour hero def
+### Réuse existant (chemins exacts)
+
+**Pixi rigging & animations** :
+- `src/pixi/CharacterEngine.ts` — sprite state machine idle/attack/hurt **déjà fait**. Utiliser `createCharacter`, `updateCharacter`, `triggerState`. **Ne pas refaire.**
+- `src/game/characters/types.ts` — `CharacterDef`, `PartSpec`, `RigNode`, `AnimationFn`, `CharacterState`. Le hero def doit suivre exactement ce contract.
+- `src/game/characters/palette.ts` — palettes pixel art existantes.
+- 12 character defs (`src/game/characters/defs/*.ts`) — modèles à imiter pour le hero def. Voir notamment `templar.ts` ou `bandit.ts` comme référence de structure (parts + rig + animations override).
+- `src/features/characters/CharacterSprite.tsx` — wrapper React qui mount un `CharacterEngine` instance + RAF update. **Réutiliser tel quel** pour rendre le hero in-combat (pas besoin de `HeroSprite.tsx` dédié si `CharacterSprite` accepte déjà un `def` prop).
+- `src/features/characters/Bestiary.tsx` (route `/kit/characters`) — preview visuel du hero pendant développement.
+
+**UI atoms pour `/cards` & stats** :
+- `src/components/ui/Bar.tsx` / `SegBar.tsx` — pour HP / Focus / action meters côté hero.
+- `src/components/ui/Tier.tsx` — affichage rareté carte équipée.
+- `src/components/ui/Pill.tsx` — pills stats (HP, dmg, crit, etc.) résumées.
+- `src/components/ui/Card.tsx` — wrapper pour les slots équipables (cards UI cf. PRD-07).
+- `src/components/ui/Button.tsx` — actions equip/unequip/swap. **Mood narratif** (cf. `REUSE-INVENTORY.md` §1.1) :
+  - `Equip` (action calme, intégration) → `variant="primary"` (herbe — mood vie/croissance).
+  - `Unequip` / `Disenchant` (sacrifice carte) → `variant="danger"` (sang — mood violence/perte).
+  - `Inspect` / `Compare` → `variant="ghost"` (muet — info-only).
+  Ne pas raisonner « primary = action principale ».
+- `src/components/ui/Panel.tsx` + `PanelTitle.tsx` — encadrement panneau équipement.
 
 ### À créer
 
@@ -95,12 +112,18 @@ Tooltip détaillé sur hover de chaque stat.
     block: 0,
   } as const
 
-  export function computeHeroStats(base, equipped: Equipment, passives: PassiveId[]): HeroStats
+  export type HeroStats = typeof HERO_BASE
+  export function computeHeroStats(
+    base: HeroStats,
+    equipped: { mainhand?: CardId; body?: CardId; head?: CardId; charm?: CardId },
+    passives: PassiveId[],
+  ): HeroStats
   ```
-- `src/game/characters/defs/hero.ts` : character def avec sprite + animations (réuse mécanique des enemy defs)
-- `src/components/pit/HeroSprite.tsx` : composant pixi pour render hero in-combat
-- `src/components/cards/EquipmentPanel.tsx` : UI 4 slots (à utiliser dans `/cards` cf. PRD-07)
-- `src/components/cards/StatsPreview.tsx` : preview stats hero avec contributions par source
+- `src/game/characters/defs/hero.ts` — character def "the descender" suivant le contract `CharacterDef` (parts + rig + animations override si besoin). **Imiter la structure d'un def existant** (ex. `templar.ts`), pas créer un format parallèle.
+- `src/components/cards/EquipmentPanel.tsx` — UI 4 slots, composé de `<Card>` × 4 + `<Tier>` + `<Pill>`. Pas de styles custom from scratch ; CSS Module co-localisé.
+- `src/components/cards/StatsPreview.tsx` — preview stats hero avec contributions par source. Composé de `<Bar>` / `<Pill>` / `<Divider>`.
+
+> ❌ **Ne pas créer** un `HeroSprite.tsx` séparé si `CharacterSprite.tsx` peut être utilisé tel quel. Si `CharacterSprite` n'accepte pas encore le hero def, étendre ses props plutôt que dupliquer.
 
 ### Pre-conditions
 

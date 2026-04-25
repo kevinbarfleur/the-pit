@@ -67,31 +67,48 @@ Tabs verrouillés affichés en dim avec `(at DN)` suffix dans help docs (PRD-12)
 
 ## Technical approach
 
-### Réuse existant
+> **Lire d'abord [`REUSE-INVENTORY.md`](./REUSE-INVENTORY.md) §1, §3, §6, §8.**
 
-- `src/components/ui/Topbar.tsx` — chrome existant, prop `pills` déjà supportée
-- `src/components/ui/Menubar.tsx` — étend MenubarItem avec `dim?: boolean` déjà présent (cf. session précédente)
-- `src/routes/__root.tsx` — point d'entrée TanStack Router
-- `src/hooks/usePlayerProfile.ts` — données pour Topbar pills
+### Réuse existant (chemins exacts)
 
-### À supprimer
+**UI atoms** (utiliser tels quels) :
+- `src/components/ui/Topbar.tsx` + `Topbar.module.css` — chrome existant, prop `pills` déjà supportée. Réutiliser sans le réécrire.
+- `src/components/ui/Menubar.tsx` + `Menubar.module.css` — `MenubarItem` supporte déjà `dim?: boolean` ; ajouter `hidden?: boolean` si manquant pour la progressive disclosure (édit minimal, pas un nouveau composant).
+- `src/components/ui/Pill.tsx` — pour les pills de la Topbar (D047, scrap, shards, torch).
+- `src/components/ui/Footer.tsx` — chrome bottom si présent.
+- `src/components/ui/Button.tsx` — n'importe quel CTA dans les routes. **Choisir le `variant` selon le mood narratif de l'action** (cf. `REUSE-INVENTORY.md` §1.1) ; pas selon "primary = action principale".
+- `src/components/ui/{PixelFrame, Card, Panel, PanelTitle, Divider, Row, Heraldry, Ribbon, Kbd}.tsx` — pour structurer les pages stub (`/passives`, `/codex`).
 
-- `src/features/hub/HubPage.tsx`
-- `src/features/hub/HubChains.tsx`
-- `src/features/hub/InfoCluster.tsx`
-- `src/features/hub/HubPage.module.css`
-- `src/features/hub/InfoCluster.module.css`
-- `src/routes/index.tsx` (sera remplacé par redirect `/pit`)
+**Routes & providers** :
+- `src/routes/__root.tsx` — point d'entrée TanStack Router. Y monter `<AuthGuard>` (PRD-01) + `EffectsProvider` + `ChainsProvider` (déjà présents probablement, vérifier avant de modifier).
+- `src/routes/title.tsx` + `.module.css` — **recyclé pour `/auth`** (cf. PRD-01). Ne pas créer un écran auth from scratch.
+- `src/routes/pit.tsx` — déjà monte `PitScene`. Conserver. Wrapper dans `<AppShell active="D">`.
+- `src/routes/kit/*` — inchangé, public.
+
+**Features hub** (statut révisé) :
+- `src/features/hub/HubPage.tsx` + `HubChains.tsx` + `InfoCluster.tsx` — **NE PAS supprimer**. Les conserver comme :
+  1. Composants utilisables sur `/auth` (HubChains pour ambiance ; InfoCluster pour stats joueur après login).
+  2. Base potentielle d'un écran « post-login splash » V1.5 si besoin de cérémonie au retour de session.
+  Si non utilisés au end of Sprint 1, les laisser dormants (pas de coût).
+- `src/features/hub/HubPage.tsx` ne doit **plus être la landing page** par défaut (`/` redirige `/pit` après auth, ou `/auth` sinon).
+
+**Hooks** :
+- `src/hooks/usePlayerProfile.ts` — alimente Topbar pills via Convex live query.
+- `src/hooks/useSession.ts` (PRD-01, à créer) — alimente Topbar avatar + display name.
+
+### À retirer du flow par défaut (sans supprimer le code)
+
+- `src/routes/index.tsx` — refactor en redirect : si session valide → `/pit`, sinon `/auth`. Ne pas afficher de hub écran intermédiaire.
+- `src/routes/ilots.tsx` — auditer (Q2.2). Si inutilisé en runtime, marquer en route debug `/kit/ilots` ou supprimer après validation user.
 
 ### À créer
 
-- `src/routes/index.tsx` (nouveau) : redirect `/pit`
-- `src/routes/passives.tsx` : stub V1 (4 trees vides + scrap counter)
-- `src/routes/cards.tsx` : full V1 (cf. PRD-07)
-- `src/routes/codex.tsx` : stub V1
-- `src/routes/leaderboard.tsx` : full V1 (cf. PRD-11)
-- `src/components/layout/AppShell.tsx` : wrapper Topbar + Menubar partagé entre routes
-- `src/components/layout/TabUnlockGate.tsx` : composant qui gate l'affichage d'un onglet selon profile
+- `src/routes/passives.tsx` : stub V1 (4 trees vides + scrap counter). Réutiliser `<Card>` + `<Tier>` + `<Pill>` + `<Button variant="default" juicy>` (mood embers = ambient, neutre).
+- `src/routes/cards.tsx` : full V1 (cf. PRD-07).
+- `src/routes/codex.tsx` : stub V1. Réutiliser `<Card>` + Bestiary slice (`src/features/characters/CharacterSprite.tsx`) si pertinent.
+- `src/routes/leaderboard.tsx` : full V1 (cf. PRD-11). Réutiliser `<Tier>` pour les bandes (Surface/Shaft/Caverns…).
+- `src/components/layout/AppShell.tsx` : wrapper Topbar + Menubar partagé entre routes. **Doit composer Topbar + Menubar existants, pas en réécrire.**
+- `src/components/layout/TabUnlockGate.tsx` : helper qui calcule `unlockedTabs` depuis profile.
 
 ### Pattern d'usage
 

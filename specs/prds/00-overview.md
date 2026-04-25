@@ -8,6 +8,7 @@ Index des PRDs V1 alpha + glossaire de termes partagés. Lire en premier.
 
 | # | PRD | Sprint | État |
 |---|---|---|---|
+| — | [REUSE-INVENTORY](./REUSE-INVENTORY.md) | — | **lecture obligatoire** |
 | 01 | Identity & Persistence | 1 | draft |
 | 02 | App Shell & Routes | 1 | draft |
 | 03 | Hero & Equipment | 1 | draft |
@@ -106,6 +107,17 @@ Chaque PRD suit le template :
 7. **Acceptance criteria** — tests
 8. **Dependencies** — autres PRDs requis
 9. **Open questions** — décisions à acter
+
+## Politique de réuse — **lecture obligatoire avant tout commit**
+
+> Le repo a déjà ~110 fichiers de UI/feature/engine/hook avec beaucoup de polish accumulé (12 character defs riggés, EffectsEngine 11 attach kinds, ChainsEngine Verlet, pit map gen chunk-based fuzz-testé, transitions zoom continues, etc.).
+>
+> **Le Sprint 1 = câbler ces lego, pas en sculpter de nouveaux.**
+
+- 📘 **[`REUSE-INVENTORY.md`](./REUSE-INVENTORY.md)** — inventaire exhaustif des composants existants avec chemins exacts + mapping par PRD. À consulter **avant** d'introduire un nouveau composant.
+- 🧭 **§1.1 du REUSE-INVENTORY** : le `variant` de `<Button>` (`primary` / `danger` / `default` / `ghost`) désigne un **mood narratif**, pas un rôle UX. Ex : "Descendre dans le pit" utilise `variant="danger"` (sang) parce que mood = engager avec la violence — **même si c'est l'action principale de l'écran**.
+- 🚫 **Hard rule** : avant d'ouvrir un nouveau fichier `.tsx` / `.ts` / `.module.css`, vérifier qu'aucun existant ne couvre déjà le besoin (étendre une prop / variant plutôt que dupliquer). Si vraiment nouveau, justifier dans le commit message.
+- ✅ Chaque PRD a maintenant une section "Réuse existant (chemins exacts)" qui liste les fichiers à utiliser et ceux à NE PAS recréer.
 
 ## Notes
 
