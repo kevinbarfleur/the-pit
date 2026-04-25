@@ -1,5 +1,6 @@
 import { internalMutation, query } from './_generated/server'
 import { v } from 'convex/values'
+import { makeSeed } from './auth/_helpers'
 
 /**
  * Player rows are created server-side only, by the OAuth callback in
@@ -40,9 +41,8 @@ export const findOrCreateFromTwitch = internalMutation({
       lastSeenAt: now,
     })
 
-    // Seed for the procedural map. Stable across sessions so the same
-    // descent reveals the same shape every time.
-    const seed = twitchUserId.padStart(12, '0').slice(0, 12)
+    // Stable per-Twitch-id map seed (cf. auth/_helpers.makeSeed).
+    const seed = await makeSeed(twitchUserId)
 
     await ctx.db.insert('profiles', {
       playerId,

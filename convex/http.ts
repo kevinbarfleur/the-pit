@@ -44,7 +44,7 @@ http.route({
       )
     }
     return Response.redirect(
-      `${frontendUrl}/auth/complete?token=${encodeURIComponent(result.sessionToken)}`,
+      `${frontendUrl}/auth?token=${encodeURIComponent(result.sessionToken)}`,
       302,
     )
   }),

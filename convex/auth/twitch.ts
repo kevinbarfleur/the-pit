@@ -2,6 +2,7 @@ import { action, internalAction, internalMutation } from '../_generated/server'
 import { internal } from '../_generated/api'
 import { v } from 'convex/values'
 import { requireEnv } from '../_env'
+import { randomToken, sha256Hex } from './_helpers'
 
 /**
  * Twitch OAuth authorization URL builder.
@@ -18,9 +19,9 @@ import { requireEnv } from '../_env'
  *       - fetches the Twitch user,
  *       - calls `players.findOrCreateFromTwitch`,
  *       - creates a `sessions` row,
- *       - 302-redirects the browser to `<frontend>/auth/complete?token=...`.
- *  4. The `/auth/complete` page stores the token in localStorage and
- *     navigates to `/pit`.
+ *       - 302-redirects the browser to `<frontend>/auth?token=...`.
+ *  4. The `/auth` page detects the `?token=` query, persists it to the
+ *     session store (Zustand + localStorage), and navigates to `/pit`.
  *
  * Required Convex env vars (set with `convex env set <KEY> <VAL>`):
  *  - `TWITCH_CLIENT_ID`
@@ -33,20 +34,6 @@ import { requireEnv } from '../_env'
 const SCOPES = ['openid'] as const
 const STATE_TTL_MS = 10 * 60_000
 const SESSION_TTL_MS = 30 * 24 * 60 * 60_000
-
-function randomToken(byteLen = 32): string {
-  const bytes = new Uint8Array(byteLen)
-  crypto.getRandomValues(bytes)
-  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
-}
-
-async function sha256Hex(input: string): Promise<string> {
-  const buf = new TextEncoder().encode(input)
-  const digest = await crypto.subtle.digest('SHA-256', buf)
-  return Array.from(new Uint8Array(digest), (b) =>
-    b.toString(16).padStart(2, '0'),
-  ).join('')
-}
 
 export const getAuthUrl = action({
   args: {},

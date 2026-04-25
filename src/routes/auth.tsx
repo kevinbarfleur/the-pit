@@ -1,6 +1,8 @@
-import { useRef } from 'react'
-import { createFileRoute } from '@tanstack/react-router'
+import { useEffect, useRef } from 'react'
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useAttachedEffect } from '../hooks/useAttachedEffect'
+import { useSession } from '../hooks/useSession'
+import { useSessionStore } from '../stores/sessionStore'
 import { TwitchLoginButton } from '../components/auth/TwitchLoginButton'
 import styles from './title.module.css'
 import authStyles from './auth.module.css'
@@ -9,10 +11,16 @@ import authStyles from './auth.module.css'
  * Twitch OAuth landing page. Mandatory gateway before any gameplay
  * route (cf. specs/prds/01-identity-persistence.md).
  *
- * Layout / mood reuses `title.module.css` to stay coherent with the
- * existing splash treatment — same wordmark, same drip effect on the
- * glyphs. `?error=...` query param is rendered as a discreet line
- * above the CTA when present (e.g. cancelled OAuth, invalid state).
+ * Two responsibilities, same route:
+ *  1. **Login screen** — when there's no session and no incoming
+ *     handoff, show the wordmark + "Connect with Twitch" CTA.
+ *  2. **OAuth handoff** — when Convex's HTTP callback redirects here
+ *     with `?token=<sessionToken>`, persist the token to localStorage,
+ *     fire `notifySessionChanged()`, and navigate to `/pit`.
+ *
+ * Layout reuses `title.module.css` for visual coherence with the
+ * existing splash treatment (same wordmark, same drip effect).
+ * `?error=...` is surfaced as a discreet failure line.
  */
 
 const PIT_ASCII = String.raw`
@@ -32,19 +40,46 @@ const PIT_ASCII = String.raw`
 
 interface AuthSearch {
   error?: string
+  token?: string
 }
 
 export const Route = createFileRoute('/auth')({
   component: AuthPage,
   validateSearch: (search: Record<string, unknown>): AuthSearch => ({
     error: typeof search.error === 'string' ? search.error : undefined,
+    token: typeof search.token === 'string' ? search.token : undefined,
   }),
 })
 
 function AuthPage() {
-  const { error } = Route.useSearch()
+  const { error, token } = Route.useSearch()
   const wordmarkRef = useRef<HTMLPreElement | null>(null)
   useAttachedEffect(wordmarkRef, 'drips')
+
+  const { status } = useSession()
+  const setToken = useSessionStore((s) => s.setToken)
+  const navigate = useNavigate()
+
+  // Handoff path: Convex callback redirects here with ?token=...
+  // Persist + redirect /pit immediately. Runs before the "already
+  // authenticated" branch so a fresh login always wins.
+  useEffect(() => {
+    if (!token) return
+    setToken(token)
+    void navigate({ to: '/pit', replace: true })
+  }, [token, setToken, navigate])
+
+  // Already-authenticated path: skip the login screen entirely.
+  // AuthGuard treats /auth as public, so it never auto-routes us — we
+  // do it ourselves here.
+  useEffect(() => {
+    if (token) return
+    if (status === 'authenticated') {
+      void navigate({ to: '/pit', replace: true })
+    }
+  }, [token, status, navigate])
+
+  if (token) return null
 
   return (
     <main className={styles.page}>

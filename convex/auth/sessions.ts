@@ -1,5 +1,6 @@
 import { mutation, query } from '../_generated/server'
 import { v } from 'convex/values'
+import { sha256Hex } from './_helpers'
 
 /**
  * Session resolution + logout.
@@ -8,14 +9,6 @@ import { v } from 'convex/values'
  * lives in the client's localStorage. The server stores the hash so a
  * DB leak doesn't compromise live sessions.
  */
-
-async function sha256Hex(input: string): Promise<string> {
-  const buf = new TextEncoder().encode(input)
-  const digest = await crypto.subtle.digest('SHA-256', buf)
-  return Array.from(new Uint8Array(digest), (b) =>
-    b.toString(16).padStart(2, '0'),
-  ).join('')
-}
 
 export const getSession = query({
   args: { sessionToken: v.string() },
