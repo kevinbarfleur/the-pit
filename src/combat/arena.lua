@@ -25,6 +25,10 @@ Arena.__index = Arena
 local SWING_DUR = 35
 local CONNECT_AT = 0.5
 
+-- Statuts (DoT/altérations) — caps d'anti-dégénérescence (placeholders, cf. effects-design.md §4).
+local WEAKEN_CAP = 0.40    -- malus de valeur max (poison)
+local SHOCK_AMP_CAP = 2.00 -- +200% de dégâts-pris max (clamp dur, choc)
+
 local ROWS_Y = { 70, 104, 138 }
 
 -- Compo de démonstration (si aucune compo fournie) : reprend les stats de units.lua.
@@ -76,7 +80,13 @@ function Arena:makeUnit(spec, team)
     taunt = spec.taunt or (u and u.taunt) or false,
     shield = spec.shield or 0, maxShield = spec.shield or 0,
     atkTimer = self.rng:random() * spec.cd, -- décalage seedé -> pas de swings synchronisés
-    firstHit = true, poison = nil,
+    firstHit = true,
+    -- Statuts : poison = LISTE de stacks (axe « nombre ») ; burn/bleed/rot/shock = instances uniques.
+    dots = { poison = {} },
+    weaken = 0,    -- malus de valeur (poison) : réduit les valeurs PRODUITES par l'unité
+    atkSlow = 0,   -- slow de cadence (bleed) : rallonge le rechargement du timer d'attaque
+    shockAmp = 0,  -- amplification (choc) : l'unité prend +shockAmp de dégâts
+    regen = 0, regenAcc = 0, -- contre-DoT : soin au fil du temps
     swinging = false, swingAge = 0, swingHit = false,
     alive = true, target = nil,
   }
@@ -93,6 +103,12 @@ function Arena:spawn()
   end
   for _, spec in ipairs(self.rightComp or demoComp("right")) do
     table.insert(self.units, self:makeUnit(spec, "right"))
+  end
+  -- combat_start : arme les effets qui s'initialisent au début (ex. regen). shield_aura (résolu au
+  -- BUILD) n'a pas d'op combat -> ignoré gracieusement ici. ctx réutilisé.
+  for _, u in ipairs(self.units) do
+    self.ctx.arena, self.ctx.source, self.ctx.victim = self, u, u
+    Effects.run(u, "combat_start", self.ctx)
   end
   self.bus:emit("spawned", self.units) -- la couche render (re)construit ses rigs
 end
@@ -137,6 +153,10 @@ end
 -- opts : { ignoreShield?, silent?, poison?, source?, cause? }. Renvoie les PV réellement perdus.
 function Arena:damage(target, amount, opts)
   opts = opts or {}
+  -- CHOC : la cible choquée prend PLUS de dégâts (amplification AVANT le bouclier). Arrondi -> PV entiers.
+  if target.shockAmp and target.shockAmp > 0 and not opts.noShock then
+    amount = math.floor(amount * (1 + target.shockAmp) + 0.5)
+  end
   local raw = math.max(0, amount)
   local absorbed = 0
   amount = raw
@@ -162,6 +182,14 @@ function Arena:damage(target, amount, opts)
       poison = opts.poison, hpAfter = target.hp, shieldAfter = target.shield,
     })
   end
+  -- POURRITURE : ampute une fraction des PV MAX (perte permanente au combat). Min 1 ; re-clamp les PV.
+  if opts.amputate and opts.amputate > 0 and target.maxHp > 1 then
+    local cut = math.floor(raw * opts.amputate + 0.5)
+    if cut > 0 then
+      target.maxHp = math.max(1, target.maxHp - cut)
+      if target.hp > target.maxHp then target.hp = target.maxHp end
+    end
+  end
   if died then self.bus:emit("death", target) end
   return dealt
 end
@@ -172,6 +200,8 @@ function Arena:hit(a, target)
   ctx.arena, ctx.source, ctx.victim = self, a, target
   ctx.amount, ctx.dealt = a.dmg, 0
   Effects.run(a, "on_attack", ctx) -- peut modifier ctx.amount (ex. bonus 1re frappe)
+  -- Malus de VALEUR (poison) : une unité empoisonnée produit moins (dégâts réduits ici).
+  if a.weaken > 0 then ctx.amount = math.max(0, math.floor(ctx.amount * (1 - a.weaken))) end
 
   local dealt = self:damage(target, ctx.amount, { source = a, cause = "attack" })
   ctx.dealt = dealt
@@ -185,22 +215,97 @@ function Arena:hit(a, target)
   end
 end
 
+-- ── Tick des statuts (DoT / altérations) ──────────────────────────────────────────────────────
+-- Le SEUL bloc « ouvert » qui connaît les familles (la boucle de combat, elle, reste fermée). Ordre
+-- FIXE burn -> bleed -> poison -> rot -> choc -> regen (déterminisme). Accumulation ENTIÈRE (jamais de
+-- float infligé) -> reproductible à l'octet. Ajouter une famille = +1 bloc ICI + 1 op de pose.
+-- cf. docs/research/effects-design.md §1.B, effects-dot-families.md.
+function Arena:tickDots(u, frameDt)
+  local d = u.dots
+
+  -- BRÛLURE : intensité qui DÉCROÎT ; n'IGNORE PAS le bouclier (le feu lèche l'enveloppe d'abord).
+  local b = d.burn
+  if b then
+    b.remaining = b.remaining - frameDt
+    if b.decayEvery then
+      b.decayAcc = b.decayAcc + frameDt
+      if b.decayAcc >= b.decayEvery then
+        b.decayAcc = b.decayAcc - b.decayEvery
+        b.dps = math.floor(b.dps * (1 - b.decayPct))
+      end
+    end
+    b.acc = b.acc + b.dps * (frameDt / 60)
+    if b.acc >= 1 then local n = math.floor(b.acc); b.acc = b.acc - n
+      self:damage(u, n, { cause = "burn", source = b.source }) end
+    if b.remaining <= 0 or b.dps <= 0 then d.burn = nil end
+  end
+
+  -- SAIGNEMENT : bas DPS, ignore le bouclier ; le slow de cadence (u.atkSlow) est posé à l'application.
+  local bl = d.bleed
+  if bl then
+    bl.remaining = bl.remaining - frameDt
+    bl.acc = bl.acc + bl.dps * (frameDt / 60)
+    if bl.acc >= 1 then local n = math.floor(bl.acc); bl.acc = bl.acc - n
+      self:damage(u, n, { ignoreShield = true, cause = "bleed", source = bl.source }) end
+    if bl.remaining <= 0 then
+      u.atkSlow = math.max(0, u.atkSlow - bl.slowPct)
+      d.bleed = nil
+    end
+  end
+
+  -- POISON : N stacks indépendants (axe « nombre »), ignore le bouclier ; recompute le malus de valeur.
+  local stacks = d.poison
+  if #stacks > 0 then
+    local weaken = 0
+    local i = 1
+    while i <= #stacks do
+      local s = stacks[i]
+      s.remaining = s.remaining - frameDt
+      s.acc = s.acc + s.dps * (frameDt / 60)
+      if s.acc >= 1 then local n = math.floor(s.acc); s.acc = s.acc - n
+        self:damage(u, n, { ignoreShield = true, poison = true, cause = "poison", source = s.source }) end
+      if s.remaining <= 0 then
+        stacks[i] = stacks[#stacks]; stacks[#stacks] = nil -- swap-remove (jamais table.remove au milieu)
+      else
+        weaken = weaken + (s.weaken or 0)
+        i = i + 1
+      end
+    end
+    u.weaken = math.min(WEAKEN_CAP, weaken)
+  end
+
+  -- POURRITURE : durée qui enfle ; ampute les PV max ; ignore le bouclier.
+  local r = d.rot
+  if r then
+    r.remaining = r.remaining - frameDt
+    r.acc = r.acc + r.dps * (frameDt / 60)
+    if r.acc >= 1 then local n = math.floor(r.acc); r.acc = r.acc - n
+      self:damage(u, n, { ignoreShield = true, cause = "rot", amputate = r.maxHpFrac, source = r.source }) end
+    if r.remaining <= 0 then d.rot = nil end
+  end
+
+  -- CHOC : amplification glissante (recompute shockAmp). Expire -> plus d'amplification.
+  local sh = d.shock
+  if sh then
+    sh.remaining = sh.remaining - frameDt
+    if sh.remaining <= 0 then d.shock = nil; u.shockAmp = 0
+    else u.shockAmp = math.min(SHOCK_AMP_CAP, sh.stacks * sh.perStack) end
+  end
+
+  -- REGEN (contre-DoT) : soin au fil du temps, accumulation entière.
+  if u.regen > 0 and u.hp < u.maxHp then
+    u.regenAcc = u.regenAcc + u.regen * (frameDt / 60)
+    if u.regenAcc >= 1 then local n = math.floor(u.regenAcc); u.regenAcc = u.regenAcc - n
+      u.hp = math.min(u.maxHp, u.hp + n) end
+  end
+end
+
 function Arena:update(frameDt, t)
   self.t = t
 
   for _, u in ipairs(self.units) do
     if u.alive then
-      -- Poison (DoT) : ignore le bouclier.
-      if u.poison then
-        u.poison.remaining = u.poison.remaining - frameDt
-        u.poison.acc = u.poison.acc + u.poison.dps * (frameDt / 60)
-        if u.poison.acc >= 1 then
-          local n = math.floor(u.poison.acc)
-          u.poison.acc = u.poison.acc - n
-          self:damage(u, n, { ignoreShield = true, poison = true, cause = "poison", source = u.poison.source })
-        end
-        if u.poison.remaining <= 0 then u.poison = nil end
-      end
+      self:tickDots(u, frameDt) -- statuts (burn/bleed/poison/rot/choc/regen) + recompute des malus
     end
 
     if u.alive then
@@ -210,7 +315,7 @@ function Arena:update(frameDt, t)
       u.atkTimer = u.atkTimer - frameDt
       if not u.swinging and u.target and u.atkTimer <= 0 then
         u.swinging = true; u.swingAge = 0; u.swingHit = false
-        u.atkTimer = u.cd
+        u.atkTimer = u.cd * (1 + u.atkSlow) -- bleed ralentit la cadence
         u.target = self:chooseTarget(u)
         self.bus:emit("attack", u) -- le render joue l'anim d'attaque
       end

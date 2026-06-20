@@ -61,7 +61,7 @@ function Build.new(palette, vw, vh, host)
 end
 
 function Build:newRig(id)
-  local c = Rig.new(Creatures[id], self.palette)
+  local c = Rig.new(Creatures[Units.spriteOf(id)], self.palette) -- visuel = sprite de repli si pas de rig dédié
   c.facing = 1
   return c
 end

@@ -41,7 +41,7 @@ end
 function ArenaDraw:rigFor(u)
   local c = self.rigs[u]
   if not c then
-    c = Rig.new(Creatures[u.id], self.palette)
+    c = Rig.new(Creatures[Units.spriteOf(u.id)], self.palette) -- visuel = sprite de repli si pas de rig dédié
     c.x, c.y, c.facing = u.x, u.y, u.facing
     c.trail = {}
     self.rigs[u] = c

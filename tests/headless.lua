@@ -34,7 +34,7 @@ local ok, err = pcall(function()
   for _, id in ipairs(Units.order) do
     local u = Units[id]
     assert(u and u.hp and u.dmg and u.cd and u.cost and u.effects, "unit incomplète: " .. id)
-    assert(Creatures[id], "créature manquante pour unit " .. id)
+    assert(Creatures[Units.spriteOf(id)], "visuel manquant pour unit " .. id)
   end
 
   -- Plateau-graphe : adjacence symétrique, 9 cases, hiérarchie du carré.
@@ -109,7 +109,7 @@ local ok, err = pcall(function()
     a:damage(u, 10); assert(u.shield == 0 and u.hp == hp0 - 6, "bouclier: déborde sur les PV")
     u.shield = 50
     local hp1 = u.hp
-    u.poison = { dps = 4, remaining = 120, acc = 0 }
+    table.insert(u.dots.poison, { dps = 4, remaining = 120, acc = 0, source = u }) -- 1 stack
     for i = 1, 60 do a:update(1.0, i) end
     assert(u.hp < hp1 and u.shield == 50, "poison: draine les PV en ignorant le bouclier")
   end
@@ -128,6 +128,67 @@ local ok, err = pcall(function()
     local dem = a.units[1]; dem.hp = 30
     a:hit(dem, a.units[2])
     assert(dem.hp == 35, "vol de vie: +50% des dégâts infligés")
+  end
+
+  -- Familles de STATUTS (le moteur générique arena:tickDots) : poison stacks + weaken, burn décroît +
+  -- lèche le bouclier, bleed slow, rot ampute, choc amplifie, regen contre. Tous déterministes.
+  do
+    local function U2(id, eff) local u = Units[id]
+      return { id = id, hp = u.hp, dmg = u.dmg, cd = u.cd, effects = eff, shield = 0, x = 0, y = 0, facing = 1 } end
+
+    do -- POISON : 2 stacks indépendants + malus de valeur (weaken)
+      local a = Arena.new({ left = { U2("witch", { { trigger = "on_hit", op = "poison", params = { dps = 2, dur = 180, weaken = 0.1 } } }) },
+        right = { U2("marauder") }, autoReset = false })
+      local atk, vic = a.units[1], a.units[2]
+      a:hit(atk, vic); a:hit(atk, vic)
+      assert(#vic.dots.poison == 2, "poison: 2 stacks independants")
+      a:update(1.0, 1)
+      assert(math.abs(vic.weaken - 0.2) < 1e-9, "poison: weaken = 0.1 x 2 stacks")
+    end
+
+    do -- BRÛLURE : décroît (-50%/s) et N'IGNORE PAS le bouclier
+      local a = Arena.new({ left = { U2("marauder") }, right = {}, autoReset = false })
+      local u = a.units[1]; u.shield = 100
+      u.dots.burn = { dps = 10, remaining = 300, acc = 0, decayEvery = 60, decayAcc = 0, decayPct = 0.5, source = u }
+      for i = 1, 60 do a:update(1.0, i) end
+      assert(u.shield < 100, "burn: leche le bouclier (n'ignore pas)")
+      assert(u.dots.burn.dps == 5, "burn: decroissance 10 -> 5 apres 1s")
+    end
+
+    do -- SAIGNEMENT : le slow est retiré à l'expiration
+      local a = Arena.new({ left = { U2("marauder") }, right = {}, autoReset = false })
+      local u = a.units[1]
+      u.dots.bleed = { dps = 1, remaining = 60, acc = 0, slowPct = 0.25, source = u }; u.atkSlow = 0.25
+      for i = 1, 60 do a:update(1.0, i) end
+      assert(u.dots.bleed == nil and u.atkSlow == 0, "bleed: slow retire a l'expiration")
+    end
+
+    do -- POURRITURE : ampute les PV max
+      local a = Arena.new({ left = { U2("marauder") }, right = {}, autoReset = false })
+      local u = a.units[1]; local mh0 = u.maxHp
+      u.dots.rot = { dps = 10, remaining = 300, acc = 0, capDps = 10, maxHpFrac = 0.5, source = u }
+      for i = 1, 120 do a:update(1.0, i) end
+      assert(u.maxHp < mh0, "rot: ampute les PV max")
+    end
+
+    do -- CHOC : amplification déterministe des dégâts-pris
+      local a = Arena.new({ left = { U2("marauder") }, right = {}, autoReset = false })
+      local u = a.units[1]
+      u.dots.shock = { stacks = 5, remaining = 300, perStack = 0.10, cap = 8 }
+      a:update(1.0, 1)
+      assert(math.abs(u.shockAmp - 0.5) < 1e-9, "choc: shockAmp = 5 x 0.10")
+      local hp0 = u.hp
+      a:damage(u, 10, {})
+      assert(u.hp == hp0 - 15, "choc: +50% degats-pris (10 -> 15)")
+    end
+
+    do -- REGEN : contre-DoT, soigne au fil du temps
+      local a = Arena.new({ left = { U2("marauder") }, right = {}, autoReset = false })
+      local u = a.units[1]; u.hp = 20; u.regen = 6
+      for i = 1, 60 do a:update(1.0, i) end
+      assert(u.hp > 20, "regen: soigne au fil du temps")
+    end
+    print("  statuts : poison-stacks+weaken / burn-decroit / bleed-slow / rot-ampute / choc-amplifie / regen OK")
   end
 
   -- Ciblage DÉTERMINISTE : les 4 couches (front/back par depth, tie-break haut->bas, aggro, taunt).
