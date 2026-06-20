@@ -16,10 +16,9 @@ local Shapes = {}
 
 -- Carré du novice : 3×3 plein, adjacence ORTHOGONALE (pas les diagonales : la 8-connexité
 -- tuerait le puzzle). Hiérarchie lisible : centre (idx 5) = 4 voisins, bords = 3, coins = 2.
+-- label/archetype affichés : src/i18n/en.lua (shape.<name>.label|archetype).
 Shapes.carre = {
   name = "carre",
-  label = "Carre du novice",
-  archetype = "polyvalent",
   cells = {
     { x = 0, y = 0 }, { x = 1, y = 0 }, { x = 2, y = 0 },
     { x = 0, y = 1 }, { x = 1, y = 1 }, { x = 2, y = 1 },
@@ -35,8 +34,6 @@ Shapes.carre = {
 -- (un monstre alimenté par 4 voisins, mais les nourriciers sont faibles).
 Shapes.croix = {
   name = "croix",
-  label = "Sigil en croix",
-  archetype = "mono-carry",
   cells = {
     { x = 2, y = 2 },                   -- 1  centre (4 voisins)
     { x = 2, y = 1 }, { x = 2, y = 0 }, -- 2,3  branche haut
@@ -56,15 +53,13 @@ do
     cells[i + 1] = { x = math.cos(a) * 2.2 + 2.2, y = math.sin(a) * 2.2 + 2.2 }
     edges[i + 1] = { i + 1, ((i + 1) % 9) + 1 } -- i -> i+1, le 9 reboucle sur le 1
   end
-  Shapes.anneau = { name = "anneau", label = "Sigil de l'anneau", archetype = "chaine", cells = cells, edges = edges }
+  Shapes.anneau = { name = "anneau", cells = cells, edges = edges }
 end
 
 -- Diamant : adjacence répartie, beaucoup de cases à 2-3 voisins -> builds GO-WIDE / essaim
 -- (tout le monde se buff un peu).
 Shapes.diamant = {
   name = "diamant",
-  label = "Sigil du diamant",
-  archetype = "go-wide",
   cells = {
     { x = 2, y = 0 },                                 -- 1
     { x = 1, y = 1 }, { x = 3, y = 1 },               -- 2,3
@@ -85,7 +80,7 @@ do
   local cells, edges = {}, {}
   for i = 1, 9 do cells[i] = { x = i - 1, y = 0 } end
   for i = 1, 8 do edges[i] = { i, i + 1 } end
-  Shapes.ligne = { name = "ligne", label = "Sigil du conduit", archetype = "conduit", cells = cells, edges = edges }
+  Shapes.ligne = { name = "ligne", cells = cells, edges = edges }
 end
 
 -- Ordre de rotation des sigils (touche [s] dans la scène plateau).

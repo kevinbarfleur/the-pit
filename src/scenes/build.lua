@@ -26,6 +26,7 @@ local Units = require("src.data.units")
 local Encounters = require("src.data.encounters")
 local Place = require("src.combat.place")
 local Run = require("src.run.state")
+local T = require("src.core.i18n").t
 
 local Build = {}
 Build.__index = Build
@@ -36,8 +37,8 @@ local BOARD_OY = 60
 function Build.new(palette, vw, vh, host)
   local self = setmetatable({
     vw = vw, vh = vh, t = 0, palette = palette, host = host,
-    title = "build",
-    hint = "[clic-glisse] achete/place  ·  REROLL/NIVEAU  ·  [s] sigil  ·  COMBAT",
+    titleKey = "scene.build",
+    hintKey = "ui.hint_build",
     shapeIdx = 1,
     board = Board.new("carre"),
     slotRigs = {},     -- [slot] = { id, char } : unités posées
@@ -252,7 +253,7 @@ function Build:buildComp(side)
     local u = Units[p.id]
     local x, y = Place.pos(p.col, p.row, side, maxCol, rowRef)
     -- depth (0 = front) + row dérivés de la forme -> exposition portée par le sigil (ciblage déterministe).
-    comp[#comp + 1] = { id = p.id, slot = p.slot, hp = u.hp, dmg = u.dmg, cd = u.cd, passive = u.passive,
+    comp[#comp + 1] = { id = p.id, slot = p.slot, hp = u.hp, dmg = u.dmg, cd = u.cd,
       depth = maxCol - p.col, row = p.row,
       shield = shield[p.slot] or 0, x = x, y = y, facing = facing }
   end
@@ -269,7 +270,7 @@ function Build:buildRightComp(enc)
   for _, e in ipairs(enc.units) do
     local u = Units[e.id]
     local x, y = Place.pos(e.col, e.row, 1, maxCol, rowRef)
-    comp[#comp + 1] = { id = e.id, hp = u.hp, dmg = u.dmg, cd = u.cd, passive = u.passive,
+    comp[#comp + 1] = { id = e.id, hp = u.hp, dmg = u.dmg, cd = u.cd,
       depth = maxCol - e.col, row = e.row,
       shield = 0, x = x, y = y, facing = -1 }
   end
@@ -285,7 +286,7 @@ function Build:startCombat()
   -- (rejouabilité), avec repli sur le RNG global hors-run (tests). La SIM ne lira que ce seed.
   local seed = (self.host.run and self.host.run:nextCombatSeed()) or love.math.random(1, 2147483647)
   self.host.goto("combat",
-    { left = left, right = self:buildRightComp(enc), enemyName = enc.name, seed = seed })
+    { left = left, right = self:buildRightComp(enc), enemyKey = enc.key, seed = seed })
 end
 
 -- ── Update ──
@@ -422,26 +423,28 @@ function Build:drawOverlay(view)
 
   -- Titre du sigil.
   local tx, ty = project(self.vw / 2, 8)
+  local nm = b.shape.name
   love.graphics.setColor(0.78, 0.72, 0.60, 0.95)
-  love.graphics.printf(b.shape.label:upper() .. "  ·  " .. b.shape.archetype, tx - 200, ty, 400, "center")
+  love.graphics.printf(T("shape." .. nm .. ".label"):upper() .. "  -  " .. T("shape." .. nm .. ".archetype"),
+    tx - 200, ty, 400, "center")
 
   -- HUD de run (ou repli sandbox).
   if run then
     love.graphics.setColor(0.82, 0.76, 0.50, 1)
-    love.graphics.printf(string.format(
-      "OR %d    VIES %d/%d    VICTOIRES %d/%d    ROUND %d    NIVEAU %d (%d/%d slots)",
-      run.gold, run.lives, Run.START_LIVES, run.wins, Run.WIN_TARGET, run.round, run.level, run.slots, Run.MAX_SLOTS),
+    love.graphics.printf(T("ui.hud", {
+      gold = run.gold, lives = run.lives, maxlives = Run.START_LIVES, wins = run.wins,
+      target = Run.WIN_TARGET, round = run.round, level = run.level, slots = run.slots, maxslots = Run.MAX_SLOTS }),
       tx - 300, ty + 16, 600, "center")
     if run.winStreak >= 2 or run.lossStreak >= 2 then
       local won = run.winStreak >= 2
       love.graphics.setColor(won and 0.50 or 0.66, won and 0.60 or 0.28, 0.28, 0.95)
       love.graphics.printf(
-        won and ("SERIE DE VICTOIRES x" .. run.winStreak) or ("SERIE DE DEFAITES x" .. run.lossStreak),
+        won and T("ui.win_streak", { n = run.winStreak }) or T("ui.loss_streak", { n = run.lossStreak }),
         tx - 200, ty + 30, 400, "center")
     end
   else
     love.graphics.setColor(0.50, 0.42, 0.38, 0.9)
-    love.graphics.printf(("%d posees  ·  %d/9 slots"):format(self:placedCount(), b.activeCount),
+    love.graphics.printf(T("ui.placed_count", { placed = self:placedCount(), active = b.activeCount }),
       tx - 200, ty + 16, 400, "center")
   end
 
@@ -452,26 +455,26 @@ function Build:drawOverlay(view)
       local o = run.shop[i]
       if o and not o.sold then
         local px, py = project(rect.x + rect.w / 2, rect.y + 1)
-        love.graphics.printf(o.cost .. "o", px - 40, py, 80, "center")
+        love.graphics.printf(T("ui.cost", { n = o.cost }), px - 40, py, 80, "center")
       end
     end
     local rx, ry = project(self.rerollBtn.x + self.rerollBtn.w / 2, self.rerollBtn.y + 1)
     love.graphics.setColor(run:canReroll() and 0.82 or 0.40, 0.70, 0.55, 1)
-    love.graphics.printf("REROLL " .. Run.REROLL_COST .. "o", rx - 90, ry, 180, "center")
+    love.graphics.printf(T("ui.reroll", { n = Run.REROLL_COST }), rx - 90, ry, 180, "center")
     local lx, ly = project(self.levelBtn.x + self.levelBtn.w / 2, self.levelBtn.y + 1)
     if run.level < Run.MAX_LEVEL then
       love.graphics.setColor(run:canLevel() and 0.82 or 0.40, 0.70, 0.55, 1)
-      love.graphics.printf("NIVEAU " .. run:levelCost() .. "o", lx - 90, ly, 180, "center")
+      love.graphics.printf(T("ui.level_up", { n = run:levelCost() }), lx - 90, ly, 180, "center")
     else
       love.graphics.setColor(0.45, 0.42, 0.38, 1)
-      love.graphics.printf("NIVEAU MAX", lx - 90, ly, 180, "center")
+      love.graphics.printf(T("ui.level_max"), lx - 90, ly, 180, "center")
     end
   end
 
   -- Label bouton COMBAT.
   local bx, by = project(self.button.x + self.button.w / 2, self.button.y + 5)
   love.graphics.setColor(self:placedCount() > 0 and 0.92 or 0.45, 0.82, 0.74, 1)
-  love.graphics.printf("COMBAT", bx - 100, by, 200, "center")
+  love.graphics.printf(T("ui.fight"), bx - 100, by, 200, "center")
   love.graphics.setColor(1, 1, 1, 1)
 
   -- Infobulle : survol d'une offre de boutique ou d'une case occupée.
@@ -504,13 +507,13 @@ function Build:drawTooltip(view, id)
 
   local x, y = px + 6, py + 4
   love.graphics.setColor(0.82, 0.76, 0.62, 1)
-  love.graphics.print(U.name .. "  (" .. U.type .. ")", x, y)
+  love.graphics.print(T("ui.unit_header", { name = T("unit." .. id .. ".name"), type = T("type." .. U.type) }), x, y)
   love.graphics.setColor(0.62, 0.58, 0.52, 1)
-  love.graphics.print(("PV %d    DGT %d    CD %d"):format(U.hp, U.dmg, U.cd), x, y + lh)
+  love.graphics.print(T("ui.unit_stats", { hp = U.hp, dmg = U.dmg, cd = U.cd }), x, y + lh)
   love.graphics.setColor(0.70, 0.56, 0.30, 1)
-  love.graphics.print(U.passive.name, x, y + lh * 2)
+  love.graphics.print(T("unit." .. id .. ".passive_name"), x, y + lh * 2)
   love.graphics.setColor(0.58, 0.54, 0.50, 1)
-  love.graphics.printf(U.passive.desc, x, y + lh * 3, bw - 12, "left")
+  love.graphics.printf(T("unit." .. id .. ".passive_desc"), x, y + lh * 3, bw - 12, "left")
   love.graphics.setColor(1, 1, 1, 1)
 end
 

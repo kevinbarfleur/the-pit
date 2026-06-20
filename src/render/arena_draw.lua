@@ -7,6 +7,7 @@
 local Rig = require("src.core.rig")
 local Creatures = require("src.data.creatures")
 local Units = require("src.data.units")
+local T = require("src.core.i18n").t
 
 local ArenaDraw = {}
 ArenaDraw.__index = ArenaDraw
@@ -180,7 +181,7 @@ function ArenaDraw:drawOverlay(view)
     if u.alive then
       local sx, sy = project(u.x, u.y + 8)
       love.graphics.setColor(0.55, 0.42, 0.16, 0.85)
-      love.graphics.printf((Units[u.id] and Units[u.id].name) or u.id, sx - 60, sy, 120, "center")
+      love.graphics.printf((Units[u.id] and T("unit." .. u.id .. ".name")) or u.id, sx - 60, sy, 120, "center")
     end
   end
 

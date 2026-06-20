@@ -12,6 +12,7 @@ local Build = require("src.scenes.build")
 local Combat = require("src.scenes.combat")
 local Runover = require("src.scenes.runover")
 local RunState = require("src.run.state")
+local T = require("src.core.i18n").t
 
 local VW, VH = 320, 180           -- résolution virtuelle (×4 = 1280×720 pile)
 local FRAME = 60                  -- conversion dt(s) -> "frames" pour l'horloge des anims
@@ -56,10 +57,10 @@ end
 
 local function drawHud(scene)
   love.graphics.setColor(0.78, 0.72, 0.60, 0.9)
-  love.graphics.print("THE PIT  —  " .. (scene.title or ""), 16, 12)
+  love.graphics.print(T("ui.title") .. "  -  " .. T(scene.titleKey or "ui.empty"), 16, 12)
   love.graphics.setColor(0.40, 0.34, 0.30, 1)
-  love.graphics.print("FPS " .. love.timer.getFPS(), 16, 30)
-  love.graphics.print((scene.hint or "") .. "   ·   [echap] quitter", 16, 46)
+  love.graphics.print(T("ui.fps", { n = love.timer.getFPS() }), 16, 30)
+  love.graphics.print(T(scene.hintKey or "ui.empty") .. "   -   " .. T("ui.quit"), 16, 46)
   love.graphics.setColor(1, 1, 1, 1)
 end
 
