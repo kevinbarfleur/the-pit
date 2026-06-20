@@ -358,6 +358,7 @@ end
 function Build:startCombat()
   local left = self:buildLeftComp()
   if #left == 0 then return end -- il faut au moins une unité posée
+  if self.host.run then self.host.run:applyRelics(left) end -- reliques : effet RÉEL sur la compo joueur (build)
   local enc = self:pickEncounter()
   self.combatCount = self.combatCount + 1
   -- Seed choisi ICI (couche scène) : il fait partie du snapshot/replay. Tiré du RNG seedé du run

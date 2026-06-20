@@ -44,6 +44,9 @@ luajit tests/auras.lua
 echo "== duplicatas (3 copies -> niveau : fusion + scaling + cascade) =="
 luajit tests/duplicates.lua
 
+echo "== reliques (cryptiques 1-parmi-3 + Grimoire persistant + meta-progression) =="
+luajit tests/relics.lua
+
 echo "== synergies (interactions inter-effets en combat : deroule + resultat) =="
 luajit tests/synergies.lua
 

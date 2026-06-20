@@ -13,6 +13,7 @@ local Combat = require("src.scenes.combat")
 local Runover = require("src.scenes.runover")
 local Gallery = require("src.scenes.gallery")
 local RunState = require("src.run.state")
+local Grimoire = require("src.core.grimoire")
 local T = require("src.core.i18n").t
 
 local VW, VH = 320, 180           -- résolution virtuelle (×4 = 1280×720 pile)
@@ -44,6 +45,13 @@ end
 -- suivant (retour build, plateau PERSISTANT) — ou l'écran de fin de run si le run est conclu.
 function host.finishCombat(win)
   host.run:resolve(win)
+  -- Reliques cryptiques (pilier #2) : observation post-combat -> identification -> Grimoire (méta cross-run).
+  for _, id in ipairs(host.run:observeRelics()) do Grimoire.learn(id) end
+  -- Acquisition : une relique tous les 3 victoires (déjà identifiée si le Grimoire la connaît déjà).
+  if win and host.run.wins % 3 == 0 then
+    local rid = host.run:rollRelic()
+    if rid then host.run:grantRelic(rid, Grimoire.isKnown(rid)) end
+  end
   local over = host.run:isOver()
   if over then
     host.goto("runover", { result = over, run = host.run })
@@ -83,6 +91,7 @@ function love.load()
   canvas = love.graphics.newCanvas(VW, VH)
   canvas:setFilter("nearest", "nearest")
 
+  Grimoire.load() -- charge le codex persistant (reliques identifiées, méta-progression cross-run)
   host.newRun() -- crée host.run (état seedé) + host.build, puis entre en phase build
 end
 

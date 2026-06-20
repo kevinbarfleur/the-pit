@@ -234,4 +234,28 @@ return {
   ["unit.gravewarden.name"] = "GRAVEWARDEN",
   ["unit.gravewarden.passive_name"] = "Bulwark of Bone",
   ["unit.gravewarden.passive_desc"] = "Taunt: forces the enemy front to strike it. Returns 4 damage to attackers.",
+
+  -- RELIQUES CRYPTIQUES (pilier #2) : name + vraie description (real) + 2 leurres (d1/d2). Les leurres se
+  -- recoupent d'une relique a l'autre (le vrai effet de l'une est le leurre d'une autre) -> deduction Obra Dinn.
+  ["relic.unidentified"] = "??? (unidentified relic)",
+  ["relic.bloodstone.name"] = "BLOODSTONE",
+  ["relic.bloodstone.real"] = "+20% damage to all your units",
+  ["relic.bloodstone.d1"] = "+30% max HP to all your units",
+  ["relic.bloodstone.d2"] = "Your units' first strike deals +10",
+  ["relic.carapace.name"] = "CARAPACE",
+  ["relic.carapace.real"] = "+15 max HP to all your units",
+  ["relic.carapace.d1"] = "+15% damage to all your units",
+  ["relic.carapace.d2"] = "Your units return 3 damage to attackers",
+  ["relic.ember_heart.name"] = "EMBER HEART",
+  ["relic.ember_heart.real"] = "Your units' first strike deals +6",
+  ["relic.ember_heart.d1"] = "+20 max HP to all your units",
+  ["relic.ember_heart.d2"] = "Your units regenerate 2 HP/s",
+  ["relic.venom_sigil.name"] = "VENOM SIGIL",
+  ["relic.venom_sigil.real"] = "Your units return 3 damage to attackers",
+  ["relic.venom_sigil.d1"] = "+15% damage to all your units",
+  ["relic.venom_sigil.d2"] = "Shield 10 to all your units",
+  ["relic.gravewax.name"] = "GRAVEWAX",
+  ["relic.gravewax.real"] = "Your units regenerate 2 HP/s",
+  ["relic.gravewax.d1"] = "+25 max HP to all your units",
+  ["relic.gravewax.d2"] = "+15% damage to all your units",
 }
