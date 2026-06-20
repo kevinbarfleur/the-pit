@@ -13,7 +13,7 @@ local Encounters = require("src.data.encounters")
 local EventLog = require("tools.eventlog")
 
 local SEED = 424242
-local EXPECTED = 346147162 -- empreinte de référence (regénérer si changement VOULU ; maj : ciblage déterministe)
+local EXPECTED = 843214188 -- empreinte de référence (regénérer si changement VOULU ; maj : poison en N stacks + moteur de statuts)
 
 local ok, err = pcall(function()
   -- Scénario canonique : carré 9 slots, 5 unités placées, encounter #2.
