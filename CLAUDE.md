@@ -226,8 +226,10 @@ bandeau VICTOIRE/DEFAITE → round suivant (or/boutique renouvelés, **plateau c
 - **7 unités à effets** jouables (poison×2 dont weaken / burn / bleed+slow / rot+amputation / choc / **contre regen**) ;
   visuel réutilisé via le champ **`sprite`** (`Units.spriteOf`) en attendant le pixel-art dédié. **13 unités en boutique**.
   Tests des 6 familles (`headless`) + `stats` ; golden rebaseliné (843214188) ; sim saine (σ 0,056, entropie 0,999).
-- **Reste** (cf. tâches P3-P6) : étendre le pool (~50, 5/3/2 + T2/T3 croisés + auras) ; métriques sim (dégâts/famille,
-  `lift` de co-occurrence, distrib TTK) ; **équilibrage auto-itéré** ; activer l'aggro.
+- **Métriques sim (P3) — FAIT** : `tools/sim.lua` ajoute dégâts par cause + **part des altérations** (DoT vs frappe),
+  distribution TTK (p10/p50/p90), **`lift` de co-occurrence (détecteur de combos cassés)** et **drapeaux d'outliers**
+  (écart à la moyenne du champ en σ, pas une bande absolue : le win% « présence côté gagnant » se centre sur la moyenne).
+- **Reste** (cf. tâches P4-P6) : étendre le pool (~50, 5/3/2 + T2/T3 croisés + auras) ; **équilibrage auto-itéré** ; activer l'aggro.
 
 **Prochaines étapes moteur** (à faire quand un contenu l'exige — cf. `engine-architecture.md` §12) :
 - **Valeurs d'aggro + archétype tank** + **passifs de ligne** (façade=armure / arrière=attaque) — quand
@@ -249,10 +251,10 @@ bandeau VICTOIRE/DEFAITE → round suivant (or/boutique renouvelés, **plateau c
 > d'économie** (or/coûts/streaks) = placeholders d'équilibrage (à tuner via `tools/sim.lua`) ; boutique
 > sans **raretés/cotes-par-niveau** (pool uniforme) et **duplicatas non fusionnés** (étape #2) ;
 > snapshots toujours remplacés par l'**IA de seed** (étape #4) ; **pool d'effets partiel** (7/~50,
-> P4), **effets non équilibrés** (P5), métriques sim famille/`lift` à ajouter (P3) ; **visuels
-> réutilisés** (`sprite` de repli, pixel-art dédié à faire) ; **aggro toujours inerte** (P6).
+> P4), **effets non équilibrés** (P5) ; **visuels réutilisés** (`sprite` de repli, pixel-art dédié à
+> faire) ; **aggro toujours inerte** (P6).
 > *Résolu* : ciblage déterministe (était euclidien) ; split SIM/RENDER (le rendu n'est plus dans `arena.lua`) ;
-> boucle run roguelite (était « manque éco/run »).
+> boucle run roguelite (était « manque éco/run ») ; **métriques sim P3** (`lift` de co-occurrence + distrib TTK + drapeaux d'outliers).
 
 ---
 
