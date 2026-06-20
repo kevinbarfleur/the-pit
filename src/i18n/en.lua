@@ -149,4 +149,18 @@ return {
   ["unit.necro_leech.name"] = "NECRO LEECH",
   ["unit.necro_leech.passive_name"] = "Atrophy",
   ["unit.necro_leech.passive_desc"] = "Rot that gnaws away a heavy share of max HP (35% of rot damage).",
+
+  -- wave 2 : adjacency auras (build-resolved via sigil graph)
+  ["unit.soot_acolyte.name"] = "SOOT ACOLYTE",
+  ["unit.soot_acolyte.passive_name"] = "Ember Rite",
+  ["unit.soot_acolyte.passive_desc"] = "Adjacent allies' burns deal +2 dmg/s.",
+  ["unit.clot_mender.name"] = "CLOT MENDER",
+  ["unit.clot_mender.passive_name"] = "Open Wounds",
+  ["unit.clot_mender.passive_desc"] = "Adjacent allies' strikes also bleed (1 dmg/s, minor slow).",
+  ["unit.miasma_acolyte.name"] = "MIASMA ACOLYTE",
+  ["unit.miasma_acolyte.passive_name"] = "Foul Air",
+  ["unit.miasma_acolyte.passive_desc"] = "Adjacent allies' poison stacks deal +1 dmg/s.",
+  ["unit.decay_tender.name"] = "DECAY TENDER",
+  ["unit.decay_tender.passive_name"] = "Compost",
+  ["unit.decay_tender.passive_desc"] = "Adjacent allies' rot swells faster (+1 growth per hit).",
 }

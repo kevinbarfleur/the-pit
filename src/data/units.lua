@@ -141,6 +141,26 @@ local U = {
     id = "necro_leech", sprite = "demon", type = "abyss", cost = 3, hp = 50, dmg = 5, cd = 56,
     effects = { { trigger = "on_hit", op = "rot", params = { base = 1, growth = 1, dur = 240, capDps = 10, maxHpFrac = 0.35 } } },
   },
+
+  -- ══ VAGUE 2 : AURAS d'adjacence (T1.5 « semeurs »). Build-résolues via le GRAPHE du sigil (buildComp +
+  -- board:neighbors), comme shield_aura -> AUCUN op combat (ignorées gracieusement à combat_start). Elles
+  -- ne posent PAS le DoT elles-mêmes : elles AMPLIFIENT le voisin qui le pose (la synergie positionnelle). ══
+  soot_acolyte = { -- BRÛLURE : +dps aux brûlures des voisins
+    id = "soot_acolyte", sprite = "witch", type = "arcane", cost = 3, hp = 36, dmg = 4, cd = 60,
+    effects = { { trigger = "combat_start", op = "aura_burn_dps", target = "neighbors", params = { bonus = 2 } } },
+  },
+  clot_mender = { -- SAIGNEMENT : les voisins appliquent AUSSI un petit bleed
+    id = "clot_mender", sprite = "skeleton", type = "bone", cost = 3, hp = 44, dmg = 4, cd = 56,
+    effects = { { trigger = "combat_start", op = "aura_grant_bleed", target = "neighbors", params = { dps = 1, dur = 180, slowPct = 0.10 } } },
+  },
+  miasma_acolyte = { -- POISON : +dps aux stacks de poison des voisins
+    id = "miasma_acolyte", sprite = "witch", type = "arcane", cost = 3, hp = 36, dmg = 4, cd = 60,
+    effects = { { trigger = "combat_start", op = "aura_poison_dps", target = "neighbors", params = { bonus = 1 } } },
+  },
+  decay_tender = { -- POURRITURE : +growth aux pourritures des voisins (enflent plus vite)
+    id = "decay_tender", sprite = "skeleton", type = "bone", cost = 3, hp = 50, dmg = 4, cd = 60,
+    effects = { { trigger = "combat_start", op = "aura_rot_growth", target = "neighbors", params = { bonus = 1 } } },
+  },
 }
 
 -- Roster complet (ordre d'affichage). Les 6 premiers = vanille/v0 ; les suivants = familles de statuts.
@@ -150,7 +170,9 @@ U.order = { "marauder", "templar", "skeleton", "bandit", "witch", "demon",
   "cinder_cur", "pyre_tender", "ash_moth",
   "gash_fiend", "hookjaw", "leech_thorn",
   "bile_spitter", "rot_grub",
-  "carrion_pecker", "maggot_king", "necro_leech" }
+  "carrion_pecker", "maggot_king", "necro_leech",
+  -- vague 2 (auras d'adjacence) : burn / bleed / poison / rot
+  "soot_acolyte", "clot_mender", "miasma_acolyte", "decay_tender" }
 
 -- Pool d'unités ACHETABLES en boutique (cf. src/run/state.lua). Identique au roster pour l'instant.
 U.pool = { "marauder", "templar", "skeleton", "bandit", "witch", "demon",
@@ -158,7 +180,8 @@ U.pool = { "marauder", "templar", "skeleton", "bandit", "witch", "demon",
   "cinder_cur", "pyre_tender", "ash_moth",
   "gash_fiend", "hookjaw", "leech_thorn",
   "bile_spitter", "rot_grub",
-  "carrion_pecker", "maggot_king", "necro_leech" }
+  "carrion_pecker", "maggot_king", "necro_leech",
+  "soot_acolyte", "clot_mender", "miasma_acolyte", "decay_tender" }
 
 -- Visuel (rig) d'une unité : son propre id, ou un `sprite` de repli (réutilise une créature existante
 -- tant que le pixel-art dédié n'existe pas, cf. src/data/creatures.lua).

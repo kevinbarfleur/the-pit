@@ -233,18 +233,49 @@ function Build:buildComp(side)
   end
   if #placed == 0 then return {} end
 
-  -- Auras d'adjacence (ex. Rempart) résolues AVANT le combat : état DÉRIVÉ du graphe du plateau.
-  -- On lit les descripteurs combat_start/shield_aura (data) — plus aucun `kind` codé en dur.
-  -- Changer de sigil re-cible automatiquement via board:neighbors (zéro code par sigil).
+  -- ── Auras d'adjacence résolues AVANT le combat : état DÉRIVÉ du graphe du sigil (board:neighbors),
+  -- fidèle au pilier « la forme EST le graphe de synergies ». AUCUN op combat (comme shield_aura) : on
+  -- lit le descripteur combat_start/aura_* (data) et on BAKE le bonus sur le voisin. Changer de sigil
+  -- re-cible tout seul. shield_aura -> stat directe ; aura_* -> modifient les EFFETS du voisin (ci-dessous).
+  -- NB : notre burn/poison sont en `dps` (pas en pct) -> aura_burn_dps/aura_poison_dps = +dps à plat. ──
   local shield = {}
+  local burnDps, poisonDps, rotGrowth, grantBleed = {}, {}, {}, {}
   for _, p in ipairs(placed) do
     for _, e in ipairs(Units[p.id].effects or {}) do
-      if e.trigger == "combat_start" and e.op == "shield_aura" and e.target == "neighbors" then
+      if e.trigger == "combat_start" and e.target == "neighbors" then
+        local op, pa = e.op, e.params or {}
         for _, nb in ipairs(self.board:neighbors(p.slot)) do
-          if self.slotRigs[nb] then shield[nb] = (shield[nb] or 0) + (e.params.value or 0) end
+          if self.slotRigs[nb] then
+            if op == "shield_aura" then shield[nb] = (shield[nb] or 0) + (pa.value or 0)
+            elseif op == "aura_burn_dps" then burnDps[nb] = (burnDps[nb] or 0) + (pa.bonus or 0)
+            elseif op == "aura_poison_dps" then poisonDps[nb] = (poisonDps[nb] or 0) + (pa.bonus or 0)
+            elseif op == "aura_rot_growth" then rotGrowth[nb] = (rotGrowth[nb] or 0) + (pa.bonus or 0)
+            elseif op == "aura_grant_bleed" then grantBleed[nb] = pa
+            end
+          end
         end
       end
     end
+  end
+
+  -- Matérialise les effets d'un voisin SOUS aura (copie -> mutation) ; sinon nil = base (golden-safe).
+  local function auraEffects(id, slot)
+    if not (burnDps[slot] or poisonDps[slot] or rotGrowth[slot] or grantBleed[slot]) then return nil end
+    local out = {}
+    for _, e in ipairs(Units[id].effects or {}) do
+      local pa = {}
+      for k, v in pairs(e.params or {}) do pa[k] = v end
+      if e.op == "burn" and burnDps[slot] then pa.dps = (pa.dps or 0) + burnDps[slot] end
+      if e.op == "poison" and poisonDps[slot] then pa.dps = (pa.dps or 0) + poisonDps[slot] end
+      if e.op == "rot" and rotGrowth[slot] then pa.growth = (pa.growth or 1) + rotGrowth[slot] end
+      out[#out + 1] = { trigger = e.trigger, op = e.op, params = pa, target = e.target, condition = e.condition }
+    end
+    if grantBleed[slot] then
+      local g = grantBleed[slot]
+      out[#out + 1] = { trigger = "on_hit", op = "bleed",
+        params = { dps = g.dps or 1, dur = g.dur or 180, slowPct = g.slowPct or 0 } }
+    end
+    return out
   end
 
   local maxCol, rowRef = Place.bounds(placed)
@@ -254,7 +285,7 @@ function Build:buildComp(side)
     local x, y = Place.pos(p.col, p.row, side, maxCol, rowRef)
     -- depth (0 = front) + row dérivés de la forme -> exposition portée par le sigil (ciblage déterministe).
     comp[#comp + 1] = { id = p.id, slot = p.slot, hp = u.hp, dmg = u.dmg, cd = u.cd,
-      depth = maxCol - p.col, row = p.row,
+      depth = maxCol - p.col, row = p.row, effects = auraEffects(p.id, p.slot),
       shield = shield[p.slot] or 0, x = x, y = y, facing = facing }
   end
   return comp
