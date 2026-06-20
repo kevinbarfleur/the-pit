@@ -513,10 +513,10 @@ function Build:drawOverlay(view)
   if run then self:drawBanner(run)
   else Draw.textC(T("ui.placed_count", { placed = self:placedCount(), active = b.activeCount }), Draw.W / 2, 22, c.faint, Theme.ui(12)) end
 
-  -- Sigil (gothique) + archétype.
+  -- Sigil : gothique en CASSE DE TITRE (les capitales blackletter sont illisibles) + archétype.
   local nm = b.shape.name
-  Draw.textC(T("shape." .. nm .. ".label"):upper(), Draw.W / 2, 72, c.title, Theme.display(30))
-  Draw.textC(T("shape." .. nm .. ".archetype"):upper() .. "    " .. T("ui.reshape"), Draw.W / 2, 116, c.faint, Theme.ui(11))
+  Draw.textC(T("shape." .. nm .. ".label"), Draw.W / 2, 70, c.title, Theme.display(36))
+  Draw.textC(T("shape." .. nm .. ".archetype"):upper() .. "    " .. T("ui.reshape"), Draw.W / 2, 118, c.faint, Theme.ui(11))
 
   -- Cases : bordure d'état + décor (verrou / pip de type / pips de niveau / nom).
   for i = 1, 9 do
@@ -628,11 +628,11 @@ end
 -- stats éteintes, passif en or, description en lore italique. Position = curseur (mx,my) ×4.
 function Build:drawTooltip(id)
   local U, c = Units[id], Theme.c
-  local fontN, fontS, fontL = Theme.ui(12), Theme.ui(11), Theme.lore(15)
+  local fontN, fontS, fontL = Theme.ui(12), Theme.ui(11), Theme.ui(11) -- desc en Silkscreen (lisible), pas en italique
   local w = 300
   local nameStr, descStr = T("unit." .. id .. ".name"), T("unit." .. id .. ".passive_desc")
   local _, lines = fontL:getWrap(descStr, w - 28)
-  local h = 60 + math.max(1, #lines) * fontL:getHeight() + 12
+  local h = 62 + math.max(1, #lines) * (fontL:getHeight() + 2) + 12
   local x, y = self.mx * 4 + 18, self.my * 4 + 10
   if x + w > Draw.W then x = x - w - 36 end
   if y + h > Draw.H then y = Draw.H - h - 8 end
@@ -642,8 +642,8 @@ function Build:drawTooltip(id)
   Draw.text(nameStr, ix, iy, c.title, fontN)
   Draw.text("(" .. T("type." .. U.type) .. ")", ix + fontN:getWidth(nameStr) + 8, iy, Theme.type(U.type).color, fontN)
   Draw.text(T("ui.unit_stats", { hp = U.hp, dmg = U.dmg, cd = U.cd }), ix, iy + 20, c.muted, fontS)
-  Draw.text(T("unit." .. id .. ".passive_name"), ix, iy + 38, c.goldBright, fontS)
-  Draw.textWrap(descStr, ix, iy + 56, w - 28, c.dim, fontL)
+  Draw.text(T("unit." .. id .. ".passive_name"), ix, iy + 40, c.goldBright, fontS)
+  Draw.textWrap(descStr, ix, iy + 58, w - 28, c.body, fontL)
 end
 
 return Build

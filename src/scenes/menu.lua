@@ -79,24 +79,24 @@ function Menu:drawOverlay(view)
   local c = Theme.c
   Draw.begin(view)
 
-  -- Kicker + titre.
-  Draw.textTrackedC(T("menu.descend"), CX, 250, c.faint, Theme.lore(20), 8)
+  -- Kicker (saveur, serif romain lisible) + logotype gothique.
+  Draw.textTrackedC(T("menu.descend"), CX, 250, c.faint, Theme.loreRoman(20), 8)
   drawTitleGlow(T("menu.title"), CX, 280, Theme.display(128))
   Draw.divider(CX, 430, 300, c.blood, 1)
 
-  -- Entrées.
+  -- Entrées : Silkscreen (fonctionnel = lisible), léger interlettrage cérémonial.
   for i, it in ipairs(self.items) do
     local y = itemY(i)
-    local font = Theme.lore(24)
+    local font = Theme.uiBold(16)
     if not it.enabled then
-      Draw.textTrackedC(T(it.key), CX, y, c.lock, font, 4)
-      Draw.textC(T("menu.sealed"), CX, y + 26, c.ghost, Theme.ui(9))
+      Draw.textTrackedC(T(it.key), CX, y + 2, c.lock, font, 2)
+      Draw.textC(T("menu.sealed"), CX, y + 24, c.ghost, Theme.ui(9))
     elseif self.hover == i then
       -- survol : doré + léger bloom.
-      Draw.textTrackedC(T(it.key), CX, y, { c.bloodBright[1], c.bloodBright[2], c.bloodBright[3], 0.20 }, font, 4)
-      Draw.textTrackedC(T(it.key), CX, y, c.goldBright, font, 4)
+      Draw.textTrackedC(T(it.key), CX, y + 2, { c.bloodBright[1], c.bloodBright[2], c.bloodBright[3], 0.20 }, font, 2)
+      Draw.textTrackedC(T(it.key), CX, y + 2, c.goldBright, font, 2)
     else
-      Draw.textTrackedC(T(it.key), CX, y, c.muted, font, 4)
+      Draw.textTrackedC(T(it.key), CX, y + 2, c.muted, font, 2)
     end
   end
 

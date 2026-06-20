@@ -91,10 +91,14 @@ Theme.types = {
 function Theme.type(name) return Theme.types[name] or Theme.types.bone end
 
 -- ───────────────────────────────── Polices ─────────────────────────────────
--- 3 familles, 3 rôles (cf. DA) :
---   display   = Jacquard 24  -> titres gothiques (The Pit, VICTORY, sigils, noms de relique)
---   ui/uiBold = Silkscreen   -> UI pixel (stats, boutons, labels) ; hinting "mono" + nearest = net
---   lore      = IM Fell it.  -> texte d'ambiance italique (flavor, lore) ; loreRoman = variante droite
+-- 3 familles. RÈGLE DE LISIBILITÉ (retour user) : le FONCTIONNEL passe en Silkscreen ; le gothique et
+-- l'italique sont réservés à de courtes touches.
+--   display   = Jacquard 24  -> UNIQUEMENT le logotype "The Pit" + grands mots de résultat (VICTORY...).
+--                               Jamais en label fonctionnel ; en casse de TITRE (capitales blackletter = illisibles).
+--   ui/uiBold = Silkscreen   -> TOUT le fonctionnel (stats, boutons, labels, items de menu, descriptions,
+--                               infobulles). hinting "mono" + nearest = net.
+--   loreRoman = IM Fell rom. -> SAVEUR courte (kickers, citations de relique) : serif d'ambiance LISIBLE.
+--   lore      = IM Fell ital -> à ÉVITER (peu lisible) ; réserver à un rare accent décoratif.
 Theme.FONT_FILES = {
   display   = "assets/fonts/Jacquard24-Regular.ttf",
   ui        = "assets/fonts/Silkscreen-Regular.ttf",
