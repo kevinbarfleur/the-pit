@@ -23,6 +23,7 @@ local Shapes = require("src.board.shapes")
 local Rig = require("src.core.rig")
 local Creatures = require("src.data.creatures")
 local Units = require("src.data.units")
+local CreatureGen = require("src.gen.creaturegen") -- visuel généré pour les unités sans rig dessiné main
 local Encounters = require("src.data.encounters")
 local Place = require("src.combat.place")
 local Run = require("src.run.state")
@@ -61,7 +62,14 @@ function Build.new(palette, vw, vh, host)
 end
 
 function Build:newRig(id)
-  local c = Rig.new(Creatures[Units.spriteOf(id)], self.palette) -- visuel = sprite de repli si pas de rig dédié
+  -- Visuel : rig dessiné MAIN (Creatures[id], les 6 vanille) sinon créature GÉNÉRÉE procéduralement
+  -- (déterministe par id) — COHÉRENT avec le rendu de combat (arena_draw). Boutique = combat.
+  local def = Creatures[id]
+  if not def then
+    local spec = Units[id] or {}
+    def = CreatureGen.cached({ id = id, type = spec.type, effects = spec.effects })
+  end
+  local c = Rig.new(def, self.palette)
   c.facing = 1
   return c
 end
