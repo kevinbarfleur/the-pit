@@ -38,6 +38,9 @@ luajit tests/i18n.lua
 echo "== run (economie roguelite : invariants + determinisme) =="
 luajit tests/run.lua
 
+echo "== synergies (interactions inter-effets en combat : deroule + resultat) =="
+luajit tests/synergies.lua
+
 echo "== props (invariants + fuzz) =="
 luajit tests/props.lua
 
