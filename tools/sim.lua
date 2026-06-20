@@ -223,6 +223,9 @@ for _, p in ipairs(pairRows) do
   print(string.format("  %-12s + %-12s  lift %.2f  (win %.1f%% sur %d)", p.a, p.b, p.lift, p.pwr * 100, p.appear))
   shown = shown + 1
 end
+if #pairRows == 0 then
+  print(string.format("  (aucune paire >= %d co-occurrences — pool large : augmenter N pour nourrir le detecteur)", PAIR_MIN))
+end
 if #pairRows > 8 then
   print("  … anti-synergies (lift le plus bas) :")
   for i = #pairRows, math.max(1, #pairRows - 3), -1 do
