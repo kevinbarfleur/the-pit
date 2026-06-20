@@ -114,12 +114,16 @@ src/
     rig.lua               MOTEUR de rigging (build/update/draw + transforms monde)
     bus.lua               bus d'événements DÉTERMINISTE (array+ipairs) pour la couche SIM
     i18n.lua              INTERNATIONALISATION : t(key,vars) + locale courante + fallback en (texte = locales)
+    grimoire.lua          GRIMOIRE : codex PERSISTANT des reliques identifiées (méta cross-run ; IO hors SIM)
   i18n/
     en.lua                locale ANGLAISE (défaut/fallback) : TOUTES les chaînes affichées (clé -> texte)
   data/
     creatures.lua         définitions data-only des créatures (grilles/pivots/rig/anims)
     units.lua             stats + EFFETS (descripteurs data) + coût/pool par créature ; combat/build/boutique
     encounters.lua        équipes adverses pré-construites (IA de seed du cold-start)
+    relics.lua            RELIQUES CRYPTIQUES (pilier #2) : effet réel + 2 leurres ; apply(comp) au build
+  gen/
+    creaturegen.lua       GÉNÉRATION procédurale de créatures (déterministe par id) + factions/masks/ramps/details
   combat/
     arena.lua             MOTEUR de combat SIM PUR (zéro love.graphics) : cooldown, hooks d'effets, émet des événements
     place.lua             (col,row) -> position de combat (front/back par colonne)
@@ -131,7 +135,10 @@ src/
     shapes.lua            formes de plateau = GRAPHES explicites (cases + arêtes), 9 slots
     board.lua             plateau-graphe : slots, adjacence, sigils, déblocage progressif
   run/
-    state.lua             ÉTAT DE RUN roguelite, SIM PUR : or/vies/victoires/niveau/boutique seedés (éco)
+    state.lua             ÉTAT DE RUN roguelite, SIM PUR : or/vies/victoires/niveau/boutique + RELIQUES (candidats seedés/identification)
+  net/
+    snapshot.lua          SNAPSHOT async (pilier #3) : capture/encode sûr/decode/toComp (PUR, sérialisable)
+    snapstore.lua         STORE de snapshots : pool persistant + serve par version/tier + cold-start IA (IO hors SIM)
   render/
     arena_draw.lua        RENDER du combat : rigs/anims + love.graphics ; lit la SIM + écoute le bus
   fx/
@@ -140,6 +147,7 @@ src/
     build.lua             phase BUILD : plateau + BOUTIQUE (achat/reroll/niveau) + drag-drop + infobulles + COMBAT
     combat.lua            phase COMBAT : SIM (arena) + RENDER (arena_draw) ; résultat -> host.finishCombat
     runover.lua           écran de FIN DE RUN (ascension 10 victoires / chute 0 vie) -> nouvelle run
+    gallery.lua           écran GALERIE [g] : revue visuelle des entités (générées vs dessinées main)
 tests/
   mock_love.lua           mock LÖVE partagé (graphics stub + RNG seedé) pour headless/sims
   headless.lua            smoke + déterminisme + passifs + e2e souris/boutique (mock LÖVE, vraie logique)
@@ -150,6 +158,10 @@ tests/
   synergies.lua           INTERACTIONS inter-effets en combat (12 : familles + contagion/propagation/aggravate + croisés T3)
   props.lua               invariants + fuzz (PV>=0, terminaison, 1 vainqueur, déterminisme)
   golden.lua              golden-log de régression (empreinte event-log d'un scénario figé)
+  duplicatas.lua          DUPLICATAS : fusion 3->niveau + scaling + cascade (niveau 1 = identité, golden-safe)
+  relics.lua              RELIQUES : 1-parmi-3 seedé + identification -> Grimoire + méta-progression
+  snapshot.lua            SNAPSHOTS : round-trip sûr + toComp + serve version/tier + cold-start IA
+  gen.lua                 GÉNÉRATEUR de créatures : déterminisme + validation + smoke rendu + distinction
 tools/
   check.sh                garde RNG SIM + firewall + headless + run + props + golden + luacheck
   eventlog.lua            logger d'événements (s'abonne au bus) -> JSONL + empreinte
@@ -245,8 +257,9 @@ bandeau VICTOIRE/DEFAITE → round suivant (or/boutique renouvelés, **plateau c
   levier à la fois) ; activer l'**aggro** ; (option) étendre le **ladder choc** à 5/3/2.
 
 **Prochaines étapes moteur** (à faire quand un contenu l'exige — cf. `engine-architecture.md` §12) :
-- **Valeurs d'aggro + archétype tank** + **passifs de ligne** (façade=armure / arrière=attaque) — quand
-  les plateaux se remplissent. **Reliques de taunt** + contres (AoE/strip/furtivité) en parallèle.
+- ~~**Valeurs d'aggro + archétype tank**~~ — **FAIT (P6/v0.8)** : `AGGRO_STD=10`, tank ~40 / bruiser ~15 / carry ~5 (data) ;
+  unité tank `gravewarden` (**taunt** + épines). Reste : **passifs de ligne** (façade=armure / arrière=attaque), **contres**
+  de taunt (AoE-colonne / strip / furtivité), **ladder choc** à 5/3/2.
 - **Buckets de modifiers** (flat/increased/more/clamp) — au 1er modificateur en % de stat.
 - **Attaque-entité** (pierce/chain/fork + budget anti-boucle) — à la 1re relique de projectile.
 - **Work-queue d'effets** (budget 256) — au 1er effet qui en déclenche un autre (chaîne).
@@ -254,22 +267,22 @@ bandeau VICTOIRE/DEFAITE → round suivant (or/boutique renouvelés, **plateau c
 
 **Prochaines étapes gameplay** (cf. `gd-research-result.md` §Étapes) :
 1. ~~**Économie + run roguelite**~~ — **FAIT (v0.5)** : or/tour, reroll, leveling = déblocage de slots, streaks, 5 vies, 10 victoires.
-2. **Duplicatas** (3 copies → niveau, stats + buffs scalent) + plus de **synergies d'adjacence** par type. **← prochaine**
-3. **Reliques cryptiques** + **Grimoire** persistant (verrouillage façon Obra Dinn) ; sigils via reliques.
-4. Backend **snapshots** (unités + positions + **sigil** + **seed**) + équipes IA + tag de version. Pas de timer.
-5. Porter **props** et **biomes** depuis les références PixiJS (cf. `docs/pixel-art/`).
+2. ~~**Duplicatas**~~ — **FAIT (v0.8)** : 3 copies (même id+niveau) → niveau+1 (cap 3, **cascade**) ; stats ET auras scalent (`LEVEL_MULT {1,1.8,3}`). Fusion à l'achat (`build:checkMerges`) ; **niveau 1 = identité** (golden/sim inchangés). Pips dorés. Reste : synergies d'adjacence par **type**.
+3. ~~**Reliques cryptiques + Grimoire**~~ — **FAIT (v0.8)** : **1-parmi-3** (vrai + 2 leurres **entrecroisés**), candidats **seedés/run**, effet réel au build, identification par **observation** → **Grimoire** persistant (`src/core/grimoire.lua`, méta cross-run : relique apprise = identifiée d'emblée). Reste (UI) : infobulle des 3 candidats + **écran Grimoire** ; sigils via reliques.
+4. ~~**Snapshots async**~~ — **FAIT (v0.8)** : `src/net/snapshot.lua` (capture/encode **sûr**/decode/toComp) + `snapstore.lua` (pool persistant + **serve par version/tier** + **cold-start IA garanti**). `build:startCombat` sert un **ghost** ou l'IA (pick seedé). Reste : effets aura/relique dans le snapshot (v1 = effets de base), matchmaking rang, backend distant.
+5. Porter **props** et **biomes** depuis les références PixiJS (cf. `docs/pixel-art/`). Génération procédurale de **créatures** déjà en place (`src/gen/`, écran galerie `[g]`, chantier parallèle).
 
 > Dette connue : profils d'exposition des sigils non réglés (les formes à `cell.x` flottant comme
-> l'anneau donnent une exposition en file ; à ajuster par forme) ; valeurs de passifs, d'aggro **et
+> l'anneau donnent une exposition en file ; à ajuster par forme) ; valeurs de passifs/aggro/reliques **et
 > d'économie** (or/coûts/streaks) = placeholders d'équilibrage (à tuner via `tools/sim.lua`) ; boutique
-> sans **raretés/cotes-par-niveau** (pool uniforme) et **duplicatas non fusionnés** (étape #2) ;
-> snapshots toujours remplacés par l'**IA de seed** (étape #4) ; **4 familles DoT complètes (47 unités) mais
-> NON équilibrées** (P5 : tests d'envergure → tuner) et **ladder choc non étendu** (1 unité) ; quelques **T3
-> simplifiés** (placeholders) ; **visuels réutilisés** (`sprite` de repli, pixel-art dédié à faire) ; **aggro
-> toujours inerte** (P6).
-> *Résolu* : ciblage déterministe (était euclidien) ; split SIM/RENDER (le rendu n'est plus dans `arena.lua`) ;
-> boucle run roguelite (était « manque éco/run ») ; **métriques sim P3** (`lift` + distrib TTK + drapeaux) ;
-> **pool d'effets P4** (4 familles DoT 5/3/2 + auras graphe + propagation on_death/contagion champ + transforms grant_team).
+> sans **raretés/cotes-par-niveau** (pool uniforme) ; **ladder choc non étendu** (1 unité) ; quelques **T3
+> simplifiés** (placeholders) ; **UI reliques** (3 candidats + écran Grimoire) et **effets aura/relique
+> non capturés dans le snapshot** (v1 = effets de base) à faire ; **passifs de ligne** + **contres de taunt**
+> différés.
+> *Résolu* : ciblage déterministe (était euclidien) ; split SIM/RENDER ; boucle run roguelite ; **métriques
+> sim P3** ; **pool d'effets P4** (4 familles DoT 5/3/2 + auras + propagation + transforms) ; **P5 équilibré**
+> (σ 0,033) ; **P6 aggro activée** (tank + taunt) ; **duplicatas** (3→niveau) ; **reliques cryptiques + Grimoire**
+> (pilier #2) ; **snapshots async** (pilier #3, ghosts + cold-start IA) ; **scaffolding `sprite` retiré** (CreatureGen).
 
 ---
 
