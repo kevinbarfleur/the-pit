@@ -8,6 +8,8 @@ local Rig = require("src.core.rig")
 local Creatures = require("src.data.creatures")
 local Units = require("src.data.units")
 local CreatureGen = require("src.gen.creaturegen") -- visuel généré pour les unités sans rig main
+local Theme = require("src.ui.theme")
+local Draw = require("src.ui.draw")
 local T = require("src.core.i18n").t
 
 local ArenaDraw = {}
@@ -145,18 +147,19 @@ function ArenaDraw:draw(showBones)
 end
 
 function ArenaDraw:drawHpBar(u)
+  local c = Theme.c
   local w = 18
   local x, y = math.floor(u.x - w / 2), u.y - 42
   local frac = u.hp / u.maxHp
   love.graphics.setColor(0.04, 0.02, 0.04, 0.9)
   love.graphics.rectangle("fill", x - 1, y - 1, w + 2, 4)
-  love.graphics.setColor(0.16, 0.04, 0.05, 1)
+  love.graphics.setColor(c.bloodDeep[1], c.bloodDeep[2], c.bloodDeep[3], 1)
   love.graphics.rectangle("fill", x, y, w, 2)
-  love.graphics.setColor(0.63, 0.16, 0.14, 1)
+  love.graphics.setColor(c.blood[1], c.blood[2], c.blood[3], 1)
   love.graphics.rectangle("fill", x, y, math.floor(w * frac + 0.5), 2)
   if u.shield and u.shield > 0 then
     local sw = math.floor(w * math.min(1, u.shield / u.maxHp) + 0.5)
-    love.graphics.setColor(0.45, 0.70, 0.95, 1)
+    love.graphics.setColor(c.shield[1], c.shield[2], c.shield[3], 1)
     love.graphics.rectangle("fill", x, y - 2, sw, 1)
   end
   love.graphics.setColor(1, 1, 1, 1)
@@ -181,29 +184,28 @@ function ArenaDraw:drawBones()
   love.graphics.setColor(1, 1, 1, 1)
 end
 
--- ───────────────────────── Overlay (résolution native, texte net) ─────────────────────────
+-- ───────────────────────── Overlay (espace design, texte net) ─────────────────────────
+-- Gère sa PROPRE transform (appelée entre deux blocs Draw de la scène combat). Coords sim (u.x,u.y)
+-- en virtuel -> ×4 design.
 function ArenaDraw:drawOverlay(view)
-  local function project(x, y) return view.ox + x * view.scale, view.oy + y * view.scale end
+  local c = Theme.c
+  Draw.begin(view)
 
+  local nameFont = Theme.ui(9)
   for _, u in ipairs(self.arena.units) do
     if u.alive then
-      local sx, sy = project(u.x, u.y + 8)
-      love.graphics.setColor(0.55, 0.42, 0.16, 0.85)
-      love.graphics.printf((Units[u.id] and T("unit." .. u.id .. ".name")) or u.id, sx - 60, sy, 120, "center")
+      Draw.textC((Units[u.id] and T("unit." .. u.id .. ".name")) or u.id, u.x * 4, (u.y + 8) * 4, c.faint, nameFont)
     end
   end
 
+  local numFont = Theme.uiBold(16)
   for _, d in ipairs(self.dmgNumbers) do
     local life = 1 - d.age / 40
-    local sx, sy = project(d.x, d.y - d.age * 0.3)
-    if d.poison then
-      love.graphics.setColor(0.45, 0.78, 0.32, life)
-    else
-      love.graphics.setColor(0.78, 0.20, 0.16, life)
-    end
-    love.graphics.printf("-" .. d.val, sx - 40, sy, 80, "center")
+    local col = d.poison and c.heal or c.dmg -- DoT (poison) vert ; frappe directe rouge
+    Draw.textC("-" .. d.val, d.x * 4, (d.y - d.age * 0.3) * 4, { col[1], col[2], col[3], life }, numFont)
   end
-  love.graphics.setColor(1, 1, 1, 1)
+
+  Draw.finish()
 end
 
 return ArenaDraw

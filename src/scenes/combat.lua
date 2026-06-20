@@ -8,9 +8,11 @@
 --
 -- Interface scène : update / drawWorld / drawOverlay(view) / keypressed / mousepressed.
 
-local Background = require("src.fx.background")
 local Arena = require("src.combat.arena")
 local ArenaDraw = require("src.render.arena_draw")
+local Ambient = require("src.fx.ambient")
+local Theme = require("src.ui.theme")
+local Draw = require("src.ui.draw")
 local T = require("src.core.i18n").t
 
 local Combat = {}
@@ -21,10 +23,11 @@ function Combat.new(palette, vw, vh, host, payload)
   local arena = Arena.new({ left = payload.left, right = payload.right, autoReset = false, seed = payload.seed })
   return setmetatable({
     vw = vw, vh = vh, t = 0, host = host, palette = palette, payload = payload,
+    daChrome = true, -- chrome DA portée par la scène
     titleKey = "scene.combat",
     hintKey = "ui.hint_combat",
     enemyKey = payload.enemyKey,
-    bg = Background.new(palette, vw, vh),
+    ambient = Ambient.new(payload.seed or 11), -- atmosphère "combat" (gueule du puits + braises)
     arena = arena,
     renderer = ArenaDraw.new(arena, palette),
   }, Combat)
@@ -39,7 +42,7 @@ end
 
 function Combat:update(frameDt)
   self.t = self.t + frameDt
-  self.bg:update(frameDt, self.t)
+  self.ambient:update(frameDt)
   self.arena:update(frameDt, self.t) -- SIM (émet des événements)
   self.renderer:update(frameDt, self.t) -- RENDER (consomme + anime)
   if self.arena.over then
@@ -47,34 +50,43 @@ function Combat:update(frameDt)
   end
 end
 
+-- Atmosphère "combat" native (gueule du puits + braises), derrière les combattants pixel.
+function Combat:drawBack(view)
+  Draw.begin(view)
+  self.ambient:draw("combat")
+  Draw.finish()
+end
+
 function Combat:drawWorld()
-  self.bg:draw()
   self.renderer:draw(false)
 end
 
 function Combat:drawOverlay(view)
-  -- Étiquette de l'adversaire en haut.
-  love.graphics.setColor(0.55, 0.30, 0.30, 0.9)
-  love.graphics.printf(T("ui.vs", { name = T("encounter." .. (self.enemyKey or "unknown") .. ".name") }),
-    0, view.oy + 8, love.graphics.getWidth(), "center")
+  local c = Theme.c
+  Draw.begin(view)
+  -- Chrome debug + adversaire (centré haut, "vs" éteint + nom en sang).
+  Draw.text(T("ui.title") .. "  -  " .. T("scene.combat"):upper(), 16, 14, c.faint, Theme.ui(11))
+  Draw.text(T(self.hintKey), 16, 32, c.ghost, Theme.ui(9))
+  local font = Theme.ui(13)
+  local name = T("encounter." .. (self.enemyKey or "unknown") .. ".name")
+  love.graphics.setFont(font)
+  local x = Draw.W / 2 - (font:getWidth("vs ") + font:getWidth(name)) / 2
+  Draw.text("vs ", x, 18, c.faint, font)
+  Draw.text(name, x + font:getWidth("vs "), 18, c.bloodBright, font)
+  Draw.finish()
 
-  self.renderer:drawOverlay(view)
+  self.renderer:drawOverlay(view) -- noms d'unités + nombres flottants (gère sa propre transform)
 
+  -- Bandeau VICTORY / DEFEAT (logotype gothique = mot court iconique).
   if self.arena.over and self.arena.overAge >= 20 then
-    local sw, sh = love.graphics.getDimensions()
-    love.graphics.setColor(0, 0, 0, 0.55)
-    love.graphics.rectangle("fill", 0, sh / 2 - 34, sw, 64)
-    if self.arena.win then
-      love.graphics.setColor(0.72, 0.64, 0.30, 1)
-      love.graphics.printf(T("result.victory"), 0, sh / 2 - 24, sw, "center")
-    else
-      love.graphics.setColor(0.70, 0.22, 0.20, 1)
-      love.graphics.printf(T("result.defeat"), 0, sh / 2 - 24, sw, "center")
-    end
-    love.graphics.setColor(0.70, 0.66, 0.58, 0.95)
-    love.graphics.printf(T("ui.hint_combat_end"), 0, sh / 2 + 2, sw, "center")
+    local won = self.arena.win
+    Draw.begin(view)
+    Draw.rect(0, Draw.H / 2 - 92, Draw.W, 184, { 0.02, 0.012, 0.03, 0.66 })
+    Draw.textC(won and T("result.victory") or T("result.defeat"), Draw.W / 2, Draw.H / 2 - 72,
+      won and c.gold or c.bloodBright, Theme.display(104))
+    Draw.textC(T("ui.hint_combat_end"), Draw.W / 2, Draw.H / 2 + 58, c.muted, Theme.ui(12))
+    Draw.finish()
   end
-  love.graphics.setColor(1, 1, 1, 1)
 end
 
 function Combat:keypressed(key)
