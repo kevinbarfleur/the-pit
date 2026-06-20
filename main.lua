@@ -13,6 +13,7 @@ local Combat = require("src.scenes.combat")
 local Runover = require("src.scenes.runover")
 local Gallery = require("src.scenes.gallery")
 local Menu = require("src.scenes.menu")
+local Relicpick = require("src.scenes.relicpick")
 local RunState = require("src.run.state")
 local Grimoire = require("src.core.grimoire")
 local Theme = require("src.ui.theme")
@@ -33,6 +34,8 @@ function host.goto(name, payload)
     host.scene = Combat.new(Palette, VW, VH, host, payload)
   elseif name == "runover" then
     host.scene = Runover.new(Palette, VW, VH, host, payload)
+  elseif name == "relicpick" then
+    host.scene = Relicpick.new(Palette, VW, VH, host, payload)
   elseif name == "gallery" then
     -- Galerie de revue visuelle (debug) : construite à la demande, mémoïsée (indépendante du run).
     host.gallery = host.gallery or Gallery.new(Palette, VW, VH, host)
@@ -53,18 +56,25 @@ function host.finishCombat(win)
   host.run:resolve(win)
   -- Reliques cryptiques (pilier #2) : observation post-combat -> identification -> Grimoire (méta cross-run).
   for _, id in ipairs(host.run:observeRelics()) do Grimoire.learn(id) end
-  -- Acquisition : une relique tous les 3 victoires (déjà identifiée si le Grimoire la connaît déjà).
-  if win and host.run.wins % 3 == 0 then
-    local rid = host.run:rollRelic()
-    if rid then host.run:grantRelic(rid, Grimoire.isKnown(rid)) end
-  end
   local over = host.run:isOver()
   if over then
     host.goto("runover", { result = over, run = host.run })
-  else
-    host.run:startRound()
-    host.goto("build")
+    return
   end
+  -- Acquisition : tous les 3 victoires, un écran de CHOIX 1-parmi-3 (« A Fragment Surfaces »).
+  if win and host.run.wins % 3 == 0 then
+    local choices = host.run:rollRelicChoices(3)
+    if #choices > 0 then host.goto("relicpick", { choices = choices }); return end
+  end
+  host.run:startRound()
+  host.goto("build")
+end
+
+-- Choix de relique confirmé (BIND) : octroi (identifiée d'emblée si déjà connue au Grimoire), round suivant.
+function host.finishRelicPick(id)
+  host.run:grantRelic(id, Grimoire.isKnown(id))
+  host.run:startRound()
+  host.goto("build")
 end
 
 -- Démarre une run neuve : nouvel état seedé (boutique/seeds de combat dérivés) + plateau remis à zéro.

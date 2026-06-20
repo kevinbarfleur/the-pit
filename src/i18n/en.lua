@@ -73,6 +73,18 @@ return {
   ["runover.win"] = "ASCENSION",
   ["runover.lose"] = "THE PIT KEEPS YOU",
   ["runover.stats"] = "{wins} wins  -  {losses} losses  -  {rounds} rounds  -  level {level}",
+  ["runover.kicker_win"] = "the pit gives you up, this once",
+  ["runover.kicker_lose"] = "the dark closes over the last candle",
+  ["runover.score"] = "{wins} WINS    -    {losses} LOSSES",
+  ["runover.progress"] = "{rounds} ROUNDS    -    LEVEL {level}",
+  ["runover.again"] = "[click] / [r]  -  descend again",
+
+  -- relic pick (1-of-3 acquisition)
+  ["relicpick.kicker"] = "the victory loosens something below",
+  ["relicpick.title"] = "A Fragment Surfaces",
+  ["relicpick.unknown"] = "EFFECT UNKNOWN  -  REVEALS IN USE",
+  ["relicpick.bind"] = "BIND THE FRAGMENT",
+  ["relicpick.choose"] = "CHOOSE ONE",
 
   -- unit types (clé mécanique -> libellé affiché)
   ["type.flesh"] = "Flesh",
@@ -259,6 +271,12 @@ return {
   -- RELIQUES CRYPTIQUES (pilier #2) : name + vraie description (real) + 2 leurres (d1/d2). Les leurres se
   -- recoupent d'une relique a l'autre (le vrai effet de l'une est le leurre d'une autre) -> deduction Obra Dinn.
   ["relic.unidentified"] = "??? (unidentified relic)",
+  -- saveur (citation courte, affichee a l'acquisition ; serif romain lisible)
+  ["relic.bloodstone.flavor"] = "A heart of compressed murder, still warm to the touch.",
+  ["relic.carapace.flavor"] = "Shed by something that outgrew its own death.",
+  ["relic.ember_heart.flavor"] = "It beats once an hour, and the hour burns.",
+  ["relic.venom_sigil.flavor"] = "Drawn in a fluid that was never ink.",
+  ["relic.gravewax.flavor"] = "Sealing-wax for tombs that refuse to stay shut.",
   ["relic.bloodstone.name"] = "BLOODSTONE",
   ["relic.bloodstone.real"] = "+20% damage to all your units",
   ["relic.bloodstone.d1"] = "+30% max HP to all your units",

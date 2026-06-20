@@ -184,6 +184,23 @@ function RunState:rollRelic()
   return avail[self.rng:random(1, #avail)]
 end
 
+-- Tire jusqu'à n ids DISTINCTS de reliques NON possédées (seedé) : l'offre 1-parmi-n de l'écran de relique.
+function RunState:rollRelicChoices(n)
+  local avail = {}
+  for _, id in ipairs(Relics.order) do
+    local owned = false
+    for _, r in ipairs(self.relics) do if r.id == id then owned = true; break end end
+    if not owned then avail[#avail + 1] = id end
+  end
+  for i = #avail, 2, -1 do -- Fisher-Yates seedé (RNG du run) -> rejouable
+    local j = self.rng:random(1, i)
+    avail[i], avail[j] = avail[j], avail[i]
+  end
+  local out = {}
+  for i = 1, math.min(n or 3, #avail) do out[i] = avail[i] end
+  return out
+end
+
 -- Octroie une relique. `alreadyKnown` (lu du Grimoire par le host) -> démarre IDENTIFIÉE (la connaissance
 -- est une méta-progression : déjà déduite dans un run passé). Sinon CRYPTIQUE : 3 candidats mélangés seedé.
 function RunState:grantRelic(id, alreadyKnown)
