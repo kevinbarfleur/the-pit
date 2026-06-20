@@ -101,6 +101,7 @@ function Arena:spawn()
   self.over = false
   self.win = nil
   self.overAge = 0
+  self.teamFlags = { left = {}, right = {} } -- drapeaux d'équipe (grant_team T3) posés à combat_start
   for _, spec in ipairs(self.leftComp or demoComp("left")) do
     table.insert(self.units, self:makeUnit(spec, "left"))
   end
@@ -252,7 +253,8 @@ function Arena:tickDots(u, frameDt)
   local b = d.burn
   if b then
     b.remaining = b.remaining - frameDt
-    if b.decayEvery then
+    local btf = b.source and self.teamFlags and self.teamFlags[b.source.team]
+    if b.decayEvery and not (btf and btf.burnNoDecay) then -- ASH-MAW : les feux de l'equipe ne decroissent plus
       b.decayAcc = b.decayAcc + frameDt
       if b.decayAcc >= b.decayEvery then
         b.decayAcc = b.decayAcc - b.decayEvery
@@ -302,6 +304,15 @@ function Arena:tickDots(u, frameDt)
       end
     end
     u.weaken = math.min(WEAKEN_CAP, weaken)
+    if u.igniteAt and #stacks >= u.igniteAt and not u.ignited then -- VENOM-CENSER : seuil atteint -> detonation (poison->burn)
+      u.ignited = true
+      local cur = u.dots.burn
+      local dps = u.igniteDps or 8
+      if not cur or dps > cur.dps then
+        u.dots.burn = { dps = dps, remaining = u.igniteDur or 120, acc = 0,
+          decayEvery = 60, decayAcc = 0, decayPct = 0.30, source = u.igniteSrc }
+      end
+    end
   end
 
   -- POURRITURE : durée qui enfle ; ampute les PV max ; ignore le bouclier.

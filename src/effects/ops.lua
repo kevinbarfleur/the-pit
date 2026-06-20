@@ -39,9 +39,17 @@ end)
 Effects.register("poison", function(ctx, p)
   local v = ctx.victim
   local stacks = v.dots.poison
-  stacks[#stacks + 1] = { dps = p.dps or 0, remaining = p.dur or 0, acc = 0,
-    weaken = p.weaken or 0, source = ctx.source }
-  if #stacks > 8 then table.remove(stacks, 1) end -- POISON_STACK_CAP : rare, retire le plus ancien
+  local tf = ctx.arena.teamFlags and ctx.arena.teamFlags[ctx.source.team] -- THE FESTERING : sans-cap + duree++
+  local cap = (tf and tf.poisonNoCap) and 99 or 8
+  stacks[#stacks + 1] = { dps = p.dps or 0, remaining = (p.dur or 0) + ((tf and tf.poisonDurBonus) or 0),
+    acc = 0, weaken = p.weaken or 0, source = ctx.source }
+  if #stacks > cap then table.remove(stacks, 1) end -- POISON_STACK_CAP (levé par The Festering)
+  if p.igniteAt then -- VENOM-CENSER : arme la détonation au seuil (poison->burn), tickée par tickDots
+    v.igniteAt = p.igniteAt
+    v.igniteDps = (p.igniteBurst and p.igniteBurst.dps) or 8
+    v.igniteDur = (p.igniteBurst and p.igniteBurst.dur) or 120
+    v.igniteSrc = ctx.source
+  end
   if p.shieldEat and v.shield and v.shield > 0 then -- ACID-MAW : le venin DISSOUT l'armure (par pose)
     v.shield = math.floor(v.shield * (1 - p.shieldEat))
   end
@@ -164,6 +172,48 @@ Effects.register("spread_rot", function(ctx, p)
         capDps = p.capDps or 10, maxHpFrac = p.maxHpFrac or 0, source = ctx.source }
     end
   end
+end)
+
+-- ── TRANSFORMS T3 (combat_start) — GRANT_TEAM pose des DRAPEAUX d'équipe (lus par le tick/les ops) et/ou
+-- des AURAS immédiates. Le T3 ne scale QUE ses stats, jamais son seuil ni sa bascule (anti double-snowball,
+-- cf. effects-design.md §3). cf. effects-dot-families.md §H. ──
+Effects.register("grant_team", function(ctx, p)
+  local arena, team = ctx.arena, ctx.source.team
+  local tf = arena.teamFlags and arena.teamFlags[team]
+  if tf then
+    if p.burnNoDecay then tf.burnNoDecay = true end                         -- ASH-MAW : feux sans décroissance
+    if p.poisonNoCap then tf.poisonNoCap = true end                         -- THE FESTERING : poison sans cap
+    if p.poisonDurBonus then tf.poisonDurBonus = (tf.poisonDurBonus or 0) + p.poisonDurBonus end
+  end
+  if p.slowEnemies then -- THE SLOW BLEED : aura de slow sur TOUTE l'équipe ennemie (immédiate)
+    for _, w in ipairs(arena.units) do
+      if w.alive and w.team ~= team then w.atkSlow = w.atkSlow + p.slowEnemies end
+    end
+  end
+  if p.rotEnemies then -- THE PIT-MAW : la présence pourrit toute l'équipe ennemie (immédiate)
+    local re = p.rotEnemies
+    for _, w in ipairs(arena.units) do
+      if w.alive and w.team ~= team and not w.dots.rot then
+        w.dots.rot = { dps = re.base or 1, remaining = re.dur or 240, acc = 0,
+          capDps = re.capDps or 8, maxHpFrac = re.maxHpFrac or 0.10, source = ctx.source }
+      end
+    end
+  end
+end)
+
+-- MARROW-DRINKER (croisement saignement->pourriture) : sur une cible DÉJÀ saignante, le coup convertit
+-- le sang noir en nécrose (pose/enfle une pourriture, consomme le bleed). Payoff conditionnel d'usure.
+Effects.register("convert_to_rot", function(ctx, p)
+  local v = ctx.victim
+  if not v.dots.bleed then return end -- seulement si la cible saigne (synergie cross-famille)
+  if not v.dots.rot then
+    v.dots.rot = { dps = p.base or 2, remaining = p.dur or 240, acc = 0,
+      capDps = p.capDps or 10, maxHpFrac = p.maxHpFrac or 0.10, source = ctx.source }
+  else
+    v.dots.rot.dps = math.min(v.dots.rot.capDps, v.dots.rot.dps + (p.growth or 1))
+  end
+  v.atkSlow = math.max(0, v.atkSlow - (v.dots.bleed.slowPct or 0) - (v.dots.bleed.dynBonus or 0))
+  v.dots.bleed = nil -- la plaie se nécrose : le bleed devient pourriture
 end)
 
 return Effects
