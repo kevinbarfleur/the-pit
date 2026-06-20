@@ -123,11 +123,15 @@ local ok, err = pcall(function()
     assert(mar.hp == mhp - 3, "épines: l'attaquant du squelette subit 3 dégâts")
   end
 
-  do -- vol de vie (démon se soigne)
+  do -- vol de vie (démon se soigne d'une fraction des dégâts) — DÉRIVÉ des data (survit aux tunings)
     local a = Arena.new({ left = { spec("demon", 150) }, right = { spec("marauder", 170, 100) }, autoReset = false })
     local dem = a.units[1]; dem.hp = 30
+    local frac
+    for _, e in ipairs(Units.demon.effects) do if e.op == "lifesteal" then frac = e.params.frac end end
+    local before = dem.hp
     a:hit(dem, a.units[2])
-    assert(dem.hp == 35, "vol de vie: +50% des dégâts infligés")
+    local expected = before + math.floor(Units.demon.dmg * frac + 0.5)
+    assert(dem.hp == expected, ("vol de vie: +%d%% des degats infliges"):format(frac * 100))
   end
 
   -- Familles de STATUTS (le moteur générique arena:tickDots) : poison stacks + weaken, burn décroît +

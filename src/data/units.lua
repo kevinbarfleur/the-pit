@@ -49,8 +49,8 @@ local U = {
     effects = { { trigger = "on_hit", op = "poison", params = { dps = 2, dur = 180 } } },
   },
   demon = {
-    id = "demon", type = "abyss", cost = 3, hp = 72, dmg = 10, cd = 56, -- DEMON / Leech
-    effects = { { trigger = "on_hit", op = "lifesteal", params = { frac = 0.5 } } },
+    id = "demon", type = "abyss", cost = 3, hp = 64, dmg = 9, cd = 56, -- DEMON / Leech
+    effects = { { trigger = "on_hit", op = "lifesteal", params = { frac = 0.4 } } },
   },
 
   -- ── Unités à EFFETS (familles de statuts, cf. docs/research/effects-dot-families.md). Le champ
@@ -146,7 +146,7 @@ local U = {
   -- board:neighbors), comme shield_aura -> AUCUN op combat (ignorées gracieusement à combat_start). Elles
   -- ne posent PAS le DoT elles-mêmes : elles AMPLIFIENT le voisin qui le pose (la synergie positionnelle). ══
   soot_acolyte = { -- BRÛLURE : +dps aux brûlures des voisins
-    id = "soot_acolyte", sprite = "witch", type = "arcane", cost = 3, hp = 36, dmg = 4, cd = 60,
+    id = "soot_acolyte", sprite = "witch", type = "arcane", cost = 3, hp = 46, dmg = 6, cd = 54,
     effects = { { trigger = "combat_start", op = "aura_burn_dps", target = "neighbors", params = { bonus = 2 } } },
   },
   clot_mender = { -- SAIGNEMENT : les voisins appliquent AUSSI un petit bleed
