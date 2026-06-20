@@ -155,7 +155,9 @@ local statusShare = (totalDmg > 0) and (statusDmg / totalDmg) or 0
 -- sur-performe ce que ses unités font seules => synergie (voulue ou CASSÉE) ; lift << 1 = anti-synergie.
 -- La normalisation par la moyenne solo neutralise « portée par une unité forte ». Signal à confirmer
 -- à grand N (peu d'échantillons par paire = bruyant). ──
-local PAIR_MIN = math.max(12, math.floor(N / 25)) -- seuil d'échantillon anti-bruit (scale avec N)
+-- Seuil d'échantillon : BAS pour un grand pool (sur ~47 unités une paire ne co-occurre que ~N/90 fois ;
+-- un seuil en N/25 désactiverait le détecteur). On vise ~25-130 co-occurrences -> lift = signal à confirmer.
+local PAIR_MIN = math.max(20, math.floor(N / 150))
 local function wrOf(id) local s = stat[id]; return (s and s.appear > 0) and s.wins / s.appear or 0 end
 local pairRows = {}
 for _, pd in pairs(pairData) do
