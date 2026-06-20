@@ -53,65 +53,65 @@ local U = {
     effects = { { trigger = "on_hit", op = "lifesteal", params = { frac = 0.4 } } },
   },
 
-  -- ── Unités à EFFETS (familles de statuts, cf. docs/research/effects-dot-families.md). Le champ
-  -- `sprite` RÉUTILISE une créature existante tant que le pixel-art dédié n'existe pas. PLACEHOLDERS. ──
+  -- ── Unités à EFFETS (familles de statuts, cf. docs/research/effects-dot-families.md). Visuel GÉNÉRÉ
+  -- procéduralement par `type` (src/gen/creaturegen.lua) ; aucun champ visuel ici. PLACEHOLDERS. ──
   spore_tick = { -- POISON : cadence rapide, petits stacks (empile vite)
-    id = "spore_tick", sprite = "witch", type = "arcane", cost = 2, hp = 30, dmg = 3, cd = 30,
+    id = "spore_tick", type = "arcane", cost = 2, hp = 30, dmg = 3, cd = 30,
     effects = { { trigger = "on_hit", op = "poison", params = { dps = 1, dur = 180 } } },
   },
   corruptor = { -- POISON + malus de valeur (anti-stat)
-    id = "corruptor", sprite = "demon", type = "abyss", cost = 3, hp = 46, dmg = 6, cd = 62,
+    id = "corruptor", type = "abyss", cost = 3, hp = 46, dmg = 6, cd = 62,
     effects = { { trigger = "on_hit", op = "poison", params = { dps = 2, dur = 180, weaken = 0.06 } } },
   },
   emberling = { -- BRÛLURE : burst qui décroît, lèche le bouclier
-    id = "emberling", sprite = "demon", type = "abyss", cost = 2, hp = 40, dmg = 5, cd = 50,
+    id = "emberling", type = "abyss", cost = 2, hp = 40, dmg = 5, cd = 50,
     effects = { { trigger = "on_hit", op = "burn", params = { dps = 6, dur = 150 } } },
   },
   razorkin = { -- SAIGNEMENT : slow de cadence
-    id = "razorkin", sprite = "bandit", type = "flesh", cost = 3, hp = 52, dmg = 5, cd = 46,
+    id = "razorkin", type = "flesh", cost = 3, hp = 52, dmg = 5, cd = 46,
     effects = { { trigger = "on_hit", op = "bleed", params = { dps = 2, dur = 240, slowPct = 0.20 } } },
   },
   rot_hound = { -- POURRITURE : enfle, ampute les PV max
-    id = "rot_hound", sprite = "skeleton", type = "bone", cost = 3, hp = 54, dmg = 5, cd = 56,
+    id = "rot_hound", type = "bone", cost = 3, hp = 54, dmg = 5, cd = 56,
     effects = { { trigger = "on_hit", op = "rot", params = { base = 1, growth = 1, dur = 240, capDps = 10, maxHpFrac = 0.15 } } },
   },
   stormcaller = { -- CHOC : amplifie les dégâts-pris de la cible
-    id = "stormcaller", sprite = "witch", type = "arcane", cost = 3, hp = 38, dmg = 6, cd = 58,
+    id = "stormcaller", type = "arcane", cost = 3, hp = 38, dmg = 6, cd = 58,
     effects = { { trigger = "on_hit", op = "shock", params = { add = 1, perStack = 0.07, cap = 8, dur = 150 } } },
   },
   plague_doctor = { -- CONTRE-DoT : régénération (le contre livré avec les familles)
-    id = "plague_doctor", sprite = "templar", type = "order", cost = 4, hp = 80, dmg = 6, cd = 66,
+    id = "plague_doctor", type = "order", cost = 4, hp = 80, dmg = 6, cd = 66,
     effects = { { trigger = "combat_start", op = "regen", params = { value = 3 } } },
   },
 
   -- ══ VAGUE 1 : T1 « enablers » supplémentaires (cf. effects-dot-families.md §H). Ops EXISTANTS, params
-  -- variés -> PURE DATA, aucune nouvelle mécanique moteur. `sprite` = visuel de repli. PLACEHOLDERS (P5). ══
+  -- variés -> PURE DATA, aucune nouvelle mécanique moteur. Visuel généré (CreatureGen). PLACEHOLDERS (P5). ══
 
   -- BRÛLURE (burst qui décroît, lèche le bouclier) : cadence / front-load / éphémère
   cinder_cur = { -- cadence rapide, petites brûlures qui se rallument souvent
-    id = "cinder_cur", sprite = "demon", type = "abyss", cost = 2, hp = 34, dmg = 4, cd = 34,
+    id = "cinder_cur", type = "abyss", cost = 2, hp = 34, dmg = 4, cd = 34,
     effects = { { trigger = "on_hit", op = "burn", params = { dps = 4, dur = 120, refresh = true } } },
   },
   pyre_tender = { -- gros coup lent -> grosse brûlure de départ (front-load)
-    id = "pyre_tender", sprite = "marauder", type = "flesh", cost = 3, hp = 50, dmg = 7, cd = 72,
+    id = "pyre_tender", type = "flesh", cost = 3, hp = 50, dmg = 7, cd = 72,
     effects = { { trigger = "on_hit", op = "burn", params = { dps = 10, dur = 180 } } },
   },
   ash_moth = { -- coût bas, brûlure qui décroît vite (éphémère mais bon marché)
-    id = "ash_moth", sprite = "bandit", type = "flesh", cost = 2, hp = 26, dmg = 3, cd = 40,
+    id = "ash_moth", type = "flesh", cost = 2, hp = 26, dmg = 3, cd = 40,
     effects = { { trigger = "on_hit", op = "burn", params = { dps = 7, dur = 120, decayPct = 0.45 } } },
   },
 
   -- SAIGNEMENT (bas DPS, slow de cadence) : intensité / contrôle pur / épines
   gash_fiend = { -- saignement un peu plus fort, slow standard
-    id = "gash_fiend", sprite = "bandit", type = "flesh", cost = 3, hp = 50, dmg = 5, cd = 48,
+    id = "gash_fiend", type = "flesh", cost = 3, hp = 50, dmg = 5, cd = 48,
     effects = { { trigger = "on_hit", op = "bleed", params = { dps = 3, dur = 240, slowPct = 0.20 } } },
   },
   hookjaw = { -- gros slow, dégâts minimes (pur contrôle de tempo)
-    id = "hookjaw", sprite = "marauder", type = "flesh", cost = 3, hp = 58, dmg = 3, cd = 54,
+    id = "hookjaw", type = "flesh", cost = 3, hp = 58, dmg = 3, cd = 54,
     effects = { { trigger = "on_hit", op = "bleed", params = { dps = 1, dur = 300, slowPct = 0.30 } } },
   },
   leech_thorn = { -- bleed bas + ÉPINES (punit qui le frappe) : DEUX effets via ops existants
-    id = "leech_thorn", sprite = "skeleton", type = "bone", cost = 3, hp = 46, dmg = 4, cd = 50,
+    id = "leech_thorn", type = "bone", cost = 3, hp = 46, dmg = 4, cd = 50,
     effects = {
       { trigger = "on_hit", op = "bleed", params = { dps = 2, dur = 180, slowPct = 0.10 } },
       { trigger = "on_attacked", op = "thorns", params = { value = 3 } },
@@ -120,25 +120,25 @@ local U = {
 
   -- POISON (N stacks, malus de valeur) : malus de base / longue durée
   bile_spitter = { -- stacks moyens + malus de valeur de base
-    id = "bile_spitter", sprite = "witch", type = "arcane", cost = 3, hp = 42, dmg = 5, cd = 56,
+    id = "bile_spitter", type = "arcane", cost = 3, hp = 42, dmg = 5, cd = 56,
     effects = { { trigger = "on_hit", op = "poison", params = { dps = 2, dur = 180, weaken = 0.10 } } },
   },
   rot_grub = { -- stacks LONGUE durée (entretien facile du total) — POISON malgré le nom
-    id = "rot_grub", sprite = "demon", type = "abyss", cost = 3, hp = 48, dmg = 4, cd = 58,
+    id = "rot_grub", type = "abyss", cost = 3, hp = 48, dmg = 4, cd = 58,
     effects = { { trigger = "on_hit", op = "poison", params = { dps = 2, dur = 300 } } },
   },
 
   -- POURRITURE (enfle, ampute les PV max) : cadence / long terme / amputation forte
   carrion_pecker = { -- cadence rapide -> enfle vite (mais cap bas)
-    id = "carrion_pecker", sprite = "bandit", type = "flesh", cost = 2, hp = 38, dmg = 4, cd = 38,
+    id = "carrion_pecker", type = "flesh", cost = 2, hp = 38, dmg = 4, cd = 38,
     effects = { { trigger = "on_hit", op = "rot", params = { base = 1, growth = 1, dur = 180, capDps = 6, maxHpFrac = 0.10 } } },
   },
   maggot_king = { -- démarrage lent, cap HAUT (récompense le long terme)
-    id = "maggot_king", sprite = "skeleton", type = "bone", cost = 4, hp = 70, dmg = 5, cd = 64,
+    id = "maggot_king", type = "bone", cost = 4, hp = 70, dmg = 5, cd = 64,
     effects = { { trigger = "on_hit", op = "rot", params = { base = 1, growth = 1, dur = 300, capDps = 12, maxHpFrac = 0.15 } } },
   },
   necro_leech = { -- pourriture + amputation RENFORCÉE des PV max
-    id = "necro_leech", sprite = "demon", type = "abyss", cost = 3, hp = 50, dmg = 5, cd = 56,
+    id = "necro_leech", type = "abyss", cost = 3, hp = 50, dmg = 5, cd = 56,
     effects = { { trigger = "on_hit", op = "rot", params = { base = 1, growth = 1, dur = 240, capDps = 10, maxHpFrac = 0.35 } } },
   },
 
@@ -146,19 +146,19 @@ local U = {
   -- board:neighbors), comme shield_aura -> AUCUN op combat (ignorées gracieusement à combat_start). Elles
   -- ne posent PAS le DoT elles-mêmes : elles AMPLIFIENT le voisin qui le pose (la synergie positionnelle). ══
   soot_acolyte = { -- BRÛLURE : +dps aux brûlures des voisins
-    id = "soot_acolyte", sprite = "witch", type = "arcane", cost = 3, hp = 46, dmg = 6, cd = 54,
+    id = "soot_acolyte", type = "arcane", cost = 3, hp = 46, dmg = 6, cd = 54,
     effects = { { trigger = "combat_start", op = "aura_burn_dps", target = "neighbors", params = { bonus = 2 } } },
   },
   clot_mender = { -- SAIGNEMENT : les voisins appliquent AUSSI un petit bleed
-    id = "clot_mender", sprite = "skeleton", type = "bone", cost = 3, hp = 44, dmg = 4, cd = 56,
+    id = "clot_mender", type = "bone", cost = 3, hp = 44, dmg = 4, cd = 56,
     effects = { { trigger = "combat_start", op = "aura_grant_bleed", target = "neighbors", params = { dps = 1, dur = 180, slowPct = 0.10 } } },
   },
   miasma_acolyte = { -- POISON : +dps aux stacks de poison des voisins
-    id = "miasma_acolyte", sprite = "witch", type = "arcane", cost = 3, hp = 36, dmg = 4, cd = 60,
+    id = "miasma_acolyte", type = "arcane", cost = 3, hp = 36, dmg = 4, cd = 60,
     effects = { { trigger = "combat_start", op = "aura_poison_dps", target = "neighbors", params = { bonus = 1 } } },
   },
   decay_tender = { -- POURRITURE : +growth aux pourritures des voisins (enflent plus vite)
-    id = "decay_tender", sprite = "skeleton", type = "bone", cost = 3, hp = 50, dmg = 4, cd = 60,
+    id = "decay_tender", type = "bone", cost = 3, hp = 50, dmg = 4, cd = 60,
     effects = { { trigger = "combat_start", op = "aura_rot_growth", target = "neighbors", params = { bonus = 1 } } },
   },
 
@@ -167,56 +167,56 @@ local U = {
 
   -- BRÛLURE T2
   bellows_priest = { -- anti-décroissance : la brûlure décroît bien moins (maintien facilité)
-    id = "bellows_priest", sprite = "demon", type = "abyss", cost = 3, hp = 44, dmg = 5, cd = 58,
+    id = "bellows_priest", type = "abyss", cost = 3, hp = 44, dmg = 5, cd = 58,
     effects = { { trigger = "on_hit", op = "burn", params = { dps = 6, dur = 180, decayPct = 0.15 } } },
   },
   wildfire_hound = { -- à la mort d'un ennemi en feu, propage la brûlure à ses voisins (proximité champ)
-    id = "wildfire_hound", sprite = "demon", type = "abyss", cost = 3, hp = 48, dmg = 5, cd = 54,
+    id = "wildfire_hound", type = "abyss", cost = 3, hp = 48, dmg = 5, cd = 54,
     effects = {
       { trigger = "on_hit", op = "burn", params = { dps = 5, dur = 150 } },
       { trigger = "on_death", op = "spread_burn_on_death", params = { frac = 0.7, minDps = 3, dur = 120 } },
     },
   },
   kiln_warden = { -- convertit le surplus : une brûlure plus faible PROLONGE au lieu d'être perdue
-    id = "kiln_warden", sprite = "marauder", type = "flesh", cost = 3, hp = 52, dmg = 5, cd = 60,
+    id = "kiln_warden", type = "flesh", cost = 3, hp = 52, dmg = 5, cd = 60,
     effects = { { trigger = "on_hit", op = "burn", params = { dps = 5, dur = 180, mode = "extend_if_weaker" } } },
   },
 
   -- SAIGNEMENT T2
   bloodletter = { -- le saignement ÉCLATE (×2) quand la cible attaque (payoff conditionnel)
-    id = "bloodletter", sprite = "bandit", type = "flesh", cost = 3, hp = 48, dmg = 5, cd = 48,
+    id = "bloodletter", type = "flesh", cost = 3, hp = 48, dmg = 5, cd = 48,
     effects = { { trigger = "on_hit", op = "bleed", params = { dps = 2, dur = 240, slowPct = 0.20, aggravateMult = 2.0 } } },
   },
   tendon_render = { -- le slow SCALE avec les PV manquants (plus elle saigne, plus elle ralentit)
-    id = "tendon_render", sprite = "skeleton", type = "bone", cost = 3, hp = 50, dmg = 4, cd = 50,
+    id = "tendon_render", type = "bone", cost = 3, hp = 50, dmg = 4, cd = 50,
     effects = { { trigger = "on_hit", op = "bleed", params = { dps = 2, dur = 240, slowPct = 0.15, slowScalesMissingHp = true } } },
   },
   vein_splitter = { -- saignement profond et rapide (« deux entailles » ; 2-instances approximé par 1 fort)
-    id = "vein_splitter", sprite = "bandit", type = "flesh", cost = 3, hp = 46, dmg = 4, cd = 44,
+    id = "vein_splitter", type = "flesh", cost = 3, hp = 46, dmg = 4, cd = 44,
     effects = { { trigger = "on_hit", op = "bleed", params = { dps = 4, dur = 180, slowPct = 0.15 } } },
   },
 
   -- POISON T2 (corruptor = le 3e, déjà présent)
   plague_bearer = { -- CONTAGION : le poison se propage en stack plus faible aux voisins de la cible
-    id = "plague_bearer", sprite = "witch", type = "arcane", cost = 3, hp = 40, dmg = 5, cd = 58,
+    id = "plague_bearer", type = "arcane", cost = 3, hp = 40, dmg = 5, cd = 58,
     effects = { { trigger = "on_hit", op = "poison", params = { dps = 2, dur = 180, spread = { dps = 1, dur = 120 } } } },
   },
   acid_maw = { -- le venin RONGE le bouclier (−30 % par pose : dissout l'armure)
-    id = "acid_maw", sprite = "demon", type = "abyss", cost = 3, hp = 46, dmg = 5, cd = 56,
+    id = "acid_maw", type = "abyss", cost = 3, hp = 46, dmg = 5, cd = 56,
     effects = { { trigger = "on_hit", op = "poison", params = { dps = 2, dur = 180, shieldEat = 0.30 } } },
   },
 
   -- POURRITURE T2
   patient_worm = { -- la pourriture enfle même SANS frapper (ramp passif tant qu'active)
-    id = "patient_worm", sprite = "skeleton", type = "bone", cost = 3, hp = 54, dmg = 4, cd = 60,
+    id = "patient_worm", type = "bone", cost = 3, hp = 54, dmg = 4, cd = 60,
     effects = { { trigger = "on_hit", op = "rot", params = { base = 1, passiveRamp = 1, dur = 240, capDps = 10, maxHpFrac = 0.10 } } },
   },
   hollow_gut = { -- l'amputation des PV max NOURRIT le porteur (vol de plafond de vie)
-    id = "hollow_gut", sprite = "demon", type = "abyss", cost = 3, hp = 50, dmg = 5, cd = 58,
+    id = "hollow_gut", type = "abyss", cost = 3, hp = 50, dmg = 5, cd = 58,
     effects = { { trigger = "on_hit", op = "rot", params = { base = 1, growth = 1, dur = 240, capDps = 10, maxHpFrac = 0.20, amputateHealsMe = 0.5 } } },
   },
   blight_spreader = { -- à la mort d'une cible pourrie, la pourriture prend ses voisins (proximité champ)
-    id = "blight_spreader", sprite = "skeleton", type = "bone", cost = 3, hp = 52, dmg = 5, cd = 56,
+    id = "blight_spreader", type = "bone", cost = 3, hp = 52, dmg = 5, cd = 56,
     effects = {
       { trigger = "on_hit", op = "rot", params = { base = 1, growth = 1, dur = 240, capDps = 10, maxHpFrac = 0.15 } },
       { trigger = "on_death", op = "spread_rot", params = { base = 2, dur = 240, capDps = 10, maxHpFrac = 0.10 } },
@@ -229,14 +229,14 @@ local U = {
 
   -- BRÛLURE T3
   ash_maw = { -- TRANSFORM : tant qu'il vit, les feux de l'ÉQUIPE ne décroissent plus (les braises éternelles)
-    id = "ash_maw", sprite = "demon", type = "abyss", cost = 5, hp = 70, dmg = 6, cd = 60,
+    id = "ash_maw", type = "abyss", cost = 5, hp = 70, dmg = 6, cd = 60,
     effects = {
       { trigger = "on_hit", op = "burn", params = { dps = 6, dur = 180 } },
       { trigger = "combat_start", op = "grant_team", params = { burnNoDecay = true } },
     },
   },
   plague_pyre = { -- CROISÉ feu->poison : quand sa brûlure saute à la mort, elle SÈME aussi du venin
-    id = "plague_pyre", sprite = "demon", type = "abyss", cost = 5, hp = 56, dmg = 6, cd = 56,
+    id = "plague_pyre", type = "abyss", cost = 5, hp = 56, dmg = 6, cd = 56,
     effects = {
       { trigger = "on_hit", op = "burn", params = { dps = 5, dur = 150 } },
       { trigger = "on_death", op = "spread_burn_on_death", params = { frac = 0.6, minDps = 3, dur = 120, alsoPoison = { dps = 2, dur = 120 } } },
@@ -245,40 +245,40 @@ local U = {
 
   -- SAIGNEMENT T3
   slow_bleed = { -- TRANSFORM : au début du combat, RALENTIT toute l'équipe ennemie (la mort par mille coupures)
-    id = "slow_bleed", sprite = "skeleton", type = "bone", cost = 5, hp = 64, dmg = 5, cd = 54,
+    id = "slow_bleed", type = "bone", cost = 5, hp = 64, dmg = 5, cd = 54,
     effects = {
       { trigger = "on_hit", op = "bleed", params = { dps = 2, dur = 240, slowPct = 0.15 } },
       { trigger = "combat_start", op = "grant_team", params = { slowEnemies = 0.12 } },
     },
   },
   marrow_drinker = { -- CROISÉ saignement->pourriture : sur une cible DÉJÀ saignante, convertit le bleed en rot
-    id = "marrow_drinker", sprite = "demon", type = "abyss", cost = 4, hp = 54, dmg = 6, cd = 52,
+    id = "marrow_drinker", type = "abyss", cost = 4, hp = 54, dmg = 6, cd = 52,
     effects = { { trigger = "on_hit", op = "convert_to_rot", params = { base = 3, growth = 2, dur = 240, capDps = 12, maxHpFrac = 0.15 } } },
   },
 
   -- POISON T3
   festering = { -- TRANSFORM : le poison de l'ÉQUIPE ignore son cap de stacks ET dure plus longtemps
-    id = "festering", sprite = "witch", type = "arcane", cost = 5, hp = 50, dmg = 6, cd = 60,
+    id = "festering", type = "arcane", cost = 5, hp = 50, dmg = 6, cd = 60,
     effects = {
       { trigger = "on_hit", op = "poison", params = { dps = 2, dur = 180 } },
       { trigger = "combat_start", op = "grant_team", params = { poisonNoCap = true, poisonDurBonus = 60 } },
     },
   },
   venom_censer = { -- CROISÉ poison->feu : à N stacks de poison, la cible DÉTONE en flammes (accumule puis détonne)
-    id = "venom_censer", sprite = "witch", type = "arcane", cost = 5, hp = 48, dmg = 6, cd = 58,
+    id = "venom_censer", type = "arcane", cost = 5, hp = 48, dmg = 6, cd = 58,
     effects = { { trigger = "on_hit", op = "poison", params = { dps = 2, dur = 180, igniteAt = 5, igniteBurst = { dps = 10, dur = 150 } } } },
   },
 
   -- POURRITURE T3
   pit_maw = { -- TRANSFORM (signature thème) : au début du combat, la pourriture rampe sur TOUTE l'équipe ennemie
-    id = "pit_maw", sprite = "skeleton", type = "bone", cost = 5, hp = 76, dmg = 5, cd = 64,
+    id = "pit_maw", type = "bone", cost = 5, hp = 76, dmg = 5, cd = 64,
     effects = {
       { trigger = "on_hit", op = "rot", params = { base = 1, growth = 1, dur = 240, capDps = 10, maxHpFrac = 0.15 } },
       { trigger = "combat_start", op = "grant_team", params = { rotEnemies = { base = 1, dur = 300, capDps = 8, maxHpFrac = 0.10 } } },
     },
   },
   wither_bloom = { -- CROISÉ rot->slow+malus : pourriture qui RALENTIT et AFFAIBLIT aussi (l'usure totale, anti-stat)
-    id = "wither_bloom", sprite = "demon", type = "abyss", cost = 5, hp = 58, dmg = 5, cd = 60,
+    id = "wither_bloom", type = "abyss", cost = 5, hp = 58, dmg = 5, cd = 60,
     effects = {
       { trigger = "on_hit", op = "rot", params = { base = 2, growth = 1, dur = 240, capDps = 10, maxHpFrac = 0.15 } },
       { trigger = "on_hit", op = "bleed", params = { dps = 0, dur = 240, slowPct = 0.15 } }, -- pur slow (0 dps)
@@ -325,8 +325,8 @@ U.pool = { "marauder", "templar", "skeleton", "bandit", "witch", "demon",
   "festering", "venom_censer",
   "pit_maw", "wither_bloom" }
 
--- Visuel (rig) d'une unité : son propre id, ou un `sprite` de repli (réutilise une créature existante
--- tant que le pixel-art dédié n'existe pas, cf. src/data/creatures.lua).
-function U.spriteOf(id) local u = U[id]; return (u and u.sprite) or id end
+-- Visuel : les 6 vanille ont un rig DESSINÉ main (src/data/creatures.lua) ; toutes les autres unités
+-- sont GÉNÉRÉES procéduralement (src/gen/creaturegen.lua, déterministe par id), résolu côté rendu
+-- (build.lua + arena_draw.lua). units.lua ne porte donc plus aucun champ visuel : pur mécanique.
 
 return U
