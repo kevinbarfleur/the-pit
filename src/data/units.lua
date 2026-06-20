@@ -161,6 +161,67 @@ local U = {
     id = "decay_tender", sprite = "skeleton", type = "bone", cost = 3, hp = 50, dmg = 4, cd = 60,
     effects = { { trigger = "combat_start", op = "aura_rot_growth", target = "neighbors", params = { bonus = 1 } } },
   },
+
+  -- ══ VAGUE 3 : T2 « twists » (cf. effects-dot-families.md §H). Chacun = l'effet + UNE torsion. Ops
+  -- bornés/gated (comportement de base inchangé -> golden stable). corruptor est DÉJÀ le T2 poison-weaken. ══
+
+  -- BRÛLURE T2
+  bellows_priest = { -- anti-décroissance : la brûlure décroît bien moins (maintien facilité)
+    id = "bellows_priest", sprite = "demon", type = "abyss", cost = 3, hp = 44, dmg = 5, cd = 58,
+    effects = { { trigger = "on_hit", op = "burn", params = { dps = 6, dur = 180, decayPct = 0.15 } } },
+  },
+  wildfire_hound = { -- à la mort d'un ennemi en feu, propage la brûlure à ses voisins (proximité champ)
+    id = "wildfire_hound", sprite = "demon", type = "abyss", cost = 3, hp = 48, dmg = 5, cd = 54,
+    effects = {
+      { trigger = "on_hit", op = "burn", params = { dps = 5, dur = 150 } },
+      { trigger = "on_death", op = "spread_burn_on_death", params = { frac = 0.7, minDps = 3, dur = 120 } },
+    },
+  },
+  kiln_warden = { -- convertit le surplus : une brûlure plus faible PROLONGE au lieu d'être perdue
+    id = "kiln_warden", sprite = "marauder", type = "flesh", cost = 3, hp = 52, dmg = 5, cd = 60,
+    effects = { { trigger = "on_hit", op = "burn", params = { dps = 5, dur = 180, mode = "extend_if_weaker" } } },
+  },
+
+  -- SAIGNEMENT T2
+  bloodletter = { -- le saignement ÉCLATE (×2) quand la cible attaque (payoff conditionnel)
+    id = "bloodletter", sprite = "bandit", type = "flesh", cost = 3, hp = 48, dmg = 5, cd = 48,
+    effects = { { trigger = "on_hit", op = "bleed", params = { dps = 2, dur = 240, slowPct = 0.20, aggravateMult = 2.0 } } },
+  },
+  tendon_render = { -- le slow SCALE avec les PV manquants (plus elle saigne, plus elle ralentit)
+    id = "tendon_render", sprite = "skeleton", type = "bone", cost = 3, hp = 50, dmg = 4, cd = 50,
+    effects = { { trigger = "on_hit", op = "bleed", params = { dps = 2, dur = 240, slowPct = 0.15, slowScalesMissingHp = true } } },
+  },
+  vein_splitter = { -- saignement profond et rapide (« deux entailles » ; 2-instances approximé par 1 fort)
+    id = "vein_splitter", sprite = "bandit", type = "flesh", cost = 3, hp = 46, dmg = 4, cd = 44,
+    effects = { { trigger = "on_hit", op = "bleed", params = { dps = 4, dur = 180, slowPct = 0.15 } } },
+  },
+
+  -- POISON T2 (corruptor = le 3e, déjà présent)
+  plague_bearer = { -- CONTAGION : le poison se propage en stack plus faible aux voisins de la cible
+    id = "plague_bearer", sprite = "witch", type = "arcane", cost = 3, hp = 40, dmg = 5, cd = 58,
+    effects = { { trigger = "on_hit", op = "poison", params = { dps = 2, dur = 180, spread = { dps = 1, dur = 120 } } } },
+  },
+  acid_maw = { -- le venin RONGE le bouclier (−30 % par pose : dissout l'armure)
+    id = "acid_maw", sprite = "demon", type = "abyss", cost = 3, hp = 46, dmg = 5, cd = 56,
+    effects = { { trigger = "on_hit", op = "poison", params = { dps = 2, dur = 180, shieldEat = 0.30 } } },
+  },
+
+  -- POURRITURE T2
+  patient_worm = { -- la pourriture enfle même SANS frapper (ramp passif tant qu'active)
+    id = "patient_worm", sprite = "skeleton", type = "bone", cost = 3, hp = 54, dmg = 4, cd = 60,
+    effects = { { trigger = "on_hit", op = "rot", params = { base = 1, passiveRamp = 1, dur = 240, capDps = 10, maxHpFrac = 0.10 } } },
+  },
+  hollow_gut = { -- l'amputation des PV max NOURRIT le porteur (vol de plafond de vie)
+    id = "hollow_gut", sprite = "demon", type = "abyss", cost = 3, hp = 50, dmg = 5, cd = 58,
+    effects = { { trigger = "on_hit", op = "rot", params = { base = 1, growth = 1, dur = 240, capDps = 10, maxHpFrac = 0.20, amputateHealsMe = 0.5 } } },
+  },
+  blight_spreader = { -- à la mort d'une cible pourrie, la pourriture prend ses voisins (proximité champ)
+    id = "blight_spreader", sprite = "skeleton", type = "bone", cost = 3, hp = 52, dmg = 5, cd = 56,
+    effects = {
+      { trigger = "on_hit", op = "rot", params = { base = 1, growth = 1, dur = 240, capDps = 10, maxHpFrac = 0.15 } },
+      { trigger = "on_death", op = "spread_rot", params = { base = 2, dur = 240, capDps = 10, maxHpFrac = 0.10 } },
+    },
+  },
 }
 
 -- Roster complet (ordre d'affichage). Les 6 premiers = vanille/v0 ; les suivants = familles de statuts.
@@ -172,7 +233,12 @@ U.order = { "marauder", "templar", "skeleton", "bandit", "witch", "demon",
   "bile_spitter", "rot_grub",
   "carrion_pecker", "maggot_king", "necro_leech",
   -- vague 2 (auras d'adjacence) : burn / bleed / poison / rot
-  "soot_acolyte", "clot_mender", "miasma_acolyte", "decay_tender" }
+  "soot_acolyte", "clot_mender", "miasma_acolyte", "decay_tender",
+  -- vague 3 (T2 twists) : burn / bleed / poison / rot
+  "bellows_priest", "wildfire_hound", "kiln_warden",
+  "bloodletter", "tendon_render", "vein_splitter",
+  "plague_bearer", "acid_maw",
+  "patient_worm", "hollow_gut", "blight_spreader" }
 
 -- Pool d'unités ACHETABLES en boutique (cf. src/run/state.lua). Identique au roster pour l'instant.
 U.pool = { "marauder", "templar", "skeleton", "bandit", "witch", "demon",
@@ -181,7 +247,11 @@ U.pool = { "marauder", "templar", "skeleton", "bandit", "witch", "demon",
   "gash_fiend", "hookjaw", "leech_thorn",
   "bile_spitter", "rot_grub",
   "carrion_pecker", "maggot_king", "necro_leech",
-  "soot_acolyte", "clot_mender", "miasma_acolyte", "decay_tender" }
+  "soot_acolyte", "clot_mender", "miasma_acolyte", "decay_tender",
+  "bellows_priest", "wildfire_hound", "kiln_warden",
+  "bloodletter", "tendon_render", "vein_splitter",
+  "plague_bearer", "acid_maw",
+  "patient_worm", "hollow_gut", "blight_spreader" }
 
 -- Visuel (rig) d'une unité : son propre id, ou un `sprite` de repli (réutilise une créature existante
 -- tant que le pixel-art dédié n'existe pas, cf. src/data/creatures.lua).

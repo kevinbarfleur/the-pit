@@ -98,7 +98,53 @@ local ok, err = pcall(function()
     assert(warded < raw, ("SYNERGIE contre: regen attenue le poison (perte %d < %d)"):format(warded, raw))
   end
 
-  print("  synergies : choc-amplifie-allie / poison-multi-sources / weaken-reduit-output / bleed-ralentit-cadence / regen-contre-DoT OK")
+  -- ════════ VAGUE 3 — twists T2 (contagion, propagation à la mort, aggravate, shieldEat) ════════
+
+  -- SYNERGIE 6 — CONTAGION (Plague-Bearer) : le poison se propage au VOISIN de la cible (proximité champ).
+  do
+    local a = Arena.new({ left = { U("plague_bearer") },
+      right = { U("marauder", {}, { row = 0 }), U("marauder", {}, { row = 1 }) }, autoReset = false, seed = 11 })
+    local pb, t0, t1 = a.units[1], a.units[2], a.units[3]
+    a:hit(pb, t0)
+    assert(#t0.dots.poison == 1, "contagion: la cible est empoisonnee")
+    assert(#t1.dots.poison == 1, "SYNERGIE contagion: le VOISIN de la cible recoit un stack")
+  end
+
+  -- SYNERGIE 7 — PROPAGATION À LA MORT (Wildfire-Hound) : un ennemi qui meurt EN FEU enflamme son voisin
+  -- (au DRAIN on_death, pas pendant le hit).
+  do
+    local a = Arena.new({ left = { U("wildfire_hound") },
+      right = { U("marauder", {}, { row = 0 }), U("marauder", {}, { row = 1 }) }, autoReset = false, seed = 12 })
+    local wh, t0, t1 = a.units[1], a.units[2], a.units[3]
+    t0.dots.burn = { dps = 6, remaining = 300, acc = 0, decayEvery = 60, decayAcc = 0, decayPct = 0.30, source = wh }
+    a:damage(t0, 999, { source = wh, cause = "test" })
+    assert(not t0.alive, "la cible meurt en feu")
+    assert(not t1.dots.burn, "le voisin n'est PAS encore en feu avant le drain")
+    a:update(1.0, 1) -- draine la file des morts -> broadcast on_death
+    assert(t1.dots.burn, "SYNERGIE on_death: le feu saute au voisin a la mort")
+  end
+
+  -- SYNERGIE 8 — AGGRAVATE (Bloodletter) : le saignement ECLATE quand la cible saignante AGIT (frappe).
+  do
+    local a = Arena.new({ left = { U("bandit", {}) }, right = { U("marauder", {}, { hp = 9999 }) }, autoReset = false, seed = 13 })
+    local atkr = a.units[1]
+    atkr.dots.bleed = { dps = 3, remaining = 600, acc = 0, slowPct = 0, aggravateMult = 2.0, dynBonus = 0, source = atkr }
+    atkr.atkTimer = 0 -- pret a frapper ce tick
+    local hp0 = atkr.hp
+    a:update(1.0, 1) -- le swing declenche le burst d'aggravate (floor(3*2)=6) sur l'attaquant
+    assert(hp0 - atkr.hp >= 6, ("SYNERGIE aggravate: l'attaquant saigne en frappant (perte %d >= 6)"):format(hp0 - atkr.hp))
+  end
+
+  -- SYNERGIE 9 — SHIELD-EAT (Acid-Maw) : le venin dissout le bouclier AU-DELA de la simple absorption.
+  do
+    local a = Arena.new({ left = { U("acid_maw") }, right = { U("templar", {}, { shield = 20 }) }, autoReset = false, seed = 14 })
+    local am, tgt = a.units[1], a.units[2]
+    a:hit(am, tgt) -- absorbe am.dmg PUIS ronge 30% du bouclier restant
+    assert(tgt.shield < 20 - am.dmg, ("SYNERGIE shieldEat: bouclier ronge au-dela de l'absorption (%d < %d)"):format(tgt.shield, 20 - am.dmg))
+  end
+
+  print("  synergies : choc-amplifie-allie / poison-multi-sources / weaken-reduit-output / bleed-ralentit-cadence / regen-contre-DoT")
+  print("  synergies+: contagion-au-voisin / propagation-a-la-mort / aggravate-en-frappant / shieldEat OK")
 end)
 
 if ok then
