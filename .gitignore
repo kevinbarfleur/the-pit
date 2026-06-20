@@ -1,0 +1,25 @@
+# macOS
+.DS_Store
+
+# Builds LÖVE
+*.love
+build/
+dist/
+*.app
+*.exe
+*.zip
+
+# Lua bytecode / caches
+*.luac
+luac.out
+
+# Rapports d'équilibrage générés (tools/sim.lua)
+runs/
+
+# Sauvegardes locales LÖVE (identity "the-pit") — ne pas committer
+# ~/Library/Application Support/LOVE/the-pit/
+
+# Éditeurs
+.vscode/
+.idea/
+*.swp
