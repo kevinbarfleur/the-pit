@@ -11,6 +11,7 @@ local T = I18n.t
 local Units = require("src.data.units")
 local Shapes = require("src.board.shapes")
 local Encounters = require("src.data.encounters")
+local Relics = require("src.data.relics")
 
 local ok, err = pcall(function()
   -- Locale par défaut = anglais.
@@ -47,10 +48,15 @@ local ok, err = pcall(function()
     need("shape." .. name .. ".archetype")
   end
   for _, enc in ipairs(Encounters) do need("encounter." .. enc.key .. ".name") end
+  for _, id in ipairs(Relics.order) do -- reliques cryptiques : nom + VRAIE description + 2 leurres
+    need("relic." .. id .. ".name")
+    need(Relics[id].realKey)
+    need(Relics[id].decoys[1]); need(Relics[id].decoys[2])
+  end
   assert(#missing == 0, "cles de traduction manquantes : " .. table.concat(missing, ", "))
 
-  print(string.format("  i18n : en par defaut + interpolation + fallback ; couverture %d unites / %d sigils / %d encounters OK",
-    #Units.order, #Shapes.order, #Encounters))
+  print(string.format("  i18n : en par defaut + interpolation + fallback ; couverture %d unites / %d sigils / %d encounters / %d reliques OK",
+    #Units.order, #Shapes.order, #Encounters, #Relics.order))
 end)
 
 if ok then
