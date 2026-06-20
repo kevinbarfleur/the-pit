@@ -79,6 +79,18 @@ return {
   ["runover.progress"] = "{rounds} ROUNDS    -    LEVEL {level}",
   ["runover.again"] = "[click] / [r]  -  descend again",
 
+  -- grimoire (codex of identified relics)
+  ["grimoire.title"] = "The Grimoire",
+  ["grimoire.subtitle"] = "{n} of {total} inscribed  -  deduce to ink them permanent",
+  ["grimoire.inked"] = "INKED",
+  ["grimoire.cryptic"] = "CRYPTIC",
+  ["grimoire.unknown"] = "unidentified",
+  ["grimoire.effect_known"] = "KNOWN EFFECT",
+  ["grimoire.effect_unknown"] = "WHAT THE NOTES SAY",
+  ["grimoire.effect_pending"] = "??? - deduce it by use to inscribe it forever",
+  ["grimoire.body_unknown"] = "The ink runs here. Something was seen in the Pit and never understood. Carry it, and watch.",
+  ["grimoire.back"] = "[esc] back",
+
   -- relic pick (1-of-3 acquisition)
   ["relicpick.kicker"] = "the victory loosens something below",
   ["relicpick.title"] = "A Fragment Surfaces",

@@ -34,7 +34,7 @@ function Menu.new(palette, vw, vh, host)
   -- Entrées : 2 actives (ENTER/ABANDON), 2 scellées (Grimoire/Rites -> phases ultérieures).
   self.items = {
     { id = "enter",    key = "menu.enter",    enabled = true,  action = function() self.host.newRun() end },
-    { id = "grimoire", key = "menu.grimoire", enabled = false },
+    { id = "grimoire", key = "menu.grimoire", enabled = true,  action = function() self.host.goto("grimoire") end },
     { id = "rites",    key = "menu.rites",    enabled = false },
     { id = "abandon",  key = "menu.abandon",  enabled = true,  action = function() love.event.quit() end },
   }
