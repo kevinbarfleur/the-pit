@@ -9,6 +9,7 @@
 local Snapshot = require("src.net.snapshot")
 
 local Store = { pool = {}, file = "snapshots.txt", loaded = false }
+local MAX_POOL = 200 -- borne le pool (FIFO) : évite que snapshots.txt grossisse sans fin (1 save/combat)
 
 local function canIO() return love and love.filesystem and love.filesystem.read and love.filesystem.write end
 
@@ -31,10 +32,11 @@ end
 function Store.save(snap)
   if not Store.loaded then Store.load() end
   Store.pool[#Store.pool + 1] = snap
-  if canIO() then
-    local ok, data = pcall(love.filesystem.read, Store.file)
-    local existing = (ok and type(data) == "string") and data or ""
-    pcall(love.filesystem.write, Store.file, existing .. Snapshot.encode(snap) .. "\n")
+  while #Store.pool > MAX_POOL do table.remove(Store.pool, 1) end -- FIFO : on garde les MAX_POOL plus récents
+  if canIO() then -- réécrit le fichier depuis le pool borné (rare : 1×/combat, ~200 lignes)
+    local lines = {}
+    for _, s in ipairs(Store.pool) do lines[#lines + 1] = Snapshot.encode(s) end
+    pcall(love.filesystem.write, Store.file, table.concat(lines, "\n") .. "\n")
   end
 end
 
