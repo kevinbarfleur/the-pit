@@ -34,6 +34,8 @@ Build.__index = Build
 
 local SPACING = 26
 local BOARD_OY = 60
+local MAX_LEVEL = 3
+local LEVEL_MULT = { 1.0, 1.8, 3.0 } -- stats par niveau : 3 copies (même id+niveau) -> 1 unité niveau+1 (façon TFT)
 
 function Build.new(palette, vw, vh, host)
   local self = setmetatable({
@@ -140,11 +142,44 @@ function Build:placedCount()
 end
 
 -- Pose un id sur un slot (aussi appelé par les tests/sim, sans souris ni économie).
-function Build:placeId(slot, id)
+function Build:placeId(slot, id, level)
   if not (self.board.slots[slot] and self.board.slots[slot].unlocked) then return false end
-  self.slotRigs[slot] = { id = id, char = self:newRig(id) }
+  self.slotRigs[slot] = { id = id, level = level or 1, char = self:newRig(id) }
   self.board.slots[slot].unit = id
   return true
+end
+
+-- DUPLICATAS (étape gameplay #2) : 3 unités de MÊME id ET MÊME niveau fusionnent en une de niveau+1
+-- (cap MAX_LEVEL). Stats + buffs d'adjacence scalent (LEVEL_MULT, appliqué dans buildComp). Cascade :
+-- 3 niveau-2 -> 1 niveau-3. Appelé après un AJOUT de copie (achat). Scène (pas SIM) -> non critique au replay.
+function Build:checkMerges()
+  local merged = true
+  while merged do
+    merged = false
+    local groups = {} -- [id\0level] = { slots... }, en ordre de slot (1->9) pour un résultat stable
+    for i = 1, 9 do
+      local sr = self.slotRigs[i]
+      if sr and (sr.level or 1) < MAX_LEVEL then
+        local key = sr.id .. "\0" .. (sr.level or 1)
+        local g = groups[key]; if not g then g = {}; groups[key] = g end
+        g[#g + 1] = i
+      end
+    end
+    for _, slots in pairs(groups) do
+      if #slots >= 3 then
+        local keep = slots[1]
+        local id, lvl = self.slotRigs[keep].id, (self.slotRigs[keep].level or 1) + 1
+        for k = 2, 3 do -- consomme 2 copies
+          self.slotRigs[slots[k]] = nil
+          self.board.slots[slots[k]].unit = nil
+        end
+        self.slotRigs[keep] = { id = id, level = lvl, char = self:newRig(id) } -- promeut la 1re
+        self.board.slots[keep].unit = id
+        merged = true
+        break -- re-scan (une promotion peut déclencher une nouvelle fusion)
+      end
+    end
+  end
 end
 
 -- ── Entrées ──
@@ -172,14 +207,14 @@ function Build:mousepressed(vx, vy, button)
     if oi then -- prend une offre achetable (consommée seulement au lâcher sur une case valide)
       local o = run.shop[oi]
       if o and not o.sold and run.gold >= o.cost then
-        self.drag = { id = o.id, char = self:newRig(o.id), fromShop = oi }
+        self.drag = { id = o.id, level = 1, char = self:newRig(o.id), fromShop = oi }
       end
       return
     end
   end
   local si = self:slotAt(vx, vy)
   if si and self.slotRigs[si] then -- ramasse une unité déjà posée (réarrangement / vente)
-    self.drag = { id = self.slotRigs[si].id, char = self.slotRigs[si].char, fromSlot = si }
+    self.drag = { id = self.slotRigs[si].id, level = self.slotRigs[si].level or 1, char = self.slotRigs[si].char, fromSlot = si }
     self.slotRigs[si] = nil
     self.board.slots[si].unit = nil
   end
@@ -197,8 +232,9 @@ function Build:mousereleased(vx, vy, button)
     if si and self.board.slots[si].unlocked and not self.slotRigs[si] then
       local id = run and run:buy(d.fromShop)
       if id then
-        self.slotRigs[si] = { id = id, char = d.char }
+        self.slotRigs[si] = { id = id, level = 1, char = d.char }
         self.board.slots[si].unit = id
+        self:checkMerges() -- 3 copies (même id+niveau) -> fusion en niveau+1
       end
     end
     return
@@ -211,7 +247,7 @@ function Build:mousereleased(vx, vy, button)
       self.slotRigs[d.fromSlot] = occ
       self.board.slots[d.fromSlot].unit = occ.id
     end
-    self.slotRigs[si] = { id = d.id, char = d.char }
+    self.slotRigs[si] = { id = d.id, level = d.level or 1, char = d.char }
     self.board.slots[si].unit = d.id
   else
     -- Lâché HORS d'un slot : VENTE (remboursement) si on a une run ; sinon l'unité disparaît (sandbox).
@@ -236,7 +272,7 @@ function Build:buildComp(side)
   for i = 1, 9 do
     if self.slotRigs[i] then
       local c = self.board.shape.cells[i]
-      placed[#placed + 1] = { slot = i, id = self.slotRigs[i].id, col = c.x, row = c.y }
+      placed[#placed + 1] = { slot = i, id = self.slotRigs[i].id, col = c.x, row = c.y, level = self.slotRigs[i].level or 1 }
     end
   end
   if #placed == 0 then return {} end
@@ -249,15 +285,16 @@ function Build:buildComp(side)
   local shield = {}
   local burnDps, poisonDps, rotGrowth, grantBleed = {}, {}, {}, {}
   for _, p in ipairs(placed) do
+    local sm = LEVEL_MULT[p.level] or 1.0 -- l'aura scale avec le NIVEAU de la source (duplicatas)
     for _, e in ipairs(Units[p.id].effects or {}) do
       if e.trigger == "combat_start" and e.target == "neighbors" then
         local op, pa = e.op, e.params or {}
         for _, nb in ipairs(self.board:neighbors(p.slot)) do
           if self.slotRigs[nb] then
-            if op == "shield_aura" then shield[nb] = (shield[nb] or 0) + (pa.value or 0)
-            elseif op == "aura_burn_dps" then burnDps[nb] = (burnDps[nb] or 0) + (pa.bonus or 0)
-            elseif op == "aura_poison_dps" then poisonDps[nb] = (poisonDps[nb] or 0) + (pa.bonus or 0)
-            elseif op == "aura_rot_growth" then rotGrowth[nb] = (rotGrowth[nb] or 0) + (pa.bonus or 0)
+            if op == "shield_aura" then shield[nb] = (shield[nb] or 0) + math.floor((pa.value or 0) * sm + 0.5)
+            elseif op == "aura_burn_dps" then burnDps[nb] = (burnDps[nb] or 0) + math.floor((pa.bonus or 0) * sm + 0.5)
+            elseif op == "aura_poison_dps" then poisonDps[nb] = (poisonDps[nb] or 0) + math.floor((pa.bonus or 0) * sm + 0.5)
+            elseif op == "aura_rot_growth" then rotGrowth[nb] = (rotGrowth[nb] or 0) + math.floor((pa.bonus or 0) * sm + 0.5)
             elseif op == "aura_grant_bleed" then grantBleed[nb] = pa
             end
           end
@@ -292,7 +329,9 @@ function Build:buildComp(side)
     local u = Units[p.id]
     local x, y = Place.pos(p.col, p.row, side, maxCol, rowRef)
     -- depth (0 = front) + row dérivés de la forme -> exposition portée par le sigil (ciblage déterministe).
-    comp[#comp + 1] = { id = p.id, slot = p.slot, hp = u.hp, dmg = u.dmg, cd = u.cd,
+    local m = LEVEL_MULT[p.level] or 1.0 -- duplicatas : les stats scalent avec le niveau
+    comp[#comp + 1] = { id = p.id, slot = p.slot, level = p.level,
+      hp = math.floor(u.hp * m + 0.5), dmg = math.floor(u.dmg * m + 0.5), cd = u.cd,
       depth = maxCol - p.col, row = p.row, effects = auraEffects(p.id, p.slot),
       shield = shield[p.slot] or 0, x = x, y = y, facing = facing }
   end
@@ -386,9 +425,18 @@ function Build:drawWorld()
   end
   love.graphics.setColor(1, 1, 1, 1)
 
-  -- Unités posées.
+  -- Unités posées (+ pips de niveau dorés au-dessus si fusionnées : duplicatas).
   for i, sr in pairs(self.slotRigs) do
-    if b.slots[i].unlocked then Rig.draw(sr.char) end
+    if b.slots[i].unlocked then
+      Rig.draw(sr.char)
+      local lvl = sr.level or 1
+      if lvl > 1 then
+        love.graphics.setColor(0.95, 0.82, 0.35, 1)
+        local px = sr.char.x - (lvl * 6 - 3) / 2
+        for k = 1, lvl do love.graphics.rectangle("fill", px + (k - 1) * 6, sr.char.y - 27, 3, 3) end
+        love.graphics.setColor(1, 1, 1, 1)
+      end
+    end
   end
 
   -- Panneau boutique (bas).

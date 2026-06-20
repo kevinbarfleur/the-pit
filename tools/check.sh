@@ -41,6 +41,9 @@ luajit tests/run.lua
 echo "== auras (adjacence build-resolue via le graphe du sigil) =="
 luajit tests/auras.lua
 
+echo "== duplicatas (3 copies -> niveau : fusion + scaling + cascade) =="
+luajit tests/duplicates.lua
+
 echo "== synergies (interactions inter-effets en combat : deroule + resultat) =="
 luajit tests/synergies.lua
 
