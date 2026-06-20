@@ -34,7 +34,8 @@ local ok, err = pcall(function()
   for _, id in ipairs(Units.order) do
     local u = Units[id]
     assert(u and u.hp and u.dmg and u.cd and u.cost and u.effects, "unit incomplète: " .. id)
-    assert(Creatures[Units.spriteOf(id)], "visuel manquant pour unit " .. id)
+    -- visuel : soit un rig DESSINÉ main (vanille), soit un `type` -> génération procédurale (CreatureGen)
+    assert(Creatures[id] or u.type, "visuel: ni rig main ni type (generation) pour unit " .. id)
   end
 
   -- Plateau-graphe : adjacence symétrique, 9 cases, hiérarchie du carré.
