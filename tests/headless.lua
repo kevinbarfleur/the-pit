@@ -34,7 +34,7 @@ local ok, err = pcall(function()
   for _, id in ipairs(Units.order) do
     local u = Units[id]
     assert(u and u.hp and u.dmg and u.cd and u.cost and u.effects, "unit incomplète: " .. id)
-    assert(Creatures[id], "créature manquante pour unit " .. id)
+    assert(Creatures[Units.spriteOf(id)], "visuel manquant pour unit " .. id)
   end
 
   -- Plateau-graphe : adjacence symétrique, 9 cases, hiérarchie du carré.
