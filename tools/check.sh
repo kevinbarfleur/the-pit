@@ -47,6 +47,9 @@ luajit tests/duplicates.lua
 echo "== reliques (cryptiques 1-parmi-3 + Grimoire persistant + meta-progression) =="
 luajit tests/relics.lua
 
+echo "== snapshot (async : round-trip + serve version/tier + cold-start IA) =="
+luajit tests/snapshot.lua
+
 echo "== synergies (interactions inter-effets en combat : deroule + resultat) =="
 luajit tests/synergies.lua
 

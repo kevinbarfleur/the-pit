@@ -26,6 +26,8 @@ local Units = require("src.data.units")
 local CreatureGen = require("src.gen.creaturegen") -- visuel généré pour les unités sans rig dessiné main
 local Encounters = require("src.data.encounters")
 local Place = require("src.combat.place")
+local Snapshot = require("src.net.snapshot")
+local Snapstore = require("src.net.snapstore")
 local Run = require("src.run.state")
 local T = require("src.core.i18n").t
 
@@ -355,6 +357,20 @@ function Build:buildRightComp(enc)
   return comp
 end
 
+-- Build LOGIQUE pour un SNAPSHOT (pilier #3) : {id, level, col, row} des unités posées. Position-indépendant
+-- (les positions de combat sont re-dérivées par Snapshot.toComp via Place, par côté).
+function Build:snapshotUnits()
+  local out = {}
+  for i = 1, 9 do
+    local sr = self.slotRigs[i]
+    if sr then
+      local c = self.board.shape.cells[i]
+      out[#out + 1] = { id = sr.id, level = sr.level or 1, col = c.x, row = c.y }
+    end
+  end
+  return out
+end
+
 function Build:startCombat()
   local left = self:buildLeftComp()
   if #left == 0 then return end -- il faut au moins une unité posée
@@ -364,8 +380,16 @@ function Build:startCombat()
   -- Seed choisi ICI (couche scène) : il fait partie du snapshot/replay. Tiré du RNG seedé du run
   -- (rejouabilité), avec repli sur le RNG global hors-run (tests). La SIM ne lira que ce seed.
   local seed = (self.host.run and self.host.run:nextCombatSeed()) or love.math.random(1, 2147483647)
+  -- SNAPSHOT ASYNC (pilier #3) : on SERT un adversaire depuis le pool (ghost d'un AUTRE build figé) ou,
+  -- au cold-start, l'équipe IA (Encounter). Pick SEEDÉ par le seed de combat -> rejouable, sans consommer
+  -- le RNG du run. Puis on fige NOTRE build dans le pool pour les adversaires FUTURS (jamais en direct).
+  local version, tier = "0.7", (self.host.run and self.host.run.wins) or 0
+  local right, oppMeta = Snapstore.serveComp(version, tier, 1,
+    love.math.newRandomGenerator(seed), self:buildRightComp(enc))
+  Snapstore.save(Snapshot.capture(self:snapshotUnits(), Shapes.order[self.shapeIdx], seed,
+    { version = version, tier = tier }))
   self.host.goto("combat",
-    { left = left, right = self:buildRightComp(enc), enemyKey = enc.key, seed = seed })
+    { left = left, right = right, enemyKey = enc.key, seed = seed, oppSource = oppMeta and oppMeta.source })
 end
 
 -- ── Update ──
