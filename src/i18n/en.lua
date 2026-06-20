@@ -17,10 +17,15 @@ return {
   ["scene.build"] = "build",
   ["scene.combat"] = "combat",
   ["scene.runover"] = "run over",
-  ["ui.hint_build"] = "[click-drag] buy/place  -  REROLL/LEVEL  -  [s] sigil  -  FIGHT",
+  ["scene.gallery"] = "gallery",
+  ["ui.hint_build"] = "[click-drag] buy/place  -  REROLL/LEVEL  -  [s] sigil  -  [g] gallery  -  FIGHT",
   ["ui.hint_combat"] = "auto-battle in progress...",
   ["ui.hint_combat_end"] = "[click] back to build   [r] replay",
   ["ui.hint_runover"] = "[click] new run   -   [r] new run",
+  ["ui.hint_gallery"] = "[hover] inspect  -  [click]/[a] attack  -  [h] hurt  -  [</>] page  -  [g] back",
+  ["gallery.status"] = "{n} entities  -  {gen} generated / {hand} hand-made  -  anim: {mode}  -  pg {page}/{pages}",
+  ["gallery.generated"] = "procedurally generated",
+  ["gallery.handmade"] = "hand-authored sprite",
 
   -- build / shop
   ["ui.fight"] = "FIGHT",

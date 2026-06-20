@@ -47,6 +47,9 @@ luajit tests/synergies.lua
 echo "== props (invariants + fuzz) =="
 luajit tests/props.lua
 
+echo "== gen (generateur de creatures : determinisme + validation + smoke rendu) =="
+luajit tests/gen.lua
+
 echo "== golden (regression event-log) =="
 luajit tests/golden.lua
 
