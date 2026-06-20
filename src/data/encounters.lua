@@ -7,7 +7,7 @@
 
 return {
   {
-    name = "PATROUILLE DECHUE",
+    key = "fallen_patrol", -- nom affiché : src/i18n/en.lua (encounter.fallen_patrol.name)
     units = {
       { id = "skeleton", col = 1, row = 1 },
       { id = "bandit", col = 2, row = 0 },
@@ -15,7 +15,7 @@ return {
     },
   },
   {
-    name = "CHOEUR NOYE",
+    key = "drowned_choir",
     units = {
       { id = "witch", col = 1, row = 1 },
       { id = "templar", col = 2, row = 1 },
@@ -24,7 +24,7 @@ return {
     },
   },
   {
-    name = "ENGEANCE",
+    key = "brood",
     units = {
       { id = "demon", col = 2, row = 1 },
       { id = "witch", col = 1, row = 0 },

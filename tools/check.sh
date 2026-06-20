@@ -29,6 +29,9 @@ echo "OK (SIM sans rendu)"
 echo "== headless (smoke + determinisme + e2e souris) =="
 luajit tests/headless.lua
 
+echo "== i18n (multilangue : interpolation + fallback + couverture anglaise) =="
+luajit tests/i18n.lua
+
 echo "== run (economie roguelite : invariants + determinisme) =="
 luajit tests/run.lua
 

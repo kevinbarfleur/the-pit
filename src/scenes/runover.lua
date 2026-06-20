@@ -5,6 +5,7 @@
 -- Interface scène : update / drawWorld / drawOverlay(view) / keypressed / mousepressed.
 
 local Background = require("src.fx.background")
+local T = require("src.core.i18n").t
 
 local Runover = {}
 Runover.__index = Runover
@@ -13,8 +14,8 @@ function Runover.new(palette, vw, vh, host, payload)
   payload = payload or {}
   return setmetatable({
     vw = vw, vh = vh, t = 0, host = host, palette = palette,
-    title = "fin de run",
-    hint = "[clic] nouvelle run   ·   [r] nouvelle run",
+    titleKey = "scene.runover",
+    hintKey = "ui.hint_runover",
     result = payload.result or "lose", -- "win" | "lose"
     run = payload.run,
     bg = Background.new(palette, vw, vh),
@@ -40,22 +41,21 @@ function Runover:drawOverlay(view)
 
   if won then
     love.graphics.setColor(0.78, 0.68, 0.32, 1)
-    love.graphics.printf("ASCENSION", 0, sh / 2 - 44, sw, "center")
+    love.graphics.printf(T("runover.win"), 0, sh / 2 - 44, sw, "center")
   else
     love.graphics.setColor(0.70, 0.22, 0.20, 1)
-    love.graphics.printf("LE PUITS VOUS GARDE", 0, sh / 2 - 44, sw, "center")
+    love.graphics.printf(T("runover.lose"), 0, sh / 2 - 44, sw, "center")
   end
 
   if r then
     love.graphics.setColor(0.72, 0.68, 0.60, 0.95)
     love.graphics.printf(
-      string.format("%d victoires  ·  %d defaites  ·  %d rounds  ·  niveau %d",
-        r.wins, r.losses, r.round, r.level),
+      T("runover.stats", { wins = r.wins, losses = r.losses, rounds = r.round, level = r.level }),
       0, sh / 2 - 16, sw, "center")
   end
 
   love.graphics.setColor(0.66, 0.62, 0.56, 0.95)
-  love.graphics.printf("clic: nouvelle run      [r] nouvelle run", 0, sh / 2 + 14, sw, "center")
+  love.graphics.printf(T("ui.hint_runover"), 0, sh / 2 + 14, sw, "center")
   love.graphics.setColor(1, 1, 1, 1)
 end
 

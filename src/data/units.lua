@@ -5,8 +5,9 @@
 -- Couche DATA : ce fichier ne require RIEN de chez nous (pas même le moteur d'effets) — il ne
 -- déclare que des descripteurs. Le moteur (src/effects/) les interprète.
 --
--- Note d'orthographe : les chaînes AFFICHÉES en jeu restent en ASCII (police par défaut de LÖVE).
--- Les commentaires gardent les accents.
+-- TEXTE AFFICHÉ : plus aucune chaîne d'affichage ici. Noms/passifs/types vivent dans les LOCALES
+-- (src/i18n/en.lua : clés `unit.<id>.name|passive_name|passive_desc`, `type.<key>`). units.lua reste
+-- du PUR mécanique (id, type-clé, cost, stats, effects). Ajouter une langue = un fichier locale, zéro refacto.
 --
 -- MODÈLE D'EFFET (cf. docs/research/engine-architecture.md §6) — un effet = donnée :
 --   { trigger = <quand>, op = <quoi>, params = <payload>, condition? = <garde>, target? = <cible> }
@@ -28,33 +29,27 @@
 -- (chaff a 2, standard a 3, tank premium a 4) ; raretés/cotes-par-niveau différées (besoin de tiers).
 local U = {
   marauder = {
-    id = "marauder", name = "MARAUDER", type = "Chair", cost = 3, hp = 60, dmg = 9, cd = 60,
-    passive = { name = "Brutalite", desc = "+8 degats sur sa premiere frappe du combat." },
+    id = "marauder", type = "flesh", cost = 3, hp = 60, dmg = 9, cd = 60, -- MARAUDER / Brutality
     effects = { { trigger = "on_attack", op = "bonus_first", params = { value = 8 } } },
   },
   templar = {
-    id = "templar", name = "TEMPLIER", type = "Ordre", cost = 4, hp = 95, dmg = 12, cd = 82,
-    passive = { name = "Rempart", desc = "Debut de combat: +14 bouclier aux voisins adjacents." },
+    id = "templar", type = "order", cost = 4, hp = 95, dmg = 12, cd = 82, -- TEMPLAR / Bulwark
     effects = { { trigger = "combat_start", op = "shield_aura", target = "neighbors", params = { value = 14 } } },
   },
   skeleton = {
-    id = "skeleton", name = "SQUELETTE", type = "Os", cost = 2, hp = 40, dmg = 6, cd = 44,
-    passive = { name = "Os brises", desc = "Renvoie 3 degats a chaque attaquant qui le frappe." },
+    id = "skeleton", type = "bone", cost = 2, hp = 40, dmg = 6, cd = 44, -- SKELETON / Broken Bones
     effects = { { trigger = "on_attacked", op = "thorns", params = { value = 3 } } },
   },
   bandit = {
-    id = "bandit", name = "BANDIT", type = "Chair", cost = 2, hp = 46, dmg = 7, cd = 36,
-    passive = { name = "Lestes", desc = "Cadence rapide (cooldown court). Aucun passif notable." },
+    id = "bandit", type = "flesh", cost = 2, hp = 46, dmg = 7, cd = 36, -- BANDIT / Nimble
     effects = {}, -- aucun effet mécanique (flavor)
   },
   witch = {
-    id = "witch", name = "SORCIERE", type = "Arcane", cost = 3, hp = 36, dmg = 13, cd = 72,
-    passive = { name = "Venin", desc = "Ses frappes empoisonnent: 2 dgt/s pendant 3s." },
+    id = "witch", type = "arcane", cost = 3, hp = 36, dmg = 13, cd = 72, -- WITCH / Venom
     effects = { { trigger = "on_hit", op = "poison", params = { dps = 2, dur = 180 } } },
   },
   demon = {
-    id = "demon", name = "DEMON", type = "Abysse", cost = 3, hp = 72, dmg = 10, cd = 56,
-    passive = { name = "Sangsue", desc = "Se soigne de 50% des degats infliges." },
+    id = "demon", type = "abyss", cost = 3, hp = 72, dmg = 10, cd = 56, -- DEMON / Leech
     effects = { { trigger = "on_hit", op = "lifesteal", params = { frac = 0.5 } } },
   },
 }

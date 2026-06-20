@@ -11,6 +11,7 @@
 local Background = require("src.fx.background")
 local Arena = require("src.combat.arena")
 local ArenaDraw = require("src.render.arena_draw")
+local T = require("src.core.i18n").t
 
 local Combat = {}
 Combat.__index = Combat
@@ -20,9 +21,9 @@ function Combat.new(palette, vw, vh, host, payload)
   local arena = Arena.new({ left = payload.left, right = payload.right, autoReset = false, seed = payload.seed })
   return setmetatable({
     vw = vw, vh = vh, t = 0, host = host, palette = palette, payload = payload,
-    title = "combat",
-    hint = "combat automatique en cours...",
-    enemyName = payload.enemyName or "ADVERSAIRE",
+    titleKey = "scene.combat",
+    hintKey = "ui.hint_combat",
+    enemyKey = payload.enemyKey,
     bg = Background.new(palette, vw, vh),
     arena = arena,
     renderer = ArenaDraw.new(arena, palette),
@@ -42,7 +43,7 @@ function Combat:update(frameDt)
   self.arena:update(frameDt, self.t) -- SIM (émet des événements)
   self.renderer:update(frameDt, self.t) -- RENDER (consomme + anime)
   if self.arena.over then
-    self.hint = "[clic] retour au build   [r] rejouer"
+    self.hintKey = "ui.hint_combat_end"
   end
 end
 
@@ -54,7 +55,8 @@ end
 function Combat:drawOverlay(view)
   -- Étiquette de l'adversaire en haut.
   love.graphics.setColor(0.55, 0.30, 0.30, 0.9)
-  love.graphics.printf("vs  " .. self.enemyName, 0, view.oy + 8, love.graphics.getWidth(), "center")
+  love.graphics.printf(T("ui.vs", { name = T("encounter." .. (self.enemyKey or "unknown") .. ".name") }),
+    0, view.oy + 8, love.graphics.getWidth(), "center")
 
   self.renderer:drawOverlay(view)
 
@@ -64,13 +66,13 @@ function Combat:drawOverlay(view)
     love.graphics.rectangle("fill", 0, sh / 2 - 34, sw, 64)
     if self.arena.win then
       love.graphics.setColor(0.72, 0.64, 0.30, 1)
-      love.graphics.printf("VICTOIRE", 0, sh / 2 - 24, sw, "center")
+      love.graphics.printf(T("result.victory"), 0, sh / 2 - 24, sw, "center")
     else
       love.graphics.setColor(0.70, 0.22, 0.20, 1)
-      love.graphics.printf("DEFAITE", 0, sh / 2 - 24, sw, "center")
+      love.graphics.printf(T("result.defeat"), 0, sh / 2 - 24, sw, "center")
     end
     love.graphics.setColor(0.70, 0.66, 0.58, 0.95)
-    love.graphics.printf("clic: retour au build      [r] rejouer", 0, sh / 2 + 2, sw, "center")
+    love.graphics.printf(T("ui.hint_combat_end"), 0, sh / 2 + 2, sw, "center")
   end
   love.graphics.setColor(1, 1, 1, 1)
 end

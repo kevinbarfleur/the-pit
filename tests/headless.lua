@@ -33,7 +33,7 @@ local ok, err = pcall(function()
   -- Données d'unités : intégrité (stats + passif + visuel correspondant).
   for _, id in ipairs(Units.order) do
     local u = Units[id]
-    assert(u and u.hp and u.dmg and u.cd and u.passive, "unit incomplète: " .. id)
+    assert(u and u.hp and u.dmg and u.cd and u.cost and u.effects, "unit incomplète: " .. id)
     assert(Creatures[id], "créature manquante pour unit " .. id)
   end
 
@@ -158,7 +158,7 @@ local ok, err = pcall(function()
 
   -- Scène combat complète (drawWorld/drawOverlay sans planter).
   local Combat = require("src.scenes.combat")
-  local cs = Combat.new(Palette, 320, 180, { goto = function() end }, { left = left, right = right, enemyName = enc.name })
+  local cs = Combat.new(Palette, 320, 180, { goto = function() end }, { left = left, right = right, enemyKey = enc.key })
   for i = 1, 60 do cs:update(1.0); if i % 7 == 0 then cs:drawWorld(); cs:drawOverlay(view) end end
   print("  build+combat : compo, aura bouclier, passifs (bouclier/poison/bonus/epines/vol de vie) OK")
 

@@ -95,6 +95,10 @@ timeline temps réel sur slots, grille 2D Tetris (rotation/recettes), trop de RN
 - **Dépendances minimales.** Pour l'instant : **zéro lib externe**. Si besoin plus tard :
   `rxi/classic` (OOP), `hump.timer`/`hump.gamestate`. **Éviter `anim8`** (frame-based, inadapté
   au rigging procédural).
+- **Internationalisation (i18n).** Tout le texte affiché passe par `src/core/i18n.lua` (`t(key, vars)`,
+  interpolation `{name}`, fallback `en`). Les données (`units`/`shapes`/`encounters`) ne portent que des
+  **clés/ids mécaniques** ; les chaînes vivent dans `src/i18n/<code>.lua`. Jeu en **anglais** par défaut ;
+  ajouter une langue = **un fichier locale**, zéro refacto. Couverture testée (`tests/i18n.lua`).
 
 ---
 
@@ -109,6 +113,9 @@ src/
     sprite.lua            bake grille+palette -> Image nearest (une fois)
     rig.lua               MOTEUR de rigging (build/update/draw + transforms monde)
     bus.lua               bus d'événements DÉTERMINISTE (array+ipairs) pour la couche SIM
+    i18n.lua              INTERNATIONALISATION : t(key,vars) + locale courante + fallback en (texte = locales)
+  i18n/
+    en.lua                locale ANGLAISE (défaut/fallback) : TOUTES les chaînes affichées (clé -> texte)
   data/
     creatures.lua         définitions data-only des créatures (grilles/pivots/rig/anims)
     units.lua             stats + EFFETS (descripteurs data) + coût/pool par créature ; combat/build/boutique
@@ -135,6 +142,7 @@ src/
 tests/
   mock_love.lua           mock LÖVE partagé (graphics stub + RNG seedé) pour headless/sims
   headless.lua            smoke + déterminisme + passifs + e2e souris/boutique (mock LÖVE, vraie logique)
+  i18n.lua                i18n : interpolation + fallback + COUVERTURE (toute clé de données traduite)
   run.lua                 invariants + déterminisme de l'ÉCONOMIE de run (achat/reroll/niveau/streaks/vies)
   props.lua               invariants + fuzz (PV>=0, terminaison, 1 vainqueur, déterminisme)
   golden.lua              golden-log de régression (empreinte event-log d'un scénario figé)
