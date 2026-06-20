@@ -236,5 +236,11 @@ bandeau VICTOIRE/DEFAITE → round suivant (or/boutique renouvelés, **plateau c
 - **love2d-engineer** — implémente/maintient le code Lua/LÖVE. Vérifie *toujours* les APIs.
 - **autobattler-designer** — game design, mécaniques, async-snapshots, reliques cryptiques.
 - **pixel-art-master** (global) — création/animation pixel art, rigging, biomes, palettes.
+- **git-warden** — versionnement : branches (`main`/`dev`/`<type>/<slug>`), commits conventionnels,
+  jalons taggés. Branche un nouveau chantier depuis `dev`, commit quand `check.sh` est vert.
 
 Lancer plusieurs agents en parallèle pour du travail indépendant.
+
+**Modèle de branches** : `main` (stable, jalons `vX.Y` taggés, jamais de commit direct) · `dev`
+(intégration, les features y fusionnent quand vert) · `<type>/<slug>` (`feat/`,`fix/`,`refactor/`,
+`docs/`,`chore/`,`test/`,`perf/`). Push uniquement sur demande. Détail : `.claude/agents/git-warden.md`.
