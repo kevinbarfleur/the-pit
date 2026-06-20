@@ -146,6 +146,7 @@ tests/
   i18n.lua                i18n : interpolation + fallback + COUVERTURE (toute clé de données traduite)
   stats.lua               couche de modificateurs : formule flat/increased/more + commutativité + clamp
   run.lua                 invariants + déterminisme de l'ÉCONOMIE de run (achat/reroll/niveau/streaks/vies)
+  synergies.lua           INTERACTIONS inter-effets en combat (choc amplifie allié, poison multi-sources, weaken, bleed slow, contre)
   props.lua               invariants + fuzz (PV>=0, terminaison, 1 vainqueur, déterminisme)
   golden.lua              golden-log de régression (empreinte event-log d'un scénario figé)
 tools/
