@@ -222,6 +222,69 @@ local U = {
       { trigger = "on_death", op = "spread_rot", params = { base = 2, dur = 240, capDps = 10, maxHpFrac = 0.10 } },
     },
   },
+
+  -- ══ VAGUE 4 : T3 « transforms / clutch » (cf. effects-dot-families.md §H). 2/famille = 1 FINISHER
+  -- (grant_team : change l'archétype de l'équipe) + 1 PIVOT CROISÉ vers une autre famille (enabler->payoff).
+  -- Le T3 ne scale QUE ses stats, jamais son seuil (anti double-snowball). PREMIUM (coût 4-5). ══
+
+  -- BRÛLURE T3
+  ash_maw = { -- TRANSFORM : tant qu'il vit, les feux de l'ÉQUIPE ne décroissent plus (les braises éternelles)
+    id = "ash_maw", sprite = "demon", type = "abyss", cost = 5, hp = 70, dmg = 6, cd = 60,
+    effects = {
+      { trigger = "on_hit", op = "burn", params = { dps = 6, dur = 180 } },
+      { trigger = "combat_start", op = "grant_team", params = { burnNoDecay = true } },
+    },
+  },
+  plague_pyre = { -- CROISÉ feu->poison : quand sa brûlure saute à la mort, elle SÈME aussi du venin
+    id = "plague_pyre", sprite = "demon", type = "abyss", cost = 5, hp = 56, dmg = 6, cd = 56,
+    effects = {
+      { trigger = "on_hit", op = "burn", params = { dps = 5, dur = 150 } },
+      { trigger = "on_death", op = "spread_burn_on_death", params = { frac = 0.6, minDps = 3, dur = 120, alsoPoison = { dps = 2, dur = 120 } } },
+    },
+  },
+
+  -- SAIGNEMENT T3
+  slow_bleed = { -- TRANSFORM : au début du combat, RALENTIT toute l'équipe ennemie (la mort par mille coupures)
+    id = "slow_bleed", sprite = "skeleton", type = "bone", cost = 5, hp = 64, dmg = 5, cd = 54,
+    effects = {
+      { trigger = "on_hit", op = "bleed", params = { dps = 2, dur = 240, slowPct = 0.15 } },
+      { trigger = "combat_start", op = "grant_team", params = { slowEnemies = 0.12 } },
+    },
+  },
+  marrow_drinker = { -- CROISÉ saignement->pourriture : sur une cible DÉJÀ saignante, convertit le bleed en rot
+    id = "marrow_drinker", sprite = "demon", type = "abyss", cost = 4, hp = 54, dmg = 6, cd = 52,
+    effects = { { trigger = "on_hit", op = "convert_to_rot", params = { base = 3, growth = 2, dur = 240, capDps = 12, maxHpFrac = 0.15 } } },
+  },
+
+  -- POISON T3
+  festering = { -- TRANSFORM : le poison de l'ÉQUIPE ignore son cap de stacks ET dure plus longtemps
+    id = "festering", sprite = "witch", type = "arcane", cost = 5, hp = 50, dmg = 6, cd = 60,
+    effects = {
+      { trigger = "on_hit", op = "poison", params = { dps = 2, dur = 180 } },
+      { trigger = "combat_start", op = "grant_team", params = { poisonNoCap = true, poisonDurBonus = 60 } },
+    },
+  },
+  venom_censer = { -- CROISÉ poison->feu : à N stacks de poison, la cible DÉTONE en flammes (accumule puis détonne)
+    id = "venom_censer", sprite = "witch", type = "arcane", cost = 5, hp = 48, dmg = 6, cd = 58,
+    effects = { { trigger = "on_hit", op = "poison", params = { dps = 2, dur = 180, igniteAt = 5, igniteBurst = { dps = 10, dur = 150 } } } },
+  },
+
+  -- POURRITURE T3
+  pit_maw = { -- TRANSFORM (signature thème) : au début du combat, la pourriture rampe sur TOUTE l'équipe ennemie
+    id = "pit_maw", sprite = "skeleton", type = "bone", cost = 5, hp = 76, dmg = 5, cd = 64,
+    effects = {
+      { trigger = "on_hit", op = "rot", params = { base = 1, growth = 1, dur = 240, capDps = 10, maxHpFrac = 0.15 } },
+      { trigger = "combat_start", op = "grant_team", params = { rotEnemies = { base = 1, dur = 300, capDps = 8, maxHpFrac = 0.10 } } },
+    },
+  },
+  wither_bloom = { -- CROISÉ rot->slow+malus : pourriture qui RALENTIT et AFFAIBLIT aussi (l'usure totale, anti-stat)
+    id = "wither_bloom", sprite = "demon", type = "abyss", cost = 5, hp = 58, dmg = 5, cd = 60,
+    effects = {
+      { trigger = "on_hit", op = "rot", params = { base = 2, growth = 1, dur = 240, capDps = 10, maxHpFrac = 0.15 } },
+      { trigger = "on_hit", op = "bleed", params = { dps = 0, dur = 240, slowPct = 0.15 } }, -- pur slow (0 dps)
+      { trigger = "on_hit", op = "poison", params = { dps = 0, dur = 240, weaken = 0.10 } }, -- pur malus (0 dps)
+    },
+  },
 }
 
 -- Roster complet (ordre d'affichage). Les 6 premiers = vanille/v0 ; les suivants = familles de statuts.
@@ -238,7 +301,12 @@ U.order = { "marauder", "templar", "skeleton", "bandit", "witch", "demon",
   "bellows_priest", "wildfire_hound", "kiln_warden",
   "bloodletter", "tendon_render", "vein_splitter",
   "plague_bearer", "acid_maw",
-  "patient_worm", "hollow_gut", "blight_spreader" }
+  "patient_worm", "hollow_gut", "blight_spreader",
+  -- vague 4 (T3 transforms/croisés) : burn / bleed / poison / rot
+  "ash_maw", "plague_pyre",
+  "slow_bleed", "marrow_drinker",
+  "festering", "venom_censer",
+  "pit_maw", "wither_bloom" }
 
 -- Pool d'unités ACHETABLES en boutique (cf. src/run/state.lua). Identique au roster pour l'instant.
 U.pool = { "marauder", "templar", "skeleton", "bandit", "witch", "demon",
@@ -251,7 +319,11 @@ U.pool = { "marauder", "templar", "skeleton", "bandit", "witch", "demon",
   "bellows_priest", "wildfire_hound", "kiln_warden",
   "bloodletter", "tendon_render", "vein_splitter",
   "plague_bearer", "acid_maw",
-  "patient_worm", "hollow_gut", "blight_spreader" }
+  "patient_worm", "hollow_gut", "blight_spreader",
+  "ash_maw", "plague_pyre",
+  "slow_bleed", "marrow_drinker",
+  "festering", "venom_censer",
+  "pit_maw", "wither_bloom" }
 
 -- Visuel (rig) d'une unité : son propre id, ou un `sprite` de repli (réutilise une créature existante
 -- tant que le pixel-art dédié n'existe pas, cf. src/data/creatures.lua).

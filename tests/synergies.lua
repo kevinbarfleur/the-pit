@@ -143,8 +143,44 @@ local ok, err = pcall(function()
     assert(tgt.shield < 20 - am.dmg, ("SYNERGIE shieldEat: bouclier ronge au-dela de l'absorption (%d < %d)"):format(tgt.shield, 20 - am.dmg))
   end
 
+  -- ════════ VAGUE 4 — transforms T3 & CROISEMENTS de familles (enabler -> payoff cross-famille) ════════
+
+  -- SYNERGIE 10 — CROISÉ saignement->pourriture (Marrow-Drinker) : frapper une cible DÉJÀ saignante
+  -- convertit le bleed en rot (le sang noir devient nécrose).
+  do
+    local a = Arena.new({ left = { U("marrow_drinker") }, right = { U("marauder", {}) }, autoReset = false, seed = 21 })
+    local md, tgt = a.units[1], a.units[2]
+    tgt.dots.bleed = { dps = 2, remaining = 300, acc = 0, slowPct = 0.2, dynBonus = 0, source = md }
+    tgt.atkSlow = 0.2
+    a:hit(md, tgt)
+    assert(not tgt.dots.bleed, "marrow: le bleed est consomme")
+    assert(tgt.dots.rot, "SYNERGIE bleed->rot: la cible saignante recoit de la pourriture")
+  end
+
+  -- SYNERGIE 11 — CROISÉ poison->feu (Venom-Censer) : à 5 stacks de poison, la cible DÉTONE en flammes.
+  do
+    local a = Arena.new({ left = { U("venom_censer") }, right = { U("marauder", {}, { hp = 9999 }) }, autoReset = false, seed = 22 })
+    local vc, tgt = a.units[1], a.units[2]
+    for _ = 1, 5 do a:hit(vc, tgt) end
+    assert(#tgt.dots.poison >= 5, "5 stacks de poison poses")
+    assert(not tgt.dots.burn, "pas encore enflamme avant le tick")
+    a:update(1.0, 1) -- le tick poison verifie le seuil -> detonation feu
+    assert(tgt.dots.burn, "SYNERGIE poison->burn: a 5 stacks la cible s'enflamme")
+  end
+
+  -- SYNERGIE 12 — TRANSFORM d'équipe (The Festering) : lève le cap de stacks de poison pour TOUTE l'équipe
+  -- (un allié peut alors dépasser 8 stacks).
+  do
+    local a = Arena.new({ left = { U("festering"), U("spore_tick") },
+      right = { U("marauder", {}, { hp = 99999 }) }, autoReset = false, seed = 23 })
+    local sp, tgt = a.units[2], a.units[3]
+    for _ = 1, 12 do a:hit(sp, tgt) end -- spore_tick (left) profite du cap levé par festering (left)
+    assert(#tgt.dots.poison == 12, ("SYNERGIE festering: cap leve, 12 stacks tiennent >8 (obtenu %d)"):format(#tgt.dots.poison))
+  end
+
   print("  synergies : choc-amplifie-allie / poison-multi-sources / weaken-reduit-output / bleed-ralentit-cadence / regen-contre-DoT")
-  print("  synergies+: contagion-au-voisin / propagation-a-la-mort / aggravate-en-frappant / shieldEat OK")
+  print("  synergies+: contagion / propagation-a-la-mort / aggravate / shieldEat (T2)")
+  print("  synergies#: bleed->rot / poison->feu / festering-sans-cap (T3 croises) OK")
 end)
 
 if ok then
