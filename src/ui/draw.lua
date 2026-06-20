@@ -69,6 +69,27 @@ function Draw.textC(str, cx, y, color, font)
   love.graphics.print(str, math.floor(cx - w / 2 + 0.5), math.floor(y + 0.5))
 end
 
+-- Texte centré AVEC interlettrage (letter-spacing, en px design) : effet cérémonial de la DA.
+-- ASCII uniquement (les chaînes affichées le sont) -> #str = nombre de caractères.
+function Draw.textTrackedC(str, cx, y, color, font, spacing)
+  font = font or love.graphics.getFont()
+  love.graphics.setFont(font)
+  Draw.setColor(color)
+  spacing = spacing or 0
+  local total = 0
+  for i = 1, #str do
+    total = total + font:getWidth(str:sub(i, i))
+    if i < #str then total = total + spacing end
+  end
+  local x = cx - total / 2
+  for i = 1, #str do
+    local ch = str:sub(i, i)
+    love.graphics.print(ch, math.floor(x + 0.5), math.floor(y + 0.5))
+    x = x + font:getWidth(ch) + spacing
+  end
+  return total
+end
+
 -- Aligné à droite : le texte se termine à rx.
 function Draw.textR(str, rx, y, color, font)
   font = font or love.graphics.getFont()

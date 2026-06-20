@@ -99,10 +99,10 @@ function Ambient:draw(mode)
   end
 
   if full then
-    -- Gueule du puits : grand halo rouge pulsant en bas-centre.
-    local pulse = 0.22 + 0.08 * math.sin(t * 0.04)
-    drawGlow(W * 0.5, H + 10, 320, 210, c.blood, pulse)
-    drawGlow(W * 0.5, H + 30, 180, 130, c.bloodBright, pulse * 0.7)
+    -- Gueule du puits : grand halo rouge pulsant en bas-centre (élément signature).
+    local pulse = 0.34 + 0.10 * math.sin(t * 0.04)
+    drawGlow(W * 0.5, H - 6, 380, 260, c.blood, pulse)
+    drawGlow(W * 0.5, H + 24, 210, 160, c.bloodBright, pulse * 0.7)
 
     -- Stalactites.
     love.graphics.setColor(c.void[1], c.void[2], c.void[3], 1)

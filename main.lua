@@ -12,6 +12,7 @@ local Build = require("src.scenes.build")
 local Combat = require("src.scenes.combat")
 local Runover = require("src.scenes.runover")
 local Gallery = require("src.scenes.gallery")
+local Menu = require("src.scenes.menu")
 local RunState = require("src.run.state")
 local Grimoire = require("src.core.grimoire")
 local Theme = require("src.ui.theme")
@@ -36,6 +37,10 @@ function host.goto(name, payload)
     -- Galerie de revue visuelle (debug) : construite à la demande, mémoïsée (indépendante du run).
     host.gallery = host.gallery or Gallery.new(Palette, VW, VH, host)
     host.scene = host.gallery
+  elseif name == "menu" then
+    -- Écran titre : mémoïsé (indépendant du run). ENTER THE PIT -> host.newRun().
+    host.menu = host.menu or Menu.new(Palette, VW, VH, host)
+    host.scene = host.menu
   else
     host.scene = host.build
   end
@@ -94,7 +99,7 @@ function love.load()
 
   Theme.load() -- charge polices + DA une fois (pré-chauffe les tailles courantes ; fallback si TTF absent)
   Grimoire.load() -- charge le codex persistant (reliques identifiées, méta-progression cross-run)
-  host.newRun() -- crée host.run (état seedé) + host.build, puis entre en phase build
+  host.goto("menu") -- écran titre ; "ENTER THE PIT" lance une run (host.newRun)
 end
 
 function love.update(dt)

@@ -27,6 +27,17 @@ return {
   ["gallery.generated"] = "procedurally generated",
   ["gallery.handmade"] = "hand-authored sprite",
 
+  -- menu / title
+  ["menu.descend"] = "YOU DESCEND",
+  ["menu.title"] = "The Pit",
+  ["menu.enter"] = "ENTER THE PIT",
+  ["menu.grimoire"] = "THE GRIMOIRE",
+  ["menu.rites"] = "RITES & OFFERINGS",
+  ["menu.abandon"] = "ABANDON",
+  ["menu.sealed"] = "SEALED",
+  ["menu.relics"] = "{n} / {total} RELICS INSCRIBED",
+  ["menu.tag"] = "the pit  -  prototype",
+
   -- build / shop
   ["ui.fight"] = "FIGHT",
   ["ui.reroll"] = "REROLL {n}g",
