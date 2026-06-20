@@ -146,7 +146,8 @@ tests/
   i18n.lua                i18n : interpolation + fallback + COUVERTURE (toute clé de données traduite)
   stats.lua               couche de modificateurs : formule flat/increased/more + commutativité + clamp
   run.lua                 invariants + déterminisme de l'ÉCONOMIE de run (achat/reroll/niveau/streaks/vies)
-  synergies.lua           INTERACTIONS inter-effets en combat (choc amplifie allié, poison multi-sources, weaken, bleed slow, contre)
+  auras.lua               AURAS d'adjacence build-résolues (bake du bonus sur le voisin via le graphe du sigil)
+  synergies.lua           INTERACTIONS inter-effets en combat (12 : familles + contagion/propagation/aggravate + croisés T3)
   props.lua               invariants + fuzz (PV>=0, terminaison, 1 vainqueur, déterminisme)
   golden.lua              golden-log de régression (empreinte event-log d'un scénario figé)
 tools/
@@ -229,7 +230,19 @@ bandeau VICTOIRE/DEFAITE → round suivant (or/boutique renouvelés, **plateau c
 - **Métriques sim (P3) — FAIT** : `tools/sim.lua` ajoute dégâts par cause + **part des altérations** (DoT vs frappe),
   distribution TTK (p10/p50/p90), **`lift` de co-occurrence (détecteur de combos cassés)** et **drapeaux d'outliers**
   (écart à la moyenne du champ en σ, pas une bande absolue : le win% « présence côté gagnant » se centre sur la moyenne).
-- **Reste** (cf. tâches P4-P6) : étendre le pool (~50, 5/3/2 + T2/T3 croisés + auras) ; **équilibrage auto-itéré** ; activer l'aggro.
+- **Pool P4 — FAIT (4 familles DoT complètes, 47 unités)** : burn/bleed/poison/rot chacune à **5 T1 (dont 1 aura) /
+  3 T2 / 2 T3** (cf. `effects-dot-families.md §H`), livrées par **vagues** (enablers → auras → twists → transforms),
+  chaque vague verte + committée. **Décision d'archi (voisinage)** : **auras** build-résolues (graphe du sigil, comme
+  `shield_aura`) ; **propagation en combat** (contagion / mort) = **proximité du champ de bataille** (`Arena:neighborsOf`)
+  pour garder l'arène **SIM autonome**. Nouveau trigger `on_death` (broadcast **différé**, ctx dédié) + détonation au
+  seuil (`on_tick`) ; `grant_team` (transforms d'équipe via `teamFlags`). Tout **gated** → golden inchangé (843214188).
+- **Tests d'interaction** (`synergies.lua`, 12 synergies) : choc/poison-multi/weaken/bleed/regen (familles) + contagion /
+  propagation-à-la-mort / aggravate / shieldEat (T2) + bleed→rot / poison→feu / festering-sans-cap (T3 croisés).
+- **Simplifications T3 assumées** (placeholders, à enrichir) : Ash-Maw = no-decay d'équipe (sans spread-on-death) ;
+  Pit-Maw = rot sur l'équipe ennemie (au lieu de « tous les DoT amputent ») ; Vein-Splitter = 1 bleed fort (2-instances
+  approximé) ; Wither-Bloom = rot + bleed(0 dps→slow) + poison(0 dps→malus). Le **choc** garde 1 unité (ladder différée).
+- **Reste** (cf. tâches P5-P6) : **équilibrage auto-itéré** (tests d'envergure : gros N → `lift` + drapeaux → tuner un
+  levier à la fois) ; activer l'**aggro** ; (option) étendre le **ladder choc** à 5/3/2.
 
 **Prochaines étapes moteur** (à faire quand un contenu l'exige — cf. `engine-architecture.md` §12) :
 - **Valeurs d'aggro + archétype tank** + **passifs de ligne** (façade=armure / arrière=attaque) — quand
@@ -250,11 +263,13 @@ bandeau VICTOIRE/DEFAITE → round suivant (or/boutique renouvelés, **plateau c
 > l'anneau donnent une exposition en file ; à ajuster par forme) ; valeurs de passifs, d'aggro **et
 > d'économie** (or/coûts/streaks) = placeholders d'équilibrage (à tuner via `tools/sim.lua`) ; boutique
 > sans **raretés/cotes-par-niveau** (pool uniforme) et **duplicatas non fusionnés** (étape #2) ;
-> snapshots toujours remplacés par l'**IA de seed** (étape #4) ; **pool d'effets partiel** (7/~50,
-> P4), **effets non équilibrés** (P5) ; **visuels réutilisés** (`sprite` de repli, pixel-art dédié à
-> faire) ; **aggro toujours inerte** (P6).
+> snapshots toujours remplacés par l'**IA de seed** (étape #4) ; **4 familles DoT complètes (47 unités) mais
+> NON équilibrées** (P5 : tests d'envergure → tuner) et **ladder choc non étendu** (1 unité) ; quelques **T3
+> simplifiés** (placeholders) ; **visuels réutilisés** (`sprite` de repli, pixel-art dédié à faire) ; **aggro
+> toujours inerte** (P6).
 > *Résolu* : ciblage déterministe (était euclidien) ; split SIM/RENDER (le rendu n'est plus dans `arena.lua`) ;
-> boucle run roguelite (était « manque éco/run ») ; **métriques sim P3** (`lift` de co-occurrence + distrib TTK + drapeaux d'outliers).
+> boucle run roguelite (était « manque éco/run ») ; **métriques sim P3** (`lift` + distrib TTK + drapeaux) ;
+> **pool d'effets P4** (4 familles DoT 5/3/2 + auras graphe + propagation on_death/contagion champ + transforms grant_team).
 
 ---
 
