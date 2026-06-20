@@ -7,6 +7,7 @@
 local Rig = require("src.core.rig")
 local Creatures = require("src.data.creatures")
 local Units = require("src.data.units")
+local CreatureGen = require("src.gen.creaturegen") -- visuel généré pour les unités sans rig main
 local T = require("src.core.i18n").t
 
 local ArenaDraw = {}
@@ -41,7 +42,14 @@ end
 function ArenaDraw:rigFor(u)
   local c = self.rigs[u]
   if not c then
-    c = Rig.new(Creatures[Units.spriteOf(u.id)], self.palette) -- visuel = sprite de repli si pas de rig dédié
+    -- Visuel : priorité au rig dessiné MAIN (Creatures[id], les 6 vanille) ; sinon créature GÉNÉRÉE
+    -- procéduralement, déterministe (seed = hashId de l'id), mémoïsée par id dans le générateur.
+    local def = Creatures[u.id]
+    if not def then
+      local spec = Units[u.id] or {}
+      def = CreatureGen.cached({ id = u.id, type = spec.type, effects = spec.effects })
+    end
+    c = Rig.new(def, self.palette)
     c.x, c.y, c.facing = u.x, u.y, u.facing
     c.trail = {}
     self.rigs[u] = c

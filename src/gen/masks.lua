@@ -1,0 +1,313 @@
+-- src/gen/masks.lua
+-- DATA PURE (zéro love.*) : MASK MATRICES par squelette × part. Le mask BORNE la silhouette
+-- (garantit la lisibilité) ; le générateur le remplit de façon seedée puis le miroir (symétrie),
+-- détecte les bords (outline auto) et colorise (ramps.lua). Adapté de Dave Bollinger.
+--
+-- VARIÉTÉ INTRA-FACTION : chaque part offre PLUSIEURS variantes de silhouette (head/torso surtout).
+-- creaturegen en choisit une par RNG seedé -> deux unités de même faction ont des formes distinctes.
+-- Toutes les variantes restent lisibles et fidèles à la faction (la difformité reste MODÉRÉE pour
+-- humanoid/robe ; abyss peut être plus irrégulier mais jamais gruyère).
+--
+-- On stocke la MOITIÉ GAUCHE de chaque part (colonnes de gauche vers l'axe de symétrie, à droite).
+-- Le générateur produit la moitié droite par MIROIR -> silhouette symétrique. L'asymétrie eldritch
+-- (arcane/abyss) est ajoutée APRÈS le miroir (excroissances d'un seul côté).
+--
+-- Rôles de cellule :
+--   0 = toujours VIDE (transparent)
+--   1 = body si rng < density (cellule "molle" : varie d'une créature à l'autre, BORD seulement)
+--   3 = toujours BODY (cellule "dure" : garantit la silhouette, jamais trouée)
+--   E = emplacement d'œil/détail (toujours body, marqué pour injection)
+--
+-- RÈGLE DE LISIBILITÉ : les cellules molles (1) ne vivent qu'au BORD extérieur (colonne de gauche,
+-- coins, bas, sommet). À l'INTÉRIEUR tout est dur (3) : un "1" interne qui roule vide crée un trou
+-- que l'edge-detection enveloppe de contour -> silhouette gruyère illisible.
+--
+-- Convention : la colonne la plus à DROITE de chaque demi-mask touche l'axe de symétrie.
+-- `variants` = liste de demi-masks ; le générateur en pioche un (ipairs/index seedé).
+
+local M = {}
+
+-- ═══════════════════════════ HUMANOID (flesh/order/bone) ═══════════════════════════
+M.humanoid = {
+  head = { variants = {
+    -- A : ronde standard
+    {
+      { 1, 3, 3, 3 },
+      { 3, 3, 3, 3 },
+      { 3, 3, "E", 3 },
+      { 3, 3, 3, 3 },
+      { 1, 3, 3, 3 },
+    },
+    -- B : anguleuse / mâchoire carrée (plus large en bas)
+    {
+      { 0, 3, 3, 3 },
+      { 3, 3, 3, 3 },
+      { 3, 3, "E", 3 },
+      { 3, 3, 3, 3 },
+      { 3, 3, 3, 3 },
+    },
+    -- C : haute / casquée (sommet allongé)
+    {
+      { 0, 1, 3, 3 },
+      { 0, 3, 3, 3 },
+      { 3, 3, 3, 3 },
+      { 3, 3, "E", 3 },
+      { 1, 3, 3, 3 },
+    },
+    -- D : trapue / massive (basse et large, front lourd) — 5 rangées pour une structure lisible.
+    {
+      { 3, 3, 3, 3 },
+      { 3, 3, 3, 3 },
+      { 3, 3, "E", 3 },
+      { 3, 3, 3, 3 },
+      { 1, 3, 3, 3 },
+    },
+  } },
+  torso = { variants = {
+    -- A : standard
+    {
+      { 1, 3, 3, 3 },
+      { 3, 3, 3, 3 },
+      { 3, 3, 3, 3 },
+      { 3, 3, 3, 3 },
+      { 1, 3, 3, 3 },
+      { 1, 3, 3, 3 },
+    },
+    -- B : large d'épaules / cuirasse (épaules pleines, taille resserrée)
+    {
+      { 3, 3, 3, 3 },
+      { 3, 3, 3, 3 },
+      { 1, 3, 3, 3 },
+      { 0, 3, 3, 3 },
+      { 0, 3, 3, 3 },
+      { 1, 3, 3, 3 },
+    },
+    -- C : étroit / décharné (mince partout)
+    {
+      { 0, 1, 3, 3 },
+      { 0, 3, 3, 3 },
+      { 0, 3, 3, 3 },
+      { 0, 3, 3, 3 },
+      { 0, 3, 3, 3 },
+      { 0, 1, 3, 3 },
+    },
+    -- D : voûté / bossu (sommet asym léger, base large)
+    {
+      { 0, 3, 3, 3 },
+      { 1, 3, 3, 3 },
+      { 3, 3, 3, 3 },
+      { 3, 3, 3, 3 },
+      { 3, 3, 3, 3 },
+      { 1, 3, 3, 3 },
+    },
+  } },
+  armBack = { variants = { { { 3 }, { 3 }, { 3 }, { 3 }, { 3 } } } },
+  armFront = { variants = { { { 3 }, { 3 }, { 3 }, { 3 }, { 3 } } } },
+  legs = { variants = {
+    -- A : jambes droites
+    {
+      { 3, 3, 0 },
+      { 3, 3, 0 },
+      { 3, 3, 0 },
+      { 1, 3, 0 },
+    },
+    -- B : longues
+    {
+      { 3, 3, 0 },
+      { 3, 3, 0 },
+      { 3, 3, 0 },
+      { 3, 3, 0 },
+      { 1, 3, 0 },
+    },
+    -- C : trapues
+    {
+      { 3, 3, 0 },
+      { 3, 3, 0 },
+      { 1, 3, 0 },
+    },
+  } },
+}
+
+-- ═══════════════════════════ ROBE (arcane) : pas de legs, torse au sol ═══════════════════════════
+M.robe = {
+  head = { variants = {
+    -- A : capuche pointue
+    {
+      { 0, 0, 1, 3 },
+      { 0, 3, 3, 3 },
+      { 3, 3, 3, 3 },
+      { 3, 3, "E", 3 },
+      { 3, 3, 3, 3 },
+      { 0, 1, 3, 3 },
+    },
+    -- B : capuche large / arrondie
+    {
+      { 0, 1, 3, 3 },
+      { 3, 3, 3, 3 },
+      { 3, 3, 3, 3 },
+      { 3, 3, "E", 3 },
+      { 0, 3, 3, 3 },
+      { 0, 0, 3, 3 },
+    },
+    -- C : tête nue / chauve (sans capuche pointue, crâne haut)
+    {
+      { 0, 0, 3, 3 },
+      { 0, 3, 3, 3 },
+      { 3, 3, 3, 3 },
+      { 3, 3, "E", 3 },
+      { 3, 3, 3, 3 },
+      { 0, 3, 3, 3 },
+    },
+    -- D : capuche très longue (cornes de tissu)
+    {
+      { 0, 0, 0, 3 },
+      { 0, 0, 3, 3 },
+      { 0, 3, 3, 3 },
+      { 3, 3, "E", 3 },
+      { 3, 3, 3, 3 },
+      { 0, 1, 3, 3 },
+    },
+  } },
+  torso = { variants = {
+    -- A : robe évasée
+    {
+      { 0, 0, 3, 3 },
+      { 0, 3, 3, 3 },
+      { 3, 3, 3, 3 },
+      { 3, 3, 3, 3 },
+      { 1, 3, 3, 3 },
+      { 1, 3, 3, 3 },
+      { 1, 3, 3, 3 },
+    },
+    -- B : robe droite / colonne
+    {
+      { 0, 3, 3, 3 },
+      { 0, 3, 3, 3 },
+      { 0, 3, 3, 3 },
+      { 0, 3, 3, 3 },
+      { 0, 3, 3, 3 },
+      { 1, 3, 3, 3 },
+    },
+    -- C : robe à large traîne (très évasée en bas)
+    {
+      { 0, 0, 3, 3 },
+      { 0, 0, 3, 3 },
+      { 0, 3, 3, 3 },
+      { 3, 3, 3, 3 },
+      { 3, 3, 3, 3 },
+      { 1, 3, 3, 3 },
+      { 1, 3, 3, 3 },
+    },
+    -- D : courte / ramassée (acolyte)
+    {
+      { 0, 0, 3, 3 },
+      { 0, 3, 3, 3 },
+      { 3, 3, 3, 3 },
+      { 1, 3, 3, 3 },
+      { 1, 3, 3, 3 },
+    },
+  } },
+  armBack = { variants = { { { 3 }, { 3 }, { 3 }, { 3 }, { 1 } } } },
+  armFront = { variants = { { { 3 }, { 3 }, { 3 }, { 3 }, { 1 } } } },
+}
+
+-- ═══════════════════════════ DEFORMED (abyss) : pas d'arme, armFront = griffe ═══════════════════════════
+-- NOTE BRUIT : on a SUPPRIMÉ les "1" internes qui créaient le damier KKDKDKDK frôlant la silhouette
+-- trouée. Les cavités/yeux sont posés explicitement (E) ou par détail, pas par alternance plein/vide.
+M.deformed = {
+  head = { variants = {
+    -- A : bulbe large
+    {
+      { 0, 1, 3, 3 },
+      { 1, 3, 3, 3 },
+      { 3, 3, 3, 3 },
+      { 3, 3, "E", 3 },
+      { 3, 3, 3, "E" },
+      { 1, 3, 3, 3 },
+    },
+    -- B : crâne effilé vers le haut (corne naturelle)
+    {
+      { 0, 0, 3, 3 },
+      { 0, 3, 3, 3 },
+      { 3, 3, 3, 3 },
+      { 3, 3, "E", 3 },
+      { 3, 3, 3, 3 },
+      { 1, 3, 3, 3 },
+    },
+    -- C : tête basse / gueule (large bas, yeux étagés)
+    {
+      { 3, 3, 3, 3 },
+      { 3, 3, "E", 3 },
+      { 3, 3, 3, "E" },
+      { 3, 3, 3, 3 },
+      { 1, 3, 3, 3 },
+    },
+    -- D : difforme haute (double bosse de crâne)
+    {
+      { 1, 0, 3, 3 },
+      { 0, 3, 3, 3 },
+      { 3, 3, 3, 3 },
+      { 3, 3, "E", 3 },
+      { 3, 3, 3, 3 },
+      { 1, 3, 3, 3 },
+    },
+  } },
+  torso = { variants = {
+    -- A : tronc massif
+    {
+      { 1, 3, 3, 3 },
+      { 3, 3, 3, 3 },
+      { 3, 3, 3, 3 },
+      { 3, 3, 3, 3 },
+      { 1, 3, 3, 3 },
+      { 1, 1, 3, 3 },
+    },
+    -- B : ventru (large milieu)
+    {
+      { 0, 3, 3, 3 },
+      { 3, 3, 3, 3 },
+      { 3, 3, 3, 3 },
+      { 3, 3, 3, 3 },
+      { 3, 3, 3, 3 },
+      { 1, 3, 3, 3 },
+    },
+    -- C : maigre / côtelé
+    {
+      { 0, 1, 3, 3 },
+      { 0, 3, 3, 3 },
+      { 0, 3, 3, 3 },
+      { 0, 3, 3, 3 },
+      { 1, 3, 3, 3 },
+      { 1, 1, 3, 3 },
+    },
+    -- D : épaulé large / trapu
+    {
+      { 3, 3, 3, 3 },
+      { 3, 3, 3, 3 },
+      { 1, 3, 3, 3 },
+      { 1, 3, 3, 3 },
+      { 1, 3, 3, 3 },
+    },
+  } },
+  armBack = { variants = { { { 3 }, { 3 }, { 3 }, { 3 }, { 3 }, { 1 } } } },
+  armFront = { variants = { { { 3 }, { 3 }, { 3 }, { 3 }, { 3 }, { 1 } } } },
+  legs = { variants = {
+    {
+      { 3, 3, 0 },
+      { 3, 3, 0 },
+      { 1, 3, 0 },
+    },
+    {
+      { 3, 3, 0 },
+      { 3, 3, 0 },
+      { 3, 3, 0 },
+      { 1, 3, 0 },
+    },
+  } },
+}
+
+function M.get(skeleton)
+  return M[skeleton] or M.humanoid
+end
+
+return M

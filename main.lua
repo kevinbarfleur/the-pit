@@ -11,6 +11,7 @@ local Palette = require("src.core.palette")
 local Build = require("src.scenes.build")
 local Combat = require("src.scenes.combat")
 local Runover = require("src.scenes.runover")
+local Gallery = require("src.scenes.gallery")
 local RunState = require("src.run.state")
 local T = require("src.core.i18n").t
 
@@ -29,6 +30,10 @@ function host.goto(name, payload)
     host.scene = Combat.new(Palette, VW, VH, host, payload)
   elseif name == "runover" then
     host.scene = Runover.new(Palette, VW, VH, host, payload)
+  elseif name == "gallery" then
+    -- Galerie de revue visuelle (debug) : construite à la demande, mémoïsée (indépendante du run).
+    host.gallery = host.gallery or Gallery.new(Palette, VW, VH, host)
+    host.scene = host.gallery
   else
     host.scene = host.build
   end
@@ -109,6 +114,10 @@ end
 
 function love.keypressed(key)
   if key == "escape" then love.event.quit(); return end
+  -- [g] bascule build <-> galerie (revue visuelle des entités). Réservé à ces deux scènes.
+  if key == "g" and (host.name == "build" or host.name == "gallery") then
+    host.goto(host.name == "gallery" and "build" or "gallery"); return
+  end
   if host.scene.keypressed then host.scene:keypressed(key) end
 end
 
