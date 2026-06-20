@@ -125,7 +125,8 @@ src/
     place.lua             (col,row) -> position de combat (front/back par colonne)
   effects/
     engine.lua            REGISTRE d'effets : run(porteur, trigger, ctx) + register(op) ouvert/fermé
-    ops.lua               ops de base (bonus_first/lifesteal/poison/thorns) ; shield_aura résolu au build
+    ops.lua               ops : bonus_first/lifesteal/thorns + familles burn/bleed/poison/rot/choc/regen
+    stats.lua             COUCHE DE MODIFICATEURS (SIM) : resolve(base, mods) flat/increased/more + clamp
   board/
     shapes.lua            formes de plateau = GRAPHES explicites (cases + arêtes), 9 slots
     board.lua             plateau-graphe : slots, adjacence, sigils, déblocage progressif
@@ -143,6 +144,7 @@ tests/
   mock_love.lua           mock LÖVE partagé (graphics stub + RNG seedé) pour headless/sims
   headless.lua            smoke + déterminisme + passifs + e2e souris/boutique (mock LÖVE, vraie logique)
   i18n.lua                i18n : interpolation + fallback + COUVERTURE (toute clé de données traduite)
+  stats.lua               couche de modificateurs : formule flat/increased/more + commutativité + clamp
   run.lua                 invariants + déterminisme de l'ÉCONOMIE de run (achat/reroll/niveau/streaks/vies)
   props.lua               invariants + fuzz (PV>=0, terminaison, 1 vainqueur, déterminisme)
   golden.lua              golden-log de régression (empreinte event-log d'un scénario figé)
@@ -214,6 +216,18 @@ bandeau VICTOIRE/DEFAITE → round suivant (or/boutique renouvelés, **plateau c
 - **Tests** : `tests/run.lua` (invariants éco + déterminisme + fuzz 60×80) ; e2e boutique + routing dans `headless`.
 - **Chiffres = placeholders** (or 10, achat 2-4, reroll 1, niveau 5+, streak +1/+2/+3) à tuner via `tools/sim.lua`.
 
+**Système d'effets v1 — fondations + 1ères familles (v0.6)** — cf. `docs/research/effects-design.md` (synthèse des 4 recherches) :
+- **Couche de modificateurs** (`src/effects/stats.lua`) : `resolve(base, mods)` = `(base+Σflat)(1+Σinc)·Π(1+more)` ;
+  `increased` additifs → **déterministe sans tri** ; socle du malus de poison / choc / aggro modifiable. `mods=nil`→base.
+- **Moteur de statuts généralisé** (`arena:tickDots`) : `u.dots` {burn, bleed, **poison=[stacks]**, rot, choc} + regen,
+  **ordre fixe** déterministe, accumulation entière. `damage()` amplifie le choc + ampute les PV max (rot) ; `hit()`
+  applique le **malus de valeur** (poison). **6 familles** ; ajouter une famille = +1 bloc de tick + 1 op de pose.
+- **7 unités à effets** jouables (poison×2 dont weaken / burn / bleed+slow / rot+amputation / choc / **contre regen**) ;
+  visuel réutilisé via le champ **`sprite`** (`Units.spriteOf`) en attendant le pixel-art dédié. **13 unités en boutique**.
+  Tests des 6 familles (`headless`) + `stats` ; golden rebaseliné (843214188) ; sim saine (σ 0,056, entropie 0,999).
+- **Reste** (cf. tâches P3-P6) : étendre le pool (~50, 5/3/2 + T2/T3 croisés + auras) ; métriques sim (dégâts/famille,
+  `lift` de co-occurrence, distrib TTK) ; **équilibrage auto-itéré** ; activer l'aggro.
+
 **Prochaines étapes moteur** (à faire quand un contenu l'exige — cf. `engine-architecture.md` §12) :
 - **Valeurs d'aggro + archétype tank** + **passifs de ligne** (façade=armure / arrière=attaque) — quand
   les plateaux se remplissent. **Reliques de taunt** + contres (AoE/strip/furtivité) en parallèle.
@@ -233,7 +247,9 @@ bandeau VICTOIRE/DEFAITE → round suivant (or/boutique renouvelés, **plateau c
 > l'anneau donnent une exposition en file ; à ajuster par forme) ; valeurs de passifs, d'aggro **et
 > d'économie** (or/coûts/streaks) = placeholders d'équilibrage (à tuner via `tools/sim.lua`) ; boutique
 > sans **raretés/cotes-par-niveau** (pool uniforme) et **duplicatas non fusionnés** (étape #2) ;
-> snapshots toujours remplacés par l'**IA de seed** (étape #4).
+> snapshots toujours remplacés par l'**IA de seed** (étape #4) ; **pool d'effets partiel** (7/~50,
+> P4), **effets non équilibrés** (P5), métriques sim famille/`lift` à ajouter (P3) ; **visuels
+> réutilisés** (`sprite` de repli, pixel-art dédié à faire) ; **aggro toujours inerte** (P6).
 > *Résolu* : ciblage déterministe (était euclidien) ; split SIM/RENDER (le rendu n'est plus dans `arena.lua`) ;
 > boucle run roguelite (était « manque éco/run »).
 
