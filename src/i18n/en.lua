@@ -49,6 +49,16 @@ return {
   ["ui.loss_streak"] = "LOSS STREAK x{n}",
   ["ui.placed_count"] = "{placed} placed  -  {active}/9 slots",
   ["ui.sigil_header"] = "{label}  -  {archetype}",
+  ["ui.reshape"] = "[s] to reshape",
+  ["ui.controls_build"] = "drag to place  -  [s] sigil  -  [g] gallery  -  [esc] quit",
+  ["ui.offering"] = "THE OFFERING",
+  ["ui.sold"] = "SOLD",
+  ["ui.place_unit"] = "PLACE A UNIT",
+  ["ui.gold"] = "GOLD",
+  ["ui.lives"] = "LIVES",
+  ["ui.wins"] = "WINS",
+  ["ui.round"] = "ROUND",
+  ["ui.level"] = "LVL",
 
   -- tooltip
   ["ui.unit_header"] = "{name}  ({type})",

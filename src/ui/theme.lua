@@ -70,6 +70,12 @@ Theme.c = {
   -- Lignes & séparateurs
   hair       = H(0x2a2018), -- bordure de panneau détaillé
   line       = H(0x1c1620), -- séparateur sombre
+
+  -- Boutons d'économie (boutique) & survol de carte
+  ecoBg      = H(0x1c130b), -- fond bouton REROLL/LEVEL
+  ecoBgHot   = H(0x2a1c0e), -- survol
+  ecoBorder  = H(0x6a4a22), -- bord (actif)
+  cardHover  = H(0x1a1118), -- survol d'une offre achetable
 }
 
 -- ─────────────────── Couleurs de type d'unité (TYPES du .dc.html) ───────────────────

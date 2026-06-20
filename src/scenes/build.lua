@@ -29,19 +29,25 @@ local Place = require("src.combat.place")
 local Snapshot = require("src.net.snapshot")
 local Snapstore = require("src.net.snapstore")
 local Run = require("src.run.state")
+local Theme = require("src.ui.theme")
+local Draw = require("src.ui.draw")
+local Ambient = require("src.fx.ambient")
 local T = require("src.core.i18n").t
 
 local Build = {}
 Build.__index = Build
 
+local SLOT_HALF = 40 -- demi-côté d'une case en espace DESIGN (80x80 ; centre = self.pos[i] ×4)
+
 local SPACING = 26
-local BOARD_OY = 60
+local BOARD_OY = 90 -- centre du plateau (virtuel) : ×4 = ~360 design, sous l'en-tête, au-dessus de la boutique
 local MAX_LEVEL = 3
 local LEVEL_MULT = { 1.0, 1.8, 3.0 } -- stats par niveau : 3 copies (même id+niveau) -> 1 unité niveau+1 (façon TFT)
 
 function Build.new(palette, vw, vh, host)
   local self = setmetatable({
     vw = vw, vh = vh, t = 0, palette = palette, host = host,
+    daChrome = true, -- la scène porte sa propre chrome DA (pas de HUD générique)
     titleKey = "scene.build",
     hintKey = "ui.hint_build",
     shapeIdx = 1,
@@ -61,6 +67,7 @@ function Build.new(palette, vw, vh, host)
   self.button = { x = vw - 98, y = 150, w = 92, h = 26 } -- COMBAT
   self.rerollBtn = { x = 172, y = 149, w = 44, h = 12 }
   self.levelBtn = { x = 172, y = 163, w = 44, h = 12 }
+  self.ambient = Ambient.new(3) -- fond calme (mode "build" : dégradé, pas de particules d'ambiance)
   if self.host.run then self:syncSlots() end
   return self
 end
@@ -395,6 +402,7 @@ end
 -- ── Update ──
 function Build:update(frameDt)
   self.t = self.t + frameDt
+  self.ambient:update(frameDt)
   if self.host.run and self.board.activeCount ~= self.host.run.slots then self:syncSlots() end
   for i, sr in pairs(self.slotRigs) do
     local p = self.pos[i]
@@ -408,188 +416,166 @@ function Build:update(frameDt)
   end
 end
 
--- ── Rendu monde (canvas virtuel) ──
-function Build:drawWorld()
-  local b = self.board
+-- État d'interaction (survol/voisins/cible de drop/survol boutique), calculé une fois par frame et
+-- partagé entre drawBack (fonds) et drawOverlay (bordures/texte). Coords souris en espace virtuel.
+function Build:computeUi()
   local hover = self:slotAt(self.mx, self.my)
-  local dropTarget = self.drag and hover
-  local nbset = {}
-  if hover then for _, j in ipairs(b:neighbors(hover)) do nbset[j] = true end end
+  local ui = { hover = hover, dropTarget = self.drag and hover or nil, nbset = {}, shopHover = self:shopAt(self.mx, self.my) }
+  if hover then for _, j in ipairs(self.board:neighbors(hover)) do ui.nbset[j] = true end end
+  self.uiState = ui -- champ distinct de la méthode (sinon self.uiState renverrait la méthode quand vide)
+  return ui
+end
 
-  -- Arêtes du graphe.
+-- ── Pre-pass natif (espace design) : atmosphère + arêtes + FONDS (cases / panneau / cartes) ──
+-- Tout ce qui doit passer DERRIÈRE les rigs (dessinés ensuite dans le canvas virtuel). pos[i] virtuel ×4.
+function Build:drawBack(view)
+  local ui = self:computeUi()
+  local b, run, c = self.board, self.host.run, Theme.c
+  Draw.begin(view)
+  self.ambient:draw("build")
+
+  -- Arêtes du graphe de synergies (la forme EST le graphe).
   love.graphics.setLineStyle("rough")
-  love.graphics.setLineWidth(1)
   for _, e in ipairs(b.shape.edges) do
-    local a, c = e[1], e[2]
-    if b.slots[a].unlocked and b.slots[c].unlocked then
-      local pa, pc = self.pos[a], self.pos[c]
-      if a == hover or c == hover then love.graphics.setColor(0.63, 0.16, 0.14, 0.9)
-      else love.graphics.setColor(0.28, 0.24, 0.32, 0.7) end
-      love.graphics.line(pa.x, pa.y, pc.x, pc.y)
+    local a, k = e[1], e[2]
+    if b.slots[a].unlocked and b.slots[k].unlocked then
+      local pa, pk = self.pos[a], self.pos[k]
+      local active = (a == ui.hover or k == ui.hover or a == ui.dropTarget or k == ui.dropTarget)
+      Draw.setColor(active and c.edgeActive or c.edgeIdle)
+      love.graphics.setLineWidth(active and 4 or 3)
+      love.graphics.line(pa.x * 4, pa.y * 4, pk.x * 4, pk.y * 4)
     end
   end
-  love.graphics.setColor(1, 1, 1, 1)
+  love.graphics.setLineWidth(1)
 
-  -- Cases.
+  -- Fonds des cases (l'ÉTAT est porté par la bordure en overlay, pas par le fond).
   for i = 1, 9 do
-    local p, slot = self.pos[i], b.slots[i]
-    if not slot.unlocked then
-      love.graphics.setColor(0.09, 0.07, 0.11, 0.85)
-      love.graphics.rectangle("fill", p.x - 10, p.y - 10, 20, 20)
-      love.graphics.setColor(0.20, 0.16, 0.22, 1)
-      love.graphics.rectangle("line", p.x - 10, p.y - 10, 20, 20)
-    else
-      love.graphics.setColor(0.06, 0.05, 0.08, 0.55)
-      love.graphics.rectangle("fill", p.x - 11, p.y - 11, 22, 22)
-      if i == dropTarget then love.graphics.setColor(0.42, 0.78, 0.40, 1)
-      elseif i == hover then love.graphics.setColor(0.85, 0.74, 0.32, 1)
-      elseif nbset[i] then love.graphics.setColor(0.63, 0.16, 0.14, 1)
-      else love.graphics.setColor(0.32, 0.28, 0.36, 1) end
-      love.graphics.rectangle("line", p.x - 11, p.y - 11, 22, 22)
-    end
-  end
-  love.graphics.setColor(1, 1, 1, 1)
-
-  -- Unités posées (+ pips de niveau dorés au-dessus si fusionnées : duplicatas).
-  for i, sr in pairs(self.slotRigs) do
-    if b.slots[i].unlocked then
-      Rig.draw(sr.char)
-      local lvl = sr.level or 1
-      if lvl > 1 then
-        love.graphics.setColor(0.95, 0.82, 0.35, 1)
-        local px = sr.char.x - (lvl * 6 - 3) / 2
-        for k = 1, lvl do love.graphics.rectangle("fill", px + (k - 1) * 6, sr.char.y - 27, 3, 3) end
-        love.graphics.setColor(1, 1, 1, 1)
-      end
-    end
+    local p = self.pos[i]
+    Draw.rect(p.x * 4 - SLOT_HALF, p.y * 4 - SLOT_HALF, SLOT_HALF * 2, SLOT_HALF * 2,
+      b.slots[i].unlocked and c.slot or c.slotLocked)
   end
 
-  -- Panneau boutique (bas).
-  love.graphics.setColor(0.05, 0.04, 0.07, 0.88)
-  love.graphics.rectangle("fill", 0, 146, self.vw, self.vh - 146)
-  love.graphics.setColor(0.20, 0.16, 0.22, 1)
-  love.graphics.line(0, 146, self.vw, 146)
-
-  local run = self.host.run
+  -- Panneau boutique + fonds des cartes (derrière les rigs d'aperçu).
+  Draw.rect(0, 556, Draw.W, 164, c.panel)
+  Draw.setColor(c.line); love.graphics.setLineWidth(2); love.graphics.line(0, 557, Draw.W, 557); love.graphics.setLineWidth(1)
   if run then
     for i, rect in ipairs(self.shopSlots) do
       local o = run.shop[i]
       if o then
-        local affordable = (not o.sold) and run.gold >= o.cost
-        if o.sold then love.graphics.setColor(0.05, 0.04, 0.06, 1)
-        elseif inRect(self.mx, self.my, rect) and affordable then love.graphics.setColor(0.17, 0.13, 0.10, 1)
-        else love.graphics.setColor(0.10, 0.08, 0.12, 1) end
-        love.graphics.rectangle("fill", rect.x, rect.y, rect.w, rect.h)
-        love.graphics.setColor(affordable and 0.42 or 0.22, affordable and 0.32 or 0.18, 0.22, 1)
-        love.graphics.rectangle("line", rect.x, rect.y, rect.w, rect.h)
-        if not o.sold then
-          local c = self.previewRigs[o.id]
-          if c then
-            love.graphics.push()
-            love.graphics.translate(rect.x + rect.w / 2, rect.y + rect.h - 4)
-            love.graphics.scale(0.7, 0.7)
-            c.x, c.y, c.facing = 0, 0, 1
-            Rig.draw(c)
-            love.graphics.pop()
-          end
-        end
+        local aff = (not o.sold) and run.gold >= o.cost
+        local bg = o.sold and c.void or (aff and ((ui.shopHover == i) and c.cardHover or c.panel) or c.panelDeep)
+        Draw.rect(rect.x * 4, rect.y * 4, rect.w * 4, rect.h * 4, bg)
       end
     end
-    love.graphics.setColor(1, 1, 1, 1)
-
-    -- Boutons REROLL / NIVEAU (libellés en overlay, résolution native).
-    local function dbtn(rect, hot, enabled)
-      if not enabled then love.graphics.setColor(0.10, 0.09, 0.11, 0.9)
-      elseif hot then love.graphics.setColor(0.30, 0.22, 0.12, 1)
-      else love.graphics.setColor(0.18, 0.14, 0.10, 1) end
-      love.graphics.rectangle("fill", rect.x, rect.y, rect.w, rect.h)
-      love.graphics.setColor(enabled and 0.45 or 0.22, 0.34, 0.24, 1)
-      love.graphics.rectangle("line", rect.x, rect.y, rect.w, rect.h)
-    end
-    dbtn(self.rerollBtn, inRect(self.mx, self.my, self.rerollBtn), run:canReroll())
-    dbtn(self.levelBtn, inRect(self.mx, self.my, self.levelBtn), run:canLevel())
-    love.graphics.setColor(1, 1, 1, 1)
   end
 
-  -- Bouton COMBAT.
-  local enabled = self:placedCount() > 0
-  local btn = self.button
-  local over = inRect(self.mx, self.my, btn)
-  if not enabled then love.graphics.setColor(0.12, 0.10, 0.12, 0.9)
-  elseif over then love.graphics.setColor(0.55, 0.16, 0.14, 1)
-  else love.graphics.setColor(0.34, 0.10, 0.10, 1) end
-  love.graphics.rectangle("fill", btn.x, btn.y, btn.w, btn.h)
-  love.graphics.setColor(enabled and 0.75 or 0.30, 0.20, 0.18, 1)
-  love.graphics.rectangle("line", btn.x, btn.y, btn.w, btn.h)
-  love.graphics.setColor(1, 1, 1, 1)
-
-  -- Unité en cours de drag (au-dessus de tout).
-  if self.drag then Rig.draw(self.drag.char) end
+  Draw.finish()
 end
 
--- ── Overlay (résolution native, texte net) ──
-function Build:drawOverlay(view)
-  local function project(x, y) return view.ox + x * view.scale, view.oy + y * view.scale end
+-- ── Rendu monde (canvas virtuel, pixel-perfect) : UNIQUEMENT les rigs (unités/aperçus/drag) ──
+function Build:drawWorld()
   local b = self.board
-  local run = self.host.run
-
-  -- Titre du sigil.
-  local tx, ty = project(self.vw / 2, 8)
-  local nm = b.shape.name
-  love.graphics.setColor(0.78, 0.72, 0.60, 0.95)
-  love.graphics.printf(T("shape." .. nm .. ".label"):upper() .. "  -  " .. T("shape." .. nm .. ".archetype"),
-    tx - 200, ty, 400, "center")
-
-  -- HUD de run (ou repli sandbox).
-  if run then
-    love.graphics.setColor(0.82, 0.76, 0.50, 1)
-    love.graphics.printf(T("ui.hud", {
-      gold = run.gold, lives = run.lives, maxlives = Run.START_LIVES, wins = run.wins,
-      target = Run.WIN_TARGET, round = run.round, level = run.level, slots = run.slots, maxslots = Run.MAX_SLOTS }),
-      tx - 300, ty + 16, 600, "center")
-    if run.winStreak >= 2 or run.lossStreak >= 2 then
-      local won = run.winStreak >= 2
-      love.graphics.setColor(won and 0.50 or 0.66, won and 0.60 or 0.28, 0.28, 0.95)
-      love.graphics.printf(
-        won and T("ui.win_streak", { n = run.winStreak }) or T("ui.loss_streak", { n = run.lossStreak }),
-        tx - 200, ty + 30, 400, "center")
-    end
-  else
-    love.graphics.setColor(0.50, 0.42, 0.38, 0.9)
-    love.graphics.printf(T("ui.placed_count", { placed = self:placedCount(), active = b.activeCount }),
-      tx - 200, ty + 16, 400, "center")
+  for i, sr in pairs(self.slotRigs) do
+    if b.slots[i].unlocked then Rig.draw(sr.char) end
   end
-
-  -- Prix des offres de boutique + libellés des boutons (projetés depuis l'espace virtuel).
+  local run = self.host.run
   if run then
-    love.graphics.setColor(0.86, 0.78, 0.42, 1)
     for i, rect in ipairs(self.shopSlots) do
       local o = run.shop[i]
       if o and not o.sold then
-        local px, py = project(rect.x + rect.w / 2, rect.y + 1)
-        love.graphics.printf(T("ui.cost", { n = o.cost }), px - 40, py, 80, "center")
+        local c = self.previewRigs[o.id]
+        if c then
+          love.graphics.push()
+          love.graphics.translate(rect.x + rect.w / 2, rect.y + rect.h - 4)
+          love.graphics.scale(0.7, 0.7)
+          c.x, c.y, c.facing = 0, 0, 1
+          Rig.draw(c)
+          love.graphics.pop()
+        end
       end
     end
-    local rx, ry = project(self.rerollBtn.x + self.rerollBtn.w / 2, self.rerollBtn.y + 1)
-    love.graphics.setColor(run:canReroll() and 0.82 or 0.40, 0.70, 0.55, 1)
-    love.graphics.printf(T("ui.reroll", { n = Run.REROLL_COST }), rx - 90, ry, 180, "center")
-    local lx, ly = project(self.levelBtn.x + self.levelBtn.w / 2, self.levelBtn.y + 1)
-    if run.level < Run.MAX_LEVEL then
-      love.graphics.setColor(run:canLevel() and 0.82 or 0.40, 0.70, 0.55, 1)
-      love.graphics.printf(T("ui.level_up", { n = run:levelCost() }), lx - 90, ly, 180, "center")
+  end
+  if self.drag then Rig.draw(self.drag.char) end
+  love.graphics.setColor(1, 1, 1, 1)
+end
+
+-- ── Overlay (espace design, texte net) : chrome + bordures de case + boutique + boutons + infobulle ──
+function Build:drawOverlay(view)
+  local b, run, c = self.board, self.host.run, Theme.c
+  local ui = self.uiState or self:computeUi()
+  Draw.begin(view)
+
+  -- Chrome debug (haut-gauche) : court pour ne pas chevaucher la bannière centrée.
+  Draw.text(T("ui.title") .. "  -  " .. T("scene.build"):upper(), 16, 14, c.faint, Theme.ui(11))
+  Draw.text(T("ui.controls_build"), 16, 32, c.ghost, Theme.ui(9))
+
+  -- Bannière de run (haut-centre) ou repli sandbox.
+  if run then self:drawBanner(run)
+  else Draw.textC(T("ui.placed_count", { placed = self:placedCount(), active = b.activeCount }), Draw.W / 2, 22, c.faint, Theme.ui(12)) end
+
+  -- Sigil (gothique) + archétype.
+  local nm = b.shape.name
+  Draw.textC(T("shape." .. nm .. ".label"):upper(), Draw.W / 2, 72, c.title, Theme.display(30))
+  Draw.textC(T("shape." .. nm .. ".archetype"):upper() .. "    " .. T("ui.reshape"), Draw.W / 2, 116, c.faint, Theme.ui(11))
+
+  -- Cases : bordure d'état + décor (verrou / pip de type / pips de niveau / nom).
+  for i = 1, 9 do
+    local p, slot = self.pos[i], b.slots[i]
+    local x, y = p.x * 4 - SLOT_HALF, p.y * 4 - SLOT_HALF
+    local col
+    if not slot.unlocked then col = c.slotEdgeLck
+    elseif i == ui.dropTarget then col = c.drop
+    elseif i == ui.hover then col = c.goldBright
+    elseif ui.nbset[i] then col = c.blood
+    else col = c.slotEdge end
+    Draw.rect(x, y, SLOT_HALF * 2, SLOT_HALF * 2, nil, col, 2)
+    if not slot.unlocked then
+      Draw.textC("+", p.x * 4, p.y * 4 - 12, c.lock, Theme.ui(18))
     else
-      love.graphics.setColor(0.45, 0.42, 0.38, 1)
-      love.graphics.printf(T("ui.level_max"), lx - 90, ly, 180, "center")
+      local sr = self.slotRigs[i]
+      if sr then
+        Draw.pip(Units[sr.id].type, x + 13, y + 13, 5)
+        local lvl = sr.level or 1
+        for k = 1, (lvl > 1 and lvl or 0) do
+          Draw.rect(x + SLOT_HALF * 2 - 12 - (lvl - k) * 11, y + 7, 7, 7, c.goldBright)
+        end
+        Draw.textC(T("unit." .. sr.id .. ".name"), p.x * 4, y + SLOT_HALF * 2 + 3, c.name, Theme.ui(9))
+      end
     end
   end
 
-  -- Label bouton COMBAT.
-  local bx, by = project(self.button.x + self.button.w / 2, self.button.y + 5)
-  love.graphics.setColor(self:placedCount() > 0 and 0.92 or 0.45, 0.82, 0.74, 1)
-  love.graphics.printf(T("ui.fight"), bx - 100, by, 200, "center")
-  love.graphics.setColor(1, 1, 1, 1)
+  -- Boutique : label + cartes (bordure / coût / nom / SOLD) + boutons éco.
+  if run then
+    Draw.text(T("ui.offering"), 24, 566, c.faint, Theme.ui(10))
+    for i, rect in ipairs(self.shopSlots) do
+      local o = run.shop[i]
+      if o then
+        local x, y, w, h = rect.x * 4, rect.y * 4, rect.w * 4, rect.h * 4
+        local aff = (not o.sold) and run.gold >= o.cost
+        Draw.rect(x, y, w, h, nil, o.sold and c.line or (aff and c.gold or c.hair), 2)
+        if o.sold then
+          Draw.textC(T("ui.sold"), x + w / 2, y + h / 2 - 6, c.ghost, Theme.ui(10))
+        else
+          Draw.pip(Units[o.id].type, x + 11, y + 11, 4)
+          Draw.textC(T("unit." .. o.id .. ".name"), x + w / 2, y + h - 36, c.name, Theme.ui(9))
+          Draw.textR(T("ui.cost", { n = o.cost }), x + w - 8, y + h - 20, aff and c.gold or c.fainter, Theme.ui(11))
+        end
+      end
+    end
+    self:drawEcoButton(self.rerollBtn, T("ui.reroll", { n = Run.REROLL_COST }), run:canReroll())
+    if run.level < Run.MAX_LEVEL then self:drawEcoButton(self.levelBtn, T("ui.level_up", { n = run:levelCost() }), run:canLevel())
+    else self:drawEcoButton(self.levelBtn, T("ui.level_max"), false) end
+  end
 
-  -- Infobulle : survol d'une offre de boutique ou d'une case occupée.
+  -- Bouton COMBAT (gros CTA sang).
+  local enabled = self:placedCount() > 0
+  local r = self.button
+  local over = inRect(self.mx, self.my, r)
+  Draw.button(r.x * 4, r.y * 4, r.w * 4, r.h * 4, enabled and T("ui.fight") or T("ui.place_unit"), Theme.uiBold(13),
+    { fill = enabled and (over and c.blood or c.bloodDeep) or c.panelDeep,
+      border = enabled and c.blood or c.bloodEdge, text = enabled and c.ctaText or c.fainter })
+
+  -- Infobulle (survol d'une offre ou d'une case occupée).
   local id
   local oi = self:shopAt(self.mx, self.my)
   if oi then id = run.shop[oi].id
@@ -597,36 +583,67 @@ function Build:drawOverlay(view)
     local si = self:slotAt(self.mx, self.my)
     if si and self.slotRigs[si] then id = self.slotRigs[si].id end
   end
-  if id then self:drawTooltip(view, id) end
+  if id then self:drawTooltip(id) end
+
+  Draw.finish()
 end
 
-function Build:drawTooltip(view, id)
-  local U = Units[id]
-  local font = love.graphics.getFont()
-  local lh = font:getHeight() + 3
-  local bw = 196
-  local px = view.ox + self.mx * view.scale + 14
-  local py = view.oy + self.my * view.scale + 6
-  local sw, sh = love.graphics.getDimensions()
-  if px + bw > sw then px = px - bw - 28 end
-  local bh = lh * 5 + 8
-  if py + bh > sh then py = sh - bh - 4 end
+-- Bannière de run (deux tons : label éteint + valeur claire), centrée en haut.
+function Build:drawBanner(run)
+  local c = Theme.c
+  local font = Theme.ui(13)
+  local seg = {
+    { T("ui.gold") .. " ", tostring(run.gold) },
+    { T("ui.lives") .. " ", run.lives .. "/" .. Run.START_LIVES },
+    { T("ui.wins") .. " ", run.wins .. "/" .. Run.WIN_TARGET },
+    { T("ui.round") .. " ", tostring(run.round) },
+    { T("ui.level") .. " ", run.level .. " (" .. run.slots .. "/" .. Run.MAX_SLOTS .. ")" },
+  }
+  love.graphics.setFont(font)
+  local gap, total = 28, 0
+  for _, s in ipairs(seg) do total = total + font:getWidth(s[1]) + font:getWidth(s[2]) end
+  total = total + gap * (#seg - 1)
+  local x = Draw.W / 2 - total / 2
+  for _, s in ipairs(seg) do
+    Draw.setColor(c.fainter); love.graphics.print(s[1], math.floor(x), 22); x = x + font:getWidth(s[1])
+    Draw.setColor(c.title); love.graphics.print(s[2], math.floor(x), 22); x = x + font:getWidth(s[2]) + gap
+  end
+  if run.winStreak >= 2 or run.lossStreak >= 2 then
+    local won = run.winStreak >= 2
+    Draw.textC(won and T("ui.win_streak", { n = run.winStreak }) or T("ui.loss_streak", { n = run.lossStreak }),
+      Draw.W / 2, 44, won and c.gold or c.blood, Theme.ui(11))
+  end
+end
 
-  love.graphics.setColor(0.04, 0.03, 0.05, 0.95)
-  love.graphics.rectangle("fill", px, py, bw, bh)
-  love.graphics.setColor(0.40, 0.34, 0.42, 1)
-  love.graphics.rectangle("line", px, py, bw, bh)
+-- Bouton d'économie (REROLL / LEVEL) : brun DA, état actif/désactivé + survol. rect en coords virtuelles.
+function Build:drawEcoButton(rect, label, enabled)
+  local c = Theme.c
+  local hot = inRect(self.mx, self.my, rect)
+  Draw.button(rect.x * 4, rect.y * 4, rect.w * 4, rect.h * 4, label, Theme.ui(11),
+    { fill = not enabled and c.panelDeep or (hot and c.ecoBgHot or c.ecoBg),
+      border = enabled and c.ecoBorder or c.hair, text = enabled and c.title or c.fainter })
+end
 
-  local x, y = px + 6, py + 4
-  love.graphics.setColor(0.82, 0.76, 0.62, 1)
-  love.graphics.print(T("ui.unit_header", { name = T("unit." .. id .. ".name"), type = T("type." .. U.type) }), x, y)
-  love.graphics.setColor(0.62, 0.58, 0.52, 1)
-  love.graphics.print(T("ui.unit_stats", { hp = U.hp, dmg = U.dmg, cd = U.cd }), x, y + lh)
-  love.graphics.setColor(0.70, 0.56, 0.30, 1)
-  love.graphics.print(T("unit." .. id .. ".passive_name"), x, y + lh * 2)
-  love.graphics.setColor(0.58, 0.54, 0.50, 1)
-  love.graphics.printf(T("unit." .. id .. ".passive_desc"), x, y + lh * 3, bw - 12, "left")
-  love.graphics.setColor(1, 1, 1, 1)
+-- Infobulle (espace design ; appelée sous Draw.begin de drawOverlay). Style DA : nom + type coloré,
+-- stats éteintes, passif en or, description en lore italique. Position = curseur (mx,my) ×4.
+function Build:drawTooltip(id)
+  local U, c = Units[id], Theme.c
+  local fontN, fontS, fontL = Theme.ui(12), Theme.ui(11), Theme.lore(15)
+  local w = 300
+  local nameStr, descStr = T("unit." .. id .. ".name"), T("unit." .. id .. ".passive_desc")
+  local _, lines = fontL:getWrap(descStr, w - 28)
+  local h = 60 + math.max(1, #lines) * fontL:getHeight() + 12
+  local x, y = self.mx * 4 + 18, self.my * 4 + 10
+  if x + w > Draw.W then x = x - w - 36 end
+  if y + h > Draw.H then y = Draw.H - h - 8 end
+
+  Draw.rect(x, y, w, h, { c.void[1], c.void[2], c.void[3], 0.96 }, c.hair, 1)
+  local ix, iy = x + 14, y + 12
+  Draw.text(nameStr, ix, iy, c.title, fontN)
+  Draw.text("(" .. T("type." .. U.type) .. ")", ix + fontN:getWidth(nameStr) + 8, iy, Theme.type(U.type).color, fontN)
+  Draw.text(T("ui.unit_stats", { hp = U.hp, dmg = U.dmg, cd = U.cd }), ix, iy + 20, c.muted, fontS)
+  Draw.text(T("unit." .. id .. ".passive_name"), ix, iy + 38, c.goldBright, fontS)
+  Draw.textWrap(descStr, ix, iy + 56, w - 28, c.dim, fontL)
 end
 
 return Build

@@ -16,30 +16,35 @@ Ambient.__index = Ambient
 local W, H = 1280, 720
 
 -- ─────────────────────────── Textures bakées (partagées, 1 seule fois) ───────────────────────────
-local glowImg, vignImg
+local glowImg, vignImg, bakeTried
+-- Bake tolérant : sous un LÖVE mock (headless) mapPixel/newImage peuvent manquer -> on dégrade
+-- gracieusement (glowImg/vignImg restent nil, les draws sont gardés). Ambient ne crashe jamais.
 local function ensureBaked()
-  if glowImg or not (love and love.image and love.graphics) then return end
-  -- Glow radial : blanc opaque au centre -> transparent au bord (falloff doux). Teinté à l'usage.
-  local g = love.image.newImageData(64, 64)
-  g:mapPixel(function(x, y)
-    local dx, dy = (x - 31.5) / 31.5, (y - 31.5) / 31.5
-    local d = math.sqrt(dx * dx + dy * dy)
-    local a = math.max(0, 1 - d)
-    return 1, 1, 1, a * a
-  end)
-  glowImg = love.graphics.newImage(g)
-  glowImg:setFilter("linear", "linear")
+  if bakeTried or not (love and love.image and love.graphics and love.graphics.newImage) then return end
+  bakeTried = true
+  pcall(function()
+    -- Glow radial : blanc opaque au centre -> transparent au bord (falloff doux). Teinté à l'usage.
+    local g = love.image.newImageData(64, 64)
+    g:mapPixel(function(x, y)
+      local dx, dy = (x - 31.5) / 31.5, (y - 31.5) / 31.5
+      local d = math.sqrt(dx * dx + dy * dy)
+      local a = math.max(0, 1 - d)
+      return 1, 1, 1, a * a
+    end)
+    glowImg = love.graphics.newImage(g)
+    glowImg:setFilter("linear", "linear")
 
-  -- Vignette : transparent au centre -> sombre aux bords (assombrit le cadre).
-  local v = love.image.newImageData(64, 64)
-  v:mapPixel(function(x, y)
-    local dx, dy = (x - 31.5) / 31.5, (y - 31.5) / 31.5
-    local d = math.min(1, math.sqrt(dx * dx + dy * dy))
-    local a = d * d * d -- concentré sur les bords
-    return 0, 0, 0, a
+    -- Vignette : transparent au centre -> sombre aux bords (assombrit le cadre).
+    local v = love.image.newImageData(64, 64)
+    v:mapPixel(function(x, y)
+      local dx, dy = (x - 31.5) / 31.5, (y - 31.5) / 31.5
+      local d = math.min(1, math.sqrt(dx * dx + dy * dy))
+      local a = d * d * d -- concentré sur les bords
+      return 0, 0, 0, a
+    end)
+    vignImg = love.graphics.newImage(v)
+    vignImg:setFilter("linear", "linear")
   end)
-  vignImg = love.graphics.newImage(v)
-  vignImg:setFilter("linear", "linear")
 end
 
 -- Glow doux centré en (cx,cy), demi-tailles (rx,ry), teinté `color` à l'alpha `a`.

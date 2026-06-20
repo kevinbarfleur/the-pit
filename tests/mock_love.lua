@@ -49,7 +49,12 @@ local imageData = {}
 imageData.__index = imageData
 function imageData:setPixel() end
 
-local fontMock = { getWidth = function(_, s) return #tostring(s) * 6 end, getHeight = function() return 12 end }
+local fontMock = {
+  getWidth = function(_, s) return #tostring(s) * 6 end,
+  getHeight = function() return 12 end,
+  getWrap = function(_, s, limit) return limit, { tostring(s) } end, -- (width, lignes) : 1 ligne
+  setFilter = function() end, getFilter = function() return "nearest", "nearest" end,
+}
 
 local love = {
   graphics = {
@@ -61,8 +66,9 @@ local love = {
     push = function() end, pop = function() end, origin = function() end,
     translate = function() end, rotate = function() end, scale = function() end,
     rectangle = function() end, circle = function() end, ellipse = function() end,
-    line = function() end, setLineWidth = function() end,
+    polygon = function() end, line = function() end, setLineWidth = function() end,
     print = function() end, printf = function() end,
+    setFont = function() end, newFont = function() return fontMock end,
     getFont = function() return fontMock end,
     getWidth = function() return 1280 end, getHeight = function() return 720 end,
     getDimensions = function() return 1280, 720 end,
