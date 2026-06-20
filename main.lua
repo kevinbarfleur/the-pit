@@ -14,6 +14,7 @@ local Runover = require("src.scenes.runover")
 local Gallery = require("src.scenes.gallery")
 local RunState = require("src.run.state")
 local Grimoire = require("src.core.grimoire")
+local Theme = require("src.ui.theme")
 local T = require("src.core.i18n").t
 
 local VW, VH = 320, 180           -- résolution virtuelle (×4 = 1280×720 pile)
@@ -91,6 +92,7 @@ function love.load()
   canvas = love.graphics.newCanvas(VW, VH)
   canvas:setFilter("nearest", "nearest")
 
+  Theme.load() -- charge polices + DA une fois (pré-chauffe les tailles courantes ; fallback si TTF absent)
   Grimoire.load() -- charge le codex persistant (reliques identifiées, méta-progression cross-run)
   host.newRun() -- crée host.run (état seedé) + host.build, puis entre en phase build
 end
@@ -101,24 +103,31 @@ end
 
 function love.draw()
   local scene = host.scene
-  -- 1. Monde -> canvas virtuel.
-  love.graphics.setCanvas(canvas)
-  love.graphics.clear(0.024, 0.016, 0.039, 1)
-  scene:drawWorld()
-  love.graphics.setCanvas()
 
-  -- 2. Blit en scale ENTIER, centré (letterbox).
+  -- 0. Vue (scale ENTIER + letterbox) calculée d'abord : l'atmosphère native en dépend.
   local sw, sh = love.graphics.getDimensions()
   local scale = math.max(1, math.floor(math.min(sw / VW, sh / VH)))
   view.scale = scale
   view.ox = math.floor((sw - VW * scale) / 2)
   view.oy = math.floor((sh - VH * scale) / 2)
+
+  -- 1. Pre-pass ATMOSPHÈRE native (glows lisses), DERRIÈRE le monde pixel. Optionnel par scène.
+  if scene.drawBack then scene:drawBack(view) end
+
+  -- 2. Monde -> canvas virtuel. Clear TRANSPARENT : l'atmosphère transparaît dans les vides (nearest +
+  --    scale entier => alpha droit correct, pas de halo). Les scènes opaques (combat) écrasent ce vide.
+  love.graphics.setCanvas(canvas)
+  love.graphics.clear(0, 0, 0, 0)
+  scene:drawWorld()
+  love.graphics.setCanvas()
+
+  -- 3. Blit du monde en scale ENTIER, par-dessus l'atmosphère.
   love.graphics.setColor(1, 1, 1, 1)
   love.graphics.draw(canvas, view.ox, view.oy, 0, scale, scale)
 
-  -- 3. Overlays en résolution native (texte net).
+  -- 4. UI native par-dessus (texte net). La chrome DA est portée par la scène ; sinon HUD générique.
   scene:drawOverlay(view)
-  drawHud(scene)
+  if not scene.daChrome then drawHud(scene) end
 end
 
 function love.keypressed(key)
