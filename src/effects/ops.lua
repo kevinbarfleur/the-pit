@@ -37,10 +37,23 @@ end)
 -- éventuel malus de valeur (weaken). N stacks indépendants ; cap anti-explosion (retire le plus ancien).
 -- On mémorise la source pour l'attribution des dégâts (event-log / stats d'équilibrage).
 Effects.register("poison", function(ctx, p)
-  local stacks = ctx.victim.dots.poison
+  local v = ctx.victim
+  local stacks = v.dots.poison
   stacks[#stacks + 1] = { dps = p.dps or 0, remaining = p.dur or 0, acc = 0,
     weaken = p.weaken or 0, source = ctx.source }
   if #stacks > 8 then table.remove(stacks, 1) end -- POISON_STACK_CAP : rare, retire le plus ancien
+  if p.shieldEat and v.shield and v.shield > 0 then -- ACID-MAW : le venin DISSOUT l'armure (par pose)
+    v.shield = math.floor(v.shield * (1 - p.shieldEat))
+  end
+  if p.spread then -- PLAGUE-BEARER : CONTAGION aux voisins de la cible (proximité du champ de bataille)
+    local sp = p.spread
+    for _, nb in ipairs(ctx.arena:neighborsOf(v)) do
+      local ns = nb.dots.poison
+      ns[#ns + 1] = { dps = sp.dps or 1, remaining = sp.dur or (p.dur or 0), acc = 0,
+        weaken = sp.weaken or 0, source = ctx.source }
+      if #ns > 8 then table.remove(ns, 1) end
+    end
+  end
 end)
 
 -- Os brises (skeleton) : renvoie value dégâts à l'attaquant (ignore le bouclier).
@@ -62,6 +75,8 @@ Effects.register("burn", function(ctx, p)
   if not cur or dps > cur.dps then
     v.dots.burn = { dps = dps, remaining = p.dur or 180, acc = 0,
       decayEvery = p.decayEvery or 60, decayAcc = 0, decayPct = p.decayPct or 0.30, source = ctx.source }
+  elseif p.mode == "extend_if_weaker" then -- KILN-WARDEN : le surplus (plus faible) PROLONGE au lieu d'être perdu
+    cur.remaining = cur.remaining + (p.dur or 0)
   elseif p.refresh then
     cur.remaining = math.max(cur.remaining, p.dur or 0)
   end
@@ -72,11 +87,14 @@ Effects.register("bleed", function(ctx, p)
   local v = ctx.victim
   local cur = v.dots.bleed
   if not cur then
-    v.dots.bleed = { dps = p.dps or 0, remaining = p.dur or 240, acc = 0, slowPct = p.slowPct or 0, source = ctx.source }
+    v.dots.bleed = { dps = p.dps or 0, remaining = p.dur or 240, acc = 0, slowPct = p.slowPct or 0,
+      slowScalesMissingHp = p.slowScalesMissingHp, aggravateMult = p.aggravateMult, dynBonus = 0, source = ctx.source }
     v.atkSlow = v.atkSlow + (p.slowPct or 0)
   else
     if (p.dps or 0) > cur.dps then cur.dps = p.dps end
     cur.remaining = math.max(cur.remaining, p.dur or 0)
+    if p.slowScalesMissingHp then cur.slowScalesMissingHp = true end -- conserve les flags T2 si réappliqué
+    if p.aggravateMult then cur.aggravateMult = p.aggravateMult end
   end
 end)
 
@@ -109,6 +127,43 @@ end)
 -- REGEN (contre-DoT) : arme un soin/seconde sur le porteur (combat_start). Tické par arena:tickDots.
 Effects.register("regen", function(ctx, p)
   ctx.source.regen = (ctx.source.regen or 0) + (p.value or 0)
+end)
+
+-- ── PROPAGATION À LA MORT (trigger on_death, broadcast par l'arène en fin de frame). « Voisins » =
+-- proximité du CHAMP DE BATAILLE (arena:neighborsOf), PAS le graphe du sigil (cf. décision d'archi dans
+-- arena.lua). On ne pose que des DoT (zéro dégât immédiat -> pas de cascade de mort). ctx.victim = le mort ;
+-- ctx.source = le porteur (l'afflicteur du camp adverse). cf. effects-dot-families.md §H. ──
+
+-- WILDFIRE-HOUND / PLAGUE-PYRE : à la mort d'un ennemi EN FEU, la brûlure saute à ses voisins (+ venin pour Plague-Pyre).
+Effects.register("spread_burn_on_death", function(ctx, p)
+  local dead = ctx.victim
+  if not (dead.dots and dead.dots.burn) then return end -- seulement si le mort BRÛLAIT
+  local dps = math.max(p.minDps or 3, math.floor((dead.dots.burn.dps or 0) * (p.frac or 0.6) + 0.5))
+  for _, nb in ipairs(ctx.arena:neighborsOf(dead)) do
+    local cur = nb.dots.burn
+    if not cur or dps > cur.dps then
+      nb.dots.burn = { dps = dps, remaining = p.dur or 120, acc = 0,
+        decayEvery = 60, decayAcc = 0, decayPct = 0.30, source = ctx.source }
+    end
+    if p.alsoPoison then -- croisement feu->poison (Plague-Pyre) : le feu sème aussi le venin
+      local ap = p.alsoPoison
+      local ns = nb.dots.poison
+      ns[#ns + 1] = { dps = ap.dps or 2, remaining = ap.dur or 120, acc = 0, weaken = 0, source = ctx.source }
+      if #ns > 8 then table.remove(ns, 1) end
+    end
+  end
+end)
+
+-- BLIGHT-SPREADER : à la mort d'une cible POURRIE, la pourriture se pose sur ses voisins.
+Effects.register("spread_rot", function(ctx, p)
+  local dead = ctx.victim
+  if not (dead.dots and dead.dots.rot) then return end -- seulement si le mort POURRISSAIT
+  for _, nb in ipairs(ctx.arena:neighborsOf(dead)) do
+    if not nb.dots.rot then
+      nb.dots.rot = { dps = p.base or 2, remaining = p.dur or 240, acc = 0,
+        capDps = p.capDps or 10, maxHpFrac = p.maxHpFrac or 0, source = ctx.source }
+    end
+  end
 end)
 
 return Effects
