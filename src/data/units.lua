@@ -83,15 +83,82 @@ local U = {
     id = "plague_doctor", sprite = "templar", type = "order", cost = 4, hp = 80, dmg = 6, cd = 66,
     effects = { { trigger = "combat_start", op = "regen", params = { value = 3 } } },
   },
+
+  -- ══ VAGUE 1 : T1 « enablers » supplémentaires (cf. effects-dot-families.md §H). Ops EXISTANTS, params
+  -- variés -> PURE DATA, aucune nouvelle mécanique moteur. `sprite` = visuel de repli. PLACEHOLDERS (P5). ══
+
+  -- BRÛLURE (burst qui décroît, lèche le bouclier) : cadence / front-load / éphémère
+  cinder_cur = { -- cadence rapide, petites brûlures qui se rallument souvent
+    id = "cinder_cur", sprite = "demon", type = "abyss", cost = 2, hp = 34, dmg = 4, cd = 34,
+    effects = { { trigger = "on_hit", op = "burn", params = { dps = 4, dur = 120, refresh = true } } },
+  },
+  pyre_tender = { -- gros coup lent -> grosse brûlure de départ (front-load)
+    id = "pyre_tender", sprite = "marauder", type = "flesh", cost = 3, hp = 50, dmg = 7, cd = 72,
+    effects = { { trigger = "on_hit", op = "burn", params = { dps = 10, dur = 180 } } },
+  },
+  ash_moth = { -- coût bas, brûlure qui décroît vite (éphémère mais bon marché)
+    id = "ash_moth", sprite = "bandit", type = "flesh", cost = 2, hp = 26, dmg = 3, cd = 40,
+    effects = { { trigger = "on_hit", op = "burn", params = { dps = 7, dur = 120, decayPct = 0.45 } } },
+  },
+
+  -- SAIGNEMENT (bas DPS, slow de cadence) : intensité / contrôle pur / épines
+  gash_fiend = { -- saignement un peu plus fort, slow standard
+    id = "gash_fiend", sprite = "bandit", type = "flesh", cost = 3, hp = 50, dmg = 5, cd = 48,
+    effects = { { trigger = "on_hit", op = "bleed", params = { dps = 3, dur = 240, slowPct = 0.20 } } },
+  },
+  hookjaw = { -- gros slow, dégâts minimes (pur contrôle de tempo)
+    id = "hookjaw", sprite = "marauder", type = "flesh", cost = 3, hp = 58, dmg = 3, cd = 54,
+    effects = { { trigger = "on_hit", op = "bleed", params = { dps = 1, dur = 300, slowPct = 0.30 } } },
+  },
+  leech_thorn = { -- bleed bas + ÉPINES (punit qui le frappe) : DEUX effets via ops existants
+    id = "leech_thorn", sprite = "skeleton", type = "bone", cost = 3, hp = 46, dmg = 4, cd = 50,
+    effects = {
+      { trigger = "on_hit", op = "bleed", params = { dps = 2, dur = 180, slowPct = 0.10 } },
+      { trigger = "on_attacked", op = "thorns", params = { value = 3 } },
+    },
+  },
+
+  -- POISON (N stacks, malus de valeur) : malus de base / longue durée
+  bile_spitter = { -- stacks moyens + malus de valeur de base
+    id = "bile_spitter", sprite = "witch", type = "arcane", cost = 3, hp = 42, dmg = 5, cd = 56,
+    effects = { { trigger = "on_hit", op = "poison", params = { dps = 2, dur = 180, weaken = 0.10 } } },
+  },
+  rot_grub = { -- stacks LONGUE durée (entretien facile du total) — POISON malgré le nom
+    id = "rot_grub", sprite = "demon", type = "abyss", cost = 3, hp = 48, dmg = 4, cd = 58,
+    effects = { { trigger = "on_hit", op = "poison", params = { dps = 2, dur = 300 } } },
+  },
+
+  -- POURRITURE (enfle, ampute les PV max) : cadence / long terme / amputation forte
+  carrion_pecker = { -- cadence rapide -> enfle vite (mais cap bas)
+    id = "carrion_pecker", sprite = "bandit", type = "flesh", cost = 2, hp = 38, dmg = 4, cd = 38,
+    effects = { { trigger = "on_hit", op = "rot", params = { base = 1, growth = 1, dur = 180, capDps = 6, maxHpFrac = 0.10 } } },
+  },
+  maggot_king = { -- démarrage lent, cap HAUT (récompense le long terme)
+    id = "maggot_king", sprite = "skeleton", type = "bone", cost = 4, hp = 70, dmg = 5, cd = 64,
+    effects = { { trigger = "on_hit", op = "rot", params = { base = 1, growth = 1, dur = 300, capDps = 12, maxHpFrac = 0.15 } } },
+  },
+  necro_leech = { -- pourriture + amputation RENFORCÉE des PV max
+    id = "necro_leech", sprite = "demon", type = "abyss", cost = 3, hp = 50, dmg = 5, cd = 56,
+    effects = { { trigger = "on_hit", op = "rot", params = { base = 1, growth = 1, dur = 240, capDps = 10, maxHpFrac = 0.35 } } },
+  },
 }
 
 -- Roster complet (ordre d'affichage). Les 6 premiers = vanille/v0 ; les suivants = familles de statuts.
 U.order = { "marauder", "templar", "skeleton", "bandit", "witch", "demon",
-  "spore_tick", "corruptor", "emberling", "razorkin", "rot_hound", "stormcaller", "plague_doctor" }
+  "spore_tick", "corruptor", "emberling", "razorkin", "rot_hound", "stormcaller", "plague_doctor",
+  -- vague 1 (T1 enablers) : burn / bleed / poison / rot
+  "cinder_cur", "pyre_tender", "ash_moth",
+  "gash_fiend", "hookjaw", "leech_thorn",
+  "bile_spitter", "rot_grub",
+  "carrion_pecker", "maggot_king", "necro_leech" }
 
 -- Pool d'unités ACHETABLES en boutique (cf. src/run/state.lua). Identique au roster pour l'instant.
 U.pool = { "marauder", "templar", "skeleton", "bandit", "witch", "demon",
-  "spore_tick", "corruptor", "emberling", "razorkin", "rot_hound", "stormcaller", "plague_doctor" }
+  "spore_tick", "corruptor", "emberling", "razorkin", "rot_hound", "stormcaller", "plague_doctor",
+  "cinder_cur", "pyre_tender", "ash_moth",
+  "gash_fiend", "hookjaw", "leech_thorn",
+  "bile_spitter", "rot_grub",
+  "carrion_pecker", "maggot_king", "necro_leech" }
 
 -- Visuel (rig) d'une unité : son propre id, ou un `sprite` de repli (réutilise une créature existante
 -- tant que le pixel-art dédié n'existe pas, cf. src/data/creatures.lua).
