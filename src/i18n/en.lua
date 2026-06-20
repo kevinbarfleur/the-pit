@@ -229,4 +229,9 @@ return {
   ["unit.wither_bloom.name"] = "WITHER BLOOM",
   ["unit.wither_bloom.passive_name"] = "Entropy",
   ["unit.wither_bloom.passive_desc"] = "Rot that also slows and weakens the target — total decay.",
+
+  -- tank archetype (P6 : aggro)
+  ["unit.gravewarden.name"] = "GRAVEWARDEN",
+  ["unit.gravewarden.passive_name"] = "Bulwark of Bone",
+  ["unit.gravewarden.passive_desc"] = "Taunt: forces the enemy front to strike it. Returns 4 damage to attackers.",
 }

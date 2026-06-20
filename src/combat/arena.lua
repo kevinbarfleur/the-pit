@@ -28,6 +28,7 @@ local CONNECT_AT = 0.5
 -- Statuts (DoT/altérations) — caps d'anti-dégénérescence (placeholders, cf. effects-design.md §4).
 local WEAKEN_CAP = 0.40    -- malus de valeur max (poison)
 local SHOCK_AMP_CAP = 2.00 -- +200% de dégâts-pris max (clamp dur, choc)
+local AGGRO_STD = 10       -- aggro par défaut (standard) ; tank ~40, bruiser ~15, carry ~5 (porté par la data)
 
 local ROWS_Y = { 70, 104, 138 }
 
@@ -76,9 +77,9 @@ function Arena:makeUnit(spec, team)
     -- effets : du spec si fourni (build résolu avec reliques, plus tard), sinon la base.
     effects = spec.effects or (u and u.effects),
     -- ciblage déterministe : depth (0 = colonne avant), row (tie-break haut->bas),
-    -- aggro (stat, défaut INERTE = 0 ; future stat de tank), taunt (override dur, via reliques).
+    -- aggro (ACTIVÉE : tank ~40 tire le focus / carry ~5 protégé ; défaut standard), taunt (override dur).
     depth = spec.depth or 0, row = spec.row or 0,
-    aggro = spec.aggro or (u and u.aggro) or 0,
+    aggro = spec.aggro or (u and u.aggro) or AGGRO_STD,
     taunt = spec.taunt or (u and u.taunt) or false,
     shield = spec.shield or 0, maxShield = spec.shield or 0,
     atkTimer = self.rng:random() * spec.cd, -- décalage seedé -> pas de swings synchronisés
