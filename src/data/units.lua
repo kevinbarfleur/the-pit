@@ -29,11 +29,11 @@
 -- (chaff a 2, standard a 3, tank premium a 4) ; raretés/cotes-par-niveau différées (besoin de tiers).
 local U = {
   marauder = {
-    id = "marauder", type = "flesh", cost = 3, hp = 60, dmg = 9, cd = 60, -- MARAUDER / Brutality
+    id = "marauder", type = "flesh", cost = 3, hp = 60, dmg = 9, cd = 60, aggro = 15, -- MARAUDER / Brutality (bruiser)
     effects = { { trigger = "on_attack", op = "bonus_first", params = { value = 8 } } },
   },
   templar = {
-    id = "templar", type = "order", cost = 4, hp = 95, dmg = 12, cd = 82, -- TEMPLAR / Bulwark
+    id = "templar", type = "order", cost = 4, hp = 95, dmg = 12, cd = 82, aggro = 40, -- TEMPLAR / Bulwark (tank)
     effects = { { trigger = "combat_start", op = "shield_aura", target = "neighbors", params = { value = 14 } } },
   },
   skeleton = {
@@ -45,18 +45,18 @@ local U = {
     effects = {}, -- aucun effet mécanique (flavor)
   },
   witch = {
-    id = "witch", type = "arcane", cost = 3, hp = 36, dmg = 13, cd = 72, -- WITCH / Venom
+    id = "witch", type = "arcane", cost = 3, hp = 36, dmg = 13, cd = 72, aggro = 5, -- WITCH / Venom (carry)
     effects = { { trigger = "on_hit", op = "poison", params = { dps = 2, dur = 180 } } },
   },
   demon = {
-    id = "demon", type = "abyss", cost = 3, hp = 64, dmg = 9, cd = 56, -- DEMON / Leech
+    id = "demon", type = "abyss", cost = 3, hp = 64, dmg = 9, cd = 56, aggro = 15, -- DEMON / Leech (bruiser)
     effects = { { trigger = "on_hit", op = "lifesteal", params = { frac = 0.4 } } },
   },
 
   -- ── Unités à EFFETS (familles de statuts, cf. docs/research/effects-dot-families.md). Visuel GÉNÉRÉ
   -- procéduralement par `type` (src/gen/creaturegen.lua) ; aucun champ visuel ici. PLACEHOLDERS. ──
   spore_tick = { -- POISON : cadence rapide, petits stacks (empile vite)
-    id = "spore_tick", type = "arcane", cost = 2, hp = 30, dmg = 3, cd = 30,
+    id = "spore_tick", type = "arcane", cost = 2, hp = 30, dmg = 3, cd = 30, aggro = 5,
     effects = { { trigger = "on_hit", op = "poison", params = { dps = 1, dur = 180 } } },
   },
   corruptor = { -- POISON + malus de valeur (anti-stat)
@@ -76,11 +76,11 @@ local U = {
     effects = { { trigger = "on_hit", op = "rot", params = { base = 1, growth = 1, dur = 240, capDps = 10, maxHpFrac = 0.15 } } },
   },
   stormcaller = { -- CHOC : amplifie les dégâts-pris de la cible
-    id = "stormcaller", type = "arcane", cost = 3, hp = 38, dmg = 6, cd = 58,
+    id = "stormcaller", type = "arcane", cost = 3, hp = 38, dmg = 6, cd = 58, aggro = 5,
     effects = { { trigger = "on_hit", op = "shock", params = { add = 1, perStack = 0.07, cap = 8, dur = 150 } } },
   },
   plague_doctor = { -- CONTRE-DoT : régénération (le contre livré avec les familles)
-    id = "plague_doctor", type = "order", cost = 4, hp = 80, dmg = 6, cd = 66,
+    id = "plague_doctor", type = "order", cost = 4, hp = 80, dmg = 6, cd = 66, aggro = 40,
     effects = { { trigger = "combat_start", op = "regen", params = { value = 3 } } },
   },
 
@@ -208,7 +208,7 @@ local U = {
 
   -- POURRITURE T2
   patient_worm = { -- la pourriture enfle même SANS frapper (ramp passif tant qu'active)
-    id = "patient_worm", type = "bone", cost = 3, hp = 54, dmg = 4, cd = 60,
+    id = "patient_worm", type = "bone", cost = 3, hp = 58, dmg = 4, cd = 52,
     effects = { { trigger = "on_hit", op = "rot", params = { base = 1, passiveRamp = 1, dur = 240, capDps = 10, maxHpFrac = 0.10 } } },
   },
   hollow_gut = { -- l'amputation des PV max NOURRIT le porteur (vol de plafond de vie)
@@ -285,6 +285,13 @@ local U = {
       { trigger = "on_hit", op = "poison", params = { dps = 0, dur = 240, weaken = 0.10 } }, -- pur malus (0 dps)
     },
   },
+
+  -- ══ ARCHÉTYPE TANK (P6 : aggro activée). Mur de PV à faible dégât qui TIRE LE FOCUS (aggro haute) et,
+  -- via taunt, FORCE le ciblage en façade -> protège les carries derrière. Épines = punit le focus. ══
+  gravewarden = { -- TANK / TAUNT
+    id = "gravewarden", type = "bone", cost = 4, hp = 100, dmg = 3, cd = 84, aggro = 40, taunt = true,
+    effects = { { trigger = "on_attacked", op = "thorns", params = { value = 4 } } },
+  },
 }
 
 -- Roster complet (ordre d'affichage). Les 6 premiers = vanille/v0 ; les suivants = familles de statuts.
@@ -306,7 +313,9 @@ U.order = { "marauder", "templar", "skeleton", "bandit", "witch", "demon",
   "ash_maw", "plague_pyre",
   "slow_bleed", "marrow_drinker",
   "festering", "venom_censer",
-  "pit_maw", "wither_bloom" }
+  "pit_maw", "wither_bloom",
+  -- archétype tank (P6)
+  "gravewarden" }
 
 -- Pool d'unités ACHETABLES en boutique (cf. src/run/state.lua). Identique au roster pour l'instant.
 U.pool = { "marauder", "templar", "skeleton", "bandit", "witch", "demon",
@@ -323,7 +332,8 @@ U.pool = { "marauder", "templar", "skeleton", "bandit", "witch", "demon",
   "ash_maw", "plague_pyre",
   "slow_bleed", "marrow_drinker",
   "festering", "venom_censer",
-  "pit_maw", "wither_bloom" }
+  "pit_maw", "wither_bloom",
+  "gravewarden" }
 
 -- Visuel : les 6 vanille ont un rig DESSINÉ main (src/data/creatures.lua) ; toutes les autres unités
 -- sont GÉNÉRÉES procéduralement (src/gen/creaturegen.lua, déterministe par id), résolu côté rendu
