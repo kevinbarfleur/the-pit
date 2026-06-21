@@ -30,6 +30,7 @@ local Stats = require("src.effects.stats") -- caps du framework payoff (value bo
 local Snapshot = require("src.net.snapshot")
 local Snapstore = require("src.net.snapstore")
 local Run = require("src.run.state")
+local RelicGen = require("src.gen.relicgen") -- icones de reliques (rangee type Slay the Spire + hover)
 local Theme = require("src.ui.theme")
 local Draw = require("src.ui.draw")
 local Ambient = require("src.fx.ambient")
@@ -39,6 +40,13 @@ local Build = {}
 Build.__index = Build
 
 local SLOT_HALF = 40 -- demi-côté d'une case en espace DESIGN (80x80 ; centre = self.pos[i] ×4)
+
+-- Rangée de RELIQUES possédées (style Slay the Spire) : icônes bakées au-dessus de la boutique, à GAUCHE
+-- (bande design x22.. y512 — libre pour tous les sigils : board centré x536+ ou plat) ; survol -> infobulle.
+local RELIC_ICON_SCALE = 2          -- icône 16x16 -> 32x32 design (scale entier -> net)
+local RELIC_ICON_PX = 16 * RELIC_ICON_SCALE
+local RELIC_CELL = 42               -- pas horizontal (icône + gap)
+local RELIC_X0, RELIC_Y = 22, 512   -- ancrage design
 
 local SPACING = 26
 local BOARD_OY = 90 -- centre du plateau (virtuel) : ×4 = ~360 design, sous l'en-tête, au-dessus de la boutique
@@ -126,6 +134,23 @@ function Build:computeShop()
   for i = 1, Run.SHOP_SIZE do
     self.shopSlots[i] = { x = x0 + (i - 1) * (cw + gap), y = y0, w = cw, h = ch }
   end
+end
+
+-- Rect (ESPACE DESIGN) de la i-ème relique possédée (rangée au-dessus de la boutique).
+function Build:relicRowRect(i)
+  return { x = RELIC_X0 + (i - 1) * RELIC_CELL, y = RELIC_Y, w = RELIC_ICON_PX, h = RELIC_ICON_PX }
+end
+
+-- Index de la relique survolée (souris en VIRTUEL -> testée ×4 contre les rects design), ou nil.
+function Build:relicAt(vx, vy)
+  local run = self.host.run
+  if not run or #run.relics == 0 then return nil end
+  local dx, dy = vx * 4, vy * 4
+  for i = 1, #run.relics do
+    local r = self:relicRowRect(i)
+    if dx >= r.x and dx <= r.x + r.w and dy >= r.y and dy <= r.y + r.h then return i end
+  end
+  return nil
 end
 
 -- Réconcilie l'ensemble des cases OUVERTES à la capacité de la run (ne ferme JAMAIS). Les grants ouvrent
@@ -689,15 +714,21 @@ function Build:drawOverlay(view)
     { fill = enabled and (over and c.blood or c.bloodDeep) or c.panelDeep,
       border = enabled and c.blood or c.bloodEdge, text = enabled and c.ctaText or c.fainter })
 
-  -- Infobulle (survol d'une offre ou d'une case occupée).
-  local id
-  local oi = self:shopAt(self.mx, self.my)
-  if oi then id = run.shop[oi].id
+  -- Rangée de reliques possédées (au-dessus de la boutique) + infobulles (relique prioritaire sur unité).
+  self:drawRelicRow()
+  local relIdx = run and self:relicAt(self.mx, self.my)
+  if relIdx then
+    self:drawRelicTooltip(run.relics[relIdx].id)
   else
-    local si = self:slotAt(self.mx, self.my)
-    if si and self.slotRigs[si] then id = self.slotRigs[si].id end
+    local id
+    local oi = self:shopAt(self.mx, self.my)
+    if oi then id = run.shop[oi].id
+    else
+      local si = self:slotAt(self.mx, self.my)
+      if si and self.slotRigs[si] then id = self.slotRigs[si].id end
+    end
+    if id then self:drawTooltip(id) end
   end
-  if id then self:drawTooltip(id) end
 
   Draw.finish()
 end
@@ -758,6 +789,44 @@ function Build:drawTooltip(id)
   Draw.text(T("ui.unit_stats", { hp = U.hp, dmg = U.dmg, cd = U.cd }), ix, iy + 20, c.muted, fontS)
   Draw.text(T("unit." .. id .. ".passive_name"), ix, iy + 40, c.goldBright, fontS)
   Draw.textWrap(descStr, ix, iy + 58, w - 28, c.body, fontL)
+end
+
+-- Rangée de reliques possédées : icônes bakées (le vrai artefact) + cadre, surbrillance au survol.
+function Build:drawRelicRow()
+  local run, c = self.host.run, Theme.c
+  if not run or #run.relics == 0 then return end
+  local hov = self:relicAt(self.mx, self.my)
+  for i, rel in ipairs(run.relics) do
+    local r = self:relicRowRect(i)
+    local on = (hov == i)
+    Draw.rect(r.x - 3, r.y - 3, r.w + 6, r.h + 6, c.panelDeep, on and c.gold or c.hair, on and 2 or 1)
+    local baked = RelicGen.cached(rel.id, self.palette)
+    if baked and baked.image then
+      love.graphics.setColor(1, 1, 1, 1)
+      love.graphics.draw(baked.image, r.x, r.y, 0, RELIC_ICON_SCALE, RELIC_ICON_SCALE)
+    end
+  end
+  Draw.reset()
+end
+
+-- Infobulle de relique (survol de la rangée) : nom + effet clair (or) + flavor d'ambiance (lore). Style DA.
+function Build:drawRelicTooltip(id)
+  local c = Theme.c
+  local fontN, fontE, fontF = Theme.uiBold(13), Theme.ui(11), Theme.loreRoman(13)
+  local w = 320
+  local effStr, flavStr = T("relic." .. id .. ".effect"), T("relic." .. id .. ".flavor")
+  local _, eLines = fontE:getWrap(effStr, w - 28)
+  local _, fLines = fontF:getWrap(flavStr, w - 28)
+  local h = 30 + #eLines * (fontE:getHeight() + 2) + 8 + #fLines * (fontF:getHeight() + 1) + 14
+  local x, y = self.mx * 4 + 18, self.my * 4 + 10
+  if x + w > Draw.W then x = x - w - 36 end
+  if y + h > Draw.H then y = Draw.H - h - 8 end
+  Draw.rect(x, y, w, h, { c.void[1], c.void[2], c.void[3], 0.96 }, c.gold, 1)
+  local ix, iy = x + 14, y + 12
+  Draw.text(T("relic." .. id .. ".name"), ix, iy, c.title, fontN)
+  iy = iy + 22
+  iy = iy + Draw.textWrap(effStr, ix, iy, w - 28, c.goldBright, fontE) + 6
+  Draw.textWrap(flavStr, ix, iy, w - 28, c.dim, fontF)
 end
 
 return Build

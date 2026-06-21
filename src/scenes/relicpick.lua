@@ -10,6 +10,7 @@
 local Theme = require("src.ui.theme")
 local Draw = require("src.ui.draw")
 local Ambient = require("src.fx.ambient")
+local RelicGen = require("src.gen.relicgen") -- icones bakees des reliques (le vrai artefact)
 local T = require("src.core.i18n").t
 
 local Relicpick = {}
@@ -42,6 +43,8 @@ function Relicpick.new(palette, vw, vh, host, payload)
   for i = 1, n do
     self.cards[i] = { x = x0 + (i - 1) * (CARD_W + GAP), y = CARD_Y, w = CARD_W, h = CARD_H }
   end
+  self.icons = {} -- icone bakee par choix (le vrai artefact ; pip procedural en repli si absente)
+  for i = 1, n do self.icons[i] = RelicGen.cached(self.choices[i], palette) end
   self.bind = { x = (Draw.W - 300) / 2, y = 628, w = 300, h = 52 } -- bouton BIND (design)
   return self
 end
@@ -78,7 +81,14 @@ function Relicpick:drawOverlay(view)
     local fill = sel and c.panel or c.panelDeep
     Draw.rect(card.x, card.y, card.w, card.h, fill, border, 2)
 
-    Draw.pip(RELIC_TYPE[id] or "bone", card.x + card.w / 2, card.y + 74, 30)
+    local baked = self.icons[i]
+    if baked and baked.image then -- le vrai artefact baké (16x16), centré, scale entier net
+      local s = 5
+      love.graphics.setColor(1, 1, 1, 1)
+      love.graphics.draw(baked.image, math.floor(card.x + card.w / 2 - 8 * s), math.floor(card.y + 74 - 8 * s), 0, s, s)
+    else
+      Draw.pip(RELIC_TYPE[id] or "bone", card.x + card.w / 2, card.y + 74, 30)
+    end
     Draw.textC(T("relic." .. id .. ".name"), card.x + card.w / 2, card.y + 124, sel and c.title or c.name, Theme.uiBold(20))
     Draw.textWrap(T("relic." .. id .. ".flavor"), card.x + 28, card.y + 168, card.w - 56, c.dim, Theme.loreRoman(16), "center")
     Draw.textWrap(T("relic." .. id .. ".effect"), card.x + 24, card.y + card.h - 72, card.w - 48,
