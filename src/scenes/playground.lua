@@ -29,13 +29,14 @@ local SIM_N = 200          -- nb de matchs par batch SIM
 local SIM_PER_FRAME = 10   -- matchs joués par frame (étalé -> pas de gel)
 
 -- Mise en page (espace design 1280x720).
-local LIST_X, LIST_Y, LIST_W, ROW_H, ROW_GAP = 28, 138, 300, 46, 6 -- LIST_Y abaisse : laisse la place au filtre
+local LIST_X, LIST_W, ROW_H, ROW_GAP = 28, 300, 46, 6
 local LIST_STEP = ROW_H + ROW_GAP               -- 52 px par ligne
-local LIST_VIEW_H = 380                          -- hauteur du CONTENEUR scrollable (bas toujours aligne sur les panneaux, y=518)
-local LIST_VISIBLE = math.floor(LIST_VIEW_H / LIST_STEP) -- lignes entierement visibles (7)
-local FILTER_Y, CHIP_H, CHIP_PAD, CHIP_GAP = 92, 18, 8, 4 -- filtre par categorie : chips cliquables (wrap, au-dessus de la liste)
+local LIST_BOTTOM = 518                          -- bas du conteneur scrollable (aligne sur le bas des panneaux : PANEL_Y+PANEL_H)
+local FILTER_Y, CHIP_H, CHIP_PAD, CHIP_GAP = 92, 18, 8, 4 -- filtre : chips cliquables (archetypes + tags), wrap multi-rangs
 local AX, BX, PANEL_Y, PANEL_W, PANEL_H = 356, 818, 122, 408, 396
 local BTN_Y, BTN_H = 540, 54
+-- listY / listViewH / listVisible sont CALCULES (layoutChips) : la liste commence sous la derniere rangee de
+-- chips et garde son bas aligne sur LIST_BOTTOM -> le filtre peut occuper 1, 2 ou 3 rangs sans chevauchement.
 
 function Playground.new(palette, vw, vh, host)
   local self = setmetatable({
@@ -49,54 +50,67 @@ function Playground.new(palette, vw, vh, host)
     compA = nil, compB = nil, costA = nil, costB = nil,
     result = nil, sim = nil,
   }, Playground)
-  self:buildCats()  -- categories presentes dans les scenarios
-  self:layoutChips() -- positions des chips (wrap dans LIST_W)
+  self:buildChips() -- chips presentes (archetypes + tags) dans les scenarios
+  self:layoutChips() -- positions des chips (wrap) + geometrie de la liste sous le filtre
   self:select(1)
   return self
 end
 
--- ── Filtre par categorie (chips). La VUE est self.scenarios (= master filtre) -> toute la logique liste
--- existante (select/scroll/souris/clavier) fonctionne telle quelle sur la vue, zero refonte. ──
-function Playground:buildCats()
-  local present = {}
+-- ── Filtre (chips). DEUX facettes en selection unique : ARCHETYPE (famille de combat, A ou B) et TAG
+-- (theme transversal : transmission, combo croise, vitrine VFX...). La VUE est self.scenarios (= master
+-- filtre) -> toute la logique liste (select/scroll/souris/clavier) marche telle quelle. Cle composite
+-- "all" | "arch:<x>" | "tag:<x>" -> aucune ambiguite famille/theme. ──
+function Playground:buildChips()
+  local present, tagSeen = {}, {}
   for _, sc in ipairs(self.allScenarios) do
     local a, b = Compositions.byId[sc.a], Compositions.byId[sc.b]
     if a then present[a.archetype] = true end
     if b then present[b.archetype] = true end
+    if sc.tags then for _, tg in ipairs(sc.tags) do tagSeen[tg] = true end end
   end
-  self.cats = { "all" }
-  for _, arch in ipairs(Compositions.archetypes) do
-    if present[arch] then self.cats[#self.cats + 1] = arch end
+  self.chips = { { key = "all", label = T("pg.filter.all") } }
+  for _, arch in ipairs(Compositions.archetypes) do -- familles, dans l'ordre canonique
+    if present[arch] then self.chips[#self.chips + 1] = { key = "arch:" .. arch, kind = "arch", label = T("pg.archetype." .. arch) } end
+  end
+  for _, tg in ipairs(Compositions.tags or {}) do -- themes, dans l'ordre canonique (ceux presents)
+    if tagSeen[tg] then self.chips[#self.chips + 1] = { key = "tag:" .. tg, kind = "tag", label = T("pg.tag." .. tg) } end
   end
 end
 
-function Playground:catLabel(cat)
-  return (cat == "all") and T("pg.filter.all") or T("pg.archetype." .. cat)
-end
-
--- Place les chips en lignes qui s'enroulent dans LIST_W (mesure le texte ; au-dessus de la liste).
+-- Place les chips en rangs qui s'enroulent dans LIST_W, PUIS positionne la liste juste dessous.
 function Playground:layoutChips()
   local font = Theme.ui(8)
   self.chipRects = {}
   local x, y = LIST_X, FILTER_Y
-  for _, cat in ipairs(self.cats) do
-    local label = self:catLabel(cat)
-    local w = (font and font:getWidth(label) or #label * 5) + CHIP_PAD * 2
+  for _, ch in ipairs(self.chips) do
+    local w = (font and font:getWidth(ch.label) or #ch.label * 5) + CHIP_PAD * 2
     if x > LIST_X and x + w > LIST_X + LIST_W then x = LIST_X; y = y + CHIP_H + CHIP_GAP end
-    self.chipRects[#self.chipRects + 1] = { cat = cat, label = label, x = x, y = y, w = w, h = CHIP_H }
+    self.chipRects[#self.chipRects + 1] = { key = ch.key, kind = ch.kind, label = ch.label, x = x, y = y, w = w, h = CHIP_H }
     x = x + w + CHIP_GAP
   end
+  -- La liste commence sous la derniere rangee de chips ; son bas reste aligne sur les panneaux.
+  self.listY = y + CHIP_H + 14
+  self.listViewH = math.max(LIST_STEP, LIST_BOTTOM - self.listY)
+  self.listVisible = math.max(1, math.floor(self.listViewH / LIST_STEP))
 end
 
--- Filtre la vue. "all" -> master ; sinon scenarios dont A ou B a cet archetype. Re-selectionne le 1er.
+-- Filtre la vue. "all" -> master ; "arch:<x>" -> A ou B a cet archetype ; "tag:<x>" -> le scenario porte
+-- ce tag. Re-selectionne le 1er.
 function Playground:rebuildView()
   if self.filter == "all" then
     self.scenarios = self.allScenarios
   else
+    local kind, val = self.filter:match("^(%a+):(.+)$")
     local v = {}
     for _, sc in ipairs(self.allScenarios) do
-      local a, b = Compositions.byId[sc.a], Compositions.byId[sc.b]
-      if (a and a.archetype == self.filter) or (b and b.archetype == self.filter) then v[#v + 1] = sc end
+      local keep = false
+      if kind == "arch" then
+        local a, b = Compositions.byId[sc.a], Compositions.byId[sc.b]
+        keep = (a and a.archetype == val) or (b and b.archetype == val)
+      elseif kind == "tag" and sc.tags then
+        for _, tg in ipairs(sc.tags) do if tg == val then keep = true; break end end
+      end
+      if keep then v[#v + 1] = sc end
     end
     self.scenarios = v
   end
@@ -236,18 +250,21 @@ function Playground:drawOverlay(view)
   Draw.text(T("pg.title"), LIST_X, 24, c.title, Theme.display(40))
   Draw.text(T("pg.subtitle"), LIST_X + 2, 78, c.faint, Theme.ui(9))
 
-  -- Filtre par catégorie : rang de chips cliquables (la catégorie active = bordée d'or).
+  -- Filtre : rang(s) de chips cliquables. Famille active = bordée d'or ; thème (tag) actif = bordé de sang
+  -- (lecture « familles | thèmes »).
   for _, ch in ipairs(self.chipRects) do
-    local on = (self.filter == ch.cat)
-    Draw.rect(ch.x, ch.y, ch.w, ch.h, on and c.panel or c.panelDeep, on and c.gold or c.line, 1)
-    Draw.textC(ch.label, ch.x + ch.w / 2, ch.y + 4, on and c.gold or c.faint, Theme.ui(8))
+    local on = (self.filter == ch.key)
+    local accent = (ch.kind == "tag") and c.bloodBright or c.gold
+    Draw.rect(ch.x, ch.y, ch.w, ch.h, on and c.panel or c.panelDeep, on and accent or c.line, 1)
+    Draw.textC(ch.label, ch.x + ch.w / 2, ch.y + 4, on and accent or c.faint, Theme.ui(8))
   end
 
   -- Liste des scénarios : CONTENEUR scrollable (clip au viewport -> aucun débordement hors-fenêtre).
-  Draw.scissor(view, LIST_X - 4, LIST_Y - 2, LIST_W + 10, LIST_VIEW_H + 4)
+  local listY, listViewH = self.listY, self.listViewH
+  Draw.scissor(view, LIST_X - 4, listY - 2, LIST_W + 10, listViewH + 4)
   for i, sc in ipairs(self.scenarios) do
     local r = self:rowRect(i)
-    if r.y + r.h > LIST_Y - 2 and r.y < LIST_Y + LIST_VIEW_H then -- saute les lignes hors-champ
+    if r.y + r.h > listY - 2 and r.y < listY + listViewH then -- saute les lignes hors-champ
       local on = (self.sel == i)
       Draw.rect(r.x, r.y, r.w, r.h, on and c.panel or c.panelDeep, on and c.ecoBorder or c.line, 1)
       Draw.text(T("scenario." .. sc.id .. ".label"), r.x + 12, r.y + 7, on and c.title or c.body, Theme.ui(11))
@@ -261,11 +278,11 @@ function Playground:drawOverlay(view)
   local maxS = self:maxScroll()
   if maxS > 0 then
     local tx = LIST_X + LIST_W + 6
-    Draw.rect(tx, LIST_Y, 3, LIST_VIEW_H, c.line)
-    local thumbH = math.max(24, LIST_VIEW_H * LIST_VISIBLE / #self.scenarios)
-    Draw.rect(tx, LIST_Y + (LIST_VIEW_H - thumbH) * (self.scroll / maxS), 3, thumbH, c.ecoBorder)
+    Draw.rect(tx, listY, 3, listViewH, c.line)
+    local thumbH = math.max(24, listViewH * self.listVisible / #self.scenarios)
+    Draw.rect(tx, listY + (listViewH - thumbH) * (self.scroll / maxS), 3, thumbH, c.ecoBorder)
   end
-  Draw.text(T("pg.trials", { n = #self.scenarios }), LIST_X, LIST_Y + LIST_VIEW_H + 8, c.ghost, Theme.ui(8))
+  Draw.text(T("pg.trials", { n = #self.scenarios }), LIST_X, listY + listViewH + 8, c.ghost, Theme.ui(8))
 
   -- Aperçus A (gauche) / B (droite) + "Vs".
   local watched = self.result and self.result.kind == "watch"
@@ -317,7 +334,7 @@ function Playground:drawResult(c)
 end
 
 -- ── Défilement de la liste (conteneur scrollable : molette/clavier, contenu borné au viewport) ──
-function Playground:maxScroll() return math.max(0, #self.scenarios - LIST_VISIBLE) end
+function Playground:maxScroll() return math.max(0, #self.scenarios - self.listVisible) end
 
 function Playground:clampScroll()
   local m = self:maxScroll()
@@ -327,7 +344,7 @@ end
 -- Garde la ligne `i` dans le viewport (auto-scroll quand la sélection sort par le haut/bas).
 function Playground:ensureVisible(i)
   if i - 1 < self.scroll then self.scroll = i - 1
-  elseif i - 1 >= self.scroll + LIST_VISIBLE then self.scroll = i - LIST_VISIBLE end
+  elseif i - 1 >= self.scroll + self.listVisible then self.scroll = i - self.listVisible end
   self:clampScroll()
 end
 
@@ -338,16 +355,16 @@ end
 
 -- ── Géométrie + souris (rowRect tient compte du scroll) ──
 function Playground:rowRect(i)
-  return { x = LIST_X, y = LIST_Y + (i - 1 - self.scroll) * LIST_STEP, w = LIST_W, h = ROW_H }
+  return { x = LIST_X, y = self.listY + (i - 1 - self.scroll) * LIST_STEP, w = LIST_W, h = ROW_H }
 end
 local function ptIn(x, y, r) return x >= r.x and x <= r.x + r.w and y >= r.y and y <= r.y + r.h end
 -- Le clic/survol n'est valide que DANS le conteneur (une ligne scrollée hors-champ n'est pas cliquable).
-local function inList(dx, dy) return dx >= LIST_X and dx <= LIST_X + LIST_W and dy >= LIST_Y and dy <= LIST_Y + LIST_VIEW_H end
+function Playground:inList(dx, dy) return dx >= LIST_X and dx <= LIST_X + LIST_W and dy >= self.listY and dy <= self.listY + self.listViewH end
 
 function Playground:mousemoved(vx, vy)
   local dx, dy = vx * 4, vy * 4
   self.hover = nil
-  if not inList(dx, dy) then return end
+  if not self:inList(dx, dy) then return end
   for i = 1, #self.scenarios do if ptIn(dx, dy, self:rowRect(i)) then self.hover = i; return end end
 end
 
@@ -355,9 +372,9 @@ function Playground:mousepressed(vx, vy, button)
   if button ~= 1 then return end
   local dx, dy = vx * 4, vy * 4
   for _, ch in ipairs(self.chipRects) do -- clic sur une chip de filtre
-    if ptIn(dx, dy, ch) then self:setFilter(ch.cat); return end
+    if ptIn(dx, dy, ch) then self:setFilter(ch.key); return end
   end
-  if inList(dx, dy) then -- clic dans le conteneur : sélectionne une ligne (bornée au viewport)
+  if self:inList(dx, dy) then -- clic dans le conteneur : sélectionne une ligne (bornée au viewport)
     for i = 1, #self.scenarios do
       if ptIn(dx, dy, self:rowRect(i)) then self:select(i); break end
     end
@@ -370,8 +387,8 @@ end
 function Playground:keypressed(key)
   if key == "up" then self:select((self.sel - 2) % #self.scenarios + 1)
   elseif key == "down" then self:select(self.sel % #self.scenarios + 1)
-  elseif key == "pageup" then self.scroll = self.scroll - LIST_VISIBLE; self:clampScroll()
-  elseif key == "pagedown" then self.scroll = self.scroll + LIST_VISIBLE; self:clampScroll()
+  elseif key == "pageup" then self.scroll = self.scroll - self.listVisible; self:clampScroll()
+  elseif key == "pagedown" then self.scroll = self.scroll + self.listVisible; self:clampScroll()
   elseif key == "return" or key == "kpenter" or key == "w" then self:startWatch()
   elseif key == "s" then self:startSim() end
 end

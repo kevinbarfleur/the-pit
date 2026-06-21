@@ -47,6 +47,11 @@ local ok, err = pcall(function()
     assert(Compositions.byId[s.a], "scenario " .. s.id .. " : compo A inconnue " .. tostring(s.a))
     assert(Compositions.byId[s.b], "scenario " .. s.id .. " : compo B inconnue " .. tostring(s.b))
     assert(type(s.seed) == "number", "scenario " .. s.id .. " : seed requis")
+    if s.tags then -- facette de filtre thematique : tout tag doit etre connu (anti-typo)
+      for _, tg in ipairs(s.tags) do
+        assert(Compositions.tagSet[tg], "scenario " .. s.id .. " : tag inconnu " .. tostring(tg))
+      end
+    end
   end
   print(string.format("  lab : catalogue OK (%d compos, %d scenarios ; integrite + slots + refs)",
     #Compositions.list, #Compositions.scenarios))

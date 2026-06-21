@@ -258,17 +258,165 @@ Compositions.list = {
     },
     noteKey = "comp.bulwark_carre.note",
   },
+
+  -- ════════ ÉQUIPES « JOUEUR » (stratégies réalistes, un plan de jeu clair chacune) ════════
+
+  -- VITRINE DE TRANSMISSION : les 4 porteurs de spread + leurs amorces, sur l'anneau (chaîne thématique).
+  -- Contre un mur groupé -> on VOIT les arcs (poison/feu/pourriture) sauter de voisin en voisin.
+  {
+    id = "spread_showcase", archetype = "poison", variant = "perfect", sigil = "anneau", boardLevel = 9,
+    units = {
+      { id = "plague_bearer", slot = 1 },   -- contagion poison à chaque coup
+      { id = "wildfire_hound", slot = 2 },  -- le feu saute aux voisins d'un mort en feu
+      { id = "blight_spreader", slot = 3 }, -- la pourriture saute aux voisins d'un mort pourri
+      { id = "plague_pyre", slot = 4 },     -- croisé feu->poison à la mort
+      { id = "cinder_cur", slot = 5 },      -- amorce le feu (carburant de wildfire/pyre)
+      { id = "rot_hound", slot = 6 },       -- amorce la pourriture (carburant de blight)
+      { id = "spore_tick", slot = 7 },      -- amorce le poison vite (morts à détoner)
+      { id = "venom_censer", slot = 8 },    -- croisé poison->feu : source d'ignition de plus
+      { id = "miasma_acolyte", slot = 9 },  -- AURA poison aux voisins (8 et 1 sur l'anneau)
+    },
+    noteKey = "comp.spread_showcase.note",
+  },
+
+  -- MONO-CARRY poison : tous les amplis sur un seul contagieux au cœur de la croix (4 branches le nourrissent).
+  {
+    id = "poison_amp_croix", archetype = "poison", variant = "perfect", sigil = "croix", boardLevel = 8,
+    units = {
+      { id = "plague_bearer", slot = 1 },  -- CARRY : centre (voisins 2,4,6,8)
+      { id = "miasma_acolyte", slot = 2 }, -- AURA +dps -> buffe le carry
+      { id = "festering", slot = 4 },      -- TRANSFORM : poison d'équipe sans cap
+      { id = "corruptor", slot = 6 },      -- weaken (anti-stat)
+      { id = "acid_maw", slot = 8 },       -- le venin ronge les boucliers
+      { id = "spore_tick", slot = 3 },     -- racine de branche : empile vite
+      { id = "bile_spitter", slot = 5 },   -- racine : stacks moyens + weaken
+    },
+    noteKey = "comp.poison_amp_croix.note",
+  },
+
+  -- CONDUIT de feu inextinguible (ligne) : ash_maw + bellows + kiln -> les braises ne meurent jamais.
+  {
+    id = "burn_conduit_ligne", archetype = "burn", variant = "perfect", sigil = "ligne", boardLevel = 8,
+    units = {
+      { id = "pyre_tender", slot = 1 },    -- grosse brûlure de tête
+      { id = "soot_acolyte", slot = 2 },   -- AURA +dps (voisins 1 et 3)
+      { id = "cinder_cur", slot = 3 },     -- rallume vite (buffé par l'aura)
+      { id = "kiln_warden", slot = 4 },    -- les faibles brûlures PROLONGENT
+      { id = "bellows_priest", slot = 5 }, -- anti-décroissance
+      { id = "ash_maw", slot = 6 },        -- TRANSFORM : feux d'équipe sans décroissance
+      { id = "ash_moth", slot = 7 },       -- feu bon marché, gardé vivant par ash_maw
+      { id = "emberling", slot = 8 },      -- burst devenu permanent -> lèche le bouclier
+    },
+    noteKey = "comp.burn_conduit_ligne.note",
+  },
+
+  -- VERROU de tempo (anneau) : on ne court pas aux dégâts, on DÉNIE l'horloge ennemie (slows + punition d'action).
+  {
+    id = "bleed_lock_anneau", archetype = "bleed", variant = "perfect", sigil = "anneau", boardLevel = 7,
+    units = {
+      { id = "slow_bleed", slot = 1 },     -- TRANSFORM : ralentit TOUTE l'équipe ennemie au début
+      { id = "hookjaw", slot = 2 },        -- gros slow, dégâts minimes = tempo pur
+      { id = "bloodletter", slot = 3 },    -- le saignement ÉCLATE quand la cible agit
+      { id = "tendon_render", slot = 4 },  -- slow qui scale avec les PV manquants
+      { id = "clot_mender", slot = 5 },    -- AURA : les voisins appliquent aussi un bleed
+      { id = "gash_fiend", slot = 6 },     -- bleed solide (voisin d'aura)
+      { id = "razorkin", slot = 7 },       -- bleed + slow de cadence (ferme l'anneau)
+    },
+    noteKey = "comp.bleed_lock_anneau.note",
+  },
+
+  -- POURRITURE patiente (carré) : perd tôt, gagne tard (ramp passif + auto-soin jusqu'au plafond de PV mangé).
+  {
+    id = "rot_patient_carre", archetype = "rot", variant = "perfect", sigil = "carre", boardLevel = 9,
+    units = {
+      { id = "maggot_king", slot = 5 },    -- cap HAUT, payoff long terme (centre)
+      { id = "decay_tender", slot = 4 },   -- AURA +growth (voisin de 5)
+      { id = "patient_worm", slot = 2 },   -- ramp passif (voisin de 5)
+      { id = "necro_leech", slot = 6 },    -- amputation renforcée (voisin de 5)
+      { id = "rot_hound", slot = 8 },      -- ampute les PV max (voisin de 5)
+      { id = "hollow_gut", slot = 1 },     -- l'amputation SOIGNE le porteur (survie)
+      { id = "carrion_pecker", slot = 3 }, -- enfle vite, cap bas (pression early)
+      { id = "patient_worm", slot = 7 },   -- 2e moteur de ramp passif
+      { id = "wither_bloom", slot = 9 },   -- croisé rot->slow+weaken (gagne du temps)
+    },
+    noteKey = "comp.rot_patient_carre.note",
+  },
+
+  -- MOTEUR d'attrition croisée (diamant) : poison<->feu se nourrissent (censer détone, pyre re-sème le venin).
+  {
+    id = "cross_venom_pyre", archetype = "poison", variant = "perfect", sigil = "diamant", boardLevel = 9,
+    units = {
+      { id = "venom_censer", slot = 5 },   -- croisé poison->feu (centre, beaucoup de voisins)
+      { id = "plague_pyre", slot = 4 },    -- croisé feu->poison à la mort (voisin de 5)
+      { id = "miasma_acolyte", slot = 2 }, -- AURA poison (voisins 1,4,5)
+      { id = "spore_tick", slot = 1 },     -- amorce poison (haut)
+      { id = "bile_spitter", slot = 6 },   -- poison + weaken (voisin de 5)
+      { id = "cinder_cur", slot = 7 },     -- amorce feu (carburant)
+      { id = "soot_acolyte", slot = 8 },   -- AURA feu (voisins 5,9)
+      { id = "emberling", slot = 9 },      -- payoff feu (bas, buffé par soot)
+    },
+    noteKey = "comp.cross_venom_pyre.note",
+  },
+
+  -- NUKE à condensateur (croix) : on charge UN gros condensateur et on fait sauter une proie marquée.
+  {
+    id = "shock_nuke_croix", archetype = "shock", variant = "perfect", sigil = "croix", boardLevel = 8,
+    units = {
+      { id = "thunderhead", slot = 1 },    -- CARRY : charge dense, lourde (centre)
+      { id = "galvanizer", slot = 2 },     -- charge puis auto-décharge
+      { id = "stormlord", slot = 4 },      -- marque la proie pour les alliés
+      { id = "stormcaller", slot = 6 },    -- charge le condensateur
+      { id = "static_swarm", slot = 8 },   -- charge régulière, longue durée
+      { id = "live_wire", slot = 3 },      -- petite charge rapide (racine)
+      { id = "live_wire", slot = 5 },      -- 2e chargeur rapide
+    },
+    noteKey = "comp.shock_nuke_croix.note",
+  },
+
+  -- FORTERESSE à épines (carré) : taunt + boucliers + épines -> l'ennemi se TUE en frappant le mur.
+  {
+    id = "fortress_thorns_carre", archetype = "shield", variant = "wall", sigil = "carre", boardLevel = 9,
+    units = {
+      { id = "aegis_warden", slot = 5 },    -- TAUNT + aura bouclier + épines (centre)
+      { id = "oath_keeper", slot = 2 },     -- grosse aura bouclier + dégâts (voisin de 5)
+      { id = "bulwark_acolyte", slot = 4 }, -- bouclier modeste à TOUS les voisins
+      { id = "shieldbearer", slot = 6 },    -- tank cheap + petite aura
+      { id = "leech_thorn", slot = 8 },     -- bleed + ÉPINES (réflexion)
+      { id = "skeleton", slot = 1 },        -- épines filler (coin)
+      { id = "leech_thorn", slot = 3 },     -- 2e réflecteur d'épines (coin)
+      { id = "gravewarden", slot = 7 },     -- 2e taunt + épines (ancre un flanc)
+      { id = "plague_doctor", slot = 9 },   -- regen = soutien du mur
+    },
+    noteKey = "comp.fortress_thorns_carre.note",
+  },
+
+  -- ESSAIM go-wide (diamant) : pile de petites unités bon marché, 2 auras -> tout le monde se buffe un peu.
+  {
+    id = "swarm_wide_diamant", archetype = "burn", variant = "baseline", sigil = "diamant", boardLevel = 9,
+    units = {
+      { id = "ash_moth", slot = 1 },       -- feu bon marché
+      { id = "soot_acolyte", slot = 5 },   -- AURA feu (centre, beaucoup de voisins)
+      { id = "cinder_cur", slot = 4 },     -- rallume vite (voisin de 5)
+      { id = "ash_moth", slot = 6 },       -- feu bon marché (voisin de 5)
+      { id = "spore_tick", slot = 2 },     -- amorce poison (largeur)
+      { id = "cinder_cur", slot = 7 },     -- feu rapide (voisin de 5)
+      { id = "ash_moth", slot = 8 },       -- feu bon marché (voisin de 5)
+      { id = "skeleton", slot = 3 },       -- corps cheap à épines
+      { id = "carrion_pecker", slot = 9 }, -- pourriture rapide (largeur, chip croisé)
+    },
+    noteKey = "comp.swarm_wide_diamant.note",
+  },
 }
 
 -- ── Matchups FEATURED (la liste de scénarios « j'ai qu'à choisir »). seed FIXE -> match rejouable.
 -- Beaucoup sont des COUNTERS DESIGNÉS (asymétriques par construction) : c'est attendu, pas un bug. ──
 Compositions.scenarios = {
-  { id = "rot_vs_tank",        a = "rot_carre_perfect",      b = "tank_carre",                    seed = 1001, noteKey = "scenario.rot_vs_tank.note" },
-  { id = "poison_vs_tank",     a = "poison_diamant_perfect", b = "tank_carre",                    seed = 1002, noteKey = "scenario.poison_vs_tank.note" },
-  { id = "burn_vs_tank",       a = "burn_ligne_perfect",     b = "tank_carre",                    seed = 1003, noteKey = "scenario.burn_vs_tank.note" },
+  { id = "rot_vs_tank",        a = "rot_carre_perfect",      b = "tank_carre",                    seed = 1001, tags = { "vfx" }, noteKey = "scenario.rot_vs_tank.note" },
+  { id = "poison_vs_tank",     a = "poison_diamant_perfect", b = "tank_carre",                    seed = 1002, tags = { "spread", "vfx" }, noteKey = "scenario.poison_vs_tank.note" },
+  { id = "burn_vs_tank",       a = "burn_ligne_perfect",     b = "tank_carre",                    seed = 1003, tags = { "vfx" }, noteKey = "scenario.burn_vs_tank.note" },
   { id = "poison_clutch_test", a = "poison_diamant_perfect", b = "poison_diamant_missing_clutch", seed = 1004, noteKey = "scenario.poison_clutch_test.note" },
   { id = "poison_minor_test",  a = "poison_diamant_perfect", b = "poison_diamant_missing_minor",  seed = 1005, noteKey = "scenario.poison_minor_test.note" },
-  { id = "bruiser_mirror",     a = "bruiser_carre",          b = "bruiser_carre",                 seed = 1006, noteKey = "scenario.bruiser_mirror.note" },
+  { id = "bruiser_mirror",     a = "bruiser_carre",          b = "bruiser_carre",                 seed = 1006, tags = { "mirror" }, noteKey = "scenario.bruiser_mirror.note" },
   { id = "bleed_vs_bruiser",   a = "bleed_anneau_perfect",   b = "bruiser_carre",                 seed = 1007, noteKey = "scenario.bleed_vs_bruiser.note" },
   { id = "rot_clutch_test",    a = "rot_carre_perfect",      b = "rot_carre_missing_clutch",      seed = 1008, noteKey = "scenario.rot_clutch_test.note" },
   -- variants complétés
@@ -282,11 +430,22 @@ Compositions.scenarios = {
   -- valeur d'une pièce non-DoT (taunt / sustain) + combo croisé
   { id = "tank_taunt_test",     a = "tank_carre",            b = "tank_carre_no_taunt",           seed = 1014, noteKey = "scenario.tank_taunt_test.note" },
   { id = "bruiser_sustain_test", a = "bruiser_carre",        b = "bruiser_carre_no_sustain",      seed = 1015, noteKey = "scenario.bruiser_sustain_test.note" },
-  { id = "cross_vs_tank",       a = "cross_bleed_rot",       b = "tank_carre",                    seed = 1016, noteKey = "scenario.cross_vs_tank.note" },
+  { id = "cross_vs_tank",       a = "cross_bleed_rot",       b = "tank_carre",                    seed = 1016, tags = { "cross", "vfx" }, noteKey = "scenario.cross_vs_tank.note" },
   -- choc & bouclier (vitrines du feedback visuel : amplification du choc / absorption des boucliers)
-  { id = "shock_vs_tank",       a = "shock_storm_carre",     b = "tank_carre",                    seed = 1018, noteKey = "scenario.shock_vs_tank.note" },
-  { id = "shock_vs_bruiser",    a = "shock_storm_carre",     b = "bruiser_carre",                 seed = 1020, noteKey = "scenario.shock_vs_bruiser.note" },
-  { id = "bulwark_vs_bruiser",  a = "bulwark_carre",         b = "bruiser_carre",                 seed = 1019, noteKey = "scenario.bulwark_vs_bruiser.note" },
+  { id = "shock_vs_tank",       a = "shock_storm_carre",     b = "tank_carre",                    seed = 1018, tags = { "vfx" }, noteKey = "scenario.shock_vs_tank.note" },
+  { id = "shock_vs_bruiser",    a = "shock_storm_carre",     b = "bruiser_carre",                 seed = 1020, tags = { "vfx" }, noteKey = "scenario.shock_vs_bruiser.note" },
+  { id = "bulwark_vs_bruiser",  a = "bulwark_carre",         b = "bruiser_carre",                 seed = 1019, tags = { "vfx" },                  noteKey = "scenario.bulwark_vs_bruiser.note" },
+  -- ── ÉQUIPES « joueur » + vitrine de TRANSMISSION (arcs d'afflictions qui sautent) ──
+  { id = "transmission",     a = "spread_showcase",    b = "bruiser_carre",         seed = 1021, tags = { "spread", "cross", "vfx" }, noteKey = "scenario.transmission.note" }, -- bruiser (pas tank) : meurt en pourrissant -> les 3 familles sautent (poison/feu/rot)
+  { id = "amp_vs_wall",      a = "poison_amp_croix",   b = "fortress_thorns_carre", seed = 1022, tags = { "tempo" },                 noteKey = "scenario.amp_vs_wall.note" },
+  { id = "conduit_vs_swarm", a = "burn_conduit_ligne", b = "swarm_wide_diamant",    seed = 1023, tags = { "vfx" },                   noteKey = "scenario.conduit_vs_swarm.note" },
+  { id = "lockdown",         a = "bleed_lock_anneau",  b = "shock_nuke_croix",      seed = 1024, tags = { "tempo" },                 noteKey = "scenario.lockdown.note" },
+  { id = "inevitable",       a = "rot_patient_carre",  b = "burn_conduit_ligne",    seed = 1025, tags = { "tempo", "vfx" },         noteKey = "scenario.inevitable.note" },
+  { id = "infection_loop",   a = "cross_venom_pyre",   b = "tank_carre",            seed = 1026, tags = { "cross", "spread", "vfx" }, noteKey = "scenario.infection_loop.note" },
+  { id = "nuke_vs_fortress", a = "shock_nuke_croix",   b = "fortress_thorns_carre", seed = 1027, tags = { "vfx" },                   noteKey = "scenario.nuke_vs_fortress.note" },
+  { id = "plague_mirror",    a = "poison_amp_croix",   b = "spread_showcase",       seed = 1028, tags = { "mirror", "spread" },      noteKey = "scenario.plague_mirror.note" },
+  { id = "attrition_clash",  a = "cross_venom_pyre",   b = "rot_patient_carre",     seed = 1029, tags = { "cross", "tempo" },       noteKey = "scenario.attrition_clash.note" },
+  { id = "swarm_vs_lock",    a = "swarm_wide_diamant", b = "bleed_lock_anneau",     seed = 1030, tags = { "tempo", "vfx" },         noteKey = "scenario.swarm_vs_lock.note" },
 }
 
 -- ── Index (construits au load ; DATA pure, aucun love/require) ──
@@ -303,5 +462,11 @@ end
 
 -- Archétypes connus (l'analyseur d'équilibrage s'en sert ; l'intégrité du catalogue le vérifie).
 Compositions.archetypes = { "poison", "burn", "bleed", "rot", "tank", "bruiser", "shock", "shield" }
+
+-- Tags THÉMATIQUES (facette de filtre transversale du Proving Ground, en plus des archétypes). Ordre =
+-- ordre d'affichage des chips. L'intégrité du catalogue vérifie que tout tag de scénario est connu.
+Compositions.tags = { "spread", "cross", "tempo", "vfx", "mirror" }
+Compositions.tagSet = {}
+for _, tg in ipairs(Compositions.tags) do Compositions.tagSet[tg] = true end
 
 return Compositions
