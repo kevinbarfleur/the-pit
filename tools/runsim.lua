@@ -26,7 +26,7 @@ local RUN_SEED, MATRIX_SEED = 4000000, 8000000
 -- Compo PARFAITE représentant chaque archétype (matrice + fragilité).
 local ARCH_COMP = {
   poison = "poison_diamant_perfect", burn = "burn_ligne_perfect", bleed = "bleed_anneau_perfect",
-  rot = "rot_carre_perfect", tank = "tank_carre", bruiser = "bruiser_carre", shock = "shock_carre",
+  rot = "rot_carre_perfect", tank = "tank_carre", bruiser = "bruiser_carre", shock = "shock_storm_carre",
 }
 local ARCH_ORDER = { "poison", "burn", "bleed", "rot", "shock", "bruiser", "tank" }
 

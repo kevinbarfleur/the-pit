@@ -20,6 +20,12 @@ local ceil, min, max = math.ceil, math.min, math.max
 -- Framework PAYOFF (cf. docs/research/payoff-framework.md) : une pose de DoT amplifiée = base × (1+Σinc),
 -- bornée à ×3 (cap par-axe anti-snowball). `inc` (nombre) vient de l'aura bakée sur le porteur au build.
 local DOT_CAP_MULT = 3
+
+-- SAIGNEMENT : contrairement au poison (LISTE de stacks), le bleed est une instance UNIQUE dont le dps
+-- s'ACCUMULE à la réapplication (les plaies se cumulent) -> une équipe bleed engagée compose une vraie
+-- attrition (avant : `max` -> 6 saigneurs = 1 seul). Borné (anti-snowball). Le slow, lui, ne cumule PAS
+-- (posé une fois = état « saigne » binaire) pour éviter le lock de cadence. cf. équilibrage 2026-06.
+local BLEED_DPS_CAP = 12
 local function ampDps(base, inc)
   if not inc or inc == 0 then return base end
   return Stats.resolve(base, { Stats.increased(inc) }, { max = base * DOT_CAP_MULT, round = "nearest" })
@@ -129,12 +135,23 @@ end)
 Effects.register("bleed", function(ctx, p)
   local v = ctx.victim
   local cur = v.dots.bleed
+  local pdps = p.dps or 0
   if not cur then
-    v.dots.bleed = { dps = p.dps or 0, remaining = p.dur or 240, acc = 0, slowPct = p.slowPct or 0,
+    v.dots.bleed = { dps = pdps, srcDps = { { src = ctx.source, dps = pdps } }, -- CUMUL PAR SOURCE (array+ipairs : déterministe)
+      remaining = p.dur or 240, acc = 0, slowPct = p.slowPct or 0,
       slowScalesMissingHp = p.slowScalesMissingHp, aggravateMult = p.aggravateMult, dynBonus = 0, source = ctx.source }
     v.atkSlow = v.atkSlow + (p.slowPct or 0)
   else
-    if (p.dps or 0) > cur.dps then cur.dps = p.dps end
+    -- CUMUL PAR SOURCE DISTINCTE : une ÉQUIPE de saigneurs COMPOSE (dps = Σ contributions, cappé) ; un saigneur
+    -- ISOLÉ ne rampe PAS (max de sa propre contribution) -> un bleed incident (ex. leech_thorn d'un mur) ne monte
+    -- pas seul au cap. Découple le bleed-archétype des bleeds parasites des autres compos. Déterministe (ipairs).
+    local found
+    for _, e in ipairs(cur.srcDps) do if e.src == ctx.source then found = e; break end end
+    if found then if pdps > found.dps then found.dps = pdps end
+    else cur.srcDps[#cur.srcDps + 1] = { src = ctx.source, dps = pdps } end
+    local total = 0
+    for _, e in ipairs(cur.srcDps) do total = total + e.dps end
+    cur.dps = min(BLEED_DPS_CAP, total)
     cur.remaining = math.max(cur.remaining, p.dur or 0)
     if p.slowScalesMissingHp then cur.slowScalesMissingHp = true end -- conserve les flags T2 si réappliqué
     if p.aggravateMult then cur.aggravateMult = p.aggravateMult end
