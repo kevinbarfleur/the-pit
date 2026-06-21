@@ -81,7 +81,7 @@ end
 
 function Arena:makeUnit(spec, team)
   local u = Units[spec.id]
-  return {
+  local unit = {
     spec = spec, team = team, slot = spec.slot, x = spec.x, y = spec.y, facing = spec.facing,
     id = spec.id,
     maxHp = spec.hp, hp = spec.hp, dmg = spec.dmg, cd = spec.cd,
@@ -102,8 +102,15 @@ function Arena:makeUnit(spec, team)
     atkSlow = 0,   -- slow de cadence (bleed) : rallonge le rechargement du timer d'attaque
     regen = 0, regenAcc = 0, -- contre-DoT : soin au fil du temps
     swinging = false, swingAge = 0, swingHit = false,
+    shieldReflect = 0, -- bouclier réfléchissant (posé par un shield_caster « miroir »)
     alive = true, target = nil,
   }
+  if spec.shieldCaster then -- COPIE par combat : le spec est réutilisé sur N matchs (sim) -> ne JAMAIS le muter
+    local sc = spec.shieldCaster
+    unit.shieldCaster = { value = sc.value, cd = sc.cd, reflect = sc.reflect or 0,
+      overcharge = sc.overcharge or false, targetSlots = sc.targetSlots, cdLeft = 0 }
+  end
+  return unit
 end
 
 function Arena:spawn()
@@ -125,6 +132,20 @@ function Arena:spawn()
   for _, u in ipairs(self.units) do
     self.ctx.arena, self.ctx.source, self.ctx.victim = self, u, u
     Effects.run(u, "combat_start", self.ctx)
+  end
+  -- BOUCLIERS PÉRIODIQUES : résout les cibles (slots figés au build) en réfs d'unités de la MÊME équipe.
+  for _, u in ipairs(self.units) do
+    local sc = u.shieldCaster
+    if sc and sc.targetSlots then
+      sc.targets = {}
+      for _, w in ipairs(self.units) do
+        if w.team == u.team and w.alive then
+          for _, s in ipairs(sc.targetSlots) do
+            if w.slot == s then sc.targets[#sc.targets + 1] = w; break end
+          end
+        end
+      end
+    end
   end
   self.bus:emit("spawned", self.units) -- la couche render (re)construit ses rigs
 end
@@ -211,6 +232,15 @@ function Arena:damage(target, amount, opts)
       raw = math.floor(raw + 0.5), absorbed = absorbed, hp = dealt, overkill = overkill,
       poison = opts.poison, hpAfter = target.hp, shieldAfter = target.shield,
     })
+  end
+  -- RÉFLEXION de bouclier (framework payoff §3.2c) : un coup ABSORBÉ mord l'attaquant (frac ≤ 0.60, cappé au
+  -- build). Seulement sur une FRAPPE (pas les DoT) et cause="reflect" -> jamais de réflexion-de-réflexion.
+  if absorbed > 0 and (target.shieldReflect or 0) > 0 and opts.cause == "attack" and opts.source and opts.source.alive then
+    local refl = math.floor(absorbed * target.shieldReflect)
+    if refl > 0 then
+      self.bus:emit("reflect", { from = opts.source, by = target, amount = refl })
+      self:damage(opts.source, refl, { ignoreShield = true, cause = "reflect", source = target })
+    end
   end
   -- POURRITURE : ampute une fraction des PV MAX (perte permanente au combat). Min 1 ; re-clamp les PV.
   if opts.amputate and opts.amputate > 0 and target.maxHp > 1 then
@@ -377,12 +407,35 @@ function Arena:tickDots(u, frameDt)
   end
 end
 
+-- BOUCLIER PÉRIODIQUE (framework payoff §3) : le porteur re-blinde ses cibles (figées au build) toutes les
+-- `cd` frames. value cappée ×3 + cd planché 2 s AU BUILD ; SURCHARGE = cumul jusqu'à 2× (sinon refresh max) ;
+-- RÉFLEXION posée sur la cible (mordue dans damage). Émet "shield_cast" (RENDER, golden-safe). Ordre ipairs.
+function Arena:tickShieldCaster(u, frameDt)
+  local sc = u.shieldCaster
+  if not sc.targets then return end
+  sc.cdLeft = sc.cdLeft - frameDt
+  if sc.cdLeft > 0 then return end
+  sc.cdLeft = sc.cd
+  local cast = {}
+  for _, w in ipairs(sc.targets) do
+    if w.alive then
+      if sc.overcharge then w.shield = math.min(sc.value * 2, w.shield + sc.value) -- SURCHARGE : s'accumule (cap 2×)
+      else w.shield = math.max(w.shield, sc.value) end                              -- sinon : rafraîchit
+      if w.shield > (w.maxShield or 0) then w.maxShield = w.shield end
+      if sc.reflect > 0 then w.shieldReflect = sc.reflect end
+      cast[#cast + 1] = w
+    end
+  end
+  self.bus:emit("shield_cast", { caster = u, targets = cast, value = sc.value, overcharge = sc.overcharge })
+end
+
 function Arena:update(frameDt, t)
   self.t = t
 
   for _, u in ipairs(self.units) do
     if u.alive then
       self:tickDots(u, frameDt) -- statuts (burn/bleed/poison/rot/choc/regen) + recompute des malus
+      if u.shieldCaster then self:tickShieldCaster(u, frameDt) end -- bouclier périodique (framework payoff)
     end
 
     if u.alive then

@@ -26,6 +26,7 @@ local Units = require("src.data.units")
 local CreatureGen = require("src.gen.creaturegen") -- visuel généré pour les unités sans rig dessiné main
 local Encounters = require("src.data.encounters")
 local Place = require("src.combat.place")
+local Stats = require("src.effects.stats") -- caps du framework payoff (value bouclier ×3 à la lecture)
 local Snapshot = require("src.net.snapshot")
 local Snapstore = require("src.net.snapstore")
 local Run = require("src.run.state")
@@ -377,6 +378,57 @@ function Build:buildComp(side)
     return out
   end
 
+  -- BOUCLIERS PÉRIODIQUES (framework payoff §3) : casters (shield_caster) + renforts (aura_shield adjacente).
+  -- Renforts = 5 axes : valeur (valueInc) / cadence (cdr) / réflexion (reflect) / largeur (radius) / surcharge.
+  local casters = {} -- [slot] = { value, cd, reflect, overcharge, targetSlots }
+  for _, p in ipairs(placed) do
+    local sm = LEVEL_MULT[p.level] or 1.0
+    for _, e in ipairs(Units[p.id].effects or {}) do
+      if e.trigger == "combat_start" and e.op == "shield_caster" then
+        local pa = e.params or {}
+        local tgt = {}
+        for _, nb in ipairs(self.board:neighbors(p.slot)) do if self.slotRigs[nb] then tgt[#tgt + 1] = nb end end
+        casters[p.slot] = { baseValue = (pa.value or 20) * sm, cd = pa.cd or 240, reflect = pa.reflect or 0,
+          overcharge = pa.overcharge or false, valueInc = 0, cdr = 0, radius = false, targetSlots = tgt }
+      end
+    end
+  end
+  if next(casters) then
+    for _, p in ipairs(placed) do -- renforts : aura_shield d'un voisin du caster
+      for _, e in ipairs(Units[p.id].effects or {}) do
+        if e.trigger == "combat_start" and e.op == "aura_shield" then
+          local pa = e.params or {}
+          for _, nb in ipairs(self.board:neighbors(p.slot)) do
+            local c = casters[nb]
+            if c then
+              c.valueInc = c.valueInc + (pa.valueInc or 0)
+              c.cdr = c.cdr + (pa.cdr or 0)
+              if pa.reflect then c.reflect = math.max(c.reflect, pa.reflect) end
+              if pa.overcharge then c.overcharge = true end
+              if pa.radius then c.radius = true end
+            end
+          end
+        end
+      end
+    end
+    for slot, c in pairs(casters) do -- finalise + CAPS (value ×3 / cd plancher 2 s / reflect 0.60 / rayon 2)
+      if c.radius then
+        local seen = {}; for _, s in ipairs(c.targetSlots) do seen[s] = true end
+        local extra = {}
+        for _, s in ipairs(c.targetSlots) do
+          for _, nb2 in ipairs(self.board:neighbors(s)) do
+            if self.slotRigs[nb2] and nb2 ~= slot and not seen[nb2] then seen[nb2] = true; extra[#extra + 1] = nb2 end
+          end
+        end
+        for _, s in ipairs(extra) do c.targetSlots[#c.targetSlots + 1] = s end
+      end
+      c.value = Stats.resolve(c.baseValue, c.valueInc > 0 and { Stats.increased(c.valueInc) } or nil,
+        { max = c.baseValue * 3, round = "nearest" })
+      c.cd = math.max(120, math.floor(c.cd * (1 - math.min(0.5, c.cdr))))
+      c.reflect = math.min(0.6, c.reflect)
+    end
+  end
+
   local b = Place.bounds(placed)
   local comp = {}
   for _, p in ipairs(placed) do
@@ -388,6 +440,9 @@ function Build:buildComp(side)
       hp = math.floor(u.hp * m + 0.5), dmg = math.floor(u.dmg * m + 0.5), cd = u.cd,
       depth = b.maxC - p.col, row = p.row, effects = auraEffects(p.id, p.slot),
       shield = shield[p.slot] or 0, poisonInc = poisonInc[p.slot], burnInc = burnInc[p.slot],
+      shieldCaster = casters[p.slot] and { value = casters[p.slot].value, cd = casters[p.slot].cd,
+        reflect = casters[p.slot].reflect, overcharge = casters[p.slot].overcharge,
+        targetSlots = casters[p.slot].targetSlots } or nil,
       x = x, y = y, facing = facing }
   end
   return comp

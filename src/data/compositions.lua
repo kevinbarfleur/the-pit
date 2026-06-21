@@ -406,6 +406,29 @@ Compositions.list = {
     },
     noteKey = "comp.swarm_wide_diamant.note",
   },
+
+  -- FORTERESSE à boucliers PÉRIODIQUES : ward_weaver re-blinde le centre toutes les 4 s, dopé par 3 renforts
+  -- adjacents (valeur+cadence / réflexion+largeur / surcharge). Le mur se re-dresse en boucle, mord, et gonfle.
+  {
+    id = "ward_fortress_carre", archetype = "shield", variant = "wall", sigil = "carre", boardLevel = 8,
+    units = {
+      { id = "ward_weaver", slot = 5 },     -- caster périodique (centre, voisins 2,4,6,8)
+      { id = "barrier_savant", slot = 2 },  -- renfort : +valeur +cadence
+      { id = "mirror_ward", slot = 4 },     -- renfort : réflexion + rayon 2
+      { id = "surge_warden", slot = 6 },    -- renfort : surcharge + valeur
+      { id = "gravewarden", slot = 8 },     -- taunt blindé en façade
+    },
+    noteKey = "comp.ward_fortress_carre.note",
+  },
+  -- SIÈGE : le counter du même lot (siege_breaker dissout les boucliers) -> prouve qu'un mur a sa réponse.
+  {
+    id = "siege_carre", archetype = "bruiser", variant = "baseline", sigil = "carre", boardLevel = 8,
+    units = {
+      { id = "siege_breaker", slot = 5 }, { id = "marauder", slot = 4 }, { id = "bandit", slot = 6 },
+      { id = "skeleton", slot = 2 }, { id = "demon", slot = 8 },
+    },
+    noteKey = "comp.siege_carre.note",
+  },
 }
 
 -- ── Matchups FEATURED (la liste de scénarios « j'ai qu'à choisir »). seed FIXE -> match rejouable.
@@ -446,6 +469,9 @@ Compositions.scenarios = {
   { id = "plague_mirror",    a = "poison_amp_croix",   b = "spread_showcase",       seed = 1028, tags = { "mirror", "spread" },      noteKey = "scenario.plague_mirror.note" },
   { id = "attrition_clash",  a = "cross_venom_pyre",   b = "rot_patient_carre",     seed = 1029, tags = { "cross", "tempo" },       noteKey = "scenario.attrition_clash.note" },
   { id = "swarm_vs_lock",    a = "swarm_wide_diamant", b = "bleed_lock_anneau",     seed = 1030, tags = { "tempo", "vfx" },         noteKey = "scenario.swarm_vs_lock.note" },
+  -- ── Boucliers périodiques (re-cast + réflexion + surcharge) et leur counter (perce-bouclier) ──
+  { id = "ward_wall",        a = "ward_fortress_carre", b = "bruiser_carre",        seed = 1031, tags = { "vfx" },                  noteKey = "scenario.ward_wall.note" },
+  { id = "breach",           a = "siege_carre",         b = "ward_fortress_carre",  seed = 1032, tags = { "vfx" },                  noteKey = "scenario.breach.note" },
 }
 
 -- ── Index (construits au load ; DATA pure, aucun love/require) ──

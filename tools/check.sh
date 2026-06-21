@@ -62,6 +62,9 @@ luajit tests/snapshot.lua
 echo "== synergies (interactions inter-effets en combat : deroule + resultat) =="
 luajit tests/synergies.lua
 
+echo "== payoff (renforcements forts mais bornes : spread + boucliers + caps) =="
+luajit tests/payoff.lua
+
 echo "== props (invariants + fuzz) =="
 luajit tests/props.lua
 

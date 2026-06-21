@@ -212,6 +212,31 @@ function AfflictionFx:amped(unit, family)
   end
 end
 
+-- BOUCLIER PÉRIODIQUE : pulse cyan sur chaque cible à un (re)cast (« le mur se re-dresse, visiblement »).
+-- overcharge -> bloom plus grand (le bouclier gonfle). 100% RENDER, golden-safe.
+function AfflictionFx:shieldCast(targets, overcharge)
+  if not targets then return end
+  for _, w in ipairs(targets) do
+    if w then
+      self.parts[#self.parts + 1] = { kind = "bloom", x = w.x, y = w.y - 12, vx = 0, vy = 0, ay = 0,
+        age = 0, life = overcharge and 14 or 11, col = COL.shield }
+    end
+  end
+end
+
+-- RÉFLEXION : le bouclier mord l'attaquant -> petite gerbe d'étincelles cyan sur lui.
+function AfflictionFx:reflect(from)
+  if not from then return end
+  local cx, cy = from.x, from.y - 12
+  for i = 1, 6 do
+    local r, r2 = self:weyl()
+    local ang = (i / 6) * 6.2832 + (r - 0.5) * 0.6
+    local spd = 1.0 + r2 * 1.0
+    self.parts[#self.parts + 1] = { kind = "spark", x = cx, y = cy,
+      vx = cos(ang) * spd, vy = sin(ang) * spd, ay = 0, age = 0, life = 7 + r2 * 5, col = COL.shield }
+  end
+end
+
 -- Phase stable par unité (sans toucher au rig) -> désynchronise glows/oscillations entre monstres.
 local function unitPhase(u) return (u.depth or 0) * 1.7 + (u.row or 0) * 2.3 end
 

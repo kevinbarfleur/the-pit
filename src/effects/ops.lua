@@ -94,6 +94,13 @@ Effects.register("thorns", function(ctx, p)
   ctx.arena:damage(ctx.victim, p.value or 0, { ignoreShield = true, source = ctx.source, cause = "thorns" })
 end)
 
+-- COUNTER de bouclier (framework payoff §3.4, « loi du même lot ») : la frappe DISSOUT une fraction du
+-- bouclier de la cible (pierce/strip). Contre les murs de boucliers périodiques.
+Effects.register("strip_shield", function(ctx, p)
+  local v = ctx.victim
+  if v.shield and v.shield > 0 then v.shield = math.floor(v.shield * (1 - (p.frac or 0.5))) end
+end)
+
 -- Rempart (templar / shield_aura) : aura d'adjacence -> RÉSOLUE AU BUILD via le graphe du plateau
 -- (cf. src/scenes/build.lua), pas en combat (l'arène ne connaît pas les voisins). Pas d'op combat.
 

@@ -97,4 +97,29 @@ return {
   ["scenario.attrition_clash.note"]   = "Two cross-family attrition engines grind into each other - whichever loop sustains longest collapses the other.",
   ["scenario.swarm_vs_lock.label"]    = "Mob & Chains",
   ["scenario.swarm_vs_lock.note"]     = "A wide cheap mob throws bodies into a tempo-lock - does breadth beat the slow, or drown in its own blood?",
+
+  -- ── Boucliers périodiques (caster + renforts + counter) ──
+  ["unit.ward_weaver.name"]            = "WARD WEAVER",
+  ["unit.ward_weaver.passive_name"]    = "Recurring Ward",
+  ["unit.ward_weaver.passive_desc"]    = "Every 4s, casts a 20 shield onto adjacent allies - again and again, not just once.",
+  ["unit.barrier_savant.name"]         = "BARRIER SAVANT",
+  ["unit.barrier_savant.passive_name"] = "Honed Wards",
+  ["unit.barrier_savant.passive_desc"] = "Strengthens an adjacent ward-caster: +50% shield value and casts 25% faster.",
+  ["unit.mirror_ward.name"]            = "MIRROR WARD",
+  ["unit.mirror_ward.passive_name"]    = "Spite Glass",
+  ["unit.mirror_ward.passive_desc"]    = "An adjacent ward-caster's shields reflect 40% of absorbed damage and reach one ring further.",
+  ["unit.surge_warden.name"]           = "SURGE WARDEN",
+  ["unit.surge_warden.passive_name"]   = "Overcharge",
+  ["unit.surge_warden.passive_desc"]   = "An adjacent ward-caster's unspent shields pile up (to 2x) instead of refreshing; +50% value.",
+  ["unit.siege_breaker.name"]          = "SIEGE BREAKER",
+  ["unit.siege_breaker.passive_name"]  = "Sunder",
+  ["unit.siege_breaker.passive_desc"]  = "Each strike dissolves half the target's shield - made to crack walls.",
+
+  -- ── Compos & duels boucliers périodiques ──
+  ["comp.ward_fortress_carre.note"] = "A wall that rebuilds itself - wards re-cast every few seconds, biting back and swelling beyond breaking.",
+  ["comp.siege_carre.note"]         = "Hammers built to break walls - every blow sunders the shield before the flesh.",
+  ["scenario.ward_wall.label"]      = "Living Wall",
+  ["scenario.ward_wall.note"]       = "Periodic wards re-dress the front over and over, reflecting blows - watch the cyan pulses and the spite-sparks on the attacker.",
+  ["scenario.breach.label"]         = "Breach",
+  ["scenario.breach.note"]          = "The same-batch counter: sunder-strikes dissolve the periodic wards faster than they can re-cast.",
 }

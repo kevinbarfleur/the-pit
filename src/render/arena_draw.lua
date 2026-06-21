@@ -76,6 +76,13 @@ function ArenaDraw.new(arena, palette)
   arena.bus:on("amped", function(ev)
     if ev and ev.unit then self.fx:amped(ev.unit, ev.family) end
   end)
+  -- Boucliers périodiques : pulse cyan à chaque (re)cast ; étincelles sur l'attaquant à une réflexion.
+  arena.bus:on("shield_cast", function(ev)
+    if ev and ev.targets then self.fx:shieldCast(ev.targets, ev.overcharge) end
+  end)
+  arena.bus:on("reflect", function(ev)
+    if ev and ev.from then self.fx:reflect(ev.from) end
+  end)
   return self
 end
 

@@ -342,6 +342,30 @@ local U = {
     id = "bulwark_acolyte", bodyplan = "robe", rank = 3, type = "arcane", cost = 3, hp = 40, dmg = 5, cd = 60, aggro = 5,
     effects = { { trigger = "combat_start", op = "shield_aura", target = "neighbors", params = { value = 8 } } },
   },
+
+  -- ══ BOUCLIERS PÉRIODIQUES (framework payoff §3) : le caster RE-blinde ses voisins toutes les N s (vs le
+  -- shield_aura one-shot). Les RENFORTS (aura_shield adjacente) = 5 axes lisibles : valeur / cadence /
+  -- réflexion / largeur / surcharge. Counter livré dans le même lot (strip_shield). DATA-ONLY. ══
+  ward_weaver = { -- BASE : caster périodique (re-bouclier 20 toutes les 4 s aux voisins)
+    id = "ward_weaver", bodyplan = "robe", rank = 4, type = "order", cost = 4, hp = 80, dmg = 4, cd = 64, aggro = 40,
+    effects = { { trigger = "combat_start", op = "shield_caster", target = "neighbors", params = { value = 20, cd = 240 } } },
+  },
+  barrier_savant = { -- RENFORT : +50% valeur (increased) ET −25% cooldown au caster voisin
+    id = "barrier_savant", bodyplan = "robe", rank = 3, type = "order", cost = 3, hp = 46, dmg = 4, cd = 60, aggro = 15,
+    effects = { { trigger = "combat_start", op = "aura_shield", target = "neighbors", params = { valueInc = 0.5, cdr = 0.25 } } },
+  },
+  mirror_ward = { -- RENFORT : RÉFLEXION (40% de l'absorbé mord l'attaquant) + LARGEUR (rayon 2)
+    id = "mirror_ward", bodyplan = "robe", rank = 3, type = "order", cost = 3, hp = 50, dmg = 5, cd = 58, aggro = 15,
+    effects = { { trigger = "combat_start", op = "aura_shield", target = "neighbors", params = { reflect = 0.4, radius = true } } },
+  },
+  surge_warden = { -- RENFORT : SURCHARGE (les boucliers non-consommés s'accumulent, cap 2×) + valeur
+    id = "surge_warden", bodyplan = "robe", rank = 4, type = "order", cost = 4, hp = 48, dmg = 4, cd = 60, aggro = 15,
+    effects = { { trigger = "combat_start", op = "aura_shield", target = "neighbors", params = { overcharge = true, valueInc = 0.5 } } },
+  },
+  siege_breaker = { -- COUNTER : la frappe DISSOUT la moitié du bouclier (perce les murs) + gros dégâts
+    id = "siege_breaker", bodyplan = "deformed", rank = 3, type = "flesh", cost = 3, hp = 60, dmg = 8, cd = 52, aggro = 15,
+    effects = { { trigger = "on_hit", op = "strip_shield", params = { frac = 0.5 } } },
+  },
 }
 
 -- Roster complet (ordre d'affichage). Les 6 premiers = vanille/v0 ; les suivants = familles de statuts.
@@ -368,7 +392,9 @@ U.order = { "marauder", "templar", "skeleton", "bandit", "witch", "demon",
   "gravewarden",
   -- ladder choc (5) + bouclier (4)
   "live_wire", "thunderhead", "static_swarm", "galvanizer", "stormlord",
-  "shieldbearer", "aegis_warden", "oath_keeper", "bulwark_acolyte" }
+  "shieldbearer", "aegis_warden", "oath_keeper", "bulwark_acolyte",
+  -- boucliers périodiques (caster + renforts + counter)
+  "ward_weaver", "barrier_savant", "mirror_ward", "surge_warden", "siege_breaker" }
 
 -- Pool d'unités ACHETABLES en boutique (cf. src/run/state.lua). Identique au roster pour l'instant.
 U.pool = { "marauder", "templar", "skeleton", "bandit", "witch", "demon",
@@ -388,7 +414,8 @@ U.pool = { "marauder", "templar", "skeleton", "bandit", "witch", "demon",
   "pit_maw", "wither_bloom",
   "gravewarden",
   "live_wire", "thunderhead", "static_swarm", "galvanizer", "stormlord",
-  "shieldbearer", "aegis_warden", "oath_keeper", "bulwark_acolyte" }
+  "shieldbearer", "aegis_warden", "oath_keeper", "bulwark_acolyte",
+  "ward_weaver", "barrier_savant", "mirror_ward", "surge_warden", "siege_breaker" }
 
 -- Visuel : les 6 vanille ont un rig DESSINÉ main (src/data/creatures.lua) ; toutes les autres unités
 -- sont GÉNÉRÉES procéduralement (src/gen/creaturegen.lua, déterministe par id), résolu côté rendu
