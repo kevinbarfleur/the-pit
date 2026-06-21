@@ -292,6 +292,56 @@ local U = {
     id = "gravewarden", type = "bone", cost = 4, hp = 100, dmg = 3, cd = 84, aggro = 40, taunt = true,
     effects = { { trigger = "on_attacked", op = "thorns", params = { value = 4 } } },
   },
+
+  -- ══ LADDER CHOC (5/3/2 — cf. CLAUDE.md §3). Le choc n'inflige RIEN : il amplifie les dégâts-PRIS de la
+  -- cible (frappes ET DoT), clampé à +200 % par l'arène. Mono-instance -> on joue cadence vs perStack vs cap.
+  -- DATA-ONLY (op `shock` réutilisé), golden-safe (hors compo golden). ══
+  live_wire = { -- T1 : cadence rapide, petit stack, plafond bas (empile vite, sature vite) — chaff semeur
+    id = "live_wire", type = "arcane", cost = 2, hp = 28, dmg = 3, cd = 30, aggro = 5,
+    effects = { { trigger = "on_hit", op = "shock", params = { add = 1, perStack = 0.05, cap = 5, dur = 120 } } },
+  },
+  thunderhead = { -- T1 : gros coup lent, fort perStack (peu de stacks, mais lourds) — carry burst
+    id = "thunderhead", type = "arcane", cost = 3, hp = 40, dmg = 8, cd = 76, aggro = 5,
+    effects = { { trigger = "on_hit", op = "shock", params = { add = 1, perStack = 0.12, cap = 6, dur = 180 } } },
+  },
+  static_swarm = { -- T1 : cap élevé, montée régulière, longue durée — choqueur patient (combats longs)
+    id = "static_swarm", type = "abyss", cost = 3, hp = 44, dmg = 4, cd = 50, aggro = 5,
+    effects = { { trigger = "on_hit", op = "shock", params = { add = 1, perStack = 0.06, cap = 12, dur = 240 } } },
+  },
+  galvanizer = { -- T2 : pose le choc PUIS le punit lui-même (auto-synergie) — bruiser autonome
+    id = "galvanizer", type = "flesh", cost = 4, hp = 58, dmg = 11, cd = 64, aggro = 15,
+    effects = {
+      { trigger = "on_attack", op = "bonus_first", params = { value = 6 } },
+      { trigger = "on_hit", op = "shock", params = { add = 2, perStack = 0.08, cap = 8, dur = 180 } },
+    },
+  },
+  stormlord = { -- T2 : cap max + perStack fort + longue durée — l'amplificateur d'équipe (marque une proie)
+    id = "stormlord", type = "arcane", cost = 4, hp = 50, dmg = 6, cd = 54, aggro = 5,
+    effects = { { trigger = "on_hit", op = "shock", params = { add = 2, perStack = 0.10, cap = 16, dur = 240 } } },
+  },
+
+  -- ══ BOUCLIER (étoffe l'axe défensif : aujourd'hui seul `templar` en porte). `shield_aura` est RÉSOLU AU
+  -- BUILD (build.lua) sur les voisins du sigil -> stat `shield` cuite, aucun op combat. Plus de porteurs à
+  -- coûts/auras variés = du bouclier visible quasi à chaque partie. DATA-ONLY, golden-safe. ══
+  shieldbearer = { -- tank cheap, petite aura : le porte-bouclier de masse (sort souvent en boutique)
+    id = "shieldbearer", type = "order", cost = 2, hp = 72, dmg = 2, cd = 80, aggro = 40,
+    effects = { { trigger = "combat_start", op = "shield_aura", target = "neighbors", params = { value = 6 } } },
+  },
+  aegis_warden = { -- tank-épines + TAUNT : blinde les voisins ET punit qui le frappe (mur de front complet)
+    id = "aegis_warden", type = "bone", cost = 4, hp = 96, dmg = 3, cd = 84, aggro = 40, taunt = true,
+    effects = {
+      { trigger = "combat_start", op = "shield_aura", target = "neighbors", params = { value = 10 } },
+      { trigger = "on_attacked", op = "thorns", params = { value = 4 } },
+    },
+  },
+  oath_keeper = { -- premium offensif-défensif : grosse aura + dégâts corrects (pilier d'équipe)
+    id = "oath_keeper", type = "order", cost = 4, hp = 84, dmg = 8, cd = 70, aggro = 15,
+    effects = { { trigger = "combat_start", op = "shield_aura", target = "neighbors", params = { value = 18 } } },
+  },
+  bulwark_acolyte = { -- support fragile : bouclier modeste mais sur TOUS les voisins (max de couverture)
+    id = "bulwark_acolyte", type = "arcane", cost = 3, hp = 40, dmg = 5, cd = 60, aggro = 5,
+    effects = { { trigger = "combat_start", op = "shield_aura", target = "neighbors", params = { value = 8 } } },
+  },
 }
 
 -- Roster complet (ordre d'affichage). Les 6 premiers = vanille/v0 ; les suivants = familles de statuts.
@@ -315,7 +365,10 @@ U.order = { "marauder", "templar", "skeleton", "bandit", "witch", "demon",
   "festering", "venom_censer",
   "pit_maw", "wither_bloom",
   -- archétype tank (P6)
-  "gravewarden" }
+  "gravewarden",
+  -- ladder choc (5) + bouclier (4)
+  "live_wire", "thunderhead", "static_swarm", "galvanizer", "stormlord",
+  "shieldbearer", "aegis_warden", "oath_keeper", "bulwark_acolyte" }
 
 -- Pool d'unités ACHETABLES en boutique (cf. src/run/state.lua). Identique au roster pour l'instant.
 U.pool = { "marauder", "templar", "skeleton", "bandit", "witch", "demon",
@@ -333,7 +386,9 @@ U.pool = { "marauder", "templar", "skeleton", "bandit", "witch", "demon",
   "slow_bleed", "marrow_drinker",
   "festering", "venom_censer",
   "pit_maw", "wither_bloom",
-  "gravewarden" }
+  "gravewarden",
+  "live_wire", "thunderhead", "static_swarm", "galvanizer", "stormlord",
+  "shieldbearer", "aegis_warden", "oath_keeper", "bulwark_acolyte" }
 
 -- Visuel : les 6 vanille ont un rig DESSINÉ main (src/data/creatures.lua) ; toutes les autres unités
 -- sont GÉNÉRÉES procéduralement (src/gen/creaturegen.lua, déterministe par id), résolu côté rendu

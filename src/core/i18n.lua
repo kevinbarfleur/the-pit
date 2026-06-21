@@ -63,4 +63,16 @@ function I18n.has(key)
 end
 
 ensure("en") -- précharge la locale par défaut
+
+-- Extension ADDITIVE de la locale EN : des clés peuvent vivre hors de en.lua (ex. en_ext.lua, tenu à part
+-- pour éviter un conflit d'édition concurrent) et sont fusionnées ici SANS jamais écraser une clé existante
+-- de en.lua. Tolérant : fichier absent -> ignoré. À refondre dans en.lua une fois les chantiers réunis.
+do
+  local ok, ext = pcall(require, "src.i18n.en_ext")
+  local en = I18n._locales.en
+  if ok and type(ext) == "table" and type(en) == "table" then
+    for k, v in pairs(ext) do if en[k] == nil then en[k] = v end end
+  end
+end
+
 return I18n

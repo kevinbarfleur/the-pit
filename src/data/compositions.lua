@@ -230,6 +230,34 @@ Compositions.list = {
     },
     noteKey = "comp.bruiser_carre_no_sustain.note",
   },
+
+  -- ── SHOCK (vitrine de la ladder choc : empile l'amplification sur une cible durable, puis un gros
+  -- frappeur la punit. gravewarden tient la façade ; stormlord pousse la cible vers le cap d'équipe). ──
+  {
+    id = "shock_storm_carre", archetype = "shock", variant = "amp", sigil = "carre", boardLevel = 8,
+    units = {
+      { id = "gravewarden", slot = 5 }, -- TAUNT : tient la façade pendant que l'équipe choque
+      { id = "galvanizer", slot = 4 },  -- frappe + empile 2 chocs/coup (auto-synergie)
+      { id = "thunderhead", slot = 6 }, -- gros chocs lourds (+12 %/stack)
+      { id = "stormlord", slot = 2 },   -- amplificateur : pousse la cible vers le cap (+200 %)
+      { id = "marauder", slot = 8 },    -- payoff : gros frappeur qui exploite la cible amplifiée
+    },
+    noteKey = "comp.shock_storm_carre.note",
+  },
+
+  -- ── BOUCLIER (vitrine du contour de bouclier : auras qui se recouvrent -> beaucoup de silhouettes
+  -- blindées. bulwark_acolyte@5 couvre 2,4,6,8 ; aegis_warden taunt + épines tient le front). ──
+  {
+    id = "bulwark_carre", archetype = "shield", variant = "wall", sigil = "carre", boardLevel = 8,
+    units = {
+      { id = "bulwark_acolyte", slot = 5 }, -- AURA : +8 bouclier à TOUS les voisins (2,4,6,8)
+      { id = "aegis_warden", slot = 4 },    -- TAUNT + bouclier aux voisins + épines (mur de front)
+      { id = "oath_keeper", slot = 6 },     -- grosse aura (+18) côté front
+      { id = "witch", slot = 2 },           -- carry fragile, protégé par les boucliers
+      { id = "marauder", slot = 8 },        -- frappeur, protégé lui aussi
+    },
+    noteKey = "comp.bulwark_carre.note",
+  },
 }
 
 -- ── Matchups FEATURED (la liste de scénarios « j'ai qu'à choisir »). seed FIXE -> match rejouable.
@@ -255,6 +283,10 @@ Compositions.scenarios = {
   { id = "tank_taunt_test",     a = "tank_carre",            b = "tank_carre_no_taunt",           seed = 1014, noteKey = "scenario.tank_taunt_test.note" },
   { id = "bruiser_sustain_test", a = "bruiser_carre",        b = "bruiser_carre_no_sustain",      seed = 1015, noteKey = "scenario.bruiser_sustain_test.note" },
   { id = "cross_vs_tank",       a = "cross_bleed_rot",       b = "tank_carre",                    seed = 1016, noteKey = "scenario.cross_vs_tank.note" },
+  -- choc & bouclier (vitrines du feedback visuel : amplification du choc / absorption des boucliers)
+  { id = "shock_vs_tank",       a = "shock_storm_carre",     b = "tank_carre",                    seed = 1018, noteKey = "scenario.shock_vs_tank.note" },
+  { id = "shock_vs_bruiser",    a = "shock_storm_carre",     b = "bruiser_carre",                 seed = 1020, noteKey = "scenario.shock_vs_bruiser.note" },
+  { id = "bulwark_vs_bruiser",  a = "bulwark_carre",         b = "bruiser_carre",                 seed = 1019, noteKey = "scenario.bulwark_vs_bruiser.note" },
 }
 
 -- ── Index (construits au load ; DATA pure, aucun love/require) ──
@@ -270,6 +302,6 @@ for _, c in ipairs(Compositions.list) do
 end
 
 -- Archétypes connus (l'analyseur d'équilibrage s'en sert ; l'intégrité du catalogue le vérifie).
-Compositions.archetypes = { "poison", "burn", "bleed", "rot", "tank", "bruiser", "shock" }
+Compositions.archetypes = { "poison", "burn", "bleed", "rot", "tank", "bruiser", "shock", "shield" }
 
 return Compositions
