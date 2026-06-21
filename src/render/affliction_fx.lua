@@ -64,6 +64,29 @@ local PHI3 = 0.5698402909  -- 3e flux — vie/zone
 local SHOCK_ANCHORS = { { 0, -22 }, { -5, -17 }, { 5, -17 }, { -6, -10 }, { 6, -10 }, { -3, -4 }, { 3, -4 } }
 local function fracv(x) return x - floor(x) end -- partie fractionnaire (scintillement déterministe par frame)
 
+-- Éclair JAGGED dessiné segment par segment (jitter perpendiculaire déterministe par `seed`) : on l'appelle
+-- 2× avec le MÊME seed -> halo jaune large + cœur blanc parfaitement superposés. Lecture « foudre », pas trait.
+local function jaggedBolt(g, x0, y0, x1, y1, segs, seed, alpha, width, white)
+  local dx, dy = x1 - x0, y1 - y0
+  local len = (dx * dx + dy * dy) ^ 0.5 + 0.001
+  local nx, ny = -dy / len, dx / len -- perpendiculaire (sens du zigzag)
+  if white then g.setColor(1, 1, 1, alpha) else g.setColor(COL.shock[1], COL.shock[2], COL.shock[3], alpha) end
+  g.setLineWidth(width)
+  local px, py = x0, y0
+  for s = 1, segs do
+    local qx, qy
+    if s < segs then
+      local f = s / segs
+      local j = (fracv(seed + s * 0.618) - 0.5) * (len * 0.45) -- amplitude du zigzag (déterministe)
+      qx, qy = x0 + dx * f + nx * j, y0 + dy * f + ny * j
+    else
+      qx, qy = x1, y1
+    end
+    g.line(px, py, qx, qy)
+    px, py = qx, qy
+  end
+end
+
 -- Canvas off-screen partagé pour le contour de bouclier (rig aplati). Marges = aucune fausse arête au bord.
 local SC_W, SC_H = 36, 42
 local FEET_X, FEET_Y = 18, 36 -- où atterrissent les pieds (u.x,u.y) dans le canvas
@@ -530,28 +553,40 @@ function AfflictionFx:drawGlow(units, t)
       g.setColor(ffx.head[1], ffx.head[2], ffx.head[3], 1); g.rectangle("fill", hx, hy, 1, 1)
     end
   end
-  -- Choc : ÉCLAIRS en zigzag qui crépitent à plusieurs points de la silhouette (cœur blanc + halo jaune),
-  -- scintillants (sous-ensemble d'ancres ré-tiré chaque frame) -> lecture « décharge électrique sur le corps ».
+  -- Choc : ÉCLAIRS RAMIFIÉS qui crépitent SUR et AUTOUR du corps (PAS un contour). Chaque frame ré-tire un
+  -- jeu d'arcs (scintillement) : moitié TRAVERSENT la silhouette (ancre->ancre), moitié JAILLISSENT dehors.
+  -- Cœur blanc + halo jaune, + un éclat central au tout début (le « zap »). Lecture franchement électrique.
   local frame = floor((t or 0))
-  g.setLineStyle("rough"); g.setLineWidth(1)
+  g.setLineStyle("rough")
   for u, fl in pairs(self.shockFlash) do
     local al = 1 - fl.age / fl.life
     if al > 0.05 then
-      for k, anc in ipairs(SHOCK_ANCHORS) do
-        if fracv((frame + k) * PHI + (fl.phase or 0)) < 0.55 then
-          local ax, ay = u.x + anc[1], u.y + anc[2]
-          local dir = (anc[1] >= 0) and 1 or -1
-          local hx, hy = fracv(frame * 0.754 + k * 0.31), fracv(frame * 0.317 + k * 0.62)
-          local ox, oy = ax + dir * (2 + hx * 3), ay - 1 - hy * 3
-          local mx, my = (ax + ox) / 2 + dir * 1.5, (ay + oy) / 2 + (hx - 0.5) * 3
-          g.setColor(COL.shock[1], COL.shock[2], COL.shock[3], al * 0.85)
-          g.line(ax, ay, mx, my, ox, oy) -- halo jaune (zigzag 2 segments)
-          g.setColor(1, 1, 1, al)
-          g.line(ax, ay, mx, my)         -- cœur blanc
+      local cx, cy = u.x, u.y - 13
+      local nbolts = 3 + floor(fracv(frame * 0.37 + (fl.phase or 0)) * 3) -- 3..5 arcs, nombre scintillant
+      for k = 1, nbolts do
+        local seed = frame * 0.137 + k * 0.613 + (fl.phase or 0)
+        local a = SHOCK_ANCHORS[1 + floor(fracv(seed * 1.7) * #SHOCK_ANCHORS)]
+        local ax, ay = u.x + a[1], u.y + a[2]
+        local ex, ey
+        if fracv(seed * 2.3) < 0.5 then -- arc qui TRAVERSE le corps (vers une autre ancre)
+          local b = SHOCK_ANCHORS[1 + floor(fracv(seed * 3.1) * #SHOCK_ANCHORS)]
+          ex, ey = u.x + b[1], u.y + b[2]
+        else -- arc qui JAILLIT hors de la silhouette
+          local ang = fracv(seed * 4.7) * 6.2832
+          local r = 9 + fracv(seed * 5.3) * 9
+          ex, ey = cx + cos(ang) * r, cy + sin(ang) * r * 0.85
         end
+        local segs = 3 + floor(fracv(seed * 0.91) * 3)
+        jaggedBolt(g, ax, ay, ex, ey, segs, seed, al * 0.6, 2, false) -- halo jaune large
+        jaggedBolt(g, ax, ay, ex, ey, segs, seed, al, 1, true)        -- cœur blanc superposé (même seed = aligné)
+      end
+      if fl.age < 4 then -- éclat central : le « zap » d'impact
+        g.setColor(1, 1, 1, al)
+        g.rectangle("fill", floor(cx) - 1, floor(cy) - 1, 3, 3)
       end
     end
   end
+  g.setLineWidth(1)
 
   if blend then blend("alpha") end
   g.setColor(1, 1, 1, 1)
@@ -588,15 +623,8 @@ function AfflictionFx:drawOutlines(units, rigs, t)
     if c and u.alive and (u.shield or 0) > 0 then self:_outline(g, sh, c, prev, cyan, pulse) end
   end
 
-  -- CHOC : flash électrique sur le CONTOUR (le corps entier crépite), bref + scintillant (renforce les éclairs).
-  local elec = { 1, 1, 0.5 }
-  for u, fl in pairs(self.shockFlash) do
-    local c = rigs and rigs[u]
-    if c and u.alive then
-      local a = (1 - fl.age / fl.life) * (0.5 + 0.5 * sin((t or 0) * 1.8 + (fl.phase or 0)))
-      if a > 0.06 then self:_outline(g, sh, c, prev, elec, a) end
-    end
-  end
+  -- Le CHOC n'utilise PLUS le contour (ça donnait « un bouclier jaune ») : il est rendu en ÉCLAIRS
+  -- RAMIFIÉS dans drawGlow -> lecture franchement électrique, pas une surface.
 
   g.setColor(1, 1, 1, 1)
 end
