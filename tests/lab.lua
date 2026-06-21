@@ -116,7 +116,13 @@ local ok, err = pcall(function()
   for _ = 1, 3 do pg:update(1.0) end
   pg:drawOverlay(view)
   assert(pg.sim or pg.result, "scene: la boucle SIM tourne (en cours ou aboutie)")
-  print("  lab : scene Proving Ground OK (construit + select + SIM + draw headless)")
+  -- CONTENEUR SCROLLABLE : sélectionner la dernière ligne défile ; la molette est bornée [0, maxScroll].
+  pg:select(#pg.scenarios)
+  assert(pg.scroll > 0, "scene: selectionner la derniere ligne fait defiler la liste")
+  pg:wheelmoved(0, 999); assert(pg.scroll == 0, "scene: molette haut -> debut de liste (borne 0)")
+  pg:wheelmoved(0, -999); assert(pg.scroll == pg:maxScroll(), "scene: molette bas -> borne maxScroll")
+  pg:drawOverlay(view)
+  print("  lab : scene Proving Ground OK (construit + select + SIM + scroll + draw headless)")
 
   -- 7) PILOTE DE RUN : déterminisme (même seed+politique -> trajectoire identique).
   local Rundriver = require("src.lab.rundriver")

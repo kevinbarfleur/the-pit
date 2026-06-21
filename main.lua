@@ -185,6 +185,11 @@ function love.mousemoved(x, y)
   host.scene:mousemoved(vx, vy)
 end
 
+-- Molette : défilement des listes scrollables (la scène décide). dx,dy en crans.
+function love.wheelmoved(dx, dy)
+  if host.scene.wheelmoved then host.scene:wheelmoved(dx, dy) end
+end
+
 -- ───────────────────────── Boucle à pas de temps fixe ─────────────────────────
 -- love.update est toujours appelée avec dt = TICK (déterministe) ; love.draw tourne
 -- une fois par frame. MAX_SKIP borne le rattrapage pour éviter la "spirale de la mort".

@@ -21,6 +21,21 @@ function Draw.begin(view)
 end
 function Draw.finish() love.graphics.pop() end
 
+-- CLIP (scissor) en ESPACE DESIGN : borne le rendu a un conteneur x,y,w,h (design) -> indispensable pour
+-- les LISTES SCROLLABLES (aucun debordement hors du conteneur, meme si le contenu depasse la fenetre).
+-- love.graphics.setScissor travaille en PIXELS ECRAN (insensible a la transform) -> on convertit via `view`.
+-- A refermer avec Draw.noScissor(). Doit etre appele sous Draw.begin(view) (mais utilise `view` directement).
+function Draw.scissor(view, x, y, w, h)
+  local s = (view.scale or 4) / 4
+  love.graphics.setScissor(
+    math.floor((view.ox or 0) + x * s),
+    math.floor((view.oy or 0) + y * s),
+    math.ceil(w * s),
+    math.ceil(h * s))
+end
+
+function Draw.noScissor() love.graphics.setScissor() end
+
 -- ─────────────────────────────────── Couleur ───────────────────────────────────
 -- c = {r,g,b,a} (table Theme) ; a override l'alpha. nil -> no-op (garde l'état courant).
 function Draw.setColor(c, a)

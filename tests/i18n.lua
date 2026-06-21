@@ -65,7 +65,7 @@ local ok, err = pcall(function()
     need("scenario." .. sc.id .. ".note")
   end
   for _, k in ipairs({ "pg.title", "pg.subtitle", "pg.vs", "pg.watch", "pg.sim", "pg.simming",
-    "pg.winrate", "pg.decided", "pg.invest_delta", "pg.idle", "pg.watched", "pg.invest", "pg.gold",
+    "pg.winrate", "pg.decided", "pg.invest_delta", "pg.idle", "pg.watched", "pg.invest", "pg.gold", "pg.trials",
     "result.left", "result.right", "ui.hint_playground", "menu.proving", "encounter.exhibition.name" }) do
     need(k)
   end

@@ -68,6 +68,7 @@ local love = {
     rectangle = function() end, circle = function() end, ellipse = function() end,
     polygon = function() end, line = function() end, setLineWidth = function() end,
     print = function() end, printf = function() end,
+    setScissor = function() end, getScissor = function() end,
     setFont = function() end, newFont = function() return fontMock end,
     getFont = function() return fontMock end,
     getWidth = function() return 1280 end, getHeight = function() return 720 end,

@@ -30,6 +30,9 @@ local SIM_PER_FRAME = 10   -- matchs joués par frame (étalé -> pas de gel)
 
 -- Mise en page (espace design 1280x720).
 local LIST_X, LIST_Y, LIST_W, ROW_H, ROW_GAP = 28, 122, 300, 46, 6
+local LIST_STEP = ROW_H + ROW_GAP               -- 52 px par ligne
+local LIST_VIEW_H = 396                          -- hauteur du CONTENEUR scrollable (alignee sur les panneaux)
+local LIST_VISIBLE = math.floor(LIST_VIEW_H / LIST_STEP) -- lignes entierement visibles (7)
 local AX, BX, PANEL_Y, PANEL_W, PANEL_H = 356, 818, 122, 408, 396
 local BTN_Y, BTN_H = 540, 54
 
@@ -39,7 +42,7 @@ function Playground.new(palette, vw, vh, host)
     daChrome = true, titleKey = "pg.title", hintKey = "ui.hint_playground",
     t = 0, ambient = Ambient.new(3),
     scenarios = Compositions.scenarios,
-    sel = 0, hover = nil,
+    sel = 0, hover = nil, scroll = 0,
     compA = nil, compB = nil, costA = nil, costB = nil,
     result = nil, sim = nil,
   }, Playground)
@@ -54,6 +57,7 @@ function Playground:select(i)
   local sc = self.scenarios[i]
   if not sc then return end
   self.sel = i
+  self:ensureVisible(i)
   self.cA = Compositions.byId[sc.a]
   self.cB = Compositions.byId[sc.b]
   self.compA = Compbuild.toComp(self.cA, -1)
@@ -171,16 +175,29 @@ function Playground:drawOverlay(view)
   Draw.text(T("pg.title"), LIST_X, 24, c.title, Theme.display(40))
   Draw.text(T("pg.subtitle"), LIST_X + 2, 78, c.faint, Theme.ui(9))
 
-  -- Liste des scénarios.
+  -- Liste des scénarios : CONTENEUR scrollable (clip au viewport -> aucun débordement hors-fenêtre).
+  Draw.scissor(view, LIST_X - 4, LIST_Y - 2, LIST_W + 10, LIST_VIEW_H + 4)
   for i, sc in ipairs(self.scenarios) do
     local r = self:rowRect(i)
-    local on = (self.sel == i)
-    Draw.rect(r.x, r.y, r.w, r.h, on and c.panel or c.panelDeep, on and c.ecoBorder or c.line, 1)
-    Draw.text(T("scenario." .. sc.id .. ".label"), r.x + 12, r.y + 7, on and c.title or c.body, Theme.ui(11))
-    local a, b = Compositions.byId[sc.a], Compositions.byId[sc.b]
-    Draw.text(T("pg.archetype." .. a.archetype) .. "  vs  " .. T("pg.archetype." .. b.archetype),
-      r.x + 12, r.y + 26, c.faint, Theme.ui(8))
+    if r.y + r.h > LIST_Y - 2 and r.y < LIST_Y + LIST_VIEW_H then -- saute les lignes hors-champ
+      local on = (self.sel == i)
+      Draw.rect(r.x, r.y, r.w, r.h, on and c.panel or c.panelDeep, on and c.ecoBorder or c.line, 1)
+      Draw.text(T("scenario." .. sc.id .. ".label"), r.x + 12, r.y + 7, on and c.title or c.body, Theme.ui(11))
+      local a, b = Compositions.byId[sc.a], Compositions.byId[sc.b]
+      Draw.text(T("pg.archetype." .. a.archetype) .. "  vs  " .. T("pg.archetype." .. b.archetype),
+        r.x + 12, r.y + 26, c.faint, Theme.ui(8))
+    end
   end
+  Draw.noScissor()
+  -- Barre de défilement (apparaît seulement quand la liste dépasse le conteneur).
+  local maxS = self:maxScroll()
+  if maxS > 0 then
+    local tx = LIST_X + LIST_W + 6
+    Draw.rect(tx, LIST_Y, 3, LIST_VIEW_H, c.line)
+    local thumbH = math.max(24, LIST_VIEW_H * LIST_VISIBLE / #self.scenarios)
+    Draw.rect(tx, LIST_Y + (LIST_VIEW_H - thumbH) * (self.scroll / maxS), 3, thumbH, c.ecoBorder)
+  end
+  Draw.text(T("pg.trials", { n = #self.scenarios }), LIST_X, LIST_Y + LIST_VIEW_H + 8, c.ghost, Theme.ui(8))
 
   -- Aperçus A (gauche) / B (droite) + "Vs".
   local watched = self.result and self.result.kind == "watch"
@@ -231,23 +248,49 @@ function Playground:drawResult(c)
   end
 end
 
--- ── Géométrie + souris ──
+-- ── Défilement de la liste (conteneur scrollable : molette/clavier, contenu borné au viewport) ──
+function Playground:maxScroll() return math.max(0, #self.scenarios - LIST_VISIBLE) end
+
+function Playground:clampScroll()
+  local m = self:maxScroll()
+  if self.scroll < 0 then self.scroll = 0 elseif self.scroll > m then self.scroll = m end
+end
+
+-- Garde la ligne `i` dans le viewport (auto-scroll quand la sélection sort par le haut/bas).
+function Playground:ensureVisible(i)
+  if i - 1 < self.scroll then self.scroll = i - 1
+  elseif i - 1 >= self.scroll + LIST_VISIBLE then self.scroll = i - LIST_VISIBLE end
+  self:clampScroll()
+end
+
+function Playground:wheelmoved(_, dy)
+  self.scroll = self.scroll - (dy or 0)
+  self:clampScroll()
+end
+
+-- ── Géométrie + souris (rowRect tient compte du scroll) ──
 function Playground:rowRect(i)
-  return { x = LIST_X, y = LIST_Y + (i - 1) * (ROW_H + ROW_GAP), w = LIST_W, h = ROW_H }
+  return { x = LIST_X, y = LIST_Y + (i - 1 - self.scroll) * LIST_STEP, w = LIST_W, h = ROW_H }
 end
 local function ptIn(x, y, r) return x >= r.x and x <= r.x + r.w and y >= r.y and y <= r.y + r.h end
+-- Le clic/survol n'est valide que DANS le conteneur (une ligne scrollée hors-champ n'est pas cliquable).
+local function inList(dx, dy) return dx >= LIST_X and dx <= LIST_X + LIST_W and dy >= LIST_Y and dy <= LIST_Y + LIST_VIEW_H end
 
 function Playground:mousemoved(vx, vy)
   local dx, dy = vx * 4, vy * 4
   self.hover = nil
+  if not inList(dx, dy) then return end
   for i = 1, #self.scenarios do if ptIn(dx, dy, self:rowRect(i)) then self.hover = i; return end end
 end
 
 function Playground:mousepressed(vx, vy, button)
   if button ~= 1 then return end
   local dx, dy = vx * 4, vy * 4
-  for i = 1, #self.scenarios do
-    if ptIn(dx, dy, self:rowRect(i)) then self:select(i); return end
+  if inList(dx, dy) then -- clic dans le conteneur : sélectionne une ligne (bornée au viewport)
+    for i = 1, #self.scenarios do
+      if ptIn(dx, dy, self:rowRect(i)) then self:select(i); break end
+    end
+    return
   end
   if ptIn(dx, dy, { x = AX, y = BTN_Y, w = 200, h = BTN_H }) then self:startWatch(); return end
   if ptIn(dx, dy, { x = AX + 216, y = BTN_Y, w = 200, h = BTN_H }) then self:startSim(); return end
@@ -256,6 +299,8 @@ end
 function Playground:keypressed(key)
   if key == "up" then self:select((self.sel - 2) % #self.scenarios + 1)
   elseif key == "down" then self:select(self.sel % #self.scenarios + 1)
+  elseif key == "pageup" then self.scroll = self.scroll - LIST_VISIBLE; self:clampScroll()
+  elseif key == "pagedown" then self.scroll = self.scroll + LIST_VISIBLE; self:clampScroll()
   elseif key == "return" or key == "kpenter" or key == "w" then self:startWatch()
   elseif key == "s" then self:startSim() end
 end

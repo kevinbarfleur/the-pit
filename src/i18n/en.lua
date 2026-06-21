@@ -329,6 +329,7 @@ return {
   ["pg.watched"] = "[click] watched - run it again or pick another",
   ["pg.invest"] = "INVESTMENT",
   ["pg.gold"] = "{n}g",
+  ["pg.trials"] = "{n} trials",
   ["pg.archetype.poison"] = "Poison",
   ["pg.archetype.burn"] = "Burn",
   ["pg.archetype.bleed"] = "Bleed",
