@@ -125,6 +125,9 @@ return {
   ["encounter.fallen_patrol.name"] = "FALLEN PATROL",
   ["encounter.drowned_choir.name"] = "DROWNED CHOIR",
   ["encounter.brood.name"] = "BROOD",
+  ["encounter.gorge_pack.name"] = "GORGE PACK",
+  ["encounter.drowned_legion.name"] = "DROWNED LEGION",
+  ["encounter.pit_sovereign.name"] = "PIT SOVEREIGN",
   ["encounter.exhibition.name"] = "Rival Build",
 
   -- units : nom + passif (nom & description). Mécanique = src/data/units.lua (effects).

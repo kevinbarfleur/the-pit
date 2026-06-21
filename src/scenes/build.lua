@@ -44,6 +44,12 @@ local BOARD_OY = 90 -- centre du plateau (virtuel) : ×4 = ~360 design, sous l'e
 local MAX_LEVEL = 3
 local LEVEL_MULT = { 1.0, 1.8, 3.0 } -- stats par niveau : 3 copies (même id+niveau) -> 1 unité niveau+1 (façon TFT)
 
+-- ── Courbe de difficulté (cold-start) — TUNABLES (cf. the-pit-balance-diagnosis). Le board joueur croît de
+-- façon PRÉVISIBLE (grants timés 3->9). L'ennemi suit : l'index d'encounter grimpe avec le round (taille),
+-- puis au-delà de la table le plus gros gagne des NIVEAUX (bump) pour suivre les merges du joueur fin de run. ──
+local ENEMY_LEVEL_START = 11 -- round où l'ennemi cold-start gagne des niveaux (APRÈS la table : pit_sovereign
+local ENEMY_LEVEL_EVERY = 3  -- est déjà leveled ; le bump ne sert qu'aux runs très longues, pour ne pas plateau)
+
 function Build.new(palette, vw, vh, host)
   local self = setmetatable({
     vw = vw, vh = vh, t = 0, palette = palette, host = host,
@@ -289,10 +295,16 @@ end
 
 -- ── Lancement du combat ──
 -- Escalade : l'adversaire monte en danger avec le round (IA de seed jusqu'aux snapshots, étape #4).
+-- Renvoie (encounter, levelBump) pour le round courant. Pacing `floor((round-1)/2)+1` (un palier tous les 2
+-- rounds = le joueur garde une avance de taille pendant qu'il investit), mais NON CAPPÉ : avec 6 encounters il
+-- atteint gorge_pack(r7)/drowned_legion(r9)/pit_sovereign(r11, leveled) au lieu de plafonner à brood(5) dès r5
+-- (-> late trivial). Au-delà de la table, levelBump suit le board levelé du joueur. (cold-start ; les ghosts
+-- de snapshots scalent d'eux-mêmes par tier.)
 function Build:pickEncounter()
   local round = (self.host.run and self.host.run.round) or (self.combatCount + 1)
-  local idx = math.min(#Encounters, math.floor((round - 1) / 2) + 1)
-  return Encounters[idx]
+  local idx = math.max(1, math.min(#Encounters, math.floor((round - 1) / 2) + 1))
+  local bump = (round >= ENEMY_LEVEL_START) and (1 + math.floor((round - ENEMY_LEVEL_START) / ENEMY_LEVEL_EVERY)) or 0
+  return Encounters[idx], bump
 end
 
 -- Assemble la compo posée pour un CÔTÉ (side=-1 gauche / +1 droite), auras d'adjacence résolues.
@@ -374,13 +386,19 @@ function Build:buildLeftComp()
   return self:buildComp(-1)
 end
 
-function Build:buildRightComp(enc)
+-- levelBump (défaut 0) : niveau d'escalade tardive ajouté à chaque unité (cf. pickEncounter). bump=0 + unités
+-- sans `level` -> LEVEL_MULT[1]=1.0 = stats de base -> GOLDEN-SAFE (golden appelle buildRightComp sans bump).
+function Build:buildRightComp(enc, levelBump)
+  levelBump = levelBump or 0
   local maxCol, rowRef = Place.bounds(enc.units)
   local comp = {}
   for _, e in ipairs(enc.units) do
     local u = Units[e.id]
+    local lvl = math.min(MAX_LEVEL, (e.level or 1) + levelBump)
+    local m = LEVEL_MULT[lvl] or 1.0
     local x, y = Place.pos(e.col, e.row, 1, maxCol, rowRef)
-    comp[#comp + 1] = { id = e.id, hp = u.hp, dmg = u.dmg, cd = u.cd,
+    comp[#comp + 1] = { id = e.id, level = lvl,
+      hp = math.floor(u.hp * m + 0.5), dmg = math.floor(u.dmg * m + 0.5), cd = u.cd,
       depth = maxCol - e.col, row = e.row,
       shield = 0, x = x, y = y, facing = -1 }
   end
@@ -405,7 +423,7 @@ function Build:startCombat()
   local left = self:buildLeftComp()
   if #left == 0 then return end -- il faut au moins une unité posée
   if self.host.run then self.host.run:applyRelics(left) end -- reliques : effet RÉEL sur la compo joueur (build)
-  local enc = self:pickEncounter()
+  local enc, bump = self:pickEncounter()
   self.combatCount = self.combatCount + 1
   -- Seed choisi ICI (couche scène) : il fait partie du snapshot/replay. Tiré du RNG seedé du run
   -- (rejouabilité), avec repli sur le RNG global hors-run (tests). La SIM ne lira que ce seed.
@@ -415,7 +433,7 @@ function Build:startCombat()
   -- le RNG du run. Puis on fige NOTRE build dans le pool pour les adversaires FUTURS (jamais en direct).
   local version, tier = "0.7", (self.host.run and self.host.run.wins) or 0
   local right, oppMeta = Snapstore.serveComp(version, tier, 1,
-    love.math.newRandomGenerator(seed), self:buildRightComp(enc))
+    love.math.newRandomGenerator(seed), self:buildRightComp(enc, bump))
   Snapstore.save(Snapshot.capture(self:snapshotUnits(), Shapes.order[self.shapeIdx], seed,
     { version = version, tier = tier }))
   self.host.goto("combat",

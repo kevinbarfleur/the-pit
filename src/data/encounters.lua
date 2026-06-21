@@ -33,4 +33,35 @@ return {
       { id = "skeleton", col = 2, row = 2 },
     },
   },
+  -- ── Escalade tardive (décision courbe 2026-06-21, cf. the-pit-balance-diagnosis). Les grants rendent le
+  -- board joueur PRÉVISIBLE (3->9 sur rounds 1-7) : on fait suivre l'ennemi cold-start en TAILLE puis en
+  -- NIVEAU (champ `level`, appliqué via LEVEL_MULT dans buildRightComp + un bump de round au-delà de la table).
+  -- Les unités peuvent porter `level` (2-3) pour une pression de fin de Puits. pickEncounter grimpe l'index. ──
+  {
+    key = "gorge_pack", -- 6 : mur frontal + bruisers + un carry poison derrière
+    units = {
+      { id = "templar", col = 2, row = 1 },
+      { id = "marauder", col = 2, row = 0 }, { id = "demon", col = 2, row = 2 },
+      { id = "bandit", col = 1, row = 0 }, { id = "skeleton", col = 1, row = 2 },
+      { id = "witch", col = 0, row = 1 },
+    },
+  },
+  {
+    key = "drowned_legion", -- 7 : taunt en façade, horde de DoT mixtes derrière
+    units = {
+      { id = "gravewarden", col = 2, row = 1 },
+      { id = "demon", col = 2, row = 0 }, { id = "marauder", col = 2, row = 2 },
+      { id = "corruptor", col = 1, row = 0 }, { id = "razorkin", col = 1, row = 2 },
+      { id = "witch", col = 0, row = 0 }, { id = "emberling", col = 0, row = 2 },
+    },
+  },
+  {
+    key = "pit_sovereign", -- 9 : board plein, noyau front leveled (le mur de fin de Puits)
+    units = {
+      { id = "gravewarden", col = 2, row = 1, level = 2 },
+      { id = "templar", col = 2, row = 0, level = 2 }, { id = "demon", col = 2, row = 2 },
+      { id = "corruptor", col = 1, row = 0 }, { id = "emberling", col = 1, row = 1 }, { id = "razorkin", col = 1, row = 2 },
+      { id = "witch", col = 0, row = 0 }, { id = "rot_hound", col = 0, row = 1 }, { id = "stormcaller", col = 0, row = 2 },
+    },
+  },
 }

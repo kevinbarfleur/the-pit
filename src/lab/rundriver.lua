@@ -133,8 +133,8 @@ end
 -- ── Adversaire : PvE escaladante (encounters par round) par défaut ; pluggable via opts.opponent ──
 function Rundriver:opponent()
   if self.opponentFn then return self.opponentFn(self) end
-  local enc = self.build:pickEncounter()
-  return self.build:buildRightComp(enc), enc.key
+  local enc, bump = self.build:pickEncounter()
+  return self.build:buildRightComp(enc, bump), enc.key
 end
 
 -- ── Combat + avancement de la méta-boucle (mirroir de host.finishCombat, SANS IO Grimoire) ──
