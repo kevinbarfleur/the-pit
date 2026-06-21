@@ -44,8 +44,9 @@ return {
   ["unit.bulwark_acolyte.passive_name"] = "Shared Faith",
   ["unit.bulwark_acolyte.passive_desc"] = "Combat start: +8 shield to every adjacent neighbor.",
 
-  -- ── Proving Ground : nouvel archétype + compos & scénarios choc/bouclier ──
+  -- ── Proving Ground : nouvel archétype + filtre + compos & scénarios choc/bouclier ──
   ["pg.archetype.shield"] = "Shield",
+  ["pg.filter.all"]       = "All",
 
   ["comp.shock_storm_carre.note"] = "Pile shock on a durable target, then a heavy hitter punishes the amplified prey.",
   ["comp.bulwark_carre.note"]     = "Overlapping shield auras blanket the board; the taunt wall soaks while carries hide behind.",
