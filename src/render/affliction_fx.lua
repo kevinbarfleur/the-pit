@@ -49,6 +49,9 @@ local HALF_W = 5      -- demi-largeur de silhouette (~10px)
 local PHI  = 0.6180339887  -- suite de Weyl (nombre d'or) : spread/jitter déterministe, stable
 local PHI2 = 0.7548776662  -- 2e flux (nombre plastique) — décorrèle x/y
 local PHI3 = 0.5698402909  -- 3e flux — vie/zone
+-- CHOC : points répartis sur la silhouette où crépitent les éclairs en zigzag (tête, épaules, flancs, bas).
+local SHOCK_ANCHORS = { { 0, -22 }, { -5, -17 }, { 5, -17 }, { -6, -10 }, { 6, -10 }, { -3, -4 }, { 3, -4 } }
+local function fracv(x) return x - floor(x) end -- partie fractionnaire (scintillement déterministe par frame)
 
 -- Canvas off-screen partagé pour le contour de bouclier (rig aplati). Marges = aucune fausse arête au bord.
 local SC_W, SC_H = 36, 42
@@ -109,17 +112,17 @@ end
 function AfflictionFx:shockSpark(u)
   if not u then return end
   local cx, cy = u.x, u.y - 12
-  for i = 1, 10 do
+  for i = 1, 12 do
     local r, r2 = self:weyl()
-    local ang = (i / 10) * 6.2832 + (r - 0.5) * 0.6
-    local spd = 1.1 + r2 * 1.0
+    local ang = (i / 12) * 6.2832 + (r - 0.5) * 0.7
+    local spd = 1.2 + r2 * 1.3
     self.parts[#self.parts + 1] = {
       kind = "spark", x = cx, y = cy,
       vx = cos(ang) * spd, vy = sin(ang) * spd, ay = 0,
-      age = 0, life = 6 + r2 * 5,
+      age = 0, life = 7 + r2 * 6,
     }
   end
-  self.shockFlash[u] = { age = 0, life = 10 }
+  self.shockFlash[u] = { age = 0, life = 12, phase = (self:weyl()) * 6.2832 }
 end
 
 -- Phase stable par unité (sans toucher au rig) -> désynchronise glows/oscillations entre monstres.
@@ -331,19 +334,37 @@ function AfflictionFx:drawGlow(units, t)
     end
   end
 
-  -- Choc : étincelles radiales (blanc chaud -> jaune électrique) + flash bref autour de l'unité.
+  -- Choc : étincelles radiales (cœur blanc -> jaune) éjectées à la décharge.
   for _, p in ipairs(self.parts) do
     if p.kind == "spark" then
       local f = p.age / p.life
       local col = (f < 0.4) and { 1, 1, 1 } or COL.shock
       g.setColor(col[1], col[2], col[3], 1 - f)
-      g.rectangle("fill", floor(p.x), floor(p.y), 1, 1)
+      local s = (f < 0.4) and 2 or 1
+      g.rectangle("fill", floor(p.x), floor(p.y), s, s)
     end
   end
+  -- Choc : ÉCLAIRS en zigzag qui crépitent à plusieurs points de la silhouette (cœur blanc + halo jaune),
+  -- scintillants (sous-ensemble d'ancres ré-tiré chaque frame) -> lecture « décharge électrique sur le corps ».
+  local frame = floor((t or 0))
+  g.setLineStyle("rough"); g.setLineWidth(1)
   for u, fl in pairs(self.shockFlash) do
-    local f = fl.age / fl.life
-    g.setColor(COL.shock[1], COL.shock[2], COL.shock[3], 0.35 * (1 - f))
-    g.ellipse("fill", u.x, u.y - 11, 8 + f * 4, 11 + f * 4)
+    local al = 1 - fl.age / fl.life
+    if al > 0.05 then
+      for k, anc in ipairs(SHOCK_ANCHORS) do
+        if fracv((frame + k) * PHI + (fl.phase or 0)) < 0.55 then
+          local ax, ay = u.x + anc[1], u.y + anc[2]
+          local dir = (anc[1] >= 0) and 1 or -1
+          local hx, hy = fracv(frame * 0.754 + k * 0.31), fracv(frame * 0.317 + k * 0.62)
+          local ox, oy = ax + dir * (2 + hx * 3), ay - 1 - hy * 3
+          local mx, my = (ax + ox) / 2 + dir * 1.5, (ay + oy) / 2 + (hx - 0.5) * 3
+          g.setColor(COL.shock[1], COL.shock[2], COL.shock[3], al * 0.85)
+          g.line(ax, ay, mx, my, ox, oy) -- halo jaune (zigzag 2 segments)
+          g.setColor(1, 1, 1, al)
+          g.line(ax, ay, mx, my)         -- cœur blanc
+        end
+      end
+    end
   end
 
   if blend then blend("alpha") end
@@ -352,36 +373,45 @@ end
 
 -- ── Contour de bouclier (LE shader) : rig aplati dans un canvas -> outline 8-voisins -> blit. ────
 -- `rigs` = map [u] = char (possédée par ArenaDraw). Seules les unités shieldées paient le coût.
+-- Aplatit le rig `c` dans le canvas partagé puis le redessine via le shader d'outline, en couleur/opacité
+-- données. Mutualisé entre le contour de BOUCLIER (cyan, permanent) et le flash de CHOC (électrique, bref).
+function AfflictionFx:_outline(g, sh, c, prev, lineColor, alpha)
+  g.setCanvas(self.shieldCanvas)
+  g.clear(0, 0, 0, 0)
+  g.push(); g.translate(FEET_X - c.x, FEET_Y - c.y); Rig.draw(c); g.pop()
+  g.setCanvas(prev)
+  pcall(sh.send, sh, "lineColor", lineColor)
+  pcall(sh.send, sh, "pulse", alpha)
+  g.setShader(sh)
+  g.setColor(1, 1, 1, 1)
+  g.draw(self.shieldCanvas, floor(c.x - FEET_X + 0.5), floor(c.y - FEET_Y + 0.5))
+  g.setShader()
+end
+
 function AfflictionFx:drawOutlines(units, rigs, t)
   if not (self.outlineShader and self.shieldCanvas) then return end
-  local g = love.graphics
-  local sh = self.outlineShader
-  local pulse = 0.6 + 0.25 * sin((t or 0) * 0.09)
+  local g, sh = love.graphics, self.outlineShader
   pcall(sh.send, sh, "texel", { 1 / SC_W, 1 / SC_H })
-  pcall(sh.send, sh, "lineColor", { COL.shield[1], COL.shield[2], COL.shield[3] })
-  pcall(sh.send, sh, "pulse", pulse)
-
   local prev = g.getCanvas()
+
+  -- BOUCLIER : contour cyan palpitant (permanent tant que shield > 0).
+  local cyan = { COL.shield[1], COL.shield[2], COL.shield[3] }
+  local pulse = 0.6 + 0.25 * sin((t or 0) * 0.09)
   for _, u in ipairs(units) do
-    if u.alive and (u.shield or 0) > 0 then
-      local c = rigs and rigs[u]
-      if c then
-        -- 1) aplatir le rig de l'unité dans le canvas (pieds -> FEET_X,FEET_Y).
-        g.setCanvas(self.shieldCanvas)
-        g.clear(0, 0, 0, 0)
-        g.push()
-        g.translate(FEET_X - c.x, FEET_Y - c.y)
-        Rig.draw(c)
-        g.pop()
-        g.setCanvas(prev)
-        -- 2) re-dessiner via le shader, recalé sur la position monde de l'unité.
-        g.setShader(sh)
-        g.setColor(1, 1, 1, 1)
-        g.draw(self.shieldCanvas, floor(c.x - FEET_X + 0.5), floor(c.y - FEET_Y + 0.5))
-        g.setShader()
-      end
+    local c = rigs and rigs[u]
+    if c and u.alive and (u.shield or 0) > 0 then self:_outline(g, sh, c, prev, cyan, pulse) end
+  end
+
+  -- CHOC : flash électrique sur le CONTOUR (le corps entier crépite), bref + scintillant (renforce les éclairs).
+  local elec = { 1, 1, 0.5 }
+  for u, fl in pairs(self.shockFlash) do
+    local c = rigs and rigs[u]
+    if c and u.alive then
+      local a = (1 - fl.age / fl.life) * (0.5 + 0.5 * sin((t or 0) * 1.8 + (fl.phase or 0)))
+      if a > 0.06 then self:_outline(g, sh, c, prev, elec, a) end
     end
   end
+
   g.setColor(1, 1, 1, 1)
 end
 
