@@ -59,15 +59,15 @@ function Snapshot.toComp(s, side)
     if Units[x.id] then placed[#placed + 1] = { id = x.id, level = x.level or 1, col = x.col, row = x.row } end
   end
   if #placed == 0 then return {} end
-  local maxCol, rowRef = Place.bounds(placed)
+  local b = Place.bounds(placed)
   local comp = {}
   for _, p in ipairs(placed) do
     local u = Units[p.id]
     local m = LEVEL_MULT[p.level] or 1.0
-    local px, py = Place.pos(p.col, p.row, side, maxCol, rowRef)
+    local px, py = Place.pos(p.col, p.row, side, b)
     comp[#comp + 1] = { id = p.id, level = p.level,
       hp = math.floor(u.hp * m + 0.5), dmg = math.floor(u.dmg * m + 0.5), cd = u.cd,
-      depth = maxCol - p.col, row = p.row, x = px, y = py, facing = facing }
+      depth = b.maxC - p.col, row = p.row, x = px, y = py, facing = facing }
   end
   return comp
 end

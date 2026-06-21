@@ -41,6 +41,8 @@ local SLOT_HALF = 40 -- demi-côté d'une case en espace DESIGN (80x80 ; centre 
 
 local SPACING = 26
 local BOARD_OY = 90 -- centre du plateau (virtuel) : ×4 = ~360 design, sous l'en-tête, au-dessus de la boutique
+local BOARD_HALF_W = 128 -- demi-étendue MAX (virtuelle) des CENTRES de cases -> board centré, jamais hors zone
+local BOARD_HALF_H = 44  -- (idem vertical) : un sigil étalé (croix/anneau/ligne) se resserre pour tenir ici
 local MAX_LEVEL = 3
 local LEVEL_MULT = { 1.0, 1.8, 3.0 } -- stats par niveau : 3 copies (même id+niveau) -> 1 unité niveau+1 (façon TFT)
 
@@ -100,12 +102,18 @@ function Build:computeLayout()
     miny = math.min(miny, c.y); maxy = math.max(maxy, c.y)
   end
   local mx, my = (minx + maxx) / 2, (miny + maxy) / 2
+  -- SPACING ADAPTATIF : on resserre pour que TOUTE forme (3×3, croix/diamant 4×4, anneau, ligne 8×0) tienne
+  -- dans la zone du board, centrée -> plus de débordement. Plafonné à SPACING (les petites ne gonflent pas).
+  local sp = SPACING
+  local extX, extY = maxx - minx, maxy - miny
+  if extX > 0 then sp = math.min(sp, 2 * BOARD_HALF_W / extX) end
+  if extY > 0 then sp = math.min(sp, 2 * BOARD_HALF_H / extY) end
   local ox, oy = self.vw / 2, BOARD_OY
   self.pos = {}
   for i, c in ipairs(cells) do
     self.pos[i] = {
-      x = math.floor(ox + (c.x - mx) * SPACING + 0.5),
-      y = math.floor(oy + (c.y - my) * SPACING + 0.5),
+      x = math.floor(ox + (c.x - mx) * sp + 0.5),
+      y = math.floor(oy + (c.y - my) * sp + 0.5),
     }
   end
 end
@@ -367,16 +375,16 @@ function Build:buildComp(side)
     return out
   end
 
-  local maxCol, rowRef = Place.bounds(placed)
+  local b = Place.bounds(placed)
   local comp = {}
   for _, p in ipairs(placed) do
     local u = Units[p.id]
-    local x, y = Place.pos(p.col, p.row, side, maxCol, rowRef)
+    local x, y = Place.pos(p.col, p.row, side, b)
     -- depth (0 = front) + row dérivés de la forme -> exposition portée par le sigil (ciblage déterministe).
     local m = LEVEL_MULT[p.level] or 1.0 -- duplicatas : les stats scalent avec le niveau
     comp[#comp + 1] = { id = p.id, slot = p.slot, level = p.level,
       hp = math.floor(u.hp * m + 0.5), dmg = math.floor(u.dmg * m + 0.5), cd = u.cd,
-      depth = maxCol - p.col, row = p.row, effects = auraEffects(p.id, p.slot),
+      depth = b.maxC - p.col, row = p.row, effects = auraEffects(p.id, p.slot),
       shield = shield[p.slot] or 0, x = x, y = y, facing = facing }
   end
   return comp
@@ -390,16 +398,16 @@ end
 -- sans `level` -> LEVEL_MULT[1]=1.0 = stats de base -> GOLDEN-SAFE (golden appelle buildRightComp sans bump).
 function Build:buildRightComp(enc, levelBump)
   levelBump = levelBump or 0
-  local maxCol, rowRef = Place.bounds(enc.units)
+  local b = Place.bounds(enc.units)
   local comp = {}
   for _, e in ipairs(enc.units) do
     local u = Units[e.id]
     local lvl = math.min(MAX_LEVEL, (e.level or 1) + levelBump)
     local m = LEVEL_MULT[lvl] or 1.0
-    local x, y = Place.pos(e.col, e.row, 1, maxCol, rowRef)
+    local x, y = Place.pos(e.col, e.row, 1, b)
     comp[#comp + 1] = { id = e.id, level = lvl,
       hp = math.floor(u.hp * m + 0.5), dmg = math.floor(u.dmg * m + 0.5), cd = u.cd,
-      depth = maxCol - e.col, row = e.row,
+      depth = b.maxC - e.col, row = e.row,
       shield = 0, x = x, y = y, facing = -1 }
   end
   return comp
