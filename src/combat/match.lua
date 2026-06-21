@@ -40,7 +40,7 @@ end
 
 -- Joue un combat headless. SIM-pur.
 --   left, right : compos (arrays de specs d'unités) ; seed : entier.
---   opts = { tickCap=8000, attach?(arena)->handle, expose?, fatigue?, judge=true, assertPure? }
+--   opts = { tickCap=8000, attach?(arena)->handle, expose?, fatigue?, hpMult?, judge=true, assertPure? }
 -- Retour : { win, decided, ticks, hpFrac = { left, right } [, arena, log si expose] }.
 function Match.run(left, right, seed, opts)
   opts = opts or {}
@@ -51,7 +51,8 @@ function Match.run(left, right, seed, opts)
   local n0L, n0R, h0
   if opts.assertPure then n0L, n0R = #left, #right; h0 = left[1] and left[1].hp end
 
-  local arena = Arena.new({ left = left, right = right, autoReset = false, seed = seed, fatigue = opts.fatigue })
+  local arena = Arena.new({ left = left, right = right, autoReset = false, seed = seed,
+    fatigue = opts.fatigue, hpMult = opts.hpMult }) -- hpMult : bouton global de PV (sinon constante d'arena)
   local log = opts.attach and opts.attach(arena) or nil
 
   local ticks = 0

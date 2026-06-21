@@ -31,6 +31,7 @@ function Rundriver.new(seed, opts)
   return setmetatable({
     run = run, build = build, host = host, opts = opts,
     tickCap = opts.tickCap or 8000,
+    hpMult = opts.hpMult, -- bouton global de PV (forwardé à Match.run dans fight) ; nil -> constante Arena.HP_MULT
     relicsKnown = opts.relicsKnown or false, -- reliques pré-connues au Grimoire ? (le driver n'a pas d'IO)
     opponentFn = opts.opponent,              -- (driver) -> compo droite ; défaut PvE escaladante
     over = nil, pendingRelics = nil, lastResult = nil,
@@ -146,7 +147,7 @@ function Rundriver:fight()
   self.run:applyRelics(left) -- reliques : effet RÉEL sur la compo joueur (comme au build)
   local right, enemyKey = self:opponent()
   local seed = self.run:nextCombatSeed()
-  local res = Match.run(left, right, seed, { tickCap = self.tickCap })
+  local res = Match.run(left, right, seed, { tickCap = self.tickCap, hpMult = self.hpMult })
   res.enemyKey = enemyKey
   self.lastResult = res
 

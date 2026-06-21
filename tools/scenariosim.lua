@@ -15,12 +15,13 @@ local Match = require("src.combat.match")
 
 local M = tonumber(arg and arg[1]) or 60
 local BASE = 5000000
+local HPM = tonumber(os.getenv("PIT_HP_MULT")) -- bouton global de PV : sweep `PIT_HP_MULT=N` (sinon constante Arena.HP_MULT)
 local SIGILS = { "carre", "croix", "anneau", "diamant", "ligne" }
 
 local function winRate(L, R, seedBase)
   local w, dec = 0, 0
   for i = 1, M do
-    local r = Match.run(L, R, seedBase + i, {})
+    local r = Match.run(L, R, seedBase + i, { hpMult = HPM })
     if r.win then w = w + 1 end
     if r.decided then dec = dec + 1 end
   end

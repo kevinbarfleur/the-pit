@@ -118,9 +118,9 @@ local ok, err = pcall(function()
   do -- bonus 1re frappe (marauder) + épines (squelette renvoie des dégâts)
     local a = Arena.new({ left = { spec("marauder", 150) }, right = { spec("skeleton", 170) }, autoReset = false })
     local mar, ske = a.units[1], a.units[2]
-    local mhp = mar.hp
+    local mhp, shp = mar.hp, ske.hp -- PV de DÉPART réels (robuste au bouton global Arena.HP_MULT)
     a:hit(mar, ske)
-    assert(ske.hp == Units.skeleton.hp - (Units.marauder.dmg + 8), "bonus 1re frappe appliqué")
+    assert(ske.hp == shp - (Units.marauder.dmg + 8), "bonus 1re frappe appliqué")
     assert(mar.hp == mhp - 3, "épines: l'attaquant du squelette subit 3 dégâts")
   end
 

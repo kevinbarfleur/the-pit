@@ -31,6 +31,14 @@ local VOLT_PER_STACK = 3    -- CHOC : dégâts libérés PAR STACK à la déchar
 local SHOCK_STACK_CAP = 8   -- CHOC : plafond DUR de stacks (anti-explosion ; clamp comme les autres familles)
 local AGGRO_STD = 10       -- aggro par défaut (standard) ; tank ~40, bruiser ~15, carry ~5 (porté par la data)
 
+-- BOUTON GLOBAL DE DURÉE DE COMBAT (levier d'équilibrage) : multiplie les PV de TOUTE unité à la création
+-- (makeUnit, sur la COPIE -> jamais le spec d'entrée). Tout le reste (dégâts, dps de DoT, boucliers, regen,
+-- épines, aggro) reste FLAT -> les combats durent ~HP_MULT× plus longtemps SANS changer les forces relatives
+-- de base. Ça laisse les archétypes à MONTÉE LENTE (rot qui enfle, poison qui stacke, seuils festering/censer)
+-- atteindre leur payoff. UN SEUL chiffre à twister pour trouver la bonne durée. 1 = PV d'origine. Override par
+-- combat via opts.hpMult (les outils balaient via PIT_HP_MULT=N). NB : rebaseline le golden à chaque valeur.
+local HP_MULT = 2
+
 -- FATIGUE (enrage ~17 s) : passé FATIGUE_START ticks, une USURE globale croissante frappe toutes les
 -- unités (ignore le bouclier) jusqu'à conclusion — aucun combat ne stagne (murs tank/regen, échanges de
 -- DoT/soin). GATED sur les vraies batailles (autoReset=false) ; la démo en boucle n'est JAMAIS fatiguée.
@@ -67,6 +75,7 @@ function Arena.new(opts)
   self.rng = opts.rng or love.math.newRandomGenerator(self.seed)
   self.bus = opts.bus or Bus.new() -- bus d'événements par combat (render + event-log s'y abonnent)
   self.fatigue = opts.fatigue -- override optionnel { start?, base?, ramp? } (le lab peut balayer ; sinon constantes)
+  self.hpMult = opts.hpMult or HP_MULT -- bouton global de PV (rallonge les combats) ; override par combat, sinon constante
   self.ctx = {} -- contexte d'effets RÉUTILISÉ (aucune allocation par hook)
   self.deathCtx = {} -- ctx DÉDIÉ au broadcast on_death (n'écrase pas self.ctx pendant hit/tick)
   self.deaths = {}   -- file des morts de la frame : on_death résolu APRÈS la boucle (hors réentrance)
@@ -81,10 +90,11 @@ end
 
 function Arena:makeUnit(spec, team)
   local u = Units[spec.id]
+  local hp = math.floor((spec.hp or 0) * self.hpMult + 0.5) -- BOUTON GLOBAL : scale les PV sur la COPIE (jamais le spec)
   local unit = {
     spec = spec, team = team, slot = spec.slot, x = spec.x, y = spec.y, facing = spec.facing,
     id = spec.id,
-    maxHp = spec.hp, hp = spec.hp, dmg = spec.dmg, cd = spec.cd,
+    maxHp = hp, hp = hp, dmg = spec.dmg, cd = spec.cd,
     -- effets : du spec si fourni (build résolu avec reliques, plus tard), sinon la base.
     effects = spec.effects or (u and u.effects),
     -- ciblage déterministe : depth (0 = colonne avant), row (tie-break haut->bas),
@@ -567,7 +577,8 @@ function Arena:update(frameDt, t)
   end
 end
 
--- Constante exposée (lecture seule) : les tests/le lab s'y réfèrent (seuil de déclenchement de la Fatigue).
+-- Constantes exposées (lecture seule) : les tests/le lab s'y réfèrent (seuil de Fatigue ; multiplicateur de PV).
 Arena.FATIGUE_START = FATIGUE_START
+Arena.HP_MULT = HP_MULT
 
 return Arena

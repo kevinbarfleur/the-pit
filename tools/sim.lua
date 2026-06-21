@@ -25,6 +25,7 @@ local EventLog = require("tools.eventlog")
 local N = tonumber(arg and arg[1]) or 400
 local BASE_SEED = 700000
 local TICK_CAP = 8000
+local HPM = tonumber(os.getenv("PIT_HP_MULT")) -- bouton global de PV : sweep `PIT_HP_MULT=N` (sinon constante Arena.HP_MULT)
 local gen = love.math.newRandomGenerator(13579) -- generateur de scenarios seede -> rapport reproductible
 
 -- Causes de dégâts qui sont des ALTÉRATIONS (DoT/statuts) — par opposition à la frappe directe.
@@ -83,7 +84,7 @@ for run = 1, N do
   local left = buildSide(-1)
   local right = buildSide(1)
   local res = Match.run(left, right, BASE_SEED + run, {
-    tickCap = TICK_CAP,
+    tickCap = TICK_CAP, hpMult = HPM,
     attach = function(a) return EventLog.attach(a) end,
     expose = true,
   })

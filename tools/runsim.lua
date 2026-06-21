@@ -20,6 +20,7 @@ local Match = require("src.combat.match")
 
 local N = tonumber(arg and arg[1]) or 40 -- runs par politique
 local M = tonumber(arg and arg[2]) or 30 -- matchs par cellule de matrice
+local HPM = tonumber(os.getenv("PIT_HP_MULT")) -- bouton global de PV : sweep `PIT_HP_MULT=N` (sinon constante Arena.HP_MULT)
 local RUN_SEED, MATRIX_SEED = 4000000, 8000000
 
 -- Compo PARFAITE représentant chaque archétype (matrice + fragilité).
@@ -46,7 +47,7 @@ local polRows = {}
 for _, p in ipairs(policies) do
   local comp, rounds, cost, wins, totalCombats, combatWins = 0, 0, 0, 0, 0, 0
   for run = 1, N do
-    local t = Rundriver.run(RUN_SEED + run, p, {})
+    local t = Rundriver.run(RUN_SEED + run, p, { hpMult = HPM })
     if t.result == "win" then comp = comp + 1 end
     rounds = rounds + #t.rounds
     cost = cost + (t.finalCost and t.finalCost.score or 0)
@@ -77,7 +78,7 @@ end
 
 local function winRate(L, R, seedBase)
   local w = 0
-  for i = 1, M do if Match.run(L, R, seedBase + i, {}).win then w = w + 1 end end
+  for i = 1, M do if Match.run(L, R, seedBase + i, { hpMult = HPM }).win then w = w + 1 end end
   return w / M
 end
 
