@@ -39,6 +39,17 @@ local AGGRO_STD = 10       -- aggro par défaut (standard) ; tank ~40, bruiser ~
 -- combat via opts.hpMult (les outils balaient via PIT_HP_MULT=N). NB : rebaseline le golden à chaque valeur.
 local HP_MULT = 2
 
+-- ROT « tueur de tank » (RPS : le mur reste fort vs bruiser/dégâts bruts mais CÈDE à l'ATTRITION, comme au
+-- poison). Deux pressions anti-mur, thématiques et BORNÉES, posées dans tickDots quand la cible pourrit :
+--   · NÉCROSE : ronge les PV MAX ∝ pool courant (self-scaling -> inerte sur une petite unité, DÉVORE un tank :
+--     plus le mur est gros, plus il y a à pourrir). Ne tue jamais seule (plancher maxHp=1) : elle érode, le
+--     dps/les frappes finissent. La maturité du rot compte déjà via son dps + l'anti-heal (pas besoin de la doubler).
+--   · ANTI-HEAL : la chair pourrie ne guérit pas -> étouffe la régén de la cible (le contre désigné du mur-regen).
+-- Magnitudes = placeholders tunés par sim (scenariosim rot-vs-tank + matrice). Golden-safe (le golden n'a pas de rot).
+local ROT_NECROSIS = 0.037 -- fraction des PV MAX rongée /s (au-dessus du seuil : atteint le plafond de façon fiable)
+local ROT_NECRO_CAP = 0.45 -- BOUTON DE RÉGLAGE FIN : la nécrose ronge jusqu'à -CAP% des PV max d'origine (haut = mur plus battable)
+local ROT_HEAL_CUT = 0.80 -- part de la régén ANNULÉE tant que la cible pourrit (0 = aucun anti-heal)
+
 -- FATIGUE (enrage ~17 s) : passé FATIGUE_START ticks, une USURE globale croissante frappe toutes les
 -- unités (ignore le bouclier) jusqu'à conclusion — aucun combat ne stagne (murs tank/regen, échanges de
 -- DoT/soin). GATED sur les vraies batailles (autoReset=false) ; la démo en boucle n'est JAMAIS fatiguée.
@@ -94,7 +105,7 @@ function Arena:makeUnit(spec, team)
   local unit = {
     spec = spec, team = team, slot = spec.slot, x = spec.x, y = spec.y, facing = spec.facing,
     id = spec.id,
-    maxHp = hp, hp = hp, dmg = spec.dmg, cd = spec.cd,
+    maxHp = hp, hp = hp, maxHp0 = hp, dmg = spec.dmg, cd = spec.cd, -- maxHp0 = PV max d'origine (plancher de nécrose rot)
     -- effets : du spec si fourni (build résolu avec reliques, plus tard), sinon la base.
     effects = spec.effects or (u and u.effects),
     -- ciblage déterministe : depth (0 = colonne avant), row (tie-break haut->bas),
@@ -437,6 +448,19 @@ function Arena:tickDots(u, frameDt)
         if heal > 0 then r.source.hp = math.min(r.source.maxHp, r.source.hp + heal) end
       end
     end
+    -- NÉCROSE (anti-mur) : ronge les PV MAX ∝ pool × maturité (r.dps). Self-scaling. Plancher maxHp=1 (ne tue
+    -- jamais seule) ; re-clamp les PV. Accumulation entière (déterministe). Le tank fond, sans être one-shot.
+    local nfloor = math.max(1, math.floor((u.maxHp0 or u.maxHp) * (1 - ROT_NECRO_CAP))) -- plancher : -CAP% des PV max d'origine
+    if ROT_NECROSIS > 0 and u.maxHp > nfloor then
+      r.necroAcc = (r.necroAcc or 0) + ROT_NECROSIS * u.maxHp * (frameDt / 60)
+      if r.necroAcc >= 1 then
+        local cut = math.min(u.maxHp - nfloor, math.floor(r.necroAcc)); r.necroAcc = r.necroAcc - cut
+        if cut > 0 then
+          u.maxHp = u.maxHp - cut
+          if u.hp > u.maxHp then u.hp = u.maxHp end
+        end
+      end
+    end
     if r.remaining <= 0 then d.rot = nil end
   end
 
@@ -448,9 +472,11 @@ function Arena:tickDots(u, frameDt)
     if sh.remaining <= 0 then d.shock = nil end
   end
 
-  -- REGEN (contre-DoT) : soin au fil du temps, accumulation entière.
+  -- REGEN (contre-DoT) : soin au fil du temps, accumulation entière. La POURRITURE l'ÉTOUFFE (chair morte
+  -- ne guérit pas) -> rot = anti-heal, le contre désigné du mur-regen. ANTI-HEAL borné par ROT_HEAL_CUT.
   if u.regen > 0 and u.hp < u.maxHp then
-    u.regenAcc = u.regenAcc + u.regen * (frameDt / 60)
+    local rg = d.rot and (u.regen * (1 - ROT_HEAL_CUT)) or u.regen
+    u.regenAcc = u.regenAcc + rg * (frameDt / 60)
     if u.regenAcc >= 1 then local n = math.floor(u.regenAcc); u.regenAcc = u.regenAcc - n
       u.hp = math.min(u.maxHp, u.hp + n) end
   end
