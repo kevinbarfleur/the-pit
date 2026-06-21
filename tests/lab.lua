@@ -117,6 +117,43 @@ local ok, err = pcall(function()
   pg:drawOverlay(view)
   assert(pg.sim or pg.result, "scene: la boucle SIM tourne (en cours ou aboutie)")
   print("  lab : scene Proving Ground OK (construit + select + SIM + draw headless)")
+
+  -- 7) PILOTE DE RUN : déterminisme (même seed+politique -> trajectoire identique).
+  local Rundriver = require("src.lab.rundriver")
+  local Policies = require("src.lab.policies")
+  local t1 = Rundriver.run(31337, Policies.greedy_stats, {})
+  local t2 = Rundriver.run(31337, Policies.greedy_stats, {})
+  assert(t1.result == t2.result and t1.wins == t2.wins and #t1.rounds == #t2.rounds
+    and t1.finalCost.gold == t2.finalCost.gold, "rundriver deterministe (greedy)")
+  local r1 = Rundriver.run(42, Policies.random_baseline(love.math.newRandomGenerator(7)), {})
+  local r2 = Rundriver.run(42, Policies.random_baseline(love.math.newRandomGenerator(7)), {})
+  assert(r1.wins == r2.wins and #r1.rounds == #r2.rounds, "rundriver deterministe (random, RNG re-seede)")
+  print(string.format("  lab : rundriver deterministe OK (greedy %s en %d rounds)", tostring(t1.result), #t1.rounds))
+
+  -- 8) LÉGALITÉ : chaque politique mène une run a une issue valide (win/lose), invariants tenus.
+  local prng = love.math.newRandomGenerator(555)
+  for _, p in ipairs(Policies.defaultSet(prng)) do
+    local t = Rundriver.run(909, p, {})
+    assert(t.result == "win" or t.result == "lose", "politique " .. p.name .. " : run conclut")
+    assert(#t.rounds >= 1 and t.wins >= 0 and t.losses >= 0, "politique " .. p.name .. " : compteurs valides")
+  end
+  print("  lab : 8 politiques menent des runs valides (win/lose)")
+
+  -- 9) API D'ACTIONS : refus propres + effets attendus + classifieur d'archétype (jamais d'exception).
+  local drv = Rundriver.new(2025, {})
+  assert(drv:buy(1, 99) == false, "buy: slot invalide refuse (pas d'or debite)")
+  local before, boughtId = drv.run.gold, nil
+  for i = 1, #drv.run.shop do
+    local o = drv.run.shop[i]
+    if o and not o.sold and drv.run.gold >= o.cost then boughtId = drv:buy(i); break end
+  end
+  assert(boughtId and drv.run.gold < before and drv.build:placedCount() >= 1, "buy: or debite + unite posee")
+  assert(drv:reshape("ligne") and drv.build.board.shape.name == "ligne", "reshape applique")
+  assert(drv:reshape("inexistant") == false, "reshape: sigil inconnu refuse")
+  assert(Policies.archetypeOf("spore_tick") == "poison", "classifier: spore_tick = poison")
+  assert(Policies.archetypeOf("gravewarden") == "tank", "classifier: gravewarden = tank")
+  assert(Policies.archetypeOf("marauder") == "bruiser", "classifier: marauder = bruiser")
+  print("  lab : API d'actions OK (refus propres + reshape + classifieur)")
 end)
 
 if ok then
