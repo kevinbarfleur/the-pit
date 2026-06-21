@@ -88,6 +88,20 @@ local ok, err = pcall(function()
   for _, e in ipairs(ctg[1].effects or {}) do if e.op == "thorns" then hasThorns = true end end
   assert(hasThorns, "thornguard: ajoute on_attacked thorns")
 
+  --   TRANSFORMATIVES (vague 4) : posent un grant_team{flag} a combat_start.
+  local function addsGrantFlag(relic, flag)
+    local r = RunState.new(20); r:grantRelic(relic)
+    local cc = { { id = "a", hp = 50, dmg = 7, cd = 36 } }; r:applyRelics(cc)
+    for _, e in ipairs(cc[1].effects or {}) do
+      if e.op == "grant_team" and e.params and e.params[flag] ~= nil then return true end
+    end
+    return false
+  end
+  assert(addsGrantFlag("forked_tongue", "shockChain"), "forked_tongue: grant_team{shockChain}")
+  assert(addsGrantFlag("everburn", "burnNoDecay"), "everburn: grant_team{burnNoDecay}")
+  assert(addsGrantFlag("open_wounds", "bleedNoExpire"), "open_wounds: grant_team{bleedNoExpire}")
+  assert(addsGrantFlag("plague_communion", "plagueAmp"), "plague_communion: grant_team{plagueAmp}")
+
   -- 3) OFFRE 1-parmi-3 SEEDEE (meme seed -> meme offre, rejouable).
   local x = RunState.new(777):rollRelicChoices(3)
   local y = RunState.new(777):rollRelicChoices(3)
@@ -101,7 +115,7 @@ local ok, err = pcall(function()
   assert(not Grimoire.learn("bloodstone"), "deja connu -> pas re-appris")
 
   Grimoire.wipe()
-  print("  reliques : grant lisible / ops stats+amplis+paliers+defensives(haste/invuln/secondBreath/thorns) / offre seedee / Grimoire OK")
+  print("  reliques : grant lisible / ops stats+amplis+paliers+defensives+transformatives(chain/burn/bleed/plague) / offre seedee / Grimoire OK")
 end)
 
 if ok then

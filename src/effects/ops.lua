@@ -183,18 +183,20 @@ local SHOCK_STACK_CAP = 8 -- miroir de la constante d'arena (ops.lua sans dépen
 Effects.register("shock", function(ctx, p)
   local v = ctx.victim
   local cap = math.min(p.cap or SHOCK_STACK_CAP, SHOCK_STACK_CAP)
+  local tf = ctx.arena.teamFlags and ctx.arena.teamFlags[ctx.source.team] -- FORKED TONGUE : le choc d'équipe rebondit
+  local chain = p.chain or (tf and tf.shockChain) or nil
   local cur = v.dots.shock
   if not cur then
     v.dots.shock = { stacks = math.min(cap, p.add or 1), remaining = p.dur or 180,
       cap = cap, volt = p.volt, source = ctx.source,
-      persist = p.persist, transfer = p.transfer, chain = p.chain } -- MODIFICATEURS RARES (cf. dischargeShock)
+      persist = p.persist, transfer = p.transfer, chain = chain } -- MODIFICATEURS RARES (cf. dischargeShock)
   else
     cur.stacks = math.min(cur.cap, cur.stacks + (p.add or 1))
     cur.remaining = p.dur or cur.remaining
     if p.volt and (not cur.volt or p.volt > cur.volt) then cur.volt = p.volt end
     if p.persist then cur.persist = p.persist end -- un porteur de modificateur « upgrade » la charge
     if p.transfer then cur.transfer = p.transfer end
-    if p.chain then cur.chain = p.chain end
+    if chain then cur.chain = chain end
   end
 end)
 
@@ -271,6 +273,9 @@ Effects.register("grant_team", function(ctx, p)
     if p.poisonDurBonus then tf.poisonDurBonus = (tf.poisonDurBonus or 0) + p.poisonDurBonus end
     if p.pierceHeal then tf.pierceHeal = math.max(tf.pierceHeal or 0, p.pierceHeal) end -- HOLLOW CHOIR : afflictions percent les soins
     if p.invulnT then tf.invulnT = math.max(tf.invulnT or 0, p.invulnT) end             -- SACRED SHIELD : invuln d'ouverture (t < invulnT)
+    if p.shockChain then tf.shockChain = math.max(tf.shockChain or 0, p.shockChain) end -- FORKED TONGUE : le choc rebondit
+    if p.bleedNoExpire then tf.bleedNoExpire = true end                                 -- OPEN WOUNDS : saignements éternels
+    if p.plagueAmp then tf.plagueAmp = math.max(tf.plagueAmp or 0, p.plagueAmp) end     -- PLAGUE COMMUNION : 2+ afflictions -> +dmg
   end
   if p.slowEnemies then -- THE SLOW BLEED : aura de slow sur TOUTE l'équipe ennemie (immédiate)
     for _, w in ipairs(arena.units) do

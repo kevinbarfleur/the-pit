@@ -45,11 +45,23 @@ local R = {
   sacred_shield = { id = "sacred_shield", op = "relic_add_effect", tier = 3, -- 0,5 s d'invulnérabilité d'ouverture (t<30)
     params = { effect = { trigger = "combat_start", op = "grant_team", params = { invulnT = 30 } } } },
   second_breath = { id = "second_breath", op = "relic_second_breath", tier = 3 }, -- chaque unité survit 1× à 1 PV
+
+  -- ── E — transformatives (changent une RÈGLE intra-combat ; build-defining ; cf. doc §4-E). Réutilisent
+  -- toutes relic_add_effect + grant_team (flags lus par le tick/les ops à combat_start ; ZÉRO nouvel op). ──
+  forked_tongue = { id = "forked_tongue", op = "relic_add_effect", tier = 4, -- le choc rebondit sur 1 ennemi
+    params = { effect = { trigger = "combat_start", op = "grant_team", params = { shockChain = 1 } } } },
+  everburn = { id = "everburn", op = "relic_add_effect", tier = 4, -- les feux ne décroissent jamais (réutilise burnNoDecay)
+    params = { effect = { trigger = "combat_start", op = "grant_team", params = { burnNoDecay = true } } } },
+  open_wounds = { id = "open_wounds", op = "relic_add_effect", tier = 4, -- les saignements ne se referment jamais
+    params = { effect = { trigger = "combat_start", op = "grant_team", params = { bleedNoExpire = true } } } },
+  plague_communion = { id = "plague_communion", op = "relic_add_effect", tier = 4, -- 2+ afflictions -> +25% de tous nos dégâts
+    params = { effect = { trigger = "combat_start", op = "grant_team", params = { plagueAmp = 0.25 } } } },
 }
 
 R.order = { "bloodstone", "carapace", "aegis", "kings_bowl", "ember_heart", "weeping_nail", "grave_cap",
   "famines_math", "hollow_choir", "feeding_frenzy",
-  "whetstone", "thornguard", "sacred_shield", "second_breath" }
+  "whetstone", "thornguard", "sacred_shield", "second_breath",
+  "forked_tongue", "everburn", "open_wounds", "plague_communion" }
 
 -- Applique l'effet d'une relique à une compo (liste de specs d'unités), au BUILD. Modifie en place.
 -- Les amplis (poisonInc/…/dmgReduce) sont ADDITIFS (cumul avec une aura d'adjacence qui poserait le même champ).

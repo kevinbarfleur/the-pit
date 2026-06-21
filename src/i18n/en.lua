@@ -337,6 +337,19 @@ return {
   ["relic.second_breath.name"] = "SECOND BREATH",
   ["relic.second_breath.effect"] = "Each of your units survives one lethal blow at 1 health.",
   ["relic.second_breath.flavor"] = "The Pit lets some fall twice before it keeps them.",
+  -- E : transformatives (changent une regle)
+  ["relic.forked_tongue.name"] = "FORKED TONGUE",
+  ["relic.forked_tongue.effect"] = "Your shock arcs to a second enemy.",
+  ["relic.forked_tongue.flavor"] = "It tasted the air once, and the air has feared it since.",
+  ["relic.everburn.name"] = "EVERBURN",
+  ["relic.everburn.effect"] = "Your fires never die down.",
+  ["relic.everburn.flavor"] = "Lit for a vigil that the mourners did not outlast.",
+  ["relic.open_wounds.name"] = "OPEN WOUNDS",
+  ["relic.open_wounds.effect"] = "Your bleeds never close.",
+  ["relic.open_wounds.flavor"] = "Some cuts are kept open on purpose, and remember why.",
+  ["relic.plague_communion.name"] = "PLAGUE COMMUNION",
+  ["relic.plague_communion.effect"] = "Enemies under two or more afflictions take 25% more from everything.",
+  ["relic.plague_communion.flavor"] = "Drink deep of every sickness, and call the mix a sacrament.",
 
   -- ── Proving Ground (banc d'essai) : UI + archetypes + variants + scenarios + notes de compo (ASCII) ──
   ["pg.title"] = "The Proving Ground",

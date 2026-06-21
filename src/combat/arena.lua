@@ -230,11 +230,28 @@ end
 -- PV. Émet un événement "damage" RICHE (record d'attribution : source/cause/brut/absorbé/débordement)
 -- consommé par le render (nombre flottant) ET l'event-log (stats d'équilibrage), puis "death".
 -- opts : { ignoreShield?, silent?, poison?, source?, cause? }. Renvoie les PV réellement perdus.
+-- PLAGUE COMMUNION : nb de FAMILLES d'affliction actives sur une unité (poison compté 1× quel que soit le nb de stacks).
+local function afflictionCount(d)
+  local n = 0
+  if d.burn then n = n + 1 end
+  if d.bleed then n = n + 1 end
+  if d.rot then n = n + 1 end
+  if d.shock then n = n + 1 end
+  if #d.poison > 0 then n = n + 1 end
+  return n
+end
 function Arena:damage(target, amount, opts)
   opts = opts or {}
   -- SACRED SHIELD (relique) : invulnérabilité d'OUVERTURE — l'équipe ne subit RIEN tant que t < invulnT. Gated.
   local itf = self.teamFlags and self.teamFlags[target.team]
   if itf and itf.invulnT and self.t < itf.invulnT then return 0 end
+  -- PLAGUE COMMUNION (relique) : une cible sous 2+ familles d'affliction prend +plagueAmp de TOUS nos dégâts. Gated.
+  if opts.source and self.teamFlags then
+    local stf = self.teamFlags[opts.source.team]
+    if stf and stf.plagueAmp and afflictionCount(target.dots) >= 2 then
+      amount = math.floor(amount * (1 + stf.plagueAmp) + 0.5)
+    end
+  end
   -- DÉFENSE (relique Aegis) : réduit les dégâts d'ATTAQUE subis (pas les DoT ni la fatigue). Gated -> nil =
   -- inerte (golden-safe). Arrondi au plus proche : le chip à 1 n'est pas annulé, les gros coups sont amputés.
   if opts.cause == "attack" and target.dmgReduce and target.dmgReduce > 0 then
@@ -428,7 +445,9 @@ function Arena:tickDots(u, frameDt)
       u.atkSlow = math.max(0, u.atkSlow + bonus - (bl.dynBonus or 0))
       bl.dynBonus = bonus
     end
-    if bl.remaining <= 0 then
+    -- OPEN WOUNDS (relique) : si l'équipe source a bleedNoExpire, le saignement ne se referme JAMAIS (gated).
+    local btf = bl.source and self.teamFlags and self.teamFlags[bl.source.team]
+    if bl.remaining <= 0 and not (btf and btf.bleedNoExpire) then
       u.atkSlow = math.max(0, u.atkSlow - bl.slowPct - (bl.dynBonus or 0))
       d.bleed = nil
     end
