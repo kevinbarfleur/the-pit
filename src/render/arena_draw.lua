@@ -67,6 +67,11 @@ function ArenaDraw.new(arena, palette)
       x = tgt.x, y = tgt.y - 26, vx = vx, vy = DMG_VY0, age = 0,
     })
   end)
+  -- TRANSMISSION (Partie 2) : une affliction saute d'une unité à une autre (contagion / propagation à la
+  -- mort). La SIM émet "spread" {from,to,family} ; le RENDER lance un projectile en arc + impact.
+  arena.bus:on("spread", function(ev)
+    if ev and ev.from and ev.to then self.fx:spread(ev.from, ev.to, ev.family) end
+  end)
   return self
 end
 

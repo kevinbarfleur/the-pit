@@ -45,6 +45,17 @@ local COL = {
   shock     = C.shock,           -- étincelles de choc (jaune électrique)
 }
 
+-- TRANSMISSION (Partie 2) : 1 entrée par famille propagée -> couleur de la traînée/halo + cœur (head).
+-- MODULAIRE : rendre une nouvelle affliction transmissible = +1 emit "spread" en SIM + +1 ligne ici.
+local FAMILY_FX = {
+  poison = { col = COL.poison,   head = COL.poisonHi },
+  burn   = { col = COL.flameMid, head = COL.flameHi },
+  rot    = { col = COL.rot,      head = COL.rotBrown },
+  bleed  = { col = COL.blood,    head = COL.bloodDeep }, -- prêt (pas encore émis par la SIM)
+  shock  = { col = COL.shock,    head = { 1, 1, 1 } },   -- prêt (pas encore émis par la SIM)
+}
+local FAMILY_DEFAULT = { col = COL.poison, head = { 1, 1, 1 } }
+
 local HALF_W = 5      -- demi-largeur de silhouette (~10px)
 local PHI  = 0.6180339887  -- suite de Weyl (nombre d'or) : spread/jitter déterministe, stable
 local PHI2 = 0.7548776662  -- 2e flux (nombre plastique) — décorrèle x/y
@@ -87,6 +98,7 @@ function AfflictionFx.new()
     flies = {}, -- [u] = { {ph,ph2,stutAcc,stutOff,fade}, ... } (persistant tant que rot)
     acc = {},   -- [u] = { burn, bleed, poison, rot } accumulateurs d'émission
     shockFlash = {}, -- [u] = { age, life } flash électrique bref à la décharge du choc
+    projs = {}, -- projectiles de transmission en vol {x0,y0,x1,y1,age,life,lift,family,trail}
     n = 0,      -- compteur Weyl global
   }, AfflictionFx)
   -- Shader + canvas : créés une fois, gardés gracieusement (si GLSL/canvas indispo -> pas de contour, pas de crash).
@@ -104,7 +116,7 @@ function AfflictionFx.new()
 end
 
 function AfflictionFx:reset()
-  self.parts = {}; self.flies = {}; self.acc = {}; self.shockFlash = {}; self.n = 0
+  self.parts = {}; self.flies = {}; self.acc = {}; self.shockFlash = {}; self.projs = {}; self.n = 0
 end
 
 -- CHOC : déclenché par le RENDER à la décharge (event "damage" cause="shock"). Étincelles radiales
@@ -123,6 +135,39 @@ function AfflictionFx:shockSpark(u)
     }
   end
   self.shockFlash[u] = { age = 0, life = 12, phase = (self:weyl()) * 6.2832 }
+end
+
+-- ── TRANSMISSION (Partie 2) ─────────────────────────────────────────────────────────────────────
+-- Une affliction saute de `from` vers `to` (contagion / propagation à la mort). Projectile en ARC
+-- (couleur de la famille) + traînée ; à l'arrivée, éclat d'impact. La couche PERSISTANTE prend ensuite
+-- le relais (la SIM a déjà posé le DoT sur `to` -> flammes/bulles/spores apparaissent d'elles-mêmes).
+-- Déclenché par l'event bus "spread" {from,to,family}. 100% RENDER, ne mute jamais la SIM.
+function AfflictionFx:spread(from, to, family)
+  if not (from and to) then return end
+  local x0, y0 = from.x, from.y - 16          -- part du haut du corps source
+  local x1, y1 = to.x, to.y - 12              -- vise le torse de la cible
+  local dx, dy = x1 - x0, y1 - y0
+  local dist = (dx * dx + dy * dy) ^ 0.5
+  self.projs[#self.projs + 1] = {
+    x0 = x0, y0 = y0, x1 = x1, y1 = y1, x = x0, y = y0,
+    age = 0, life = max(8, min(22, dist * 0.5)), lift = 5 + dist * 0.18,
+    family = family or "poison", trail = {},
+  }
+end
+
+-- Éclat d'impact à l'arrivée d'un projectile de transmission : burst radial teinté par la famille.
+function AfflictionFx:spawnImpact(x, y, family)
+  local fx = FAMILY_FX[family] or FAMILY_DEFAULT
+  for i = 1, 9 do
+    local r, r2 = self:weyl()
+    local ang = (i / 9) * 6.2832 + (r - 0.5) * 0.8
+    local spd = 0.8 + r2 * 1.4
+    self.parts[#self.parts + 1] = {
+      kind = "spark", x = x, y = y,
+      vx = cos(ang) * spd, vy = sin(ang) * spd - 0.3, ay = 0.04,
+      age = 0, life = 6 + r2 * 6, col = fx.col,
+    }
+  end
 end
 
 -- Phase stable par unité (sans toucher au rig) -> désynchronise glows/oscillations entre monstres.
@@ -234,6 +279,23 @@ function AfflictionFx:update(units, dt, t)
     if fl.age >= fl.life then self.shockFlash[u] = nil end
   end
 
+  -- Projectiles de transmission : arc paramétrique A->B (pas Euler) ; à l'arrivée -> éclat d'impact.
+  -- Liste DÉDIÉE -> retrait par table.remove sans perturber le swap-remove des particules ci-dessous.
+  for i = #self.projs, 1, -1 do
+    local pr = self.projs[i]
+    pr.age = pr.age + dt
+    local s = min(1, pr.age / pr.life)
+    pr.x = pr.x0 + (pr.x1 - pr.x0) * s
+    pr.y = pr.y0 + (pr.y1 - pr.y0) * s - pr.lift * (4 * s * (1 - s)) -- soulèvement parabolique
+    pr.trail[#pr.trail + 1] = { x = pr.x, y = pr.y, age = 0 }
+    for _, tp in ipairs(pr.trail) do tp.age = tp.age + dt end
+    while pr.trail[1] and pr.trail[1].age > 8 do table.remove(pr.trail, 1) end
+    if pr.age >= pr.life then
+      self:spawnImpact(pr.x1, pr.y1, pr.family)
+      table.remove(self.projs, i)
+    end
+  end
+
   -- Intégration des particules transitoires (backward swap-remove).
   local parts = self.parts
   for i = #parts, 1, -1 do
@@ -334,15 +396,33 @@ function AfflictionFx:drawGlow(units, t)
     end
   end
 
-  -- Choc : étincelles radiales (cœur blanc -> jaune) éjectées à la décharge.
+  -- Étincelles radiales (cœur blanc -> teinte) : décharge de choc (jaune) OU impact de transmission (p.col).
   for _, p in ipairs(self.parts) do
     if p.kind == "spark" then
       local f = p.age / p.life
-      local col = (f < 0.4) and { 1, 1, 1 } or COL.shock
+      local col = (f < 0.4) and { 1, 1, 1 } or (p.col or COL.shock)
       g.setColor(col[1], col[2], col[3], 1 - f)
       local s = (f < 0.4) and 2 or 1
       g.rectangle("fill", floor(p.x), floor(p.y), s, s)
     end
+  end
+
+  -- Transmission : projectiles en arc (traînée + cœur clair), couleur de la famille. Lecture « ça saute ».
+  g.setLineStyle("rough"); g.setLineWidth(1)
+  for _, pr in ipairs(self.projs) do
+    local ffx = FAMILY_FX[pr.family] or FAMILY_DEFAULT
+    local tr = pr.trail
+    for j = 1, #tr - 1 do
+      local a, b = tr[j], tr[j + 1]
+      local life = 1 - a.age / 8
+      g.setColor(ffx.col[1], ffx.col[2], ffx.col[3], life * 0.6)
+      g.line(a.x, a.y, b.x, b.y)
+    end
+    local hx, hy = floor(pr.x), floor(pr.y)
+    g.setColor(ffx.col[1], ffx.col[2], ffx.col[3], 0.9) -- halo de famille
+    g.rectangle("fill", hx - 1, hy - 1, 3, 3)
+    g.setColor(ffx.head[1], ffx.head[2], ffx.head[3], 1) -- cœur clair
+    g.rectangle("fill", hx, hy, 1, 1)
   end
   -- Choc : ÉCLAIRS en zigzag qui crépitent à plusieurs points de la silhouette (cœur blanc + halo jaune),
   -- scintillants (sous-ensemble d'ancres ré-tiré chaque frame) -> lecture « décharge électrique sur le corps ».

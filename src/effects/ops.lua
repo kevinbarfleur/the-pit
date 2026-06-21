@@ -60,6 +60,7 @@ Effects.register("poison", function(ctx, p)
       ns[#ns + 1] = { dps = sp.dps or 1, remaining = sp.dur or (p.dur or 0), acc = 0,
         weaken = sp.weaken or 0, source = ctx.source }
       if #ns > 8 then table.remove(ns, 1) end
+      ctx.arena.bus:emit("spread", { from = v, to = nb, family = "poison" }) -- RENDER : projectile de contagion (golden-safe : aucun abonné en SIM)
     end
   end
 end)
@@ -156,12 +157,14 @@ Effects.register("spread_burn_on_death", function(ctx, p)
     if not cur or dps > cur.dps then
       nb.dots.burn = { dps = dps, remaining = p.dur or 120, acc = 0,
         decayEvery = 60, decayAcc = 0, decayPct = 0.30, source = ctx.source }
+      ctx.arena.bus:emit("spread", { from = dead, to = nb, family = "burn" }) -- RENDER : le feu saute du mort au voisin
     end
     if p.alsoPoison then -- croisement feu->poison (Plague-Pyre) : le feu sème aussi le venin
       local ap = p.alsoPoison
       local ns = nb.dots.poison
       ns[#ns + 1] = { dps = ap.dps or 2, remaining = ap.dur or 120, acc = 0, weaken = 0, source = ctx.source }
       if #ns > 8 then table.remove(ns, 1) end
+      ctx.arena.bus:emit("spread", { from = dead, to = nb, family = "poison" }) -- RENDER : le venin saute aussi (croisement)
     end
   end
 end)
@@ -174,6 +177,7 @@ Effects.register("spread_rot", function(ctx, p)
     if not nb.dots.rot then
       nb.dots.rot = { dps = p.base or 2, remaining = p.dur or 240, acc = 0,
         capDps = p.capDps or 10, maxHpFrac = p.maxHpFrac or 0, source = ctx.source }
+      ctx.arena.bus:emit("spread", { from = dead, to = nb, family = "rot" }) -- RENDER : la pourriture saute du mort au voisin
     end
   end
 end)
