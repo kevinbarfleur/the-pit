@@ -53,6 +53,14 @@ local RANK_LADDERS = {
   { label = "OOZE", type = "abyss", bodyplan = "blob" },
 }
 
+-- LÉGENDAIRES = CHIMÈRES (R5) : fusion de 2 body-plans (« mi-X mi-Y »). Cadre or + glow + couronne.
+local LEGENDARIES = {
+  { label = "SOVEREIGN", type = "arcane", bodyplan = "chimera:humanoid:tentacles" },
+  { label = "HEAD-BEAST", type = "abyss", bodyplan = "chimera:cephalopod:quadruped" },
+  { label = "BEAST-MAN", type = "flesh", bodyplan = "chimera:humanoid:quadruped" },
+  { label = "DROWNED-KING", type = "bone", bodyplan = "chimera:humanoid:tentacles" },
+}
+
 -- Halo additif derrière le sprite (rangs hauts « rayonnent »). col = teinte de rang.
 local function drawGlow(cx, cy, rad, col, a)
   love.graphics.setBlendMode("add")
@@ -125,6 +133,19 @@ function Gallery.new(palette, vw, vh, host)
       }
       self.nGen = self.nGen + 1
     end
+  end
+
+  -- Légendaires chimériques (R5) : la fusion de 2 plans = l'« événement visuel du run ».
+  for _, d in ipairs(LEGENDARIES) do
+    local id = "legend_" .. d.bodyplan:gsub(":", "_") .. "_" .. d.type
+    local def = CreatureGen.cached({ id = id, type = d.type, effects = {}, bodyplan = d.bodyplan, rank = 5 })
+    local char = Rig.new(def, palette)
+    char.facing = 1
+    self.items[#self.items + 1] = {
+      id = id, char = char, type = d.type, gen = true, demo = true,
+      label = d.label, bodyplan = d.bodyplan, rank = 5,
+    }
+    self.nGen = self.nGen + 1
   end
 
   self.cols, self.rows = COLS, MAX_ROWS

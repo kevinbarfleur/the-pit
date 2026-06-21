@@ -174,7 +174,23 @@ do
       count = count + 1
     end
   end
-  print("  body-plans : OK (" .. count .. " combos plan/famille/rang : structure + determinisme + rendu)")
+
+  -- CHIMÈRES (légendaires) : fusion "chimera:top:bottom" -> structure valide + déterministe + rendu.
+  local chimeras = { "chimera:humanoid:tentacles", "chimera:cephalopod:quadruped", "chimera:humanoid:quadruped" }
+  for _, bp in ipairs(chimeras) do
+    for _, fam in ipairs({ "arcane", "abyss", "flesh" }) do
+      local id = "chim_" .. fam .. "_" .. bp:gsub(":", "_")
+      local def = CreatureGen.build({ id = id, type = fam, bodyplan = bp, rank = 5, effects = {} })
+      validateDef(id, def)
+      local def2 = CreatureGen.build({ id = id, type = fam, bodyplan = bp, rank = 5, effects = {} })
+      if not defGridsEqual(def, def2) then fail(id .. " : chimère non-déterministe") end
+      local c = Rig.new(def, Palette)
+      Rig.update(c, 0, 1); Rig.trigger(c, "attack"); Rig.update(c, 10, 1)
+      Rig.trigger(c, "hurt"); Rig.update(c, 20, 1); Rig.draw(c)
+      count = count + 1
+    end
+  end
+  print("  body-plans : OK (" .. count .. " combos plan/famille/rang/chimère : structure + determinisme + rendu)")
 end
 
 -- ─────────────────────────── 2b. Smoke rendu (le rig consomme la def sans crash) ───────────────────────────

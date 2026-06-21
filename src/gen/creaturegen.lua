@@ -611,6 +611,97 @@ end
 
 local PlanBuilders = { blob = planBlob, quadruped = planQuadruped, cephalopod = planCephalopod }
 
+-- ═══════════════════════════ CHIMÈRE (légendaire R5) : « Le Puits ne crée pas, il assemble. » ═══════════════════════════
+-- Fusion de DEUX body-plans : le HAUT (masse-tête) + le BAS (locomotion) viennent de plans distincts.
+-- La silhouette VIOLE les attentes (toutes les autres unités sont mono-plan) -> lecture instantanée
+-- « anormal/puissant ». Recette FIXÉE en data (bodyplan="chimera:top:bottom"), variation seedée -> snapshot-safe.
+
+-- Anim : pulse de masse + ondulation des tentacules + balancement des pattes/bras (combine les idles).
+local CHIMERA_ANIM = { idle = function(char, t)
+  local ph = char.idlePhase
+  local p = char.parts
+  if p.mantle then p.mantle.sy = 1 + math.sin(t * 0.035 + ph) * 0.03 end
+  if p.torso then p.torso.sy = 1 + math.sin(t * 0.04 + ph) * 0.02 end
+  if p.head then p.head.rot = math.sin(t * 0.04 + ph + 0.7) * 0.03 end
+  for name, part in pairs(p) do
+    local idx = name:match("^tentacle(%d+)$")
+    if idx then
+      part.rot = math.sin(t * 0.06 + ph + tonumber(idx) * 0.9) * 0.20
+    elseif name:match("^arm") then
+      part.rot = math.sin(t * 0.04 + ph + 0.5) * 0.04
+    elseif name:match("^leg") then
+      local sgn = (name == "legFL" or name == "legBL") and 1 or -1
+      part.rot = math.sin(t * 0.06 + ph) * 0.05 * sgn
+    end
+  end
+  return { rootDx = 0, rootDy = math.sin(t * 0.03 + ph) * 1.0 }
+end }
+
+-- top ∈ {humanoid, cephalopod} (masse-tête) ; bottom ∈ {quadruped, tentacles} (locomotion).
+local function buildChimera(rng, fac, lv, top, bottom)
+  local parts = {}
+  local legLen = 3 + rng:random(0, 1)
+  local tentLen = 4 + rng:random(0, 2)
+  local botLen = (bottom == "tentacles") and tentLen or legLen
+
+  -- ── HAUT : masse-tête (part « core », base-pivot) ──
+  local coreName, coreW, coreH
+  if top == "humanoid" then
+    local HM = Masks.get("humanoid")
+    parts.torso = (buildPart(rng, HM.torso.variants[((lv.torsoIdx - 1) % #HM.torso.variants) + 1], fac, lv.accentPair, fac.asym,
+      { ramp = lv.ramp, density = lv.density, corp = lv.corp, eyeCfg = lv.eyeCfg, detailChance = lv.detailChance, pivotMode = "base", ornament = 0 }, false))
+    parts.head = (buildPart(rng, HM.head.variants[((lv.headIdx - 1) % #HM.head.variants) + 1], fac, lv.accentPair, fac.asym,
+      { ramp = lv.ramp, density = lv.density, corp = 0, eyeCfg = lv.eyeCfg, detailChance = lv.detailChance, pivotMode = "base", ornament = lv.ornament }, true))
+    parts.armBack = (buildArm(rng, dummyHalf(4), fac, lv.ramp, lv.accentPair, true))  -- griffes (chimère monstrueuse)
+    parts.armFront = (buildArm(rng, dummyHalf(4), fac, lv.ramp, lv.accentPair, true))
+    coreName = "torso"; coreW, coreH = partWH(parts.torso.grid)
+  else -- cephalopod : mantle bulbeux à yeux multiples
+    local mv = Masks.get("cephalopod").mantle.variants
+    parts.mantle = (buildPart(rng, mv[((lv.headIdx - 1) % #mv) + 1], fac, lv.accentPair, fac.asym,
+      { ramp = lv.ramp, density = lv.density, corp = lv.corp, eyeCfg = lv.eyeCfg, detailChance = lv.detailChance, pivotMode = "base", ornament = lv.ornament }, true))
+    coreName = "mantle"; coreW, coreH = partWH(parts.mantle.grid)
+  end
+
+  -- ── BAS : locomotion (pattes de bête OU jupe de tentacules) ──
+  local nTent = 0
+  if bottom == "quadruped" then
+    for _, nm in ipairs({ "legBL", "legBR", "legFL", "legFR" }) do
+      parts[nm] = (buildArm(rng, dummyHalf(legLen), fac, lv.ramp, lv.accentPair, false))
+    end
+  else
+    nTent = 4 + rng:random(0, 2)
+    for i = 1, nTent do
+      parts["tentacle" .. i] = (buildArm(rng, dummyHalf(tentLen + rng:random(0, 1)), fac, lv.ramp, lv.accentPair, false))
+    end
+  end
+
+  -- ── RIG : membres arrière (derrière) -> core relevé -> membres avant + tête ──
+  local rig = {}
+  local x1, x2 = 2, coreW - 2
+  if bottom == "quadruped" then
+    rig[#rig + 1] = { part = "legBL", parent = coreName, at = { x1, coreH - 1 } }
+    rig[#rig + 1] = { part = "legBR", parent = coreName, at = { x2, coreH - 1 } }
+  end
+  rig[#rig + 1] = { part = coreName, at = { 0, -botLen + 1 } }
+  if top == "humanoid" then
+    rig[#rig + 1] = { part = "armBack", parent = "torso", at = { 1, 1 } }
+    rig[#rig + 1] = { part = "head", parent = "torso", at = { math.floor(coreW / 2) - 1, 0 } }
+    rig[#rig + 1] = { part = "armFront", parent = "torso", at = { coreW - 1, 1 } }
+  end
+  if bottom == "quadruped" then
+    rig[#rig + 1] = { part = "legFL", parent = coreName, at = { x1 - 1, coreH } }
+    rig[#rig + 1] = { part = "legFR", parent = coreName, at = { x2 + 1, coreH } }
+  else
+    local span = math.max(2, coreW - 2)
+    for j = 1, nTent do
+      rig[#rig + 1] = { part = "tentacle" .. j, parent = coreName, at = { 1 + math.floor((j - 0.5) * span / nTent), coreH - 1 } }
+    end
+  end
+
+  local idlePose = (top == "humanoid") and { armFront = 0, armBack = 0 } or {}
+  return parts, rig, idlePose, CHIMERA_ANIM
+end
+
 -- ─────────────────────────── API publique ───────────────────────────
 -- opts = { id, type, tier?, effects?, seed?, bodyplan?, rank? }
 --   type     = FAMILLE (palette/accent/détails) ; bodyplan = SILHOUETTE (défaut = squelette de la famille).
@@ -647,16 +738,23 @@ function CreatureGen.build(opts)
   local rank = opts.rank or 1
   local rar = Rarity.get(rank) -- leviers visuels de rareté (échelle/ornement/glow), bornés & déterministes
 
+  -- leviers seedés communs aux builders non-bipèdes + chimère (AUCUN RNG ici -> ordre de tirage préservé).
+  local lv = {
+    ramp = ramp, density = density, corp = corp, detailChance = detailChance,
+    eyeCfg = { count = eyeCount, spread = eyeSpread },
+    headIdx = headIdx, torsoIdx = torsoIdx, legIdx = legIdx, accentPair = accentPair,
+    rank = rank, ornament = rar.ornament,
+  }
+  -- chimère = "chimera:top:bottom" (légendaire). Le `match` 2-captures DOIT être hors multi-assign avec `and`.
+  local chimTop, chimBot
+  if type(bodyplan) == "string" then chimTop, chimBot = bodyplan:match("^chimera:([^:]+):([^:]+)$") end
+
   local parts, rig, idlePose, animations
-  if PlanBuilders[bodyplan] then
+  if chimTop then
+    parts, rig, idlePose, animations = buildChimera(rng, fac, lv, chimTop, chimBot)
+  elseif PlanBuilders[bodyplan] then
     -- Body-plan non-bipède (blob/quadruped/cephalopod) : builder dédié. Les leviers seedés déjà tirés
     -- sont passés tels quels -> mêmes tirages quelle que soit la forme, déterminisme préservé.
-    local lv = {
-      ramp = ramp, density = density, corp = corp, detailChance = detailChance,
-      eyeCfg = { count = eyeCount, spread = eyeSpread },
-      headIdx = headIdx, torsoIdx = torsoIdx, legIdx = legIdx, accentPair = accentPair,
-      rank = rank, ornament = rar.ornament,
-    }
     parts, rig, idlePose, animations = PlanBuilders[bodyplan](rng, fac, lv)
   else
     -- Humanoïde / robe / difforme (LEGACY, inchangé) : masks miroités + gabarit de rig + anims auto.
