@@ -18,7 +18,7 @@ return {
   ["scene.combat"] = "combat",
   ["scene.runover"] = "run over",
   ["scene.gallery"] = "gallery",
-  ["ui.hint_build"] = "[click-drag] buy/place  -  REROLL/LEVEL  -  [s] sigil  -  [g] gallery  -  FIGHT",
+  ["ui.hint_build"] = "[click-drag] buy/place  -  REROLL  -  place/refuse SLOT  -  [s] sigil  -  [g] gallery  -  FIGHT",
   ["ui.hint_combat"] = "auto-battle in progress...",
   ["ui.hint_combat_end"] = "[click] back to build   [r] replay",
   ["ui.hint_runover"] = "[click] new run   -   [r] new run",
@@ -43,10 +43,10 @@ return {
   -- build / shop
   ["ui.fight"] = "FIGHT",
   ["ui.reroll"] = "REROLL {n}g",
-  ["ui.level_up"] = "LEVEL {n}g",
-  ["ui.level_max"] = "MAX LEVEL",
+  ["ui.decline_slot"] = "REFUSE +{n}g",
+  ["ui.slot_grant"] = "A SLOT OPENS  -  place it on a cell, or REFUSE for gold",
   ["ui.cost"] = "{n}g",
-  ["ui.hud"] = "GOLD {gold}    LIVES {lives}/{maxlives}    WINS {wins}/{target}    ROUND {round}    LEVEL {level} ({slots}/{maxslots} slots)",
+  ["ui.hud"] = "GOLD {gold}    LIVES {lives}/{maxlives}    WINS {wins}/{target}    ROUND {round}    SLOTS {slots}/{maxslots}",
   ["ui.win_streak"] = "WIN STREAK x{n}",
   ["ui.loss_streak"] = "LOSS STREAK x{n}",
   ["ui.placed_count"] = "{placed} placed  -  {active}/9 slots",
@@ -60,7 +60,7 @@ return {
   ["ui.lives"] = "LIVES",
   ["ui.wins"] = "WINS",
   ["ui.round"] = "ROUND",
-  ["ui.level"] = "LVL",
+  ["ui.slots"] = "SLOTS",
 
   -- tooltip
   ["ui.unit_header"] = "{name}  ({type})",

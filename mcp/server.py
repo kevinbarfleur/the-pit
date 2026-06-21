@@ -44,8 +44,8 @@ def new_game(seed: int, sigil: str = "") -> dict:
 
 @mcp.tool()
 def get_state() -> dict:
-    """Full current state: round, gold, lives, wins, level, slots unlocked, active sigil, the 5-card shop
-    (id/cost/sold), and the 9 board slots (unlocked + occupant id/level)."""
+    """Full current state: round, gold, lives, wins, slots (capacity), pendingSlotGrant (a slot offer awaits
+    accept/decline), active sigil, the 5-card shop (id/cost/sold), and the 9 board slots (unlocked + occupant id/level)."""
     return _g().state()
 
 
@@ -83,10 +83,18 @@ def reroll() -> dict:
 
 
 @mcp.tool()
-def level_up() -> dict:
-    """Pay to level up, which unlocks the next board slot (you grow from 3 to 9 slots over the run).
-    More slots = bigger team, but spend gold wisely. Returns {ok, state}."""
-    return _g().level_up()
+def accept_slot_grant(cell: int = 0) -> dict:
+    """Accept the pending board-slot grant (free, offered on a schedule rounds 2-7): +1 slot, opened on
+    `cell` (1-9) or, if 0/omitted, the best central empty cell. Going wide = more units. Slots are NOT
+    bought with gold anymore. Only valid when state.pendingSlotGrant is true. Returns {ok, state}."""
+    return _g().accept_grant(cell or None)
+
+
+@mcp.tool()
+def decline_slot_grant() -> dict:
+    """Decline the pending board-slot grant for gold instead (you forgo that slot permanently = going
+    'tall': fewer but stronger/denser units). Only valid when state.pendingSlotGrant is true. Returns {ok, state}."""
+    return _g().decline_grant()
 
 
 @mcp.tool()

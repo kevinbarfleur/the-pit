@@ -255,38 +255,54 @@ local ok, err = pcall(function()
       eb:mousemoved(eb.pos[slot].x, eb.pos[slot].y)        -- glisse sur la case
       eb:mousereleased(eb.pos[slot].x, eb.pos[slot].y, 1)  -- lâche -> achat + pose
     end
-    -- run démarre à 3 slots débloqués (1,2,3). Achats sur cases 1 et 2.
+    -- run démarre à 3 cases OUVERTES = cluster central (placement libre, plus la rangée du haut linéaire).
+    local openSlots, lockedSlot = {}, nil
+    for i = 1, 9 do
+      if eb.board:isOpen(i) then openSlots[#openSlots + 1] = i elseif not lockedSlot then lockedSlot = i end
+    end
+    assert(#openSlots == RunState.START_SLOTS, "e2e: 3 cases ouvertes au depart (cluster central)")
     local g0 = run.gold
-    buyToSlot(1, 1); buyToSlot(2, 2)
+    buyToSlot(1, openSlots[1]); buyToSlot(2, openSlots[2])
     assert(eb:placedCount() == 2, "e2e boutique: 2 unites achetees+posees")
     assert(run.gold < g0, "e2e boutique: or debite par les achats")
     -- Rendu MODE RUN (boutique/HUD/prix/boutons/infobulle) : ne doit pas planter sous la mock.
-    eb.mx, eb.my = eb.shopSlots[3].x + 2, eb.shopSlots[3].y + 2 -- survol d'une offre
+    eb.mx, eb.my = eb.shopSlots[3].x + 2, eb.shopSlots[3].y + 2     -- survol d'une offre
     eb:update(1.0); eb:drawWorld(); eb:drawOverlay(view)
-    eb.mx, eb.my = eb.pos[2].x, eb.pos[2].y                     -- survol d'une case occupee
+    eb.mx, eb.my = eb.pos[openSlots[2]].x, eb.pos[openSlots[2]].y   -- survol d'une case occupee
     eb:drawWorld(); eb:drawOverlay(view)
-    -- Slot VERROUILLÉ (9 au niveau 1) : achat refusé même avec de l'or.
+    -- Case VERROUILLÉE : achat refusé même avec de l'or (les slots ne s'achètent plus -> grants timés).
     run.gold = 50
     local g1 = run.gold
-    buyToSlot(3, 9)
-    assert(run.gold == g1 and not eb.slotRigs[9], "e2e boutique: pas d'achat sur slot verrouille")
+    buyToSlot(3, lockedSlot)
+    assert(run.gold == g1 and not eb.slotRigs[lockedSlot], "e2e boutique: pas d'achat sur case verrouillee")
     -- REROLL : débite l'or.
     eb:mousepressed(eb.rerollBtn.x + 1, eb.rerollBtn.y + 1, 1)
     assert(run.gold == g1 - RunState.REROLL_COST, "e2e reroll: or debite")
-    -- NIVEAU : débloque le slot suivant.
-    run.gold = 50
-    local slots0 = run.slots
-    eb:mousepressed(eb.levelBtn.x + 1, eb.levelBtn.y + 1, 1)
-    assert(run.slots == slots0 + 1 and eb.board.slots[slots0 + 1].unlocked, "e2e niveau: +1 slot debloque")
+    -- GRANT D'EMPLACEMENT (event timé) : round 2 -> une offre attend. ACCEPTER = clic sur une case verrouillée.
+    run:startRound()
+    assert(run.pendingSlotGrant, "e2e grant: une offre de slot au round 2")
+    eb:update(1.0); eb:drawWorld(); eb:drawOverlay(view) -- rendu avec prompt + bouton REFUSER : ne plante pas
+    local slots0, placeAt = run.slots
+    for i = 1, 9 do if not eb.board:isOpen(i) then placeAt = i; break end end
+    eb:mousepressed(eb.pos[placeAt].x, eb.pos[placeAt].y, 1)
+    assert(run.slots == slots0 + 1 and eb.board:isOpen(placeAt) and not run.pendingSlotGrant,
+      "e2e grant: accepter ouvre la case CHOISIE (+1 slot)")
+    -- REFUSER : round 3 -> nouvelle offre -> bouton REFUSER -> +or, capacité inchangée.
+    run:startRound()
+    assert(run.pendingSlotGrant, "e2e grant: offre au round 3")
+    local g3, sl3 = run.gold, run.slots
+    eb:mousepressed(eb.declineBtn.x + 1, eb.declineBtn.y + 1, 1)
+    assert(run.gold == g3 + RunState.SLOT_DECLINE_GOLD and run.slots == sl3 and not run.pendingSlotGrant,
+      "e2e grant: refuser donne de l'or, capacite inchangee")
     -- VENTE : drag d'une unité posée hors-plateau -> remboursement + retrait.
     local g2 = run.gold
-    eb:mousepressed(eb.pos[1].x, eb.pos[1].y, 1) -- ramasse l'unite du slot 1
-    eb:mousereleased(2, 2, 1)                    -- lache hors plateau
+    eb:mousepressed(eb.pos[openSlots[1]].x, eb.pos[openSlots[1]].y, 1) -- ramasse une unite posee
+    eb:mousereleased(2, 2, 1)                                          -- lache hors plateau
     assert(run.gold > g2 and eb:placedCount() == 1, "e2e vente: remboursement + unite retiree")
     -- COMBAT -> transition.
     eb:mousepressed(eb.button.x + 1, eb.button.y + 1, 1)
     assert(gotoName == "combat", "e2e: COMBAT -> transition vers la scene combat")
-    print("  e2e : boutique (achat/slot-verrou) + reroll + niveau + vente + COMBAT OK")
+    print("  e2e : boutique (achat/case-verrou) + reroll + grant(accept/refuse) + vente + COMBAT OK")
   end
 end)
 

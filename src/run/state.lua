@@ -30,24 +30,25 @@ local START_LIVES     = 5
 local WIN_TARGET      = 10
 local START_SLOTS     = 3
 local MAX_SLOTS       = 9
-local START_LEVEL     = 1
-local MAX_LEVEL       = START_LEVEL + (MAX_SLOTS - START_SLOTS) -- 7 : niveau où slots atteint 9
 local LIFE_BACK_ROUND = 3      -- début de CE round : +1 vie si on a déjà perdu (filet SAP)
 local STREAK_CAP      = 3      -- bonus d'or max par série
 local SELL_REFUND_FRAC = 0.5   -- remboursement à la revente (< coût -> aucun exploit)
 local DEFAULT_COST    = 3      -- coût si une unité n'en déclare pas
 local RELIC_OBSERVE   = 2      -- nb de combats équipée avant qu'une relique cryptique s'IDENTIFIE (observation)
 
+-- ── Emplacements de plateau = GRANTS TIMÉS (décision 2026-06, cf. the-pit-balance-diagnosis) ──
+-- On NE PAYE PLUS pour débloquer un slot (le couplage or↔slot était un piège dégénéré : lever à chaque
+-- round drainait l'or -> board vide -> mort 0-6). À la place, façon SAP (tier de boutique timé), chaque
+-- joueur reçoit AUTOMATIQUEMENT un emplacement à des rounds prédéfinis. À chaque offre, il ACCEPTE (+1 slot,
+-- à poser librement côté plateau) OU REFUSE (+SLOT_DECLINE_GOLD or, et renonce DÉFINITIVEMENT à ce slot).
+-- Refuser = jouer « tall » (peu d'unités fortes/denses) plutôt que « wide » : un vrai axe build-dépendant.
+-- L'or ne sert donc plus qu'aux UNITÉS + reroll. La capacité (slots) est découplée de l'économie.
+local SLOT_GRANT_ROUNDS = { [2] = true, [3] = true, [4] = true, [5] = true, [6] = true, [7] = true }
+local MAX_GRANTS        = MAX_SLOTS - START_SLOTS -- 6 offres au total (3 -> 9)
+local SLOT_DECLINE_GOLD = 3      -- or reçu en refusant un slot (≈ le prix d'1 unité ; PLACEHOLDER tunable)
+
 -- Pool d'unités achetables (ids). Défaut : le roster complet.
 local POOL = Units.pool or Units.order
-
--- Coût pour passer DU niveau L à L+1 (croissant). 1->2:5, 2->3:6, ... 6->7:10.
-local function levelCostAt(level) return 4 + level end
-
--- Slots débloqués à un niveau donné (1 slot par niveau au-dessus du départ).
-local function slotsForLevel(level)
-  return math.min(MAX_SLOTS, START_SLOTS + (level - START_LEVEL))
-end
 
 local function unitCost(id)
   local u = Units[id]
@@ -71,8 +72,9 @@ function RunState.new(seed)
     wins = 0,
     losses = 0,
     round = 0,
-    level = START_LEVEL,
-    slots = slotsForLevel(START_LEVEL),
+    slots = START_SLOTS,           -- capacité du plateau (cases qu'on PEUT ouvrir) ; croît par grants timés
+    pendingSlotGrant = false,      -- une offre de slot attend une décision (accepter/refuser) ce round
+    slotGrantsResolved = 0,        -- nb d'offres déjà tranchées (accept OU refus) ; plafonné à MAX_GRANTS
     winStreak = 0,
     lossStreak = 0,
     shop = {},
@@ -102,6 +104,34 @@ function RunState:startRound()
   end
   self.gold = GOLD_PER_ROUND + streakBonus(self)
   self:roll()
+  -- Grant d'emplacement timé (façon tier SAP) : à un round prévu, tant qu'il reste des offres, on présente
+  -- un slot à placer ou refuser. La capacité ne bouge PAS ici — c'est accept/declineSlotGrant qui tranche.
+  if SLOT_GRANT_ROUNDS[self.round] and self.slotGrantsResolved < MAX_GRANTS then
+    self.pendingSlotGrant = true
+  end
+end
+
+-- ── EMPLACEMENTS DE PLATEAU (grants timés). Le RUN ne tient que la CAPACITÉ (combien de cases ouvrables)
+-- et l'offre en attente ; QUELLE case s'ouvre est géré par le plateau/la scène (couche placement). ──
+
+function RunState:canGrant() return self.pendingSlotGrant end
+
+-- ACCEPTE l'offre : +1 capacité de slot (la scène ouvre ensuite la case choisie). Renonce à l'offre.
+function RunState:acceptSlotGrant()
+  if not self.pendingSlotGrant then return false end
+  self.slots = math.min(MAX_SLOTS, self.slots + 1)
+  self.pendingSlotGrant = false
+  self.slotGrantsResolved = self.slotGrantsResolved + 1
+  return true
+end
+
+-- REFUSE l'offre : +SLOT_DECLINE_GOLD or, capacité INCHANGÉE (slot renoncé définitivement = jeu « tall »).
+function RunState:declineSlotGrant()
+  if not self.pendingSlotGrant then return false end
+  self.gold = self.gold + SLOT_DECLINE_GOLD
+  self.pendingSlotGrant = false
+  self.slotGrantsResolved = self.slotGrantsResolved + 1
+  return true
 end
 
 -- Achète l'offre i : déduit l'or, consomme l'offre, renvoie l'id acheté (ou nil si invalide/trop cher).
@@ -128,21 +158,6 @@ end
 function RunState:sellRefund(id) return math.max(1, math.floor(unitCost(id) * SELL_REFUND_FRAC)) end
 
 function RunState:sell(id) self.gold = self.gold + self:sellRefund(id) end
-
-function RunState:levelCost() return levelCostAt(self.level) end
-
-function RunState:canLevel() return self.level < MAX_LEVEL and self.gold >= self:levelCost() end
-
--- Monte d'un niveau : débloque le slot suivant (slots dérivés du niveau).
-function RunState:levelUp()
-  if self.level >= MAX_LEVEL then return false end
-  local cost = self:levelCost()
-  if self.gold < cost then return false end
-  self.gold = self.gold - cost
-  self.level = self.level + 1
-  self.slots = slotsForLevel(self.level)
-  return true
-end
 
 -- Résout l'issue d'un combat. NE distribue PAS l'or (c'est startRound, au round suivant).
 function RunState:resolve(win)
@@ -242,6 +257,7 @@ RunState.START_LIVES = START_LIVES
 RunState.WIN_TARGET = WIN_TARGET
 RunState.START_SLOTS = START_SLOTS
 RunState.MAX_SLOTS = MAX_SLOTS
-RunState.MAX_LEVEL = MAX_LEVEL
+RunState.MAX_GRANTS = MAX_GRANTS
+RunState.SLOT_DECLINE_GOLD = SLOT_DECLINE_GOLD
 
 return RunState

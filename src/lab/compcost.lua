@@ -17,10 +17,10 @@ local Compcost = {}
 
 -- Facteur d'or par NIVEAU d'unité (duplicatas : 3 copies -> niv2, 9 -> niv3 ; coût ~ nb de copies achetées).
 local LEVEL_GOLD = { 1, 3, 9 }
--- Coût de leveling DU niveau L à L+1 (miroir EXACT de src/run/state.lua : levelCostAt = 4 + level).
-local function levelCostAt(level) return 4 + level end
-local START_SLOTS = 3 -- miroir de RunState.START_SLOTS (le plateau démarre à 3 slots)
 local DEFAULT_COST = 3
+-- NB : depuis 2026-06, débloquer un slot ne coûte plus d'or (grants timés, cf. RunState) -> l'investissement
+-- ne compte plus d'« or de leveling ». Il ne reste que l'or des UNITÉS (× copies) + niveau + relique + sigil +
+-- agencement. La LARGEUR de board (boardLevel) reste un proxy de complexité/breadth via W_SLOTS, pas un coût d'or.
 
 -- Poids du score composite (somme = 1). NORM_GOLD ~ or d'un plateau plein de premiums (sature le terme or).
 local W_GOLD, W_LEVEL, W_SLOTS, W_RELIC, W_SIGIL, W_PLACE = 0.40, 0.25, 0.10, 0.05, 0.05, 0.15
@@ -60,9 +60,8 @@ function Compcost.of(comp)
     if lvl > maxLevel then maxLevel = lvl end
   end
 
-  -- Or de leveling implicite : monter le plateau de START_SLOTS jusqu'à boardLevel.
+  -- Largeur de plateau : proxy de breadth/complexité (les slots sont gratuits désormais, pas de coût d'or ici).
   local boardLevel = comp.boardLevel or #comp.units
-  for L = START_SLOTS, boardLevel - 1 do gold = gold + levelCostAt(L) end
 
   local relicDep = (comp.relics and #comp.relics > 0) and 1 or 0
   local sigilDep = (comp.sigil and comp.sigil ~= "carre") and 1 or 0 -- un sigil non-carré = topologie exigée

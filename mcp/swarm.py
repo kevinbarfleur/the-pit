@@ -31,13 +31,14 @@ def _obj(props=None, required=None):
 
 
 TOOLS = [
-    {"name": "get_state", "description": "Full current state (round, gold, lives, wins, level, sigil, shop, board).", "input_schema": _obj()},
+    {"name": "get_state", "description": "Full current state (round, gold, lives, wins, slots, pendingSlotGrant, sigil, shop, board).", "input_schema": _obj()},
     {"name": "describe_unit", "description": "Mechanical sheet for a unit id (type, archetype, stats, effects).", "input_schema": _obj({"unit_id": {"type": "string"}}, ["unit_id"])},
     {"name": "list_pool", "description": "Full roster of buyable units with their sheets.", "input_schema": _obj()},
     {"name": "buy", "description": "Buy shop offer shop_index (1-5) onto board slot (1-9, unlocked & empty).", "input_schema": _obj({"shop_index": {"type": "integer"}, "slot": {"type": "integer"}}, ["shop_index", "slot"])},
     {"name": "sell", "description": "Sell the unit on a board slot for a refund.", "input_schema": _obj({"slot": {"type": "integer"}}, ["slot"])},
     {"name": "reroll", "description": "Re-roll the shop (costs gold).", "input_schema": _obj()},
-    {"name": "level_up", "description": "Level up to unlock the next board slot (costs gold).", "input_schema": _obj()},
+    {"name": "accept_slot_grant", "description": "Accept the pending board-slot grant (free): +1 slot on `cell` (1-9) or best central cell if 0. Going wide.", "input_schema": _obj({"cell": {"type": "integer"}})},
+    {"name": "decline_slot_grant", "description": "Decline the pending slot grant for gold instead (forgo the slot = going 'tall', fewer stronger units).", "input_schema": _obj()},
     {"name": "move", "description": "Move/swap a unit between two slots (changes adjacency).", "input_schema": _obj({"src_slot": {"type": "integer"}, "dst_slot": {"type": "integer"}}, ["src_slot", "dst_slot"])},
     {"name": "reshape", "description": "Change board shape (carre/croix/anneau/diamant/ligne).", "input_schema": _obj({"sigil": {"type": "string"}}, ["sigil"])},
     {"name": "start_combat", "description": "Fight this round's opponent; auto-resolves. Returns result + new state.", "input_schema": _obj()},
@@ -59,8 +60,10 @@ def dispatch(g: GameSession, name: str, inp: dict):
         return g.sell(inp["slot"])
     if name == "reroll":
         return g.reroll()
-    if name == "level_up":
-        return g.level_up()
+    if name == "accept_slot_grant":
+        return g.accept_grant(inp.get("cell") or None)
+    if name == "decline_slot_grant":
+        return g.decline_grant()
     if name == "move":
         return g.move(inp["src_slot"], inp["dst_slot"])
     if name == "reshape":
@@ -127,12 +130,12 @@ def run_agent_smoke(persona: str, seed: int, max_rounds: int = 40) -> dict:
         rounds = 0
         while rounds < max_rounds:
             state = dispatch(g, "get_state", {})
+            if state.get("pendingSlotGrant"):  # greedy = va wide : accepte chaque slot offert (case centrale)
+                state = dispatch(g, "accept_slot_grant", {"cell": 0}).get("state", state)
             for i, o in enumerate(state["shop"], start=1):
                 if not o.get("sold") and state["gold"] >= o["cost"]:
                     r = dispatch(g, "buy", {"shop_index": i, "slot": None})
                     state = r.get("state", state)
-            if state["level"] < 7 and state["gold"] >= 5:
-                state = dispatch(g, "level_up", {}).get("state", state)
             fr = dispatch(g, "start_combat", {})
             rounds += 1
             if fr.get("relicChoices"):

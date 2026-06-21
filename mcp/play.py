@@ -27,9 +27,13 @@ def main() -> int:
                     log.append(f"  (! buy {':'.join(p[1:])} refuse)")
             elif cmd == "reroll":
                 g.reroll()
-            elif cmd == "level":
-                if not g.level_up().get("ok"):
-                    log.append("  (! level refuse)")
+            elif cmd == "accept":  # accepte le grant de slot ; accept:CELL pour choisir la case
+                cell = int(p[1]) if len(p) > 1 else None
+                if not g.accept_grant(cell).get("ok"):
+                    log.append("  (! accept refuse : pas d'offre de slot en attente)")
+            elif cmd == "decline":  # refuse le grant de slot -> +or (jeu 'tall')
+                if not g.decline_grant().get("ok"):
+                    log.append("  (! decline refuse : pas d'offre)")
             elif cmd == "reshape":
                 g.reshape(p[1])
             elif cmd == "sell":
@@ -64,7 +68,8 @@ def main() -> int:
 
     print("\n".join(log))
     print(f"--- ROUND {st['round']} | gold {st['gold']} | lives {st['lives']} | wins {st['wins']}/10"
-          f" | level {st['level']} ({st['slots']} slots) | sigil {st['sigil']}"
+          f" | slots {st['slots']}/9 | sigil {st['sigil']}"
+          + ("  >> SLOT GRANT pending (accept[:cell] / decline)" if st.get('pendingSlotGrant') else "")
           + (f" | streak W{st['winStreak']}/L{st['lossStreak']}" if (st['winStreak'] or st['lossStreak']) else ""))
     print(f"SHOP:  {shop}")
     print(f"BOARD: {board if board else '(empty)'}")

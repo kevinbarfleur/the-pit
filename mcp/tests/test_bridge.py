@@ -50,11 +50,11 @@ def test_full_scripted_run_terminates():
         over = None
         for _ in range(40):
             st = g.state()
+            if st.get("pendingSlotGrant"):  # va wide : accepte chaque slot offert (case centrale par defaut)
+                st = g.accept_grant().get("state", st)
             for i, o in enumerate(st["shop"], start=1):
                 if not o["sold"] and st["gold"] >= o["cost"]:
                     st = g.buy(i).get("state", st)
-            if st["level"] < 7 and st["gold"] >= 5:
-                st = g.level_up().get("state", st)
             fr = g.fight()
             if fr.get("relicChoices"):
                 g.pick_relic(1)

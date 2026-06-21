@@ -66,7 +66,7 @@ function Build.new(palette, vw, vh, host)
   end
   self.button = { x = vw - 98, y = 150, w = 92, h = 26 } -- COMBAT
   self.rerollBtn = { x = 172, y = 149, w = 44, h = 12 }
-  self.levelBtn = { x = 172, y = 163, w = 44, h = 12 }
+  self.declineBtn = { x = 172, y = 163, w = 44, h = 12 } -- REFUSER un grant de slot (+or) ; visible si offre en attente
   self.ambient = Ambient.new(3) -- fond calme (mode "build" : dégradé, pas de particules d'ambiance)
   if self.host.run then self:syncSlots() end
   return self
@@ -113,9 +113,12 @@ function Build:computeShop()
   end
 end
 
--- Aligne les slots débloqués du plateau sur le niveau de la run (ne fait que CROÎTRE au fil du run).
+-- Réconcilie l'ensemble des cases OUVERTES à la capacité de la run (ne ferme JAMAIS). Les grants ouvrent
+-- des cases PRÉCISES (placement libre via openCell) ; ceci ne sert que de rattrapage si la capacité dépasse
+-- l'ouvert (départ, pilotage headless). NE réinitialise PAS en préfixe -> préserve le cluster central + les
+-- choix de placement du joueur (décision grants timés 2026-06, cf. the-pit-balance-diagnosis).
 function Build:syncSlots()
-  if self.host.run then self.board:unlock(self.host.run.slots) end
+  if self.host.run then self.board:ensureOpen(self.host.run.slots) end
 end
 
 -- ── Hit-tests (espace virtuel) ──
@@ -125,6 +128,20 @@ function Build:slotAt(px, py)
   local best, bestD
   for i = 1, 9 do
     if self.board.slots[i].unlocked then
+      local p = self.pos[i]
+      local dx, dy = px - p.x, py - p.y
+      local d = dx * dx + dy * dy
+      if d <= 14 * 14 and (not bestD or d < bestD) then best, bestD = i, d end
+    end
+  end
+  return best
+end
+
+-- Case VERROUILLÉE (non ouverte) sous le curseur : cible de placement d'un grant de slot (placement libre).
+function Build:lockedCellAt(px, py)
+  local best, bestD
+  for i = 1, 9 do
+    if not self.board.slots[i].unlocked then
       local p = self.pos[i]
       local dx, dy = px - p.x, py - p.y
       local d = dx * dx + dy * dy
@@ -211,7 +228,13 @@ function Build:mousepressed(vx, vy, button)
   local run = self.host.run
   if run then
     if inRect(vx, vy, self.rerollBtn) then run:reroll(); return end
-    if inRect(vx, vy, self.levelBtn) then if run:levelUp() then self:syncSlots() end; return end
+    -- Grant d'emplacement timé en attente : REFUSER (bouton -> +or) ou ACCEPTER (clic sur une case
+    -- verrouillée -> ouvre CETTE case = placement libre, façon « pose ton slot où tu veux »).
+    if run.pendingSlotGrant then
+      if inRect(vx, vy, self.declineBtn) then run:declineSlotGrant(); return end
+      local lc = self:lockedCellAt(vx, vy)
+      if lc then if run:acceptSlotGrant() then self.board:openCell(lc) end; return end
+    end
     local oi = self:shopAt(vx, vy)
     if oi then -- prend une offre achetable (consommée seulement au lâcher sur une case valide)
       local o = run.shop[oi]
@@ -517,20 +540,25 @@ function Build:drawOverlay(view)
   local nm = b.shape.name
   Draw.textC(T("shape." .. nm .. ".label"), Draw.W / 2, 70, c.title, Theme.display(36))
   Draw.textC(T("shape." .. nm .. ".archetype"):upper() .. "    " .. T("ui.reshape"), Draw.W / 2, 118, c.faint, Theme.ui(11))
+  -- Prompt de grant d'emplacement (event timé) : pose un slot sur une case libre, ou refuse pour de l'or.
+  if run and run.pendingSlotGrant then
+    Draw.textC(T("ui.slot_grant"), Draw.W / 2, 134, c.gold, Theme.ui(12))
+  end
 
   -- Cases : bordure d'état + décor (verrou / pip de type / pips de niveau / nom).
+  local granting = run and run.pendingSlotGrant -- un slot à poser : les cases verrouillées deviennent des cibles
   for i = 1, 9 do
     local p, slot = self.pos[i], b.slots[i]
     local x, y = p.x * 4 - SLOT_HALF, p.y * 4 - SLOT_HALF
     local col
-    if not slot.unlocked then col = c.slotEdgeLck
+    if not slot.unlocked then col = granting and c.goldBright or c.slotEdgeLck
     elseif i == ui.dropTarget then col = c.drop
     elseif i == ui.hover then col = c.goldBright
     elseif ui.nbset[i] then col = c.blood
     else col = c.slotEdge end
     Draw.rect(x, y, SLOT_HALF * 2, SLOT_HALF * 2, nil, col, 2)
     if not slot.unlocked then
-      Draw.textC("+", p.x * 4, p.y * 4 - 12, c.lock, Theme.ui(18))
+      Draw.textC("+", p.x * 4, p.y * 4 - 12, granting and c.gold or c.lock, Theme.ui(18))
     else
       local sr = self.slotRigs[i]
       if sr then
@@ -563,8 +591,10 @@ function Build:drawOverlay(view)
       end
     end
     self:drawEcoButton(self.rerollBtn, T("ui.reroll", { n = Run.REROLL_COST }), run:canReroll())
-    if run.level < Run.MAX_LEVEL then self:drawEcoButton(self.levelBtn, T("ui.level_up", { n = run:levelCost() }), run:canLevel())
-    else self:drawEcoButton(self.levelBtn, T("ui.level_max"), false) end
+    -- Bouton REFUSER : visible seulement quand un grant de slot attend (sinon les slots ne s'achètent plus).
+    if run.pendingSlotGrant then
+      self:drawEcoButton(self.declineBtn, T("ui.decline_slot", { n = Run.SLOT_DECLINE_GOLD }), true)
+    end
   end
 
   -- Bouton COMBAT (gros CTA sang).
@@ -597,7 +627,7 @@ function Build:drawBanner(run)
     { T("ui.lives") .. " ", run.lives .. "/" .. Run.START_LIVES },
     { T("ui.wins") .. " ", run.wins .. "/" .. Run.WIN_TARGET },
     { T("ui.round") .. " ", tostring(run.round) },
-    { T("ui.level") .. " ", run.level .. " (" .. run.slots .. "/" .. Run.MAX_SLOTS .. ")" },
+    { T("ui.slots") .. " ", run.slots .. "/" .. Run.MAX_SLOTS },
   }
   love.graphics.setFont(font)
   local gap, total = 28, 0

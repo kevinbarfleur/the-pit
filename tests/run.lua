@@ -22,7 +22,8 @@ local ok, err = pcall(function()
     assert(r.lives == RunState.START_LIVES, "vies initiales = 5")
     assert(r.wins == 0 and r.losses == 0, "0 victoire / 0 defaite")
     assert(r.round == 1, "demarre au round 1")
-    assert(r.level == 1 and r.slots == RunState.START_SLOTS, "niveau 1 -> 3 slots")
+    assert(r.slots == RunState.START_SLOTS, "demarre a 3 slots")
+    assert(r.pendingSlotGrant == false, "round 1 : aucune offre de slot en attente")
     assert(#r.shop == RunState.SHOP_SIZE, "boutique = 5 offres")
     assert(r:isOver() == nil, "run en cours")
   end
@@ -71,22 +72,32 @@ local ok, err = pcall(function()
     assert(before == before, "garde-fou")
   end
 
-  -- ── Leveling = déblocage de slots ──
+  -- ── Emplacements = GRANTS TIMÉS (accepter +1 slot / refuser +or), plus de gold-leveling ──
   do
     local r = RunState.new(3)
-    r.gold = 99
-    local lvl0, slots0 = r.level, r.slots
-    assert(r:levelUp() == true, "niveau: monte avec assez d'or")
-    assert(r.level == lvl0 + 1, "niveau +1")
-    assert(r.slots == slots0 + 1, "niveau debloque +1 slot")
-    -- Jusqu'au max (slots = 9).
-    for _ = 1, 20 do r.gold = 99; r:levelUp() end
-    assert(r.slots == RunState.MAX_SLOTS, "niveau max -> 9 slots")
-    assert(r.level == RunState.MAX_LEVEL, "plafond de niveau")
-    assert(r:levelUp() == false, "niveau: refuse au plafond")
-    -- Refus si or insuffisant.
-    local r2 = RunState.new(3); r2.gold = 0
-    assert(r2:levelUp() == false, "niveau: refuse sans or")
+    -- Round 1 : pas d'offre. On avance les rounds : une offre arrive aux rounds 2..7.
+    assert(r:canGrant() == false, "round 1 : pas d'offre")
+    assert(r:acceptSlotGrant() == false and r:declineSlotGrant() == false, "rien a trancher sans offre")
+    r:startRound() -- round 2 : 1re offre
+    assert(r.round == 2 and r:canGrant(), "round 2 : une offre de slot")
+    local slots0 = r.slots
+    assert(r:acceptSlotGrant() == true, "accepter l'offre")
+    assert(r.slots == slots0 + 1, "accepter : +1 capacite de slot")
+    assert(r.pendingSlotGrant == false, "offre consommee")
+    assert(r:acceptSlotGrant() == false, "pas de double-accept sur la meme offre")
+    -- Refus : +or, capacite INCHANGÉE, offre consommée (slot renonce).
+    r:startRound() -- round 3 : nouvelle offre
+    local g0, sl0 = r.gold, r.slots
+    assert(r:canGrant(), "round 3 : offre")
+    assert(r:declineSlotGrant() == true, "refuser l'offre")
+    assert(r.gold == g0 + RunState.SLOT_DECLINE_GOLD, "refuser : +or du refus")
+    assert(r.slots == sl0, "refuser : capacite inchangee")
+    -- Total borné : 6 grants (rounds 2..7) -> au plus 9 slots si tout accepte.
+    local r2 = RunState.new(9)
+    for _ = 1, 12 do r2:startRound(); if r2:canGrant() then r2:acceptSlotGrant() end end
+    assert(r2.slots == RunState.MAX_SLOTS, "tout accepter -> 9 slots")
+    assert(r2.slotGrantsResolved == RunState.MAX_GRANTS, "exactement MAX_GRANTS offres tranchees")
+    assert(r2:canGrant() == false, "plus d'offre au-dela du plafond")
   end
 
   -- ── Résolution + streaks ──
@@ -144,14 +155,14 @@ local ok, err = pcall(function()
         local a = gen:random(1, 5)
         if a == 1 then r:buy(gen:random(1, RunState.SHOP_SIZE))
         elseif a == 2 then r:reroll()
-        elseif a == 3 then r:levelUp()
+        elseif a == 3 then if gen:random(1, 2) == 1 then r:acceptSlotGrant() else r:declineSlotGrant() end
         elseif a == 4 then r:resolve(gen:random(1, 2) == 1)
         else r:startRound() end
         -- Invariants durs (jamais violés, quelle que soit la suite d'actions).
         assert(r.gold >= 0, "invariant: or >= 0")
         assert(r.lives >= 0 and r.lives <= RunState.START_LIVES, "invariant: vies dans [0,5]")
         assert(r.slots >= RunState.START_SLOTS and r.slots <= RunState.MAX_SLOTS, "invariant: slots [3,9]")
-        assert(r.level >= 1 and r.level <= RunState.MAX_LEVEL, "invariant: niveau [1,7]")
+        assert(r.slotGrantsResolved <= RunState.MAX_GRANTS, "invariant: offres tranchees <= MAX_GRANTS")
         assert(#r.shop == RunState.SHOP_SIZE, "invariant: boutique = 5 offres")
         if r:isOver() then break end
       end

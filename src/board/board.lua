@@ -5,14 +5,18 @@
 
 local Shapes = require("src.board.shapes")
 
+local START_OPEN = 3 -- cases ouvertes au départ (miroir de RunState.START_SLOTS) ; les grants timés en ouvrent +
+
 local Board = {}
 Board.__index = Board
 
 function Board.new(shapeName)
-  local self = setmetatable({ slots = {} }, Board)
+  local self = setmetatable({ slots = {}, activeCount = 0 }, Board)
   for i = 1, 9 do self.slots[i] = { unit = nil, unlocked = false } end
   self:setShape(shapeName or "carre")
-  self:unlock(3) -- on démarre à 3 slots actifs ; le leveling en débloque d'autres (§1.5)
+  -- Départ = CLUSTER CENTRAL connexe (case de plus haut degré + voisines), PAS la rangée du haut linéaire :
+  -- l'adjacence compte dès le 1er round (décision 2026-06, cf. the-pit-balance-diagnosis « rangée du milieu »).
+  self:ensureOpen(START_OPEN)
   return self
 end
 
@@ -36,12 +40,65 @@ end
 -- Voisins (= portée des synergies) d'un slot, lus dans le graphe. C'est tout.
 function Board:neighbors(i) return self.adj[i] end
 
-function Board:unlock(n)
-  self.activeCount = math.max(0, math.min(9, n))
-  for i = 1, 9 do self.slots[i].unlocked = (i <= self.activeCount) end
+-- ── OUVERTURE DE CASES (placement libre). L'ensemble des cases ouvertes n'est PLUS un préfixe d'index
+-- (1..n) mais un ENSEMBLE arbitraire : un grant timé ouvre la case CHOISIE par le joueur (acceptSlotGrant).
+-- Heuristique de défaut (UI absente / headless) : on grandit un CLUSTER CONNEXE central. ──
+
+function Board:degreeOf(i) return #(self.adj[i] or {}) end
+function Board:isOpen(i) return self.slots[i] ~= nil and self.slots[i].unlocked end
+function Board:openCount() return self.activeCount or 0 end
+
+-- Recompte la capacité active depuis l'ensemble ouvert (source de vérité = les flags unlocked).
+function Board:recount()
+  local n = 0
+  for i = 1, 9 do if self.slots[i].unlocked then n = n + 1 end end
+  self.activeCount = n
+  return n
 end
 
-function Board:unlockMore() self:unlock((self.activeCount or 0) + 1) end
+-- Meilleure case VIDE à ouvrir : maximise la connexité aux cases déjà ouvertes (cluster connexe), puis le
+-- degré (cases centrales), puis index bas. Au tout début (rien d'ouvert) -> la case de plus haut degré.
+function Board:bestEmptyCell()
+  local best, bestScore
+  for i = 1, 9 do
+    if not self.slots[i].unlocked then
+      local conn = 0
+      for _, j in ipairs(self.adj[i]) do if self.slots[j].unlocked then conn = conn + 1 end end
+      local score = conn * 100 + self:degreeOf(i) * 10 - i -- connexité >> degré >> index
+      if not bestScore or score > bestScore then best, bestScore = i, score end
+    end
+  end
+  return best
+end
+
+-- Ouvre une case précise (placement libre côté UI). Renvoie false si invalide ou déjà ouverte.
+function Board:openCell(i)
+  if not (i and self.slots[i]) or self.slots[i].unlocked then return false end
+  self.slots[i].unlocked = true
+  self:recount()
+  return true
+end
+
+-- Réconcilie l'ensemble ouvert à une capacité n : ouvre les meilleures cases vides jusqu'à n (ne ferme JAMAIS).
+-- Sert au départ et au pilotage headless (le grant accepté ouvre une case ; ici on rattrape si en retard).
+function Board:ensureOpen(n)
+  n = math.max(0, math.min(9, n))
+  while self:openCount() < n do
+    local i = self:bestEmptyCell()
+    if not i then break end
+    self:openCell(i)
+  end
+end
+
+-- COMPAT : ouverture en PRÉFIXE d'index (cases 1..n), un RESET déterministe. Utilisé par le CATALOGUE de
+-- compositions, les tests et les outils de sim, qui assignent des slots EXPLICITES (1..boardLevel) et veulent
+-- un ensemble reproductible — PAS le placement libre du jeu (qui passe par openCell/ensureOpen). Réf data:
+-- src/data/compositions.lua. Le jeu réel (src/scenes/build.lua) n'appelle jamais ceci.
+function Board:unlock(n)
+  n = math.max(0, math.min(9, n))
+  for i = 1, 9 do self.slots[i].unlocked = (i <= n) end
+  self.activeCount = n
+end
 
 function Board:place(i, unit) self.slots[i].unit = unit end
 

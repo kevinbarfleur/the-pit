@@ -62,9 +62,17 @@ function handlers.reroll()
   return { ok = drv:reroll() and true or false, state = st() }
 end
 
-function handlers.level()
+-- Grant d'emplacement timé (remplace l'ancien `level`). accept_grant [cell] : +1 slot, ouvert sur la case
+-- `cell` (ou la meilleure case centrale par défaut) ; decline_grant : refuse pour de l'or (jeu « tall »).
+function handlers.accept_grant(a)
   if not drv then return { error = "no_game" } end
-  return { ok = drv:levelUp() and true or false, state = st() }
+  local cell = a[1] and tonumber(a[1]) or nil
+  return { ok = drv:acceptSlotGrant(cell) and true or false, state = st() }
+end
+
+function handlers.decline_grant()
+  if not drv then return { error = "no_game" } end
+  return { ok = drv:declineSlotGrant() and true or false, state = st() }
 end
 
 function handlers.move(a)

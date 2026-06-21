@@ -3,7 +3,7 @@
 -- Combine l'ÉTAT DE RUN réel (src/run/state, économie SIM-pure) + un vrai Build (plateau/placement/fusion/
 -- buildComp aura-résolu) + le runner de match. Il REJOUE la méta-boucle du host (resolve -> observe ->
 -- offre de relique -> startRound) SANS aucune IO Grimoire. Expose une API D'ACTIONS JOUEUR sérialisable :
---   state / buy / sell / reroll / levelUp / move / reshape / pickRelic / fight
+--   state / buy / sell / reroll / acceptSlotGrant / declineSlotGrant / move / reshape / pickRelic / fight
 -- que consomment AUSSI BIEN les politiques scriptées (Pilier B, tools/runsim) que les outils MCP (Pilier C).
 --
 -- ⚠️ RENDER-tainted (construit un Build = scène). HORS firewall SIM ; ne jamais le require depuis
@@ -49,7 +49,8 @@ function Rundriver:state()
   for i, o in ipairs(self.run.shop) do shop[i] = { id = o.id, cost = o.cost, sold = o.sold } end
   return {
     round = self.run.round, gold = self.run.gold, lives = self.run.lives,
-    wins = self.run.wins, losses = self.run.losses, level = self.run.level, slots = self.run.slots,
+    wins = self.run.wins, losses = self.run.losses, slots = self.run.slots,
+    pendingSlotGrant = self.run.pendingSlotGrant, slotGrantsResolved = self.run.slotGrantsResolved,
     sigil = self.build.board.shape.name, winStreak = self.run.winStreak, lossStreak = self.run.lossStreak,
     shop = shop, board = board, relics = #self.run.relics, placed = self.build:placedCount(),
     pendingRelics = self.pendingRelics, over = self.over,
@@ -91,10 +92,19 @@ end
 
 function Rundriver:reroll() return self.run:reroll() end
 
-function Rundriver:levelUp()
-  if self.run:levelUp() then self.build:syncSlots(); return true end
-  return false
+-- ── Grant d'emplacement timé (remplace l'ancien levelUp payant). À une offre en attente (run.pendingSlotGrant) :
+--   acceptSlotGrant(cell) : +1 capacité + OUVRE une case (la `cell` choisie, ou la meilleure case vide = cluster
+--                           central connexe). Renvoie l'index ouvert (placement libre côté UI/politique/MCP).
+--   declineSlotGrant()    : refuse -> +or (jeu « tall »), capacité inchangée. ──
+function Rundriver:acceptSlotGrant(cell)
+  if not self.run:acceptSlotGrant() then return false end
+  if not (cell and self.build.board:openCell(cell)) then
+    self.build.board:ensureOpen(self.run.slots) -- défaut : ouvre la meilleure case vide (cluster central)
+  end
+  return true
 end
+
+function Rundriver:declineSlotGrant() return self.run:declineSlotGrant() end
 
 -- Déplace/échange une unité de `from` vers `to` (mirroir du drag case->case de build.lua).
 function Rundriver:move(from, to)
@@ -194,14 +204,14 @@ function Rundriver.run(seed, policy, opts)
       drv:pickRelic(pick)
     end
     traj.rounds[#traj.rounds + 1] = {
-      round = snap.round, gold = snap.gold, level = snap.level, slots = snap.slots, sigil = snap.sigil,
+      round = snap.round, gold = snap.gold, slots = snap.slots, sigil = snap.sigil,
       placed = snap.placed, decisions = decisions,
       win = fr.result and fr.result.win, decided = fr.result and fr.result.decided,
       ticks = fr.result and fr.result.ticks, enemyKey = fr.result and fr.result.enemyKey,
     }
   end
   traj.result = drv.run:isOver() or "incomplete"
-  traj.wins, traj.losses, traj.level = drv.run.wins, drv.run.losses, drv.run.level
+  traj.wins, traj.losses, traj.slots = drv.run.wins, drv.run.losses, drv.run.slots
   traj.finalBoard = drv:boardComp()
   traj.finalCost = drv:boardCost()
   return traj

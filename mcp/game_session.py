@@ -79,8 +79,13 @@ class GameSession:
     def reroll(self) -> dict:
         return self._cmd("reroll")
 
-    def level_up(self) -> dict:
-        return self._cmd("level")
+    def accept_grant(self, cell: Optional[int] = None) -> dict:
+        """Accepte l'offre de slot en attente (+1 slot), ouvert sur `cell` ou la meilleure case centrale."""
+        return self._cmd("accept_grant" + (f" {int(cell)}" if cell is not None else ""))
+
+    def decline_grant(self) -> dict:
+        """Refuse l'offre de slot -> +or (jeu 'tall', capacite inchangee)."""
+        return self._cmd("decline_grant")
 
     def move(self, src: int, dst: int) -> dict:
         return self._cmd(f"move {int(src)} {int(dst)}")

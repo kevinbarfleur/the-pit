@@ -14,9 +14,13 @@ LOSE if you drop to 0 lives (you start with 5). You are a real player: make choi
 THE LOOP, each round:
   1. You get fresh gold. A SHOP shows 5 random unit offers (id + cost).
   2. Spend gold: `buy(shop_index, slot)` to place a unit on an unlocked, empty board slot (1-9).
-     `reroll()` re-rolls the shop. `level_up()` unlocks the next slot (you start with 3, grow to 9).
-     `sell(slot)`, `move(src, dst)` to re-arrange, `reshape(sigil)` to change the board shape.
-  3. `start_combat()` fights the round's opponent (auto-resolves). Win or lose, then the next round opens.
+     `reroll()` re-rolls the shop. `sell(slot)`, `move(src, dst)` to re-arrange, `reshape(sigil)` to change shape.
+     Gold is ONLY for units + reroll. Board slots are NOT bought.
+  3. SLOT GRANTS: on a schedule (rounds 2-7) a free slot is OFFERED (state.pendingSlotGrant). You either
+     `accept_slot_grant(cell)` to open a chosen empty cell (+1 slot = go WIDE) or `decline_slot_grant()` to
+     take gold instead and forgo that slot forever (go TALL: fewer but stronger/denser units). This is a
+     core strategic choice — wide spreads thin, tall concentrates power and adjacency.
+  4. `start_combat()` fights the round's opponent (auto-resolves). Win or lose, then the next round opens.
 
 KEY MECHANICS:
   - ARCHETYPES: poison (stacks), burn (decaying fire), bleed (slow), rot (eats max HP, kills tanks),
@@ -35,8 +39,9 @@ take. Keep going round after round — do NOT stop until the run is over or you 
 
 PERSONAS: dict[str, str] = {
     "the_economist": (
-        "THE ECONOMIST. You hate waste. Hoard gold, ride win/loss streaks for bonus income, and invest in "
-        "leveling to grow a wide, cheap, solid board before splurging. Rarely reroll. Value efficiency over flash."
+        "THE ECONOMIST (go TALL). You hate waste. Hoard gold, ride win/loss streaks, and lean toward DECLINING "
+        "slot grants for the gold — a small dense board of strong, merged units beats a sprawl of weak ones. "
+        "Concentrate power and adjacency. Accept a slot only when your board genuinely needs the body."
     ),
     "the_zealot": (
         "THE ZEALOT (all-in poison). You believe in ONE path: POISON. Reshape to 'diamant', reroll to find "

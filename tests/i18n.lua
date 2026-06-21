@@ -32,7 +32,7 @@ local ok, err = pcall(function()
   I18n.setLocale("xx")
   assert(T("ui.fight") == "ZZZ", "locale active prioritaire")
   assert(T("ui.reroll", { n = 1 }) == "REROLL 1g", "fallback en pour cle absente")
-  assert(I18n.has("ui.fight") and I18n.has("ui.level_max"), "has() couvre locale + fallback")
+  assert(I18n.has("ui.fight") and I18n.has("ui.decline_slot"), "has() couvre locale + fallback")
   I18n.setLocale("en") -- restaure
 
   -- COUVERTURE : toute clé d'affichage dérivée des données existe en anglais (anti-trou de traduction).
