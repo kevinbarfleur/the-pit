@@ -1,0 +1,4 @@
+# Pilier C — Agent Arena (MCP). Installer dans un venv : uv pip install --python mcp/.venv -r mcp/requirements.txt
+mcp[cli]>=1.2     # serveur FastMCP (outils joueur, stdio/http)
+anthropic>=0.40   # SDK pour le swarm d'agents LLM (mode live)
+pytest>=8         # tests du pont (spawn le daemon + parties scriptees)

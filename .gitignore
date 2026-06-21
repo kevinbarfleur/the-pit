@@ -13,8 +13,14 @@ dist/
 *.luac
 luac.out
 
-# Rapports d'équilibrage générés (tools/sim.lua)
+# Rapports d'équilibrage générés (tools/sim.lua, tools/runsim.lua, swarm)
 runs/
+
+# MCP (Pilier C) : venv Python local + caches — ne pas committer
+mcp/.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
 
 # Sauvegardes locales LÖVE (identity "the-pit") — ne pas committer
 # ~/Library/Application Support/LOVE/the-pit/

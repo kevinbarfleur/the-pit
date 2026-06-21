@@ -154,6 +154,15 @@ local ok, err = pcall(function()
   assert(Policies.archetypeOf("gravewarden") == "tank", "classifier: gravewarden = tank")
   assert(Policies.archetypeOf("marauder") == "bruiser", "classifier: marauder = bruiser")
   print("  lab : API d'actions OK (refus propres + reshape + classifieur)")
+
+  -- 10) ENCODEUR JSON du daemon (Pilier C) : types + tri des cles + echappement (sortie parsee par Python).
+  local json = require("tools.gamed.json")
+  assert(json.encode(42) == "42" and json.encode(-7) == "-7", "json: entiers")
+  assert(json.encode(true) == "true" and json.encode(false) == "false", "json: booleens")
+  assert(json.encode('x"y') == '"x\\"y"', "json: echappement des guillemets")
+  assert(json.encode({ 1, 2, 3 }) == "[1,2,3]", "json: array dense")
+  assert(json.encode({ b = 2, a = 1 }) == '{"a":1,"b":2}', "json: objet (cles triees -> diff-able)")
+  print("  lab : encodeur JSON daemon OK (types + tri + echappement)")
 end)
 
 if ok then
