@@ -8,6 +8,8 @@
 -- disponible ; sinon repli MÉMOIRE (tests headless / mock). Dégrade gracieusement (pcall) — jamais de
 -- crash si l'IO échoue. Ce module N'EST PAS de la SIM (il fait de l'IO) : tenu hors de src/combat.
 
+local Dev = require("src.core.dev") -- MODE DEV : full-unlock révèle tout le codex au read-time (sans polluer le disque)
+
 local Grimoire = { known = {}, file = "grimoire.txt", loaded = false }
 
 local function canIO()
@@ -36,6 +38,7 @@ function Grimoire.save()
 end
 
 function Grimoire.isKnown(id)
+  if Dev.fullUnlock() then return true end -- MODE DEV : tout révélé (read-time ; ne pollue pas Grimoire.known)
   if not Grimoire.loaded then Grimoire.load() end
   return Grimoire.known[id] == true
 end

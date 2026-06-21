@@ -12,6 +12,7 @@ local Draw = require("src.ui.draw")
 local Ambient = require("src.fx.ambient")
 local Grimoire = require("src.core.grimoire")
 local Relics = require("src.data.relics")
+local Dev = require("src.core.dev") -- MODE DEV : toggle full-unlock (visible/inerte selon Dev.ENABLED)
 local T = require("src.core.i18n").t
 
 local Menu = {}
@@ -40,6 +41,8 @@ function Menu.new(palette, vw, vh, host)
     { id = "abandon",  key = "menu.abandon",  enabled = true,  action = function() love.event.quit() end },
   }
   self.hover = nil
+  -- Toggle MODE DEV (cheat) — coin haut-gauche, présent UNIQUEMENT si Dev.ENABLED (masqué/inerte en release).
+  self.devRect = Dev.ENABLED and { x = 16, y = 14, w = 252, h = 26 } or nil
   return self
 end
 
@@ -106,6 +109,14 @@ function Menu:drawOverlay(view)
   Draw.text(T("menu.relics", { n = inscribed, total = #Relics.order }), 24, 690, c.fainter, Theme.ui(12))
   Draw.textR(T("menu.tag"), Draw.W - 24, 690, c.ghost, Theme.ui(12))
 
+  -- Toggle MODE DEV (coin haut-gauche) : visible seulement si Dev.ENABLED. Libellé en dur (dev-only, jamais shippé).
+  if self.devRect then
+    local on, r = Dev.fullUnlock(), self.devRect
+    Draw.rect(r.x, r.y, r.w, r.h, c.panelDeep, on and c.gold or c.hair, 1)
+    Draw.text(on and "[DEV] FULL UNLOCK: ON" or "[DEV] FULL UNLOCK: OFF", r.x + 10, r.y + 7,
+      on and c.goldBright or c.fainter, Theme.ui(11))
+  end
+
   Draw.finish()
 end
 
@@ -116,7 +127,12 @@ end
 
 function Menu:mousepressed(vx, vy, button)
   if button ~= 1 then return end
-  local i = self:itemAt(vx * 4, vy * 4)
+  local dx, dy = vx * 4, vy * 4
+  if self.devRect then -- MODE DEV : clic sur le toggle full-unlock
+    local r = self.devRect
+    if dx >= r.x and dx <= r.x + r.w and dy >= r.y and dy <= r.y + r.h then Dev.toggleFullUnlock(); return end
+  end
+  local i = self:itemAt(dx, dy)
   if i and self.items[i].action then self.items[i].action() end
 end
 
@@ -133,6 +149,8 @@ function Menu:keypressed(key)
     self.hover = order[cur]
   elseif key == "return" or key == "kpenter" or key == "space" then
     if self.hover and self.items[self.hover].action then self.items[self.hover].action() end
+  elseif key == "u" and Dev.ENABLED then -- MODE DEV : toggle full-unlock du codex
+    Dev.toggleFullUnlock()
   end
 end
 
