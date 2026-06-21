@@ -15,6 +15,7 @@ local Gallery = require("src.scenes.gallery")
 local Menu = require("src.scenes.menu")
 local Relicpick = require("src.scenes.relicpick")
 local GrimoireScene = require("src.scenes.grimoire")
+local Playground = require("src.scenes.playground")
 local RunState = require("src.run.state")
 local Grimoire = require("src.core.grimoire")
 local Theme = require("src.ui.theme")
@@ -48,6 +49,10 @@ function host.goto(name, payload)
   elseif name == "grimoire" then
     -- Codex persistant : recréé à chaque ouverture (relit l'état d'identification courant).
     host.scene = GrimoireScene.new(Palette, VW, VH, host)
+  elseif name == "playground" then
+    -- Banc d'essai (Proving Ground) : mémoïsé (indépendant du run ; lit le catalogue de compos).
+    host.playground = host.playground or Playground.new(Palette, VW, VH, host)
+    host.scene = host.playground
   else
     host.scene = host.build
   end
@@ -151,8 +156,8 @@ end
 
 function love.keypressed(key)
   if key == "escape" then
-    -- Depuis le Grimoire (ouvert via le menu) : retour menu ; sinon quitte le jeu.
-    if host.name == "grimoire" then host.goto("menu"); return end
+    -- Depuis le Grimoire ou le Proving Ground (ouverts via le menu) : retour menu ; sinon quitte.
+    if host.name == "grimoire" or host.name == "playground" then host.goto("menu"); return end
     love.event.quit(); return
   end
   -- [g] bascule build <-> galerie (revue visuelle des entités). Réservé à ces deux scènes.

@@ -35,6 +35,7 @@ function Menu.new(palette, vw, vh, host)
   self.items = {
     { id = "enter",    key = "menu.enter",    enabled = true,  action = function() self.host.newRun() end },
     { id = "grimoire", key = "menu.grimoire", enabled = true,  action = function() self.host.goto("grimoire") end },
+    { id = "proving",  key = "menu.proving",  enabled = true,  action = function() self.host.goto("playground") end },
     { id = "rites",    key = "menu.rites",    enabled = false },
     { id = "abandon",  key = "menu.abandon",  enabled = true,  action = function() love.event.quit() end },
   }

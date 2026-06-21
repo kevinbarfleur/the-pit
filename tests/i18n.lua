@@ -12,6 +12,7 @@ local Units = require("src.data.units")
 local Shapes = require("src.board.shapes")
 local Encounters = require("src.data.encounters")
 local Relics = require("src.data.relics")
+local Compositions = require("src.data.compositions")
 
 local ok, err = pcall(function()
   -- Locale par défaut = anglais.
@@ -53,6 +54,22 @@ local ok, err = pcall(function()
     need(Relics[id].realKey)
     need(Relics[id].decoys[1]); need(Relics[id].decoys[2])
   end
+  -- Banc d'essai (Proving Ground) : archetype/variant/note de chaque compo + labels/notes de scénarios.
+  for _, comp in ipairs(Compositions.list) do
+    need("pg.archetype." .. comp.archetype)
+    need("pg.variant." .. comp.variant)
+    need(comp.noteKey)
+  end
+  for _, sc in ipairs(Compositions.scenarios) do
+    need("scenario." .. sc.id .. ".label")
+    need("scenario." .. sc.id .. ".note")
+  end
+  for _, k in ipairs({ "pg.title", "pg.subtitle", "pg.vs", "pg.watch", "pg.sim", "pg.simming",
+    "pg.winrate", "pg.decided", "pg.invest_delta", "pg.idle", "pg.watched", "pg.invest", "pg.gold",
+    "result.left", "result.right", "ui.hint_playground", "menu.proving", "encounter.exhibition.name" }) do
+    need(k)
+  end
+
   assert(#missing == 0, "cles de traduction manquantes : " .. table.concat(missing, ", "))
 
   print(string.format("  i18n : en par defaut + interpolation + fallback ; couverture %d unites / %d sigils / %d encounters / %d reliques OK",

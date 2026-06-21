@@ -95,9 +95,11 @@ end
 
 function Combat:mousepressed(vx, vy, button)
   if button == 1 and self.arena.over then
-    -- Route via le host (méta de run : résout l'issue, met à jour vies/victoires, ouvre le round
-    -- suivant OU l'écran de fin de run). Fallback goto("build") pour les contextes sans run (tests).
-    if self.host.finishCombat then self.host.finishCombat(self.arena.win)
+    -- EXHIBITION (banc d'essai) : payload.onFinish prend la main -> retour au Proving Ground, SANS
+    -- toucher la méta de run. Sinon route normale via le host (résout vies/victoires, round suivant ou
+    -- fin de run). Fallback goto("build") pour les contextes sans run (tests).
+    if self.payload.onFinish then self.payload.onFinish(self.arena.win, self.arena)
+    elseif self.host.finishCombat then self.host.finishCombat(self.arena.win)
     else self.host.goto("build") end
   end
 end

@@ -104,6 +104,19 @@ local ok, err = pcall(function()
     assert(cc.placementSens >= 0 and cc.placementSens <= 1, "placementSens dans [0,1]: " .. c.id)
   end
   print("  lab : cout monotone OK (perfect>=minor>clutch en or ; score (0,1] ; placementSens [0,1])")
+
+  -- 6) SMOKE SCÈNE : le Proving Ground se construit, sélectionne, lance un batch SIM (étalé) et se
+  -- dessine sans crash sous mock LÖVE (attrape tout appel love.graphics non stubé / clé i18n manquante).
+  local Playground = require("src.scenes.playground")
+  local Palette = require("src.core.palette")
+  local pg = Playground.new(Palette, 320, 180, { goto = function() end })
+  local view = { scale = 4, ox = 0, oy = 0 }
+  pg:drawBack(view); pg:drawWorld(); pg:drawOverlay(view)
+  pg:select(2); pg:mousemoved(10, 40); pg:startSim()
+  for _ = 1, 3 do pg:update(1.0) end
+  pg:drawOverlay(view)
+  assert(pg.sim or pg.result, "scene: la boucle SIM tourne (en cours ou aboutie)")
+  print("  lab : scene Proving Ground OK (construit + select + SIM + draw headless)")
 end)
 
 if ok then
