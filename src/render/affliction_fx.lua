@@ -144,30 +144,53 @@ end
 -- Déclenché par l'event bus "spread" {from,to,family}. 100% RENDER, ne mute jamais la SIM.
 function AfflictionFx:spread(from, to, family)
   if not (from and to) then return end
-  local x0, y0 = from.x, from.y - 16          -- part du haut du corps source
+  family = family or "poison"
+  local x0, y0 = from.x, from.y - 14          -- part du corps source
   local x1, y1 = to.x, to.y - 12              -- vise le torse de la cible
   local dx, dy = x1 - x0, y1 - y0
   local dist = (dx * dx + dy * dy) ^ 0.5
+  -- LENT et long (>= ~0.4 s même sur un saut court) -> l'œil suit le NUAGE qui voyage.
   self.projs[#self.projs + 1] = {
     x0 = x0, y0 = y0, x1 = x1, y1 = y1, x = x0, y = y0,
-    age = 0, life = max(8, min(22, dist * 0.5)), lift = 5 + dist * 0.18,
-    family = family or "poison", trail = {},
+    age = 0, life = max(26, min(46, dist * 0.85)), lift = 9 + dist * 0.22,
+    family = family, trail = {}, moteAcc = 0, phase = self:weyl() * 6.2832,
   }
+  -- Bouffée de DÉPART : on VOIT l'affliction se détacher de la source (éjectée vers la cible).
+  local fx = FAMILY_FX[family] or FAMILY_DEFAULT
+  local nx, ny = dx / (dist + 0.001), dy / (dist + 0.001)
+  for i = 1, 6 do
+    local r, r2 = self:weyl()
+    local sp = 0.5 + r2 * 1.0
+    self.parts[#self.parts + 1] = {
+      kind = "mote", x = x0, y = y0, ay = 0,
+      vx = nx * sp + (r - 0.5) * 0.7, vy = ny * sp + (r2 - 0.5) * 0.7 - 0.2,
+      age = 0, life = 9 + r * 7, col = fx.col, r = (r2 < 0.4) and 2 or 1,
+    }
+  end
 end
 
 -- Éclat d'impact à l'arrivée d'un projectile de transmission : burst radial teinté par la famille.
 function AfflictionFx:spawnImpact(x, y, family)
   local fx = FAMILY_FX[family] or FAMILY_DEFAULT
-  for i = 1, 9 do
+  for i = 1, 12 do
     local r, r2 = self:weyl()
-    local ang = (i / 9) * 6.2832 + (r - 0.5) * 0.8
-    local spd = 0.8 + r2 * 1.4
+    local ang = (i / 12) * 6.2832 + (r - 0.5) * 0.8
+    local spd = 0.9 + r2 * 1.6
     self.parts[#self.parts + 1] = {
       kind = "spark", x = x, y = y,
       vx = cos(ang) * spd, vy = sin(ang) * spd - 0.3, ay = 0.04,
-      age = 0, life = 6 + r2 * 6, col = fx.col,
+      age = 0, life = 7 + r2 * 7, col = fx.col,
     }
   end
+  for i = 1, 4 do -- volutes de gaz à l'arrivée (rappel du nuage qui « éclate » sur la cible)
+    local r, r2 = self:weyl()
+    self.parts[#self.parts + 1] = {
+      kind = "mote", x = x, y = y, ay = 0,
+      vx = (r - 0.5) * 0.9, vy = (r2 - 0.5) * 0.9 - 0.3,
+      age = 0, life = 13 + r * 9, col = fx.col, r = 2,
+    }
+  end
+  self.parts[#self.parts + 1] = { kind = "bloom", x = x, y = y, vx = 0, vy = 0, ay = 0, age = 0, life = 9, col = fx.col }
 end
 
 -- Phase stable par unité (sans toucher au rig) -> désynchronise glows/oscillations entre monstres.
@@ -289,7 +312,19 @@ function AfflictionFx:update(units, dt, t)
     pr.y = pr.y0 + (pr.y1 - pr.y0) * s - pr.lift * (4 * s * (1 - s)) -- soulèvement parabolique
     pr.trail[#pr.trail + 1] = { x = pr.x, y = pr.y, age = 0 }
     for _, tp in ipairs(pr.trail) do tp.age = tp.age + dt end
-    while pr.trail[1] and pr.trail[1].age > 8 do table.remove(pr.trail, 1) end
+    while pr.trail[1] and pr.trail[1].age > 11 do table.remove(pr.trail, 1) end
+    -- volutes qui se détachent du nuage en vol (traînée gazeuse, pas juste une ligne)
+    pr.moteAcc = pr.moteAcc + dt
+    if pr.moteAcc >= 2 then
+      pr.moteAcc = pr.moteAcc - 2
+      local r, r2 = self:weyl()
+      local fx = FAMILY_FX[pr.family] or FAMILY_DEFAULT
+      self.parts[#self.parts + 1] = {
+        kind = "mote", x = pr.x, y = pr.y, ay = 0,
+        vx = (r - 0.5) * 0.4, vy = (r2 - 0.5) * 0.4 - 0.12,
+        age = 0, life = 10 + r * 7, col = fx.col, r = 1,
+      }
+    end
     if pr.age >= pr.life then
       self:spawnImpact(pr.x1, pr.y1, pr.family)
       table.remove(self.projs, i)
@@ -407,21 +442,43 @@ function AfflictionFx:drawGlow(units, t)
     end
   end
 
-  -- Transmission : projectiles en arc (traînée + cœur clair), couleur de la famille. Lecture « ça saute ».
-  g.setLineStyle("rough"); g.setLineWidth(1)
+  -- Transmission : volutes de gaz (motes) + flash d'arrivée (bloom) + le NUAGE qui voyage de A vers B.
+  for _, p in ipairs(self.parts) do
+    if p.kind == "mote" then
+      local col = p.col or COL.poison
+      g.setColor(col[1], col[2], col[3], (1 - p.age / p.life) * 0.6)
+      local s = p.r or 1
+      g.rectangle("fill", floor(p.x), floor(p.y), s, s)
+    elseif p.kind == "bloom" then
+      local f = p.age / p.life
+      local col = p.col or COL.poison
+      g.setColor(col[1], col[2], col[3], (1 - f) * 0.7)
+      local rad = floor(1 + f * 4)
+      g.rectangle("line", floor(p.x) - rad, floor(p.y) - rad, rad * 2, rad * 2) -- anneau qui s'ouvre
+    end
+  end
+  g.setLineStyle("rough")
   for _, pr in ipairs(self.projs) do
     local ffx = FAMILY_FX[pr.family] or FAMILY_DEFAULT
-    local tr = pr.trail
+    local tr = pr.trail -- traînée ÉPAISSE en dégradé (récent = large/vif) -> lecture « ça file »
     for j = 1, #tr - 1 do
       local a, b = tr[j], tr[j + 1]
-      local life = 1 - a.age / 8
-      g.setColor(ffx.col[1], ffx.col[2], ffx.col[3], life * 0.6)
+      local life = 1 - a.age / 11
+      g.setColor(ffx.col[1], ffx.col[2], ffx.col[3], life * 0.5)
+      g.setLineWidth(1 + life * 2)
       g.line(a.x, a.y, b.x, b.y)
     end
+    g.setLineWidth(1)
+    -- tête = NUAGE pixel qui ondule (amas de rects additifs + cœur clair) -> impossible à rater
+    local wob = floor(sin((pr.age + (pr.phase or 0)) * 0.5) * 1.5)
     local hx, hy = floor(pr.x), floor(pr.y)
-    g.setColor(ffx.col[1], ffx.col[2], ffx.col[3], 0.9) -- halo de famille
+    g.setColor(ffx.col[1], ffx.col[2], ffx.col[3], 0.45)
+    g.rectangle("fill", hx - 2 + wob, hy - 1, 2, 2)
+    g.rectangle("fill", hx + 1, hy - 2 - wob, 2, 2)
+    g.rectangle("fill", hx - 1, hy + 1, 2, 2)
+    g.setColor(ffx.col[1], ffx.col[2], ffx.col[3], 0.8)
     g.rectangle("fill", hx - 1, hy - 1, 3, 3)
-    g.setColor(ffx.head[1], ffx.head[2], ffx.head[3], 1) -- cœur clair
+    g.setColor(ffx.head[1], ffx.head[2], ffx.head[3], 1)
     g.rectangle("fill", hx, hy, 1, 1)
   end
   -- Choc : ÉCLAIRS en zigzag qui crépitent à plusieurs points de la silhouette (cœur blanc + halo jaune),
