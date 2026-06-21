@@ -148,6 +148,88 @@ Compositions.list = {
     },
     noteKey = "comp.shock_carre.note",
   },
+
+  -- ══ COMPLÉMENT DES JEUX DE VARIANTS (toutes les familles DoT ont perfect/missing_minor/missing_clutch) ══
+  {
+    id = "burn_ligne_missing_minor", archetype = "burn", variant = "missing_minor", sigil = "ligne", boardLevel = 7,
+    units = { -- bellows_priest (anti-decay redondant avec ash_maw) -> ash_moth (filler)
+      { id = "soot_acolyte", slot = 5 }, { id = "pyre_tender", slot = 4 }, { id = "emberling", slot = 6 },
+      { id = "ash_moth", slot = 3 }, { id = "wildfire_hound", slot = 7 }, { id = "ash_maw", slot = 2 },
+    },
+    noteKey = "comp.burn_ligne_missing_minor.note",
+  },
+  {
+    id = "bleed_anneau_missing_minor", archetype = "bleed", variant = "missing_minor", sigil = "anneau", boardLevel = 9,
+    units = { -- gash_fiend (2e saigneur, redondant) -> skeleton
+      { id = "clot_mender", slot = 1 }, { id = "razorkin", slot = 2 }, { id = "skeleton", slot = 9 },
+      { id = "hookjaw", slot = 5 }, { id = "bloodletter", slot = 4 }, { id = "slow_bleed", slot = 7 },
+    },
+    noteKey = "comp.bleed_anneau_missing_minor.note",
+  },
+  {
+    id = "bleed_anneau_missing_clutch", archetype = "bleed", variant = "missing_clutch", sigil = "anneau", boardLevel = 9,
+    units = { -- slow_bleed (slow d'équipe = CLUTCH) -> skeleton : plus de déni de tempo global
+      { id = "clot_mender", slot = 1 }, { id = "razorkin", slot = 2 }, { id = "gash_fiend", slot = 9 },
+      { id = "hookjaw", slot = 5 }, { id = "bloodletter", slot = 4 }, { id = "skeleton", slot = 7 },
+    },
+    noteKey = "comp.bleed_anneau_missing_clutch.note",
+  },
+  {
+    id = "rot_carre_missing_minor", archetype = "rot", variant = "missing_minor", sigil = "carre", boardLevel = 8,
+    units = { -- patient_worm (ramp passif redondant) -> skeleton
+      { id = "decay_tender", slot = 5 }, { id = "rot_hound", slot = 2 }, { id = "necro_leech", slot = 4 },
+      { id = "maggot_king", slot = 6 }, { id = "skeleton", slot = 8 }, { id = "pit_maw", slot = 1 },
+    },
+    noteKey = "comp.rot_carre_missing_minor.note",
+  },
+
+  -- ══ NIVEAUX DE BOARD (l'axe early/mid : moins de slots, moins d'unités -> matchups d'investissement) ══
+  {
+    id = "poison_diamant_mid", archetype = "poison", variant = "perfect", sigil = "diamant", boardLevel = 5,
+    units = { -- board niveau ~5 (slots 1-5) : le coeur poison sans les premiums de fin de partie
+      { id = "miasma_acolyte", slot = 5 }, { id = "spore_tick", slot = 2 }, { id = "bile_spitter", slot = 3 },
+      { id = "plague_bearer", slot = 4 }, { id = "festering", slot = 1 },
+    },
+    noteKey = "comp.poison_diamant_mid.note",
+  },
+  {
+    id = "tank_carre_mid", archetype = "tank", variant = "wall", sigil = "carre", boardLevel = 5,
+    units = { -- mur niveau ~5 : taunt + bouclier + regen, sans la 2e ligne d'épines
+      { id = "gravewarden", slot = 5 }, { id = "templar", slot = 4 }, { id = "plague_doctor", slot = 2 },
+      { id = "skeleton", slot = 1 },
+    },
+    noteKey = "comp.tank_carre_mid.note",
+  },
+
+  -- ══ COMBO CROISÉ (T3 pivot) : bleed -> rot via marrow_drinker (convertit le bleed en pourriture) ══
+  {
+    id = "cross_bleed_rot", archetype = "rot", variant = "perfect", sigil = "carre", boardLevel = 8,
+    units = {
+      { id = "clot_mender", slot = 5 },   -- AURA : grant bleed aux voisins (2,4,6,8) = beaucoup de cibles saignantes
+      { id = "razorkin", slot = 2 }, { id = "gash_fiend", slot = 4 }, -- enablers bleed
+      { id = "marrow_drinker", slot = 6 }, -- PIVOT : convertit le bleed en rot (amputation)
+      { id = "hookjaw", slot = 8 },       -- gros slow (tient la cible le temps de la conversion)
+    },
+    noteKey = "comp.cross_bleed_rot.note",
+  },
+
+  -- ══ VARIANTS CLUTCH de tank / bruiser (isolent la valeur d'une pièce non-DoT) ══
+  {
+    id = "tank_carre_no_taunt", archetype = "tank", variant = "missing_clutch", sigil = "carre", boardLevel = 8,
+    units = { -- gravewarden (TAUNT = CLUTCH) -> skeleton : sans taunt, le carry adverse n'est plus forcé en façade
+      { id = "skeleton", slot = 5 }, { id = "templar", slot = 4 }, { id = "plague_doctor", slot = 6 },
+      { id = "skeleton", slot = 2 }, { id = "leech_thorn", slot = 8 },
+    },
+    noteKey = "comp.tank_carre_no_taunt.note",
+  },
+  {
+    id = "bruiser_carre_no_sustain", archetype = "bruiser", variant = "missing_clutch", sigil = "carre", boardLevel = 8,
+    units = { -- demon (vol de vie = CLUTCH de sustain) -> bandit
+      { id = "marauder", slot = 5 }, { id = "bandit", slot = 4 }, { id = "bandit", slot = 6 },
+      { id = "skeleton", slot = 2 }, { id = "marauder", slot = 8 },
+    },
+    noteKey = "comp.bruiser_carre_no_sustain.note",
+  },
 }
 
 -- ── Matchups FEATURED (la liste de scénarios « j'ai qu'à choisir »). seed FIXE -> match rejouable.
@@ -161,6 +243,18 @@ Compositions.scenarios = {
   { id = "bruiser_mirror",     a = "bruiser_carre",          b = "bruiser_carre",                 seed = 1006, noteKey = "scenario.bruiser_mirror.note" },
   { id = "bleed_vs_bruiser",   a = "bleed_anneau_perfect",   b = "bruiser_carre",                 seed = 1007, noteKey = "scenario.bleed_vs_bruiser.note" },
   { id = "rot_clutch_test",    a = "rot_carre_perfect",      b = "rot_carre_missing_clutch",      seed = 1008, noteKey = "scenario.rot_clutch_test.note" },
+  -- variants complétés
+  { id = "burn_minor_test",     a = "burn_ligne_perfect",    b = "burn_ligne_missing_minor",      seed = 1009, noteKey = "scenario.burn_minor_test.note" },
+  { id = "bleed_clutch_test",   a = "bleed_anneau_perfect",  b = "bleed_anneau_missing_clutch",   seed = 1010, noteKey = "scenario.bleed_clutch_test.note" },
+  { id = "rot_minor_test",      a = "rot_carre_perfect",     b = "rot_carre_missing_minor",       seed = 1011, noteKey = "scenario.rot_minor_test.note" },
+  -- AXE NIVEAU DE BOARD (mid vs late, et mid sous-investi vs mur)
+  { id = "board_level_poison",  a = "poison_diamant_mid",    b = "poison_diamant_perfect",        seed = 1012, noteKey = "scenario.board_level_poison.note" },
+  { id = "board_level_tank",    a = "tank_carre_mid",        b = "tank_carre",                    seed = 1013, noteKey = "scenario.board_level_tank.note" },
+  { id = "poison_mid_vs_tank",  a = "poison_diamant_mid",    b = "tank_carre",                    seed = 1017, noteKey = "scenario.poison_mid_vs_tank.note" },
+  -- valeur d'une pièce non-DoT (taunt / sustain) + combo croisé
+  { id = "tank_taunt_test",     a = "tank_carre",            b = "tank_carre_no_taunt",           seed = 1014, noteKey = "scenario.tank_taunt_test.note" },
+  { id = "bruiser_sustain_test", a = "bruiser_carre",        b = "bruiser_carre_no_sustain",      seed = 1015, noteKey = "scenario.bruiser_sustain_test.note" },
+  { id = "cross_vs_tank",       a = "cross_bleed_rot",       b = "tank_carre",                    seed = 1016, noteKey = "scenario.cross_vs_tank.note" },
 }
 
 -- ── Index (construits au load ; DATA pure, aucun love/require) ──
