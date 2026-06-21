@@ -9,6 +9,7 @@ love = require("tests.mock_love")
 local Palette = require("src.core.palette")
 local Build = require("src.scenes.build")
 local Arena = require("src.combat.arena")
+local Match = require("src.combat.match")
 local Encounters = require("src.data.encounters")
 local EventLog = require("tools.eventlog")
 
@@ -23,17 +24,21 @@ local ok, err = pcall(function()
   b:placeId(2, "witch"); b:placeId(8, "demon")
   local left, right = b:buildLeftComp(), b:buildRightComp(Encounters[2])
 
-  local arena = Arena.new({ left = left, right = right, autoReset = false, seed = SEED })
-  local log = EventLog.attach(arena, { seed = SEED })
-  local concludedAt = 8000
-  for i = 1, 8000 do arena:update(1.0, i * 1.0); if arena.over then concludedAt = i; break end end
+  -- Combat via le runner partagé (même boucle exacte qu'avant -> empreinte inchangée). L'event-log est
+  -- attaché APRÈS Arena.new (comme à l'origine) via le closure, puis renvoyé par expose.
+  local res = Match.run(left, right, SEED, {
+    tickCap = 8000,
+    attach = function(a) return EventLog.attach(a, { seed = SEED }) end,
+    expose = true,
+  })
+  local log = res.log
   local fp = log:fingerprint()
 
   -- GARDE Fatigue : le golden DOIT conclure avant le seuil d'usure, sinon la Fatigue influencerait
   -- l'empreinte et celle-ci ne serait plus « golden-safe ». Si ce scénario venait à dépasser le seuil,
   -- c'est un changement à valider explicitement (revoir le scénario OU rebaseliner sciemment).
-  assert(concludedAt < Arena.FATIGUE_START,
-    string.format("golden doit conclure avant le seuil de Fatigue (%d) : conclu a %d", Arena.FATIGUE_START, concludedAt))
+  assert(res.ticks < Arena.FATIGUE_START,
+    string.format("golden doit conclure avant le seuil de Fatigue (%d) : conclu a %d", Arena.FATIGUE_START, res.ticks))
 
   if EXPECTED == nil then
     print("  golden : BASELINE etablie, empreinte = " .. fp .. "  -> coller dans EXPECTED")

@@ -18,7 +18,7 @@ love = require("tests.mock_love")
 local Palette = require("src.core.palette")
 local Units = require("src.data.units")
 local Shapes = require("src.board.shapes")
-local Arena = require("src.combat.arena")
+local Match = require("src.combat.match")
 local Build = require("src.scenes.build")
 local EventLog = require("tools.eventlog")
 
@@ -82,10 +82,12 @@ end
 for run = 1, N do
   local left = buildSide(-1)
   local right = buildSide(1)
-  local arena = Arena.new({ left = left, right = right, autoReset = false, seed = BASE_SEED + run })
-  local log = EventLog.attach(arena)
-  local ticks = 0
-  for i = 1, TICK_CAP do arena:update(1.0, i * 1.0); ticks = i; if arena.over then break end end
+  local res = Match.run(left, right, BASE_SEED + run, {
+    tickCap = TICK_CAP,
+    attach = function(a) return EventLog.attach(a) end,
+    expose = true,
+  })
+  local arena, log, ticks = res.arena, res.log, res.ticks
 
   local leftIds, rightIds = {}, {}
   for _, u in ipairs(left) do leftIds[#leftIds + 1] = u.id; S(u.id).appear = S(u.id).appear + 1 end
