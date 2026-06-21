@@ -25,8 +25,15 @@ local ok, err = pcall(function()
 
   local arena = Arena.new({ left = left, right = right, autoReset = false, seed = SEED })
   local log = EventLog.attach(arena, { seed = SEED })
-  for i = 1, 8000 do arena:update(1.0, i * 1.0); if arena.over then break end end
+  local concludedAt = 8000
+  for i = 1, 8000 do arena:update(1.0, i * 1.0); if arena.over then concludedAt = i; break end end
   local fp = log:fingerprint()
+
+  -- GARDE Fatigue : le golden DOIT conclure avant le seuil d'usure, sinon la Fatigue influencerait
+  -- l'empreinte et celle-ci ne serait plus « golden-safe ». Si ce scénario venait à dépasser le seuil,
+  -- c'est un changement à valider explicitement (revoir le scénario OU rebaseliner sciemment).
+  assert(concludedAt < Arena.FATIGUE_START,
+    string.format("golden doit conclure avant le seuil de Fatigue (%d) : conclu a %d", Arena.FATIGUE_START, concludedAt))
 
   if EXPECTED == nil then
     print("  golden : BASELINE etablie, empreinte = " .. fp .. "  -> coller dans EXPECTED")

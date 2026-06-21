@@ -30,6 +30,15 @@ local WEAKEN_CAP = 0.40    -- malus de valeur max (poison)
 local SHOCK_AMP_CAP = 2.00 -- +200% de dégâts-pris max (clamp dur, choc)
 local AGGRO_STD = 10       -- aggro par défaut (standard) ; tank ~40, bruiser ~15, carry ~5 (porté par la data)
 
+-- FATIGUE (enrage ~17 s) : passé FATIGUE_START ticks, une USURE globale croissante frappe toutes les
+-- unités (ignore le bouclier) jusqu'à conclusion — aucun combat ne stagne (murs tank/regen, échanges de
+-- DoT/soin). GATED sur les vraies batailles (autoReset=false) ; la démo en boucle n'est JAMAIS fatiguée.
+-- DÉTERMINISTE (zéro RNG). `cause="fatigue"` ∉ STATUS_CAUSES (tools/sim.lua) -> ne fausse pas la part DoT.
+-- Le golden conclut bien avant le seuil -> empreinte inchangée (cf. tests/golden.lua, ~105 events << 1020).
+local FATIGUE_START = 1020 -- ~17 s @ 60 fps (1 tick = 1/60 s)
+local FATIGUE_BASE  = 1    -- dps d'usure au déclenchement
+local FATIGUE_RAMP  = 0.01 -- +dps par tick au-delà du seuil (l'usure s'accélère -> conclusion garantie)
+
 local ROWS_Y = { 70, 104, 138 }
 
 -- Compo de démonstration (si aucune compo fournie) : reprend les stats de units.lua.
@@ -56,6 +65,7 @@ function Arena.new(opts)
   self.seed = opts.seed or 0
   self.rng = opts.rng or love.math.newRandomGenerator(self.seed)
   self.bus = opts.bus or Bus.new() -- bus d'événements par combat (render + event-log s'y abonnent)
+  self.fatigue = opts.fatigue -- override optionnel { start?, base?, ramp? } (le lab peut balayer ; sinon constantes)
   self.ctx = {} -- contexte d'effets RÉUTILISÉ (aucune allocation par hook)
   self.deathCtx = {} -- ctx DÉDIÉ au broadcast on_death (n'écrase pas self.ctx pendant hit/tick)
   self.deaths = {}   -- file des morts de la frame : on_death résolu APRÈS la boucle (hors réentrance)
@@ -389,6 +399,28 @@ function Arena:update(frameDt, t)
     end
   end
 
+  -- FATIGUE (enrage) : usure globale croissante passé le seuil, jusqu'à conclusion. Gated sur les vraies
+  -- batailles (la démo en boucle s'arrête à 0 via resetTimer, jamais fatiguée). Résolue APRÈS les frappes
+  -- et AVANT le broadcast on_death -> les morts d'usure sont traitées dans la même frame. `silent` : pas de
+  -- nombre flottant ni de record "damage" (l'usure n'entre pas dans les stats de dégâts) ; la mort, elle,
+  -- est émise normalement (l'unité s'effondre à l'écran). Déterministe.
+  if not self.autoReset then
+    local ft = self.fatigue
+    local start = (ft and ft.start) or FATIGUE_START
+    if self.t >= start then
+      local dps = ((ft and ft.base) or FATIGUE_BASE) + ((ft and ft.ramp) or FATIGUE_RAMP) * (self.t - start)
+      for _, u in ipairs(self.units) do
+        if u.alive then
+          u.fatigueAcc = (u.fatigueAcc or 0) + dps * (frameDt / 60)
+          if u.fatigueAcc >= 1 then
+            local n = math.floor(u.fatigueAcc); u.fatigueAcc = u.fatigueAcc - n
+            self:damage(u, n, { ignoreShield = true, silent = true, cause = "fatigue" })
+          end
+        end
+      end
+    end
+  end
+
   -- on_death : broadcast DIFFÉRÉ (hors du chemin réentrant hit/tick), ctx dédié. Les ops de propagation
   -- ne posent que des DoT (jamais de dégât immédiat) -> aucune cascade de mort pendant le drain.
   if #self.deaths > 0 then
@@ -428,5 +460,8 @@ function Arena:update(frameDt, t)
     if self.over then self.overAge = self.overAge + frameDt end
   end
 end
+
+-- Constante exposée (lecture seule) : les tests/le lab s'y réfèrent (seuil de déclenchement de la Fatigue).
+Arena.FATIGUE_START = FATIGUE_START
 
 return Arena
