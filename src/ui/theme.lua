@@ -61,6 +61,16 @@ Theme.c = {
   drop       = H(0x6bc766), -- cible de drop valide
   ember      = H(0xc4663a), -- braises
 
+  -- Afflictions (DoT) — couleurs DISTINCTES (teinte bien séparée) pour la lecture de la barre de vie
+  -- segmentée ET les icônes de statut. Chaque DoT « réserve » une portion de la vie courante, colorée
+  -- par sa famille (réf hack&slash/ARPG). Le choc amplifie (pas de segment) -> icône seule.
+  poison     = H(0x8fbf2e), -- poison : vert toxique/acide (≠ heal, plus saturé)
+  bleed      = H(0xd0405a), -- saignement : cramoisi rosé (≠ sang HP, plus vif)
+  bleedDeep  = H(0x6a1414), -- sang séché (flaque/fin de goutte du feedback corporel d'affliction)
+  burn       = H(0xe0792e), -- brûlure : braise vive (≠ ember, plus lumineux)
+  rot        = H(0xa86fc4), -- pourriture : violet nécrotique
+  shock      = H(0xf2d24a), -- choc : jaune électrique
+
   -- Plateau (cases & arêtes)
   slotEdge   = H(0x524759), -- bord de case par défaut
   slotEdgeLck= H(0x221c28), -- bord de case verrouillée

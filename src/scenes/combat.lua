@@ -30,6 +30,7 @@ function Combat.new(palette, vw, vh, host, payload)
     ambient = Ambient.new(payload.seed or 11), -- atmosphère "combat" (gueule du puits + braises)
     arena = arena,
     renderer = ArenaDraw.new(arena, palette),
+    paused = false, -- PAUSE spectateur (Espace) : gèle entièrement le combat (analyse / screenshots)
   }, Combat)
 end
 
@@ -41,6 +42,7 @@ function Combat:restart()
 end
 
 function Combat:update(frameDt)
+  if self.paused then return end -- combat GELÉ (sim + anims + horloge) -> reprise identique via Espace
   self.t = self.t + frameDt
   self.ambient:update(frameDt)
   self.arena:update(frameDt, self.t) -- SIM (émet des événements)
@@ -87,9 +89,22 @@ function Combat:drawOverlay(view)
     Draw.textC(T("ui.hint_combat_end"), Draw.W / 2, Draw.H / 2 + 58, c.muted, Theme.ui(12))
     Draw.finish()
   end
+
+  -- Indicateur de PAUSE : glyphe ❚❚ DESSINÉ (pas de texte -> aucune dépendance i18n), haut-centre, hors
+  -- de la zone des grilles -> screenshot lisible. Le combat figé est déjà un retour clair en soi.
+  if self.paused then
+    Draw.begin(view)
+    local bx, by = Draw.W / 2 - 5, 44
+    love.graphics.setColor(c.inkBright[1], c.inkBright[2], c.inkBright[3], 0.92)
+    love.graphics.rectangle("fill", bx, by, 4, 14)
+    love.graphics.rectangle("fill", bx + 7, by, 4, 14)
+    love.graphics.setColor(1, 1, 1, 1)
+    Draw.finish()
+  end
 end
 
 function Combat:keypressed(key)
+  if key == "space" then self.paused = not self.paused; return end -- PAUSE / reprise (spectateur)
   if key == "r" then self:restart() end
 end
 
