@@ -152,7 +152,6 @@ function Rundriver:fight()
   self.lastResult = res
 
   self.run:resolve(res.win)
-  self.run:observeRelics() -- avance l'observation des reliques cryptiques (le host inscrirait au Grimoire ; pas nous)
   self.over = self.run:isOver()
   if self.over then return { result = res, over = self.over } end
 
@@ -169,7 +168,7 @@ end
 function Rundriver:pickRelic(choiceIndex)
   if not self.pendingRelics then return false end
   local id = self.pendingRelics[choiceIndex or 1]
-  if id then self.run:grantRelic(id, self.relicsKnown) end
+  if id then self.run:grantRelic(id) end
   self.pendingRelics = nil
   self.run:startRound()
   return id or false

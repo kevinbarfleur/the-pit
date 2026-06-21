@@ -115,6 +115,8 @@ function Arena:makeUnit(spec, team)
     taunt = spec.taunt or (u and u.taunt) or false,
     shield = spec.shield or 0, maxShield = spec.shield or 0,
     poisonInc = spec.poisonInc, burnInc = spec.burnInc, -- ampli d'aura (increased) lu par la pose de DoT (resolve+cap)
+    bleedInc = spec.bleedInc, rotInc = spec.rotInc,     -- idem bleed/rot (aura OU relique team-wide) ; nil = inerte
+    dmgReduce = spec.dmgReduce,                          -- DÉFENSE : -frac dégâts d'ATTAQUE subis (relique) ; nil = inerte
     atkTimer = self.rng:random() * spec.cd, -- décalage seedé -> pas de swings synchronisés
     firstHit = true,
     -- Statuts : poison = LISTE de stacks (axe « nombre ») ; burn/bleed/rot/shock = instances uniques.
@@ -229,6 +231,11 @@ end
 -- opts : { ignoreShield?, silent?, poison?, source?, cause? }. Renvoie les PV réellement perdus.
 function Arena:damage(target, amount, opts)
   opts = opts or {}
+  -- DÉFENSE (relique Aegis) : réduit les dégâts d'ATTAQUE subis (pas les DoT ni la fatigue). Gated -> nil =
+  -- inerte (golden-safe). Arrondi au plus proche : le chip à 1 n'est pas annulé, les gros coups sont amputés.
+  if opts.cause == "attack" and target.dmgReduce and target.dmgReduce > 0 then
+    amount = math.floor(amount * (1 - target.dmgReduce) + 0.5)
+  end
   local raw = math.max(0, amount)
   local absorbed = 0
   amount = raw

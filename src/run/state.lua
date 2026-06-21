@@ -34,7 +34,6 @@ local LIFE_BACK_ROUND = 3      -- début de CE round : +1 vie si on a déjà per
 local STREAK_CAP      = 3      -- bonus d'or max par série
 local SELL_REFUND_FRAC = 0.5   -- remboursement à la revente (< coût -> aucun exploit)
 local DEFAULT_COST    = 3      -- coût si une unité n'en déclare pas
-local RELIC_OBSERVE   = 2      -- nb de combats équipée avant qu'une relique cryptique s'IDENTIFIE (observation)
 
 -- ── Emplacements de plateau = GRANTS TIMÉS (décision 2026-06, cf. the-pit-balance-diagnosis) ──
 -- On NE PAYE PLUS pour débloquer un slot (le couplage or↔slot était un piège dégénéré : lever à chaque
@@ -78,7 +77,7 @@ function RunState.new(seed)
     winStreak = 0,
     lossStreak = 0,
     shop = {},
-    relics = {}, -- possédées : { id, candidates (3 clés mélangées seedé), realKey, identified, observed }
+    relics = {}, -- possédées : { { id } } (modèle LISIBLE : effet affiché ; collection Grimoire inscrite au grant)
   }, RunState)
   self:startRound()
   return self
@@ -183,9 +182,9 @@ end
 -- Seed du PROCHAIN combat, tiré du RNG seedé du run -> chaque combat est rejouable (snapshot/replay).
 function RunState:nextCombatSeed() return self.rng:random(1, 2147483647) end
 
--- ── RELIQUES CRYPTIQUES (pilier #2). Le RUN reste SIM-PUR : il porte la possession, les candidats
--- (mélangés seedé) et l'IDENTIFICATION. La PERSISTANCE Grimoire (IO, cross-run) est faite par le HOST :
--- observeRelics() renvoie les ids nouvellement identifiés, le host les inscrit au Grimoire (hors SIM). ──
+-- ── RELIQUES (chantier 2026-06, modèle LISIBLE — cf. docs/research/relics-design.md). Le RUN reste SIM-PUR :
+-- il ne porte que la POSSESSION ({ id }). L'effet est affiché clairement (plus de candidats/identification).
+-- La collection Grimoire (IO, cross-run) est inscrite par le HOST au GRANT (Grimoire.learn), hors SIM. ──
 
 -- Tire un id de relique au hasard (seedé) parmi celles PAS encore possédées (nil si tout est pris).
 function RunState:rollRelic()
@@ -216,37 +215,18 @@ function RunState:rollRelicChoices(n)
   return out
 end
 
--- Octroie une relique. `alreadyKnown` (lu du Grimoire par le host) -> démarre IDENTIFIÉE (la connaissance
--- est une méta-progression : déjà déduite dans un run passé). Sinon CRYPTIQUE : 3 candidats mélangés seedé.
-function RunState:grantRelic(id, alreadyKnown)
+-- Octroie une relique (modèle LISIBLE : on ne stocke que l'id ; l'effet est affiché). Le host inscrit
+-- la relique au Grimoire (collection cross-run) au moment du grant. Args extra ignorés (compat appelants).
+function RunState:grantRelic(id)
   if not Relics[id] then return false end
   for _, r in ipairs(self.relics) do if r.id == id then return false end end -- pas de doublon
-  local cands = Relics.candidateKeys(id) -- { realKey, decoy1, decoy2 }
-  for i = #cands, 2, -1 do -- Fisher-Yates SEEDÉ (RNG du run) : candidats randomisés par run, rejouables
-    local j = self.rng:random(1, i)
-    cands[i], cands[j] = cands[j], cands[i]
-  end
-  self.relics[#self.relics + 1] = { id = id, candidates = cands, realKey = Relics[id].realKey,
-    identified = alreadyKnown or false, observed = 0 }
+  self.relics[#self.relics + 1] = { id = id }
   return true
 end
 
--- Applique l'effet RÉEL de chaque relique possédée à la compo du joueur (au build, avant combat).
+-- Applique l'effet de chaque relique possédée à la compo du joueur (au build, avant combat).
 function RunState:applyRelics(comp)
   for _, r in ipairs(self.relics) do Relics.apply(comp, Relics[r.id]) end
-end
-
--- Après un combat : chaque relique non identifiée est OBSERVÉE ; au seuil RELIC_OBSERVE elle s'IDENTIFIE.
--- Renvoie la liste des ids NOUVELLEMENT identifiés (le host les inscrit au Grimoire — IO hors SIM).
-function RunState:observeRelics()
-  local learned = {}
-  for _, r in ipairs(self.relics) do
-    if not r.identified then
-      r.observed = r.observed + 1
-      if r.observed >= RELIC_OBSERVE then r.identified = true; learned[#learned + 1] = r.id end
-    end
-  end
-  return learned
 end
 
 -- Constantes exposées (UI/tests) — lecture seule.

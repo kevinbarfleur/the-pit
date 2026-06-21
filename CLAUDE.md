@@ -27,11 +27,13 @@ Ce réflexe vaut pour moi **et tous les sous-agents**. Une API non vérifiée = 
 1. **Simplicité de gestion → profondeur émergente.** La référence d'addictivité du créateur
    est *Batomon Showdown* (SAP en habits de Pokémon Showdown) : pas de timer, gestion d'équipe
    simple. On vise le modèle le plus *simple à implémenter* qui garde une grande rejouabilité.
-2. **Reliques cryptiques (signature du jeu).** Contrairement aux autobattlers où l'effet est
-   écrit, nos reliques se **découvrent**. Pattern retenu : **1-parmi-3** (l'infobulle montre 3
-   effets candidats ; le vrai se révèle à l'usage/observation ; candidats randomisés par run ;
-   une fois identifiée, la relique devient **lore lisible de façon permanente** au niveau du
-   compte = *connaissance comme méta-progression*). Évite le piège "ID aléatoire = frustration".
+2. **Reliques (signature du jeu).** Effets **lisibles** : nom évocateur + effet clair (avec le
+   chiffre) + flavor d'ambiance. **Révise (2026-06)** l'ancien modèle cryptique à déduire — leurres
+   et identification **retirés** (décision user : « pas fan des leurres, trop compliqué pour pas
+   grand-chose »). On garde l'ambiance + l'offre **1-parmi-3** (tous les 3 combats) + le **Grimoire =
+   collection** persistante au niveau du compte (méta-progression). Garde-fous : **team-wide**,
+   **intra-combat only** (aucune relique ne handicape la suite de la partie), **égalisateur** de
+   matchup (jamais un gate). Détail : `docs/research/relics-design.md`.
 3. **Multijoueur asynchrone par snapshots ("ghosts").** On n'affronte JAMAIS un joueur en
    direct : on stocke des **snapshots figés** de builds réels, servis à d'autres selon
    *progression + rang + version*. Cold-start résolu par des **équipes IA**. Aucune netcode
@@ -61,7 +63,7 @@ Ce réflexe vaut pour moi **et tous les sous-agents**. Une API non vérifiée = 
 | Duplicatas | **3 copies → niveau (max 3)** ; stats ET buffs d'adjacence scalent | moteur économique TFT, profondeur/effort maximal |
 | Leveling | **= déblocage progressif des slots** (on démarre à 2–3, pas 9) | résout la lisibilité du combat ET donne son sens à l'éco de niveau |
 | Économie | **or fixe/round + reroll + streaks** ; intérêts/augments en V2 | squelette SAP, le plus simple à équilibrer |
-| Reliques | **cryptiques** : déduire → observer en combat → **verrouiller dans le Grimoire** (codex persistant cross-run, anti-brute-force façon Obra Dinn) ; effets **contextuels** | pilier #2 ; le 1-parmi-3 = les fragments candidats à confirmer |
+| Reliques | **lisibles** : effet affiché (nom + effet clair + flavor) ; offre **1-parmi-3** tous les 3 combats → **Grimoire = collection** persistante. Team-wide, intra-combat, **égalisateur** de matchup | pilier #2 (révisé 2026-06, cf. `docs/research/relics-design.md`) |
 | Multi | **snapshots async** (unités + positions + **sigil actif**) + équipes IA + tag de version ; match par **palier** | pilier #3 |
 | Run | **10 victoires avant ~5 défaites** ; vie rendue au tour 3 si perte précoce | convergence SAP/Backpack/Bazaar/Batomon |
 

@@ -110,7 +110,7 @@ function Screen:drawDetail(c)
   -- Effet (en pied) : réel si inscrit, sinon notes cryptiques.
   Draw.text(T(row.known and "grimoire.effect_known" or "grimoire.effect_unknown"), DET_X + 40, DET_Y + DET_H - 78,
     c.fainter, Theme.ui(10))
-  Draw.textWrap(row.known and T("relic." .. row.id .. ".real") or T("grimoire.effect_pending"),
+  Draw.textWrap(row.known and T("relic." .. row.id .. ".effect") or T("grimoire.effect_pending"),
     DET_X + 40, DET_Y + DET_H - 58, DET_W - 80, row.known and c.goldBright or c.faint, Theme.ui(12))
 end
 

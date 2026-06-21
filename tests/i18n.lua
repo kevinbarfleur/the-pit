@@ -49,10 +49,10 @@ local ok, err = pcall(function()
     need("shape." .. name .. ".archetype")
   end
   for _, enc in ipairs(Encounters) do need("encounter." .. enc.key .. ".name") end
-  for _, id in ipairs(Relics.order) do -- reliques cryptiques : nom + VRAIE description + 2 leurres
+  for _, id in ipairs(Relics.order) do -- reliques (modele lisible) : nom + effet clair + flavor
     need("relic." .. id .. ".name")
-    need(Relics[id].realKey)
-    need(Relics[id].decoys[1]); need(Relics[id].decoys[2])
+    need("relic." .. id .. ".effect")
+    need("relic." .. id .. ".flavor")
   end
   -- Banc d'essai (Proving Ground) : archetype/variant/note de chaque compo + labels/notes de scénarios.
   for _, comp in ipairs(Compositions.list) do

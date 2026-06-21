@@ -20,6 +20,15 @@ local HEX = {
   E = 0x6e7c4a, e = 0x383e22,
   G = 0x4a5e30, g = 0x2a3a18,
   M = 0x7a3850, m = 0x3c1828,
+
+  -- ── Extension RELIQUES (artefacts maudits) : 4 teintes de "point de focus lumineux"
+  -- manquantes au bestiaire. Désaturées Wraeclast (jamais de primaire pur). Append-only :
+  -- caractères neufs -> grilles/créatures existantes inchangées.
+  q = 0xc05a44, -- sang VIF (highlight de gemme/goutte ; éclat luisant, pas 0xff0000)
+  Q = 0xe08a52, -- BRAISE chaude (cœur de feu ; orange-jaune terni, vivant mais sale)
+  z = 0x7a8a34, -- poison clair (résidu/spore maladif, vert-jaune bilieux)
+  Z = 0x46562a, -- poison sombre (ombre du vert maladif)
+  W = 0xd8cfae, -- lueur SACRÉE / ivoire pâle (halo terni, os blanchi ; chaud, jamais blanc pur)
 }
 
 -- Arithmétique pure (pas de bibliothèque bit) -> portable Lua 5.1 / LuaJIT.

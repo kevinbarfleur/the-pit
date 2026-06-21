@@ -53,7 +53,7 @@ luajit tests/auras.lua
 echo "== duplicatas (3 copies -> niveau : fusion + scaling + cascade) =="
 luajit tests/duplicates.lua
 
-echo "== reliques (cryptiques 1-parmi-3 + Grimoire persistant + meta-progression) =="
+echo "== reliques (modele lisible : pool + ops + offre 1-parmi-3 + Grimoire collection) =="
 luajit tests/relics.lua
 
 echo "== snapshot (async : round-trip + serve version/tier + cold-start IA) =="
@@ -70,6 +70,9 @@ luajit tests/props.lua
 
 echo "== gen (generateur de creatures : determinisme + validation + smoke rendu) =="
 luajit tests/gen.lua
+
+echo "== relic-icons (icones de reliques : 16x16 + palette + contour + focus + bake) =="
+luajit tests/relics_icons.lua
 
 echo "== golden (regression event-log) =="
 luajit tests/golden.lua

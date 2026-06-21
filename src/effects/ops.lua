@@ -135,7 +135,11 @@ end)
 Effects.register("bleed", function(ctx, p)
   local v = ctx.victim
   local cur = v.dots.bleed
-  local pdps = p.dps or 0
+  local inc = ctx.source.bleedInc
+  local pdps = ampDps(p.dps or 0, inc) -- RENFORCÉ : ampli (increased) par source, cappé ×3 (aura/relique)
+  if inc and inc > 0 then ctx.arena.bus:emit("amped", { unit = v, family = "bleed" }) end -- signal RENDER (golden-safe)
+  -- le CAP d'équipe enfle avec l'ampli -> un saigneur committé dépasse le plafond brut (sinon l'ampli est mangé)
+  local capTeam = (inc and inc > 0) and math.floor(BLEED_DPS_CAP * (1 + inc) + 0.5) or BLEED_DPS_CAP
   if not cur then
     v.dots.bleed = { dps = pdps, srcDps = { { src = ctx.source, dps = pdps } }, -- CUMUL PAR SOURCE (array+ipairs : déterministe)
       remaining = p.dur or 240, acc = 0, slowPct = p.slowPct or 0,
@@ -151,7 +155,7 @@ Effects.register("bleed", function(ctx, p)
     else cur.srcDps[#cur.srcDps + 1] = { src = ctx.source, dps = pdps } end
     local total = 0
     for _, e in ipairs(cur.srcDps) do total = total + e.dps end
-    cur.dps = min(BLEED_DPS_CAP, total)
+    cur.dps = min(capTeam, total)
     cur.remaining = math.max(cur.remaining, p.dur or 0)
     if p.slowScalesMissingHp then cur.slowScalesMissingHp = true end -- conserve les flags T2 si réappliqué
     if p.aggravateMult then cur.aggravateMult = p.aggravateMult end
@@ -162,9 +166,11 @@ end)
 Effects.register("rot", function(ctx, p)
   local v = ctx.victim
   local cur = v.dots.rot
+  local inc = ctx.source.rotInc -- RENFORCÉ : ampli (increased) -> base ET plafond enflent (aura/relique team-wide)
+  if inc and inc > 0 then ctx.arena.bus:emit("amped", { unit = v, family = "rot" }) end -- signal RENDER (golden-safe)
   if not cur then
-    v.dots.rot = { dps = p.base or 1, remaining = p.dur or 240, acc = 0,
-      capDps = p.capDps or 10, maxHpFrac = p.maxHpFrac or 0, source = ctx.source }
+    v.dots.rot = { dps = ampDps(p.base or 1, inc), remaining = p.dur or 240, acc = 0,
+      capDps = ampDps(p.capDps or 10, inc), maxHpFrac = p.maxHpFrac or 0, source = ctx.source }
   else
     cur.dps = math.min(cur.capDps, cur.dps + (p.growth or 1)) -- enfle si entretenue
     cur.remaining = p.dur or cur.remaining

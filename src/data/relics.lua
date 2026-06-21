@@ -1,44 +1,50 @@
 -- src/data/relics.lua
--- RELIQUES CRYPTIQUES (pilier #2, signature du jeu). L'effet est CACHÉ : l'infobulle montre 3 CANDIDATS
--- (le vrai + 2 leurres), MÉLANGÉS par run (seedé). Le vrai effet (`op`) s'applique quand même au build ;
--- le joueur le DÉDUIT par observation, puis le verrouille au Grimoire (lore permanent au niveau compte).
+-- RELIQUES (chantier 2026-06, cf. docs/research/relics-design.md). Modèle LISIBLE : l'effet est AFFICHÉ
+-- clairement (plus de leurres ni d'identification ; on garde l'ambiance via nom + flavor, et la collection
+-- via le Grimoire). Une relique = un buff TEAM-WIDE appliqué à la compo du joueur AU BUILD (R.apply).
 --
--- DATA quasi-pure : on require Units uniquement pour matérialiser les effets ajoutés (copie, jamais de
--- mutation de la base). Aucun love. L'op TRANSFORME la compo du joueur au build (cf. RunState:applyRelics).
+-- PRINCIPES (garde-fous, cf. doc §1) : lisible ; AUCUN handicap persistant cross-combat (intra-combat only) ;
+-- égalisateur de matchup (incline, jamais un gate 100%) ; chaque relique a un foyer ; déterministe.
 --
--- Modèle : { id, op, params, realKey, decoys = { key1, key2 } }
---   realKey  = clé i18n de la VRAIE description (celle à identifier).
---   decoys   = 2 clés i18n de fausses descriptions plausibles (les leurres du 1-parmi-3).
+-- DATA quasi-pure : require Units uniquement pour matérialiser un effet ajouté (copie, jamais de mutation de
+-- la base). Aucun love. L'op TRANSFORME la compo du joueur au build (cf. RunState:applyRelics).
+--
+-- Modèle : { id, op, params, tier } — i18n : relic.<id>.name / .effect / .flavor.
+--   tier : 1 = commune (stats plates) · 2 = ampli conditionnel · 3+ = paliers/transformatives (vagues ult.).
+-- ⚠️ Les CHIFFRES (inc/frac/value) sont des PLACEHOLDERS d'équilibrage (à tuner via tools/runsim.lua).
 
 local Units = require("src.data.units")
 
 local R = {
-  bloodstone = { id = "bloodstone", op = "relic_more_dmg", params = { mult = 0.20 },
-    realKey = "relic.bloodstone.real", decoys = { "relic.bloodstone.d1", "relic.bloodstone.d2" } },
-  carapace = { id = "carapace", op = "relic_flat_hp", params = { value = 15 },
-    realKey = "relic.carapace.real", decoys = { "relic.carapace.d1", "relic.carapace.d2" } },
-  ember_heart = { id = "ember_heart", op = "relic_add_effect",
-    params = { effect = { trigger = "on_attack", op = "bonus_first", params = { value = 6 } } },
-    realKey = "relic.ember_heart.real", decoys = { "relic.ember_heart.d1", "relic.ember_heart.d2" } },
-  venom_sigil = { id = "venom_sigil", op = "relic_add_effect",
-    params = { effect = { trigger = "on_attacked", op = "thorns", params = { value = 3 } } },
-    realKey = "relic.venom_sigil.real", decoys = { "relic.venom_sigil.d1", "relic.venom_sigil.d2" } },
-  gravewax = { id = "gravewax", op = "relic_add_effect",
-    params = { effect = { trigger = "combat_start", op = "regen", params = { value = 2 } } },
-    realKey = "relic.gravewax.real", decoys = { "relic.gravewax.d1", "relic.gravewax.d2" } },
+  -- ── A — stats plates (communes, universelles) ──
+  bloodstone = { id = "bloodstone", op = "relic_more_dmg",   params = { mult = 0.20 }, tier = 1 },
+  carapace   = { id = "carapace",   op = "relic_flat_hp",    params = { value = 15 },  tier = 1 },
+  aegis      = { id = "aegis",      op = "relic_dmg_reduce", params = { frac = 0.15 }, tier = 1 },
+
+  -- ── B — amplis d'affliction (le cœur build-shaping : récompense le mono-archétype) ──
+  -- Poison = APEX -> ampli CONSERVATEUR (0.20) ; familles faibles (burn/bleed/rot) -> ampli plus généreux (0.30).
+  kings_bowl   = { id = "kings_bowl",   op = "relic_affliction_inc", params = { family = "poison", inc = 0.20 }, tier = 2 },
+  ember_heart  = { id = "ember_heart",  op = "relic_affliction_inc", params = { family = "burn",   inc = 0.30 }, tier = 2 },
+  weeping_nail = { id = "weeping_nail", op = "relic_affliction_inc", params = { family = "bleed",  inc = 0.30 }, tier = 2 },
+  grave_cap    = { id = "grave_cap",    op = "relic_affliction_inc", params = { family = "rot",    inc = 0.30 }, tier = 2 },
 }
 
-R.order = { "bloodstone", "carapace", "ember_heart", "venom_sigil", "gravewax" }
+R.order = { "bloodstone", "carapace", "aegis", "kings_bowl", "ember_heart", "weeping_nail", "grave_cap" }
 
--- Applique l'effet RÉEL d'une relique à une compo (liste de specs d'unités), au BUILD. Modifie en place.
--- Effets ajoutés : on matérialise une COPIE des effets du spec (jamais de mutation de la base Units).
+-- Applique l'effet d'une relique à une compo (liste de specs d'unités), au BUILD. Modifie en place.
+-- Les amplis (poisonInc/…/dmgReduce) sont ADDITIFS (cumul avec une aura d'adjacence qui poserait le même champ).
 function R.apply(comp, relic)
   local op, p = relic.op, relic.params or {}
   for _, spec in ipairs(comp) do
     if op == "relic_more_dmg" then
-      spec.dmg = math.floor(spec.dmg * (1 + (p.mult or 0)) + 0.5)
+      if spec.dmg then spec.dmg = math.floor(spec.dmg * (1 + (p.mult or 0)) + 0.5) end
     elseif op == "relic_flat_hp" then
-      spec.hp = spec.hp + (p.value or 0)
+      if spec.hp then spec.hp = spec.hp + (p.value or 0) end
+    elseif op == "relic_dmg_reduce" then
+      spec.dmgReduce = (spec.dmgReduce or 0) + (p.frac or 0) -- lu par Arena:damage (cause="attack"), gated
+    elseif op == "relic_affliction_inc" then
+      local key = (p.family or "") .. "Inc" -- poisonInc/burnInc/bleedInc/rotInc : lu par ampDps à la pose du DoT
+      spec[key] = (spec[key] or 0) + (p.inc or 0)
     elseif op == "relic_add_effect" and p.effect then
       local base = spec.effects or (Units[spec.id] and Units[spec.id].effects) or {}
       local eff = {}
@@ -47,13 +53,6 @@ function R.apply(comp, relic)
       spec.effects = eff
     end
   end
-end
-
--- Les 3 clés candidates d'une relique (vraie + 2 leurres), AVANT mélange (le mélange est seedé par run).
-function R.candidateKeys(id)
-  local r = R[id]
-  if not r then return {} end
-  return { r.realKey, r.decoys[1], r.decoys[2] }
 end
 
 return R

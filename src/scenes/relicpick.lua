@@ -1,7 +1,7 @@
 -- src/scenes/relicpick.lua
--- ÉCRAN RELIQUE 1-PARMI-3 (pilier #2). Après une victoire d'acquisition, « quelque chose remonte du
--- Puits » : on choisit UNE relique parmi 3 offertes. L'EFFET reste CACHÉ (« EFFECT UNKNOWN ») — le joueur
--- le déduira à l'usage puis le verrouillera au Grimoire. Le choix est confirmé par BIND THE FRAGMENT.
+-- ÉCRAN RELIQUE 1-PARMI-3. Après une victoire d'acquisition, « quelque chose remonte du Puits » : on choisit
+-- UNE relique parmi 3 offertes. L'EFFET est AFFICHÉ clairement (modèle lisible, cf. docs/research/relics-design.md) ;
+-- le choix est confirmé par BIND THE FRAGMENT.
 --
 -- Couche scène (love.graphics) : atmosphère native (drawBack) + cartes en overlay design. daChrome=true.
 -- Le host fournit les choix (ids de reliques, tirés seedé par RunState:rollRelicChoices) et reçoit le
@@ -17,8 +17,8 @@ Relicpick.__index = Relicpick
 
 -- Emblème par relique = un type (forme + couleur du pip). Variété visuelle sans glyphe Unicode.
 local RELIC_TYPE = {
-  bloodstone = "flesh", carapace = "bone", ember_heart = "order",
-  venom_sigil = "arcane", gravewax = "abyss",
+  bloodstone = "flesh", carapace = "bone", aegis = "order",
+  kings_bowl = "abyss", ember_heart = "arcane", weeping_nail = "flesh", grave_cap = "abyss",
 }
 
 local CARD_W, CARD_H, GAP, CARD_Y = 300, 372, 36, 206
@@ -81,7 +81,8 @@ function Relicpick:drawOverlay(view)
     Draw.pip(RELIC_TYPE[id] or "bone", card.x + card.w / 2, card.y + 74, 30)
     Draw.textC(T("relic." .. id .. ".name"), card.x + card.w / 2, card.y + 124, sel and c.title or c.name, Theme.uiBold(20))
     Draw.textWrap(T("relic." .. id .. ".flavor"), card.x + 28, card.y + 168, card.w - 56, c.dim, Theme.loreRoman(16), "center")
-    Draw.textC(T("relicpick.unknown"), card.x + card.w / 2, card.y + card.h - 34, c.fainter, Theme.ui(9))
+    Draw.textWrap(T("relic." .. id .. ".effect"), card.x + 24, card.y + card.h - 72, card.w - 48,
+      sel and c.gold or c.name, Theme.ui(13), "center")
     -- liseré coloré (rappel d'emblème) en pied de carte
     Draw.rect(card.x + 24, card.y + card.h - 14, card.w - 48, 2, emblem.color)
   end

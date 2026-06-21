@@ -1,8 +1,9 @@
 -- tests/relics.lua
--- RELIQUES CRYPTIQUES + GRIMOIRE (pilier #2). Vérifie : (1) le 1-PARMI-3 (les 3 candidats contiennent
--- TOUJOURS le vrai + 2 leurres, mélange SEEDÉ -> rejouable : même seed -> même ordre) ; (2) l'effet RÉEL
--- transforme la compo au build ; (3) l'IDENTIFICATION par observation -> renvoyée au host -> Grimoire ;
--- (4) la MÉTA-PROGRESSION (relique déjà connue = identifiée d'emblée). Lancement : luajit tests/relics.lua
+-- RELIQUES (modele LISIBLE, chantier 2026-06 ; cf. docs/research/relics-design.md) + GRIMOIRE (collection).
+-- Verifie : (1) le grant ne stocke que l'id (plus de candidats/identification) + pas de doublon ; (2) les ops
+-- transforment la compo au build (more_dmg / flat_hp / affliction_inc additif / dmg_reduce) ; (3) l'offre
+-- 1-parmi-3 est SEEDEE (rejouable) ; (4) le Grimoire collectionne (learn/isKnown, meta cross-run).
+-- Lancement : luajit tests/relics.lua
 package.path = "./?.lua;" .. package.path
 love = require("tests.mock_love")
 
@@ -10,57 +11,59 @@ local RunState = require("src.run.state")
 local Relics = require("src.data.relics")
 local Grimoire = require("src.core.grimoire")
 
-local function has(list, v) for _, x in ipairs(list) do if x == v then return true end end return false end
-
 local ok, err = pcall(function()
   Grimoire.wipe()
 
-  -- 1) 1-PARMI-3 : candidats = vrai + 2 leurres, mélangés SEEDÉ (déterministe / rejouable).
+  -- 1) GRANT LISIBLE : on ne stocke que l'id (aucun candidat/identification) ; pas de doublon.
   local a = RunState.new(123)
   assert(a:grantRelic("bloodstone"), "octroi de bloodstone")
-  local r = a.relics[1]
-  assert(#r.candidates == 3, "3 candidats")
-  assert(has(r.candidates, Relics.bloodstone.realKey), "le VRAI effet est parmi les candidats")
-  assert(has(r.candidates, Relics.bloodstone.decoys[1]) and has(r.candidates, Relics.bloodstone.decoys[2]),
-    "les 2 leurres sont parmi les candidats")
-  assert(not r.identified, "cryptique au depart (non identifiee)")
-  local a2 = RunState.new(123); a2:grantRelic("bloodstone")
-  for i = 1, 3 do
-    assert(a.relics[1].candidates[i] == a2.relics[1].candidates[i], "melange SEEDE deterministe (rejouable)")
-  end
+  assert(a.relics[1].id == "bloodstone", "stocke l'id")
+  assert(a.relics[1].candidates == nil and a.relics[1].identified == nil, "plus de candidats/identification")
+  assert(not a:grantRelic("bloodstone"), "pas de doublon")
 
-  -- 2) EFFET RÉEL : bloodstone = +20% dmg, transforme la compo au build (10->12, 13->16).
+  -- 2) OPS au build.
+  --   more_dmg (bloodstone +20%) : 10->12, 13->16.
   local comp = { { id = "bandit", hp = 46, dmg = 10, cd = 36 }, { id = "witch", hp = 36, dmg = 13, cd = 72 } }
   a:applyRelics(comp)
   assert(comp[1].dmg == 12 and comp[2].dmg == 16, "bloodstone: +20% dmg")
 
-  -- 3) IDENTIFICATION par observation (seuil 2) -> renvoyée au host -> Grimoire.
-  assert(#a:observeRelics() == 0, "1re observation : pas encore identifiee")
-  local learned = a:observeRelics()
-  assert(has(learned, "bloodstone"), "2e observation : identifiee -> renvoyee au host")
-  assert(a.relics[1].identified, "marquee identifiee dans le run")
-  Grimoire.learn("bloodstone")
-  assert(Grimoire.isKnown("bloodstone"), "le Grimoire connait bloodstone")
+  --   flat_hp (carapace +15).
+  local h = RunState.new(3); h:grantRelic("carapace")
+  local ch = { { id = "bandit", hp = 46, dmg = 7, cd = 36 } }
+  h:applyRelics(ch)
+  assert(ch[1].hp == 61, "carapace: +15 max HP")
 
-  -- 4) MÉTA-PROGRESSION : un nouveau run avec une relique DÉJÀ connue démarre IDENTIFIÉE.
-  local b = RunState.new(999)
-  b:grantRelic("bloodstone", Grimoire.isKnown("bloodstone"))
-  assert(b.relics[1].identified, "deja au Grimoire -> identifiee d'emblee (connaissance = meta-progression)")
+  --   affliction_inc (kings_bowl) : poisonInc ADDITIF sur chaque spec (cumule avec une aura).
+  local p = RunState.new(1); p:grantRelic("kings_bowl")
+  local cp = { { id = "witch", hp = 36, dmg = 8, cd = 72, poisonInc = 0.10 }, { id = "bandit", hp = 46, dmg = 7, cd = 36 } }
+  p:applyRelics(cp)
+  assert(math.abs(cp[1].poisonInc - 0.30) < 1e-9, "kings_bowl: +0.20 poisonInc (additif a l'aura 0.10)")
+  assert(math.abs(cp[2].poisonInc - 0.20) < 1e-9, "kings_bowl: +0.20 poisonInc (defaut 0)")
 
-  -- 5) effet ADD : venom_sigil ajoute un effet thorns (materialise, sans muter la base).
-  local c = RunState.new(7); c:grantRelic("venom_sigil")
-  local comp2 = { { id = "bandit", hp = 46, dmg = 7, cd = 36 } }
-  c:applyRelics(comp2)
-  local thorns = false
-  for _, e in ipairs(comp2[1].effects or {}) do if e.op == "thorns" then thorns = true end end
-  assert(thorns, "venom_sigil: ajoute un effet thorns a la compo")
+  --   dmg_reduce (aegis) : pose dmgReduce (lu par Arena:damage cause=attack).
+  local d = RunState.new(2); d:grantRelic("aegis")
+  local cd = { { id = "bandit", hp = 46, dmg = 7, cd = 36 } }
+  d:applyRelics(cd)
+  assert(math.abs(cd[1].dmgReduce - 0.15) < 1e-9, "aegis: 0.15 dmgReduce")
+
+  -- 3) OFFRE 1-parmi-3 SEEDEE (meme seed -> meme offre, rejouable).
+  local x = RunState.new(777):rollRelicChoices(3)
+  local y = RunState.new(777):rollRelicChoices(3)
+  assert(#x == 3 and #y == 3, "3 choix offerts")
+  for i = 1, 3 do assert(x[i] == y[i], "offre SEEDEE deterministe (rejouable)") end
+
+  -- 4) GRIMOIRE = collection (learn/isKnown ; meta cross-run, idempotent).
+  assert(not Grimoire.isKnown("bloodstone"), "inconnu au depart")
+  assert(Grimoire.learn("bloodstone"), "apprend (nouvelle)")
+  assert(Grimoire.isKnown("bloodstone"), "le Grimoire collectionne bloodstone")
+  assert(not Grimoire.learn("bloodstone"), "deja connu -> pas re-appris")
 
   Grimoire.wipe()
-  print("  reliques : 1-parmi-3 seede / effet reel / identification->Grimoire / meta-progression / add-effect OK")
+  print("  reliques : grant lisible / ops more_dmg+flat_hp+affliction_inc+dmg_reduce / offre seedee / Grimoire OK")
 end)
 
 if ok then
-  print("=> RELIQUES OK : cryptiques + Grimoire (pilier #2).")
+  print("=> RELIQUES OK : modele lisible + Grimoire (collection).")
 else
   print("=> RELIQUES FAIL :")
   print(err)

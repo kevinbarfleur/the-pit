@@ -12,6 +12,7 @@ local Build = require("src.scenes.build")
 local Combat = require("src.scenes.combat")
 local Runover = require("src.scenes.runover")
 local Gallery = require("src.scenes.gallery")
+local Relicons = require("src.scenes.relicons")
 local Menu = require("src.scenes.menu")
 local Relicpick = require("src.scenes.relicpick")
 local GrimoireScene = require("src.scenes.grimoire")
@@ -42,6 +43,10 @@ function host.goto(name, payload)
     -- Galerie de revue visuelle (debug) : construite à la demande, mémoïsée (indépendante du run).
     host.gallery = host.gallery or Gallery.new(Palette, VW, VH, host)
     host.scene = host.gallery
+  elseif name == "relicons" then
+    -- Cabinet de reliques (debug) : revue visuelle des icônes d'artefacts ; mémoïsé (indépendant du run).
+    host.relicons = host.relicons or Relicons.new(Palette, VW, VH, host)
+    host.scene = host.relicons
   elseif name == "menu" then
     -- Écran titre : mémoïsé (indépendant du run). ENTER THE PIT -> host.newRun().
     host.menu = host.menu or Menu.new(Palette, VW, VH, host)
@@ -63,8 +68,6 @@ end
 -- suivant (retour build, plateau PERSISTANT) — ou l'écran de fin de run si le run est conclu.
 function host.finishCombat(win)
   host.run:resolve(win)
-  -- Reliques cryptiques (pilier #2) : observation post-combat -> identification -> Grimoire (méta cross-run).
-  for _, id in ipairs(host.run:observeRelics()) do Grimoire.learn(id) end
   local over = host.run:isOver()
   if over then
     host.goto("runover", { result = over, run = host.run })
@@ -79,9 +82,10 @@ function host.finishCombat(win)
   host.goto("build")
 end
 
--- Choix de relique confirmé (BIND) : octroi (identifiée d'emblée si déjà connue au Grimoire), round suivant.
+-- Choix de relique confirmé (BIND) : octroi + inscription au Grimoire (collection cross-run), round suivant.
 function host.finishRelicPick(id)
-  host.run:grantRelic(id, Grimoire.isKnown(id))
+  host.run:grantRelic(id)
+  Grimoire.learn(id)
   host.run:startRound()
   host.goto("build")
 end
@@ -160,9 +164,13 @@ function love.keypressed(key)
     if host.name == "grimoire" or host.name == "playground" then host.goto("menu"); return end
     love.event.quit(); return
   end
-  -- [g] bascule build <-> galerie (revue visuelle des entités). Réservé à ces deux scènes.
-  if key == "g" and (host.name == "build" or host.name == "gallery") then
+  -- [g] bascule build <-> galerie (revue visuelle des entités). Réservé aux scènes de revue.
+  if key == "g" and (host.name == "build" or host.name == "gallery" or host.name == "relicons") then
     host.goto(host.name == "gallery" and "build" or "gallery"); return
+  end
+  -- [r] bascule build/galerie <-> cabinet de reliques (revue visuelle des icônes d'artefacts).
+  if key == "r" and (host.name == "build" or host.name == "gallery" or host.name == "relicons") then
+    host.goto(host.name == "relicons" and "build" or "relicons"); return
   end
   if host.scene.keypressed then host.scene:keypressed(key) end
 end
