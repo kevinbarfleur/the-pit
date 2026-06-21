@@ -16,6 +16,7 @@ local Masks    = require("src.gen.masks")
 local Factions = require("src.gen.factions")
 local Ramps    = require("src.gen.ramps")
 local Details  = require("src.gen.details")
+local Rarity   = require("src.gen.rarity")
 
 local CreatureGen = {}
 
@@ -385,6 +386,26 @@ local function buildPart(rng, half, fac, accentPair, asym, cfg, allowDetails)
     end
   end
 
+  -- ORNEMENT DE RANG (rareté) : couronne/épines au SOMMET. On rajoute des rangées vides en haut pour
+  -- la place (base-pivot seulement -> le pivot BAS ne bouge pas). DÉTERMINISTE (aucun rng) : ornament==0
+  -- ne fait STRICTEMENT rien -> unités existantes (rank 1) byte-identiques.
+  if (cfg.ornament or 0) > 0 and cfg.pivotMode ~= "top" then
+    local pad = 3
+    local g2 = newCells(fullW, hh + pad)
+    for y = 1, hh do for x = 1, fullW do g2[y + pad][x] = g[y][x] end end
+    g, hh, minY, maxY = g2, hh + pad, minY + pad, maxY + pad
+    local cx = math.floor(fullW / 2)
+    stampDetail(g, fullW, hh, Details.crown, cx, minY, fac, cfg.ramp, accentPair)
+    if cfg.ornament >= 2 then -- épines dorsales/latérales symétriques
+      local off = math.max(2, math.floor(fullW / 4))
+      stampDetail(g, fullW, hh, Details.spike, cx - off, minY, fac, cfg.ramp, accentPair)
+      stampDetail(g, fullW, hh, Details.spike, cx + off, minY, fac, cfg.ramp, accentPair)
+    end
+    if cfg.ornament >= 3 then -- corne centrale plus haute (légendaire)
+      stampDetail(g, fullW, hh, Details.horn, cx, minY - 1, fac, cfg.ramp, accentPair)
+    end
+  end
+
   -- Pivot : x = centre de la bbox horizontale ; y selon le mode.
   local minX, maxX = fullW + 1, 0
   for y = 1, hh do
@@ -459,8 +480,141 @@ local function autoAnims(skeleton)
   return nil -- humanoïde : idle par défaut suffit
 end
 
+-- ═══════════════════════════ BODY-PLANS NON-BIPÈDES (axe découplé de la faction) ═══════════════════════════
+-- La FAMILLE (opts.type) porte palette/accent/détails ; le BODY-PLAN (opts.bodyplan) porte la SILHOUETTE.
+-- Ces builders sortent { parts, rig, idlePose, animations } comme assembleRig+autoAnims, mais pour des
+-- formes radicalement non-bipèdes. Ils RÉUTILISENT buildPart (masks miroités) et buildArm (limbes fins).
+-- Append-only : ces plans ne sont atteints que si opts.bodyplan est fourni -> golden/déterminisme intacts.
+
+local function partWH(grid)
+  local h = #grid
+  local w = 0
+  for _, r in ipairs(grid) do if #r > w then w = #r end end
+  return w, h
+end
+
+-- demi-mask factice de longueur n (buildArm ne lit que #half pour la longueur du limbe).
+local function dummyHalf(n)
+  local t = {}
+  for i = 1, n do t[i] = 0 end
+  return t
+end
+
+-- ── Anims de plan (écrivent rot/sx/sy ; le scale se fait AUTOUR du pivot -> base-pivot = pousse vers le haut) ──
+-- BLOB : la masse PULSE (squash/stretch volume-ish). Aucun membre.
+local BLOB_ANIM = { idle = function(char, t)
+  local ph = char.idlePhase
+  local b = char.parts.bulb
+  if b then
+    local s = math.sin(t * 0.045 + ph)
+    b.sy = 1 + s * 0.06
+    b.sx = 1 - s * 0.045
+  end
+  return { rootDx = 0, rootDy = math.sin(t * 0.03 + ph) * 0.6 }
+end }
+
+-- QUADRUPÈDE : échine qui respire, pattes alternées, tête basse qui balance.
+local QUAD_ANIM = { idle = function(char, t)
+  local ph = char.idlePhase
+  local p = char.parts
+  if p.body then p.body.sy = 1 + math.sin(t * 0.04 + ph) * 0.02 end
+  if p.head then p.head.rot = math.sin(t * 0.05 + ph) * 0.05 end
+  for name, part in pairs(p) do
+    if name:match("^leg") then
+      local sgn = (name == "legFL" or name == "legBL") and 1 or -1
+      part.rot = math.sin(t * 0.06 + ph) * 0.06 * sgn
+    end
+  end
+  return { rootDx = 0, rootDy = math.sin(t * 0.04 + ph) * 0.8 }
+end }
+
+-- CÉPHALOPODE : mantle qui pulse, tentacules qui ONDULENT déphasées (closure sur le nombre).
+local function cephAnim()
+  return { idle = function(char, t)
+    local ph = char.idlePhase
+    if char.parts.mantle then char.parts.mantle.sy = 1 + math.sin(t * 0.035 + ph) * 0.03 end
+    for name, part in pairs(char.parts) do
+      local idx = name:match("^tentacle(%d+)$")
+      if idx then part.rot = math.sin(t * 0.06 + ph + tonumber(idx) * 0.9) * 0.22 end
+    end
+    return { rootDx = 0, rootDy = math.sin(t * 0.03 + ph) * 1.2 } -- flotte
+  end }
+end
+
+-- ── Builders (rng, fac, lv) -> parts, rig, idlePose, animations. lv = leviers seedés déjà tirés. ──
+local function planBlob(rng, fac, lv)
+  local variants = Masks.get("blob").body.variants
+  local half = variants[((lv.torsoIdx - 1) % #variants) + 1]
+  local bulb = (buildPart(rng, half, fac, lv.accentPair, fac.asym, {
+    ramp = lv.ramp, density = lv.density, corp = 0, eyeCfg = lv.eyeCfg,
+    detailChance = lv.detailChance, pivotMode = "base", ornament = lv.ornament,
+  }, true))
+  return { bulb = bulb }, { { part = "bulb", at = { 0, 0 } } }, {}, BLOB_ANIM
+end
+
+local function planQuadruped(rng, fac, lv)
+  local M = Masks.get("quadruped")
+  local bodyV = M.body.variants
+  local headV = M.head.variants
+  -- ornement sur le DOS (corps, base-pivot) -> épines dorsales : lecture « bête de haut rang ».
+  local body = (buildPart(rng, bodyV[((lv.torsoIdx - 1) % #bodyV) + 1], fac, lv.accentPair, fac.asym, {
+    ramp = lv.ramp, density = lv.density, corp = lv.corp, eyeCfg = lv.eyeCfg,
+    detailChance = lv.detailChance, pivotMode = "base", ornament = lv.ornament,
+  }, false))
+  -- tête à pivot HAUT : elle PEND depuis le bas-centre du corps (gueule baissée entre les pattes avant),
+  -- sinon (pivot base) elle se dessinerait DANS le bloc-corps et resterait invisible.
+  local head = (buildPart(rng, headV[((lv.headIdx - 1) % #headV) + 1], fac, lv.accentPair, fac.asym, {
+    ramp = lv.ramp, density = lv.density, corp = 0, eyeCfg = lv.eyeCfg,
+    detailChance = lv.detailChance, pivotMode = "top",
+  }, true))
+  local legLen = 3 + rng:random(0, 1) -- 3-4 (seedé)
+  local function leg() return (buildArm(rng, dummyHalf(legLen), fac, lv.ramp, lv.accentPair, false)) end
+  local parts = { body = body, head = head, legBL = leg(), legBR = leg(), legFL = leg(), legFR = leg() }
+  local bw, bh = partWH(body.grid)
+  -- pattes = enfants du corps (émergent du bas) ; 4 colonnes réparties. Le corps est relevé d'une longueur
+  -- de patte pour que les pieds touchent la ligne de sol. Tête baissée au centre-façade (pend du corps).
+  local x1, x2 = 2, bw - 2
+  local rig = {
+    { part = "legBL", parent = "body", at = { x1, bh - 1 } },
+    { part = "legBR", parent = "body", at = { x2, bh - 1 } },
+    { part = "body", at = { 0, -legLen + 1 } },
+    { part = "legFL", parent = "body", at = { x1 - 1, bh } },
+    { part = "legFR", parent = "body", at = { x2 + 1, bh } },
+    { part = "head", parent = "body", at = { math.floor(bw / 2), bh - 2 } },
+  }
+  return parts, rig, {}, QUAD_ANIM
+end
+
+local function planCephalopod(rng, fac, lv)
+  local variants = Masks.get("cephalopod").mantle.variants
+  local mantle = (buildPart(rng, variants[((lv.headIdx - 1) % #variants) + 1], fac, lv.accentPair, fac.asym, {
+    ramp = lv.ramp, density = lv.density, corp = lv.corp, eyeCfg = lv.eyeCfg,
+    detailChance = lv.detailChance, pivotMode = "base", ornament = lv.ornament,
+  }, true))
+  local mw, mh = partWH(mantle.grid)
+  local nTent = 4 + rng:random(0, 2) -- 4-6 tentacules (seedé)
+  local parts = { mantle = mantle }
+  local rig = {}
+  local span = math.max(2, mw - 2)
+  local maxLen = 0
+  for i = 1, nTent do
+    local len = 4 + rng:random(0, 2)
+    if len > maxLen then maxLen = len end
+    parts["tentacle" .. i] = (buildArm(rng, dummyHalf(len), fac, lv.ramp, lv.accentPair, false))
+    local fx = 1 + math.floor((i - 0.5) * span / nTent) -- réparties sur la largeur du mantle
+    rig[#rig + 1] = { part = "tentacle" .. i, parent = "mantle", at = { fx, mh - 1 } }
+  end
+  -- mantle relevé pour que les tentacules atteignent ~le sol ; dessiné AVANT (les tentacules par-dessus).
+  table.insert(rig, 1, { part = "mantle", at = { 0, -maxLen + 2 } })
+  return parts, rig, {}, cephAnim()
+end
+
+local PlanBuilders = { blob = planBlob, quadruped = planQuadruped, cephalopod = planCephalopod }
+
 -- ─────────────────────────── API publique ───────────────────────────
--- opts = { id, type, tier?, effects?, seed? }
+-- opts = { id, type, tier?, effects?, seed?, bodyplan?, rank? }
+--   type     = FAMILLE (palette/accent/détails) ; bodyplan = SILHOUETTE (défaut = squelette de la famille).
+--   rank     = 1..5 (rareté ; métadonnée pour l'instant, pilotera échelle/cadre/glow côté render).
 -- Déterministe : (id) -> toujours la même def (seed = hashId(id) sauf si opts.seed fourni).
 function CreatureGen.build(opts)
   local id = opts.id or "anon"
@@ -487,48 +641,70 @@ function CreatureGen.build(opts)
   -- tier agit sur l'INTENSITÉ seulement (pas la silhouette) : densité des cellules molles.
   local density = 0.5 + math.min(2, tier - 1) * 0.12
   local accentPair = Ramps.accentFor(opts.effects, fac.accent)
-  local masks = Masks.get(fac.skeleton)
+  -- AXE DÉCOUPLÉ : la famille (opts.type) porte la palette ; le BODY-PLAN porte la silhouette. Par défaut
+  -- bodyplan = squelette de la faction (rétro-compat : unités existantes inchangées, golden/seeds intacts).
+  local bodyplan = opts.bodyplan or fac.skeleton
+  local rank = opts.rank or 1
+  local rar = Rarity.get(rank) -- leviers visuels de rareté (échelle/ornement/glow), bornés & déterministes
 
-  -- sélection de variante bornée au nombre réel disponible (index seedé -> modulo lisible).
-  local function pickVariant(part, idx)
-    local vs = part.variants
-    return vs[((idx - 1) % #vs) + 1]
-  end
+  local parts, rig, idlePose, animations
+  if PlanBuilders[bodyplan] then
+    -- Body-plan non-bipède (blob/quadruped/cephalopod) : builder dédié. Les leviers seedés déjà tirés
+    -- sont passés tels quels -> mêmes tirages quelle que soit la forme, déterminisme préservé.
+    local lv = {
+      ramp = ramp, density = density, corp = corp, detailChance = detailChance,
+      eyeCfg = { count = eyeCount, spread = eyeSpread },
+      headIdx = headIdx, torsoIdx = torsoIdx, legIdx = legIdx, accentPair = accentPair,
+      rank = rank, ornament = rar.ornament,
+    }
+    parts, rig, idlePose, animations = PlanBuilders[bodyplan](rng, fac, lv)
+  else
+    -- Humanoïde / robe / difforme (LEGACY, inchangé) : masks miroités + gabarit de rig + anims auto.
+    local masks = Masks.get(bodyplan)
+    -- sélection de variante bornée au nombre réel disponible (index seedé -> modulo lisible).
+    local function pickVariant(part, idx)
+      local vs = part.variants
+      return vs[((idx - 1) % #vs) + 1]
+    end
 
-  local parts = {}
-  -- ORDRE FIXE de génération (déterminisme : même suite de tirages quel que soit l'ordre des clés).
-  local PART_ORDER = { "head", "torso", "armBack", "armFront", "legs" }
-  local clawHands = (fac.skeleton == "deformed") -- abyss : pas d'arme -> griffes
-  for _, name in ipairs(PART_ORDER) do
-    local part = masks[name]
-    if part then
-      if name == "armBack" or name == "armFront" then
-        -- bras fins 3-large (la griffe abyss ne s'applique qu'au bras AVANT).
-        local half = pickVariant(part, 1)
-        parts[name] = buildArm(rng, half, fac, ramp, accentPair, clawHands and name == "armFront")
-      else
-        local idx = (name == "head") and headIdx or (name == "torso") and torsoIdx or legIdx
-        local half = pickVariant(part, idx)
-        local allowDetails = (name == "head")
-        -- corpulence : seulement sur le TORSE (le tronc s'épaissit). head/legs gardent une largeur
-        -- propre -> pas d'encoche d'axe ni de centre d'yeux décalé.
-        local cfg = {
-          ramp = ramp, density = density,
-          corp = (name == "torso") and corp or 0,
-          eyeCfg = { count = eyeCount, spread = eyeSpread },
-          detailChance = detailChance,
-          pivotMode = (name == "legs") and "top" or "base",
-        }
-        parts[name] = (buildPart(rng, half, fac, accentPair, fac.asym, cfg, allowDetails))
+    parts = {}
+    -- ORDRE FIXE de génération (déterminisme : même suite de tirages quel que soit l'ordre des clés).
+    local PART_ORDER = { "head", "torso", "armBack", "armFront", "legs" }
+    local clawHands = (bodyplan == "deformed") -- abyss : pas d'arme -> griffes
+    for _, name in ipairs(PART_ORDER) do
+      local part = masks[name]
+      if part then
+        if name == "armBack" or name == "armFront" then
+          -- bras fins 3-large (la griffe abyss ne s'applique qu'au bras AVANT).
+          local half = pickVariant(part, 1)
+          parts[name] = buildArm(rng, half, fac, ramp, accentPair, clawHands and name == "armFront")
+        else
+          local idx = (name == "head") and headIdx or (name == "torso") and torsoIdx or legIdx
+          local half = pickVariant(part, idx)
+          local allowDetails = (name == "head")
+          -- corpulence : seulement sur le TORSE (le tronc s'épaissit). head/legs gardent une largeur
+          -- propre -> pas d'encoche d'axe ni de centre d'yeux décalé.
+          local cfg = {
+            ramp = ramp, density = density,
+            corp = (name == "torso") and corp or 0,
+            eyeCfg = { count = eyeCount, spread = eyeSpread },
+            detailChance = detailChance,
+            pivotMode = (name == "legs") and "top" or "base",
+            ornament = (name == "head") and rar.ornament or 0, -- couronne de rang sur la tête
+          }
+          parts[name] = (buildPart(rng, half, fac, accentPair, fac.asym, cfg, allowDetails))
+        end
       end
     end
+
+    -- Arme (faction) : générée après les parts pour un ordre de tirage stable.
+    local w = buildWeapon(rng, fac, accentPair, wpnVar)
+    if w then parts.weapon = w end
+
+    rig, idlePose = assembleRig(bodyplan, parts)
+    animations = autoAnims(bodyplan)
   end
 
-  -- Arme (faction) : générée après les parts pour un ordre de tirage stable.
-  local w = buildWeapon(rng, fac, accentPair, wpnVar)
-  if w then parts.weapon = w end
-
-  local rig, idlePose = assembleRig(fac.skeleton, parts)
   -- compacte le rig (assembleRig peut insérer des nil via `and ... or nil`).
   local cleanRig = {}
   for _, node in ipairs(rig) do cleanRig[#cleanRig + 1] = node end
@@ -538,7 +714,11 @@ function CreatureGen.build(opts)
     parts = parts,
     rig = cleanRig,
     idlePose = idlePose,
-    animations = autoAnims(fac.skeleton),
+    animations = animations,
+    bodyplan = bodyplan, -- métadonnée de forme
+    rank = rank,
+    scale = rar.scale,   -- échelle du sprite (lue par Rig.draw) : rangs hauts = plus imposants
+    glow = rar.glow,     -- alpha de halo additif (lu par le render : galerie/arène), 0 = aucun
   }
   return def
 end

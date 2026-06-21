@@ -11,6 +11,7 @@ local Rig = require("src.core.rig")
 local Creatures = require("src.data.creatures")
 local Units = require("src.data.units")
 local CreatureGen = require("src.gen.creaturegen")
+local Rarity = require("src.gen.rarity")
 local T = require("src.core.i18n").t
 
 local Gallery = {}
@@ -26,6 +27,51 @@ local TYPE_COL = {
 local COLS, MAX_ROWS = 10, 5
 local CELL_W, CELL_H = 30, 28
 local GX0, GY0 = 10, 26
+
+-- VITRINE des nouveaux BODY-PLANS (axe découplé de la famille) : créatures-démo générées à la volée,
+-- pas des unités de jeu (donc hors Units/boutique/i18n). Affichées après le roster pour juger les
+-- silhouettes radicalement non-bipèdes (blob / quadrupède / céphalopode) à travers les familles.
+local DEMOS = {
+  { label = "OOZE", type = "abyss", bodyplan = "blob" },
+  { label = "OOZE", type = "bone", bodyplan = "blob" },
+  { label = "OOZE", type = "arcane", bodyplan = "blob" },
+  { label = "OOZE", type = "flesh", bodyplan = "blob" },
+  { label = "BEAST", type = "flesh", bodyplan = "quadruped" },
+  { label = "BEAST", type = "bone", bodyplan = "quadruped" },
+  { label = "BEAST", type = "abyss", bodyplan = "quadruped" },
+  { label = "BEAST", type = "order", bodyplan = "quadruped" },
+  { label = "ELDRITCH", type = "arcane", bodyplan = "cephalopod" },
+  { label = "ELDRITCH", type = "abyss", bodyplan = "cephalopod" },
+  { label = "ELDRITCH", type = "order", bodyplan = "cephalopod" },
+  { label = "ELDRITCH", type = "bone", bodyplan = "cephalopod" },
+}
+
+-- ÉCHELLE DE RANGS (rareté) : une même créature aux 5 rangs -> on lit la montée échelle+ornement+glow+cadre.
+local RANK_LADDERS = {
+  { label = "ELDRITCH", type = "arcane", bodyplan = "cephalopod" },
+  { label = "BEAST", type = "flesh", bodyplan = "quadruped" },
+  { label = "OOZE", type = "abyss", bodyplan = "blob" },
+}
+
+-- Halo additif derrière le sprite (rangs hauts « rayonnent »). col = teinte de rang.
+local function drawGlow(cx, cy, rad, col, a)
+  love.graphics.setBlendMode("add")
+  for i = 3, 1, -1 do
+    love.graphics.setColor(col[1], col[2], col[3], a * 0.10 * i)
+    love.graphics.circle("fill", cx, cy, rad * (i / 3))
+  end
+  love.graphics.setBlendMode("alpha")
+  love.graphics.setColor(1, 1, 1, 1)
+end
+
+-- Pips de rang (1..5 petits carrés) en bas de case, teintés du rang.
+local function drawPips(cx, cyBottom, rank, col)
+  love.graphics.setColor(col[1], col[2], col[3], 0.95)
+  for i = 1, rank do
+    love.graphics.rectangle("fill", cx - CELL_W / 2 + 3 + (i - 1) * 3, cyBottom - 3, 2, 2)
+  end
+  love.graphics.setColor(1, 1, 1, 1)
+end
 
 function Gallery.new(palette, vw, vh, host)
   local self = setmetatable({
@@ -45,11 +91,40 @@ function Gallery.new(palette, vw, vh, host)
     local spec = Units[id] or {}
     local handmade = Creatures[id] ~= nil
     local def = handmade and Creatures[id]
-      or CreatureGen.cached({ id = id, type = spec.type, effects = spec.effects })
+      or CreatureGen.cached({ id = id, type = spec.type, effects = spec.effects, bodyplan = spec.bodyplan, rank = spec.rank })
     local char = Rig.new(def, palette)
     char.facing = 1
     self.items[#self.items + 1] = { id = id, char = char, type = spec.type, gen = not handmade }
     if handmade then self.nHand = self.nHand + 1 else self.nGen = self.nGen + 1 end
+  end
+
+  -- Vitrine des body-plans (démos générées à la volée, déterministes par id-démo).
+  for i, d in ipairs(DEMOS) do
+    local id = "demo_" .. d.bodyplan .. "_" .. d.type
+    local def = CreatureGen.cached({ id = id, type = d.type, effects = {}, bodyplan = d.bodyplan })
+    local char = Rig.new(def, palette)
+    char.facing = 1
+    self.items[#self.items + 1] = {
+      id = id, char = char, type = d.type, gen = true, demo = true,
+      label = d.label, bodyplan = d.bodyplan,
+    }
+    self.nGen = self.nGen + 1
+    local _ = i
+  end
+
+  -- Échelles de rangs : même créature aux 5 rangs (rareté visible : échelle/ornement/glow/cadre/pips).
+  for _, d in ipairs(RANK_LADDERS) do
+    for rank = 1, 5 do
+      local id = "rank_" .. d.bodyplan .. "_" .. rank
+      local def = CreatureGen.cached({ id = id, type = d.type, effects = {}, bodyplan = d.bodyplan, rank = rank })
+      local char = Rig.new(def, palette)
+      char.facing = 1
+      self.items[#self.items + 1] = {
+        id = id, char = char, type = d.type, gen = true, demo = true,
+        label = d.label, bodyplan = d.bodyplan, rank = rank,
+      }
+      self.nGen = self.nGen + 1
+    end
   end
 
   self.cols, self.rows = COLS, MAX_ROWS
@@ -88,9 +163,17 @@ function Gallery:drawWorld()
     local it = self.items[gi]
     local cx, cy = cellPos(gi - first + 1)
     it.char.x, it.char.y = cx, cy
-    -- liseré de case (survol = accent faction, sinon trait discret).
+    -- glow de rareté DERRIÈRE le sprite (rangs hauts seulement ; halo additif teinté du rang).
+    if it.rank then
+      local rar = Rarity.get(it.rank)
+      if rar.glow > 0 then drawGlow(cx, cy - 11, 13, Rarity.frame(it.rank), rar.glow) end
+    end
+    -- liseré : rang -> teinte de rareté (toujours visible) ; sinon survol = accent faction / trait discret.
     local hovered = (self.hover == gi)
-    if hovered then
+    if it.rank then
+      local col = Rarity.frame(it.rank)
+      love.graphics.setColor(col[1], col[2], col[3], hovered and 0.95 or 0.6)
+    elseif hovered then
       local col = TYPE_COL[it.type] or { 0.7, 0.7, 0.7 }
       love.graphics.setColor(col[1], col[2], col[3], 0.5)
     else
@@ -99,8 +182,14 @@ function Gallery:drawWorld()
     love.graphics.rectangle("line", cx - CELL_W / 2 + 1, cy - CELL_H + 2, CELL_W - 2, CELL_H - 2)
     love.graphics.setColor(1, 1, 1, 1)
     Rig.draw(it.char)
-    -- marqueur "généré" (petit point) vs "dédié" (rien) au coin de la case.
-    if it.gen then
+    -- marqueur : rang -> pips ; sinon démo body-plan (cyan) / généré (vert) / dédié (rien).
+    if it.rank then
+      drawPips(cx, cy + 1, it.rank, Rarity.frame(it.rank))
+    elseif it.demo then
+      love.graphics.setColor(0.40, 0.70, 0.82, 0.85)
+      love.graphics.rectangle("fill", cx + CELL_W / 2 - 4, cy - CELL_H + 3, 2, 2)
+      love.graphics.setColor(1, 1, 1, 1)
+    elseif it.gen then
       love.graphics.setColor(0.45, 0.78, 0.40, 0.7)
       love.graphics.rectangle("fill", cx + CELL_W / 2 - 4, cy - CELL_H + 3, 2, 2)
       love.graphics.setColor(1, 1, 1, 1)
@@ -122,17 +211,32 @@ function Gallery:drawOverlay(view)
   -- Panneau d'inspection de l'entité survolée (bas-gauche).
   if self.hover and self.items[self.hover] then
     local it = self.items[self.hover]
-    local spec = Units[it.id] or {}
     local col = TYPE_COL[it.type] or { 0.8, 0.8, 0.8 }
     local x, y = 16, sh - 56
     love.graphics.setColor(col[1], col[2], col[3], 1)
-    love.graphics.print(T("ui.unit_header", {
-      name = T("unit." .. it.id .. ".name"), type = T("type." .. tostring(it.type)),
-    }), x, y)
-    love.graphics.setColor(0.72, 0.68, 0.60, 0.95)
-    love.graphics.print(T("ui.unit_stats", { hp = spec.hp or 0, dmg = spec.dmg or 0, cd = spec.cd or 0 }), x, y + 16)
-    love.graphics.setColor(0.50, 0.60, 0.45, 0.9)
-    love.graphics.print(it.gen and T("gallery.generated") or T("gallery.handmade"), x, y + 32)
+    if it.demo then
+      -- démo body-plan : pas d'unité de jeu derrière (ni stats ni i18n) -> on affiche forme + famille.
+      love.graphics.print(it.label .. "  <" .. it.bodyplan .. ">", x, y)
+      love.graphics.setColor(0.72, 0.68, 0.60, 0.95)
+      love.graphics.print(T("type." .. tostring(it.type)) .. " family", x, y + 16)
+      if it.rank then
+        local rc = Rarity.frame(it.rank)
+        love.graphics.setColor(rc[1], rc[2], rc[3], 1)
+        love.graphics.print("RANK " .. it.rank .. " / 5  (scale " .. string.format("%.2f", Rarity.get(it.rank).scale) .. ")", x, y + 32)
+      else
+        love.graphics.setColor(0.40, 0.70, 0.82, 0.9)
+        love.graphics.print("body-plan demo", x, y + 32)
+      end
+    else
+      local spec = Units[it.id] or {}
+      love.graphics.print(T("ui.unit_header", {
+        name = T("unit." .. it.id .. ".name"), type = T("type." .. tostring(it.type)),
+      }), x, y)
+      love.graphics.setColor(0.72, 0.68, 0.60, 0.95)
+      love.graphics.print(T("ui.unit_stats", { hp = spec.hp or 0, dmg = spec.dmg or 0, cd = spec.cd or 0 }), x, y + 16)
+      love.graphics.setColor(0.50, 0.60, 0.45, 0.9)
+      love.graphics.print(it.gen and T("gallery.generated") or T("gallery.handmade"), x, y + 32)
+    end
     love.graphics.setColor(1, 1, 1, 1)
   end
 end

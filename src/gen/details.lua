@@ -84,4 +84,24 @@ D.scar = {
   },
 }
 
+-- ── ORNEMENTS DE RANG (rareté) : prestance générative, stampés au SOMMET aux rangs hauts. ──
+-- Couronne : 3 pointes (accent) sur une base de contour -> « couronné/important ».
+D.crown = {
+  ax = 2, ay = 2,
+  grid = {
+    "A . A",
+    "A A A",
+    "O A O",
+  },
+}
+
+-- Épine dorsale / latérale : une pointe unique vers le haut (accent + base contour).
+D.spike = {
+  ax = 1, ay = 1,
+  grid = {
+    ". A .",
+    "O A O",
+  },
+}
+
 return D

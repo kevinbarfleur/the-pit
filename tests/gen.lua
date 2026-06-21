@@ -17,6 +17,15 @@ local CreatureGen = require("src.gen.creaturegen")
 
 local PART_NAMES = { head = true, torso = true, armBack = true, armFront = true, weapon = true, legs = true, tail = true }
 
+-- Noms de parts valides : le set bipède + les parts des body-plans non-bipèdes (masse/membres indexés).
+local function validPartName(name)
+  if PART_NAMES[name] then return true end
+  if name == "bulb" or name == "mantle" or name == "body" then return true end
+  if name:match("^tentacle%d+$") then return true end -- céphalopode : tentacle1..N
+  if name:match("^leg%u%u$") then return true end      -- quadrupède : legFL/FR/BL/BR
+  return false
+end
+
 local function fail(msg) print("=> GEN FAIL : " .. msg); os.exit(1) end
 
 -- ─────────────────────────── deep-equal d'une def (parts: grid+pivot, rig) ───────────────────────────
@@ -54,14 +63,11 @@ do
 end
 
 -- ─────────────────────────── 2. Validation structurelle (toutes les unités) ───────────────────────────
-local function validate(id)
-  local spec = Units[id] or {}
-  local def = CreatureGen.build({ id = id, type = spec.type, effects = spec.effects })
-
+local function validateDef(id, def)
   -- (d) parts nommées reconnues + au moins une part.
   local n = 0
   for name in pairs(def.parts) do
-    if not PART_NAMES[name] then fail(id .. " : part inconnue '" .. tostring(name) .. "'") end
+    if not validPartName(name) then fail(id .. " : part inconnue '" .. tostring(name) .. "'") end
     n = n + 1
   end
   if n == 0 then fail(id .. " : aucune part générée") end
@@ -114,6 +120,12 @@ local function validate(id)
   end
 end
 
+local function validate(id)
+  local spec = Units[id] or {}
+  local def = CreatureGen.build({ id = id, type = spec.type, effects = spec.effects, bodyplan = spec.bodyplan })
+  validateDef(id, def)
+end
+
 do
   local count = 0
   for _, id in ipairs(Units.order) do
@@ -121,6 +133,48 @@ do
     count = count + 1
   end
   print("  validation : OK (" .. count .. " unites : palette + contour + pivot + nommage + weapon)")
+end
+
+-- ─────────────────────────── 2a-bis. BODY-PLANS non-bipèdes (blob/quadruped/cephalopod) ───────────────────────────
+-- Construits explicitement (axe bodyplan) à travers les familles : structure valide + déterminisme + rendu.
+do
+  local plans = { "blob", "quadruped", "cephalopod" }
+  local fams = { "flesh", "order", "bone", "arcane", "abyss" }
+  local count = 0
+  for _, bp in ipairs(plans) do
+    for _, fam in ipairs(fams) do
+      local id = "demo_" .. bp .. "_" .. fam
+      local def = CreatureGen.build({ id = id, type = fam, bodyplan = bp, effects = {} })
+      validateDef(id, def)
+      local def2 = CreatureGen.build({ id = id, type = fam, bodyplan = bp, effects = {} })
+      if not defGridsEqual(def, def2) then fail(id .. " : body-plan non-déterministe") end
+      local c = Rig.new(def, Palette)
+      Rig.update(c, 0, 1); Rig.trigger(c, "attack"); Rig.update(c, 10, 1)
+      Rig.trigger(c, "hurt"); Rig.update(c, 20, 1); Rig.draw(c)
+      count = count + 1
+    end
+  end
+
+  -- RANGS (rareté) : ornement + échelle ne cassent ni structure ni déterminisme (legacy + plans).
+  local rankCombos = {
+    { id = "rank_human", type = "flesh" }, -- legacy humanoïde (ornement sur la tête)
+    { id = "rank_ceph", type = "arcane", bodyplan = "cephalopod" },
+    { id = "rank_quad", type = "bone", bodyplan = "quadruped" },
+    { id = "rank_blob", type = "abyss", bodyplan = "blob" },
+  }
+  for _, rc in ipairs(rankCombos) do
+    for rank = 1, 5 do
+      local id = rc.id .. "_r" .. rank
+      local def = CreatureGen.build({ id = id, type = rc.type, bodyplan = rc.bodyplan, rank = rank, effects = {} })
+      validateDef(id, def)
+      if not (def.scale and def.scale >= 1) then fail(id .. " : scale de rang manquante") end
+      local def2 = CreatureGen.build({ id = id, type = rc.type, bodyplan = rc.bodyplan, rank = rank, effects = {} })
+      if not defGridsEqual(def, def2) then fail(id .. " : rang non-déterministe") end
+      local c = Rig.new(def, Palette); Rig.update(c, 0, 1); Rig.draw(c)
+      count = count + 1
+    end
+  end
+  print("  body-plans : OK (" .. count .. " combos plan/famille/rang : structure + determinisme + rendu)")
 end
 
 -- ─────────────────────────── 2b. Smoke rendu (le rig consomme la def sans crash) ───────────────────────────
@@ -143,13 +197,17 @@ end
 -- DÉDIÉES (Creatures[id]) ne passent pas par le générateur en jeu, mais on les build quand même ici
 -- via CreatureGen.build pour s'assurer qu'AUCUNE collision n'existe dans le pool généré.
 do
+  -- signature = TOUTES les parts (noms triés -> déterministe), pas seulement head+torso : un blob/
+  -- céphalopode n'a ni head ni torso, donc l'ancienne signature les aurait tous fait collisionner.
   local function sig(id)
     local spec = Units[id] or {}
-    local def = CreatureGen.build({ id = id, type = spec.type, effects = spec.effects })
+    local def = CreatureGen.build({ id = id, type = spec.type, effects = spec.effects, bodyplan = spec.bodyplan })
+    local names = {}
+    for n in pairs(def.parts) do names[#names + 1] = n end
+    table.sort(names)
     local parts = {}
-    for _, n in ipairs({ "head", "torso" }) do
-      local p = def.parts[n]
-      parts[#parts + 1] = p and table.concat(p.grid, "\n") or ""
+    for _, n in ipairs(names) do
+      parts[#parts + 1] = n .. ":" .. table.concat(def.parts[n].grid, "\n")
     end
     return table.concat(parts, "\n##\n")
   end

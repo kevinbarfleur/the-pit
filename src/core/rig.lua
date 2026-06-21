@@ -93,6 +93,7 @@ function Rig.new(def, palette)
     state = "idle", stateAge = 0,
     idlePhase = love.math.random() * math.pi * 2,
     x = 0, y = 0, facing = 1, alpha = 1,
+    scale = def.scale or 1, -- échelle globale du sprite (rareté : rangs hauts plus imposants)
     anim = { rootDx = 0, rootDy = 0 },
   }
 
@@ -175,9 +176,10 @@ function Rig.draw(char)
   local tint = a.tint or { 1, 1, 1 }
   local alpha = (a.alpha or 1) * (char.alpha or 1)
 
+  local s = char.scale or 1
   love.graphics.push()
   love.graphics.translate(rx, ry)
-  love.graphics.scale(facing, 1)                 -- miroir horizontal pour l'équipe de droite
+  love.graphics.scale(facing * s, s)             -- miroir horizontal (équipe droite) + échelle de rareté
   love.graphics.setColor(tint[1], tint[2], tint[3], alpha)
   for _, part in ipairs(char.root.children) do drawPart(part) end
   love.graphics.setColor(1, 1, 1, 1)
@@ -189,9 +191,10 @@ end
 -- par maillon de sa chaîne (équivalent exact des push/translate/rotate/scale empilés).
 local function worldTransform(char, part)
   local facing = char.facing or 1
+  local s = char.scale or 1
   local a = char.anim or {}
   local tf = love.math.newTransform(
-    char.x + (a.rootDx or 0) * facing, char.y + (a.rootDy or 0), 0, facing, 1, 0, 0)
+    char.x + (a.rootDx or 0) * facing, char.y + (a.rootDy or 0), 0, facing * s, s, 0, 0)
   for _, pp in ipairs(part.chain) do
     tf:apply(love.math.newTransform(pp.x, pp.y, pp.rot, pp.sx, pp.sy, pp.ox, pp.oy))
   end

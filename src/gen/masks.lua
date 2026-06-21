@@ -306,6 +306,119 @@ M.deformed = {
   } },
 }
 
+-- ═══════════════════════════ BLOB / OOZE : masse unique, pas de membres ═══════════════════════════
+-- Silhouette = goutte large en bas, dôme bas, 1-2 yeux. Reconnaissable par sa MASSE informe. Cols=5
+-- -> fullW=10 (squat &amp; large, contraste fort avec les bipèdes étroits). L'idle PULSE (sy/sx).
+M.blob = {
+  body = { variants = {
+    -- A : goutte trapue
+    {
+      { 0, 0, 1, 3, 3 },
+      { 0, 1, 3, 3, 3 },
+      { 1, 3, 3, 3, 3 },
+      { 3, 3, "E", 3, 3 },
+      { 3, 3, 3, 3, 3 },
+      { 1, 3, 3, 3, 3 },
+    },
+    -- B : lourde / haute (dôme bombé)
+    {
+      { 0, 1, 3, 3, 3 },
+      { 1, 3, 3, 3, 3 },
+      { 3, 3, 3, 3, 3 },
+      { 3, 3, "E", 3, 3 },
+      { 3, 3, 3, 3, 3 },
+      { 3, 3, 3, 3, 3 },
+      { 1, 3, 3, 3, 3 },
+    },
+    -- C : flaque basse (très large, écrasée)
+    {
+      { 0, 0, 1, 3, 3 },
+      { 0, 1, 3, 3, 3 },
+      { 3, 3, "E", 3, 3 },
+      { 3, 3, 3, 3, 3 },
+      { 1, 3, 3, 3, 3 },
+    },
+  } },
+}
+
+-- ═══════════════════════════ QUADRUPÈDE : corps HORIZONTAL bas + tête en façade ═══════════════════════════
+-- Silhouette = corps large &amp; bas (cols=6 -> fullW=12) sur 4 pattes, tête basse au centre. Posture
+-- radicalement non-bipède. Les 4 pattes &amp; la tête sont des parts ajoutées par le builder (pas dans le mask).
+M.quadruped = {
+  body = { variants = {
+    -- A : tronc massif
+    {
+      { 1, 3, 3, 3, 3, 3 },
+      { 3, 3, 3, 3, 3, 3 },
+      { 3, 3, 3, 3, 3, 3 },
+      { 1, 3, 3, 3, 3, 3 },
+    },
+    -- B : échine voûtée (bosse au garrot)
+    {
+      { 0, 1, 3, 3, 3, 3 },
+      { 1, 3, 3, 3, 3, 3 },
+      { 3, 3, 3, 3, 3, 3 },
+      { 1, 3, 3, 3, 3, 3 },
+    },
+    -- C : longiligne (plus mince, prédateur)
+    {
+      { 1, 3, 3, 3, 3, 3 },
+      { 3, 3, 3, 3, 3, 3 },
+      { 1, 3, 3, 3, 3, 3 },
+    },
+  } },
+  head = { variants = {
+    -- A : gueule trapue
+    {
+      { 0, 3, 3, 3 },
+      { 3, 3, "E", 3 },
+      { 3, 3, 3, 3 },
+      { 1, 3, 3, 3 },
+    },
+    -- B : long museau (mâchoire avancée)
+    {
+      { 0, 0, 3, 3 },
+      { 3, 3, "E", 3 },
+      { 3, 3, 3, 3 },
+      { 3, 3, 3, 3 },
+    },
+  } },
+}
+
+-- ═══════════════════════════ CÉPHALOPODE : mantle bulbeux + couronne de tentacules ═══════════════════════════
+-- Silhouette = manteau bombé/pointu EN HAUT (cols=5 -> fullW=10), yeux dans le tiers bas, tentacules
+-- pendantes ajoutées par le builder. La famille phare grimdark (eldritch / Cthulhu). Idle = ondulation.
+M.cephalopod = {
+  mantle = { variants = {
+    -- A : manteau arrondi
+    {
+      { 0, 0, 1, 3, 3 },
+      { 0, 1, 3, 3, 3 },
+      { 1, 3, 3, 3, 3 },
+      { 3, 3, 3, 3, 3 },
+      { 3, 3, "E", 3, 3 },
+      { 3, 3, 3, 3, 3 },
+    },
+    -- B : manteau pointu (calmar)
+    {
+      { 0, 0, 0, 3, 3 },
+      { 0, 0, 1, 3, 3 },
+      { 0, 1, 3, 3, 3 },
+      { 1, 3, 3, 3, 3 },
+      { 3, 3, "E", 3, 3 },
+      { 3, 3, 3, 3, 3 },
+    },
+    -- C : bulbe large (yeux hauts, gros front)
+    {
+      { 0, 1, 3, 3, 3 },
+      { 1, 3, 3, 3, 3 },
+      { 3, 3, "E", 3, 3 },
+      { 3, 3, 3, 3, 3 },
+      { 3, 3, 3, 3, 3 },
+    },
+  } },
+}
+
 function M.get(skeleton)
   return M[skeleton] or M.humanoid
 end
