@@ -26,6 +26,15 @@ if [ -n "$SIM_DIRS" ] && grep -rnE 'love\.(graphics|window|mouse|keyboard)\.' $S
 fi
 echo "OK (SIM sans rendu)"
 
+echo "== garde dependances (le coeur de combat ne depend pas de la couche render/lab) =="
+# src/combat (dont match.lua) doit rester SIM-pur : jamais require une scene, l'UI, le render ou le lab
+# (qui construit des Build). Sinon on recree un couplage render -> dette. Le pont vit dans src/lab.
+if grep -rnE "require\(['\"]src\.(scenes|lab|ui|render|fx)" src/combat 2>/dev/null; then
+  echo "FAIL: src/combat require un module render/lab. Le coeur de combat doit rester SIM-pur."
+  exit 1
+fi
+echo "OK (combat decouple du render/lab)"
+
 echo "== headless (smoke + determinisme + e2e souris) =="
 luajit tests/headless.lua
 
@@ -61,6 +70,9 @@ luajit tests/gen.lua
 
 echo "== golden (regression event-log) =="
 luajit tests/golden.lua
+
+echo "== lab (banc d'essai : catalogue compos + pont auras + runner partage + cout) =="
+luajit tests/lab.lua
 
 if command -v luacheck >/dev/null 2>&1; then
   echo "== luacheck =="
