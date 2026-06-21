@@ -43,6 +43,8 @@ function ArenaDraw.new(arena, palette)
     table.insert(self.impacts, { x = target.x - a.facing * 6, y = target.y - 14, age = 0 })
   end)
   arena.bus:on("damage", function(rec)
+    -- CHOC : la décharge du condensateur (cause="shock") déclenche les étincelles « Super Saiyan » sur la cible.
+    if rec.cause == "shock" and rec.target then self.fx:shockSpark(rec.target) end
     -- on n'affiche un nombre que pour les dégâts qui touchent les PV (le pur-absorbé reste discret).
     local n = rec.hp
     if not (n and n > 0) then return end
@@ -256,7 +258,7 @@ function ArenaDraw:drawOverlay(view)
 
   -- Nombres flottants : couleur par CAUSE + ICÔNE d'affliction à gauche (poison/saignement/brûlure/
   -- pourriture) -> on lit l'effet d'un coup d'œil. Frappe directe = rouge, sans icône. Fondu en fin de vie.
-  local CAUSE_COL = { burn = c.burn, bleed = c.bleed, poison = c.poison, rot = c.rot }
+  local CAUSE_COL = { burn = c.burn, bleed = c.bleed, poison = c.poison, rot = c.rot, shock = c.shock }
   local numFont = Theme.uiBold(16)
   local numH = numFont and numFont:getHeight() or 16
   for _, d in ipairs(self.dmgNumbers) do

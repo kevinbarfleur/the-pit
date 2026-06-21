@@ -119,16 +119,20 @@ Effects.register("rot", function(ctx, p)
   end
 end)
 
--- CHOC : empile du choc (amplification de dégâts-pris). shockAmp recalculé par tickDots (cap dur).
+-- CHOC : charge un CONDENSATEUR sur la victime (axe stacks). AUCUN dégât ici : la DÉCHARGE (stacks × volt)
+-- se fait à la frappe (Arena:dischargeShock) en une instance cause="shock". `volt` = dégâts/stack (déf. 3).
+local SHOCK_STACK_CAP = 8 -- miroir de la constante d'arena (ops.lua sans dépendance à arena)
 Effects.register("shock", function(ctx, p)
   local v = ctx.victim
+  local cap = math.min(p.cap or SHOCK_STACK_CAP, SHOCK_STACK_CAP)
   local cur = v.dots.shock
   if not cur then
-    v.dots.shock = { stacks = math.min(p.cap or 8, p.add or 1), remaining = p.dur or 180,
-      perStack = p.perStack or 0.06, cap = p.cap or 8 }
+    v.dots.shock = { stacks = math.min(cap, p.add or 1), remaining = p.dur or 180,
+      cap = cap, volt = p.volt, source = ctx.source }
   else
     cur.stacks = math.min(cur.cap, cur.stacks + (p.add or 1))
     cur.remaining = p.dur or cur.remaining
+    if p.volt and (not cur.volt or p.volt > cur.volt) then cur.volt = p.volt end
   end
 end)
 

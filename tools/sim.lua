@@ -28,8 +28,8 @@ local TICK_CAP = 8000
 local gen = love.math.newRandomGenerator(13579) -- generateur de scenarios seede -> rapport reproductible
 
 -- Causes de dégâts qui sont des ALTÉRATIONS (DoT/statuts) — par opposition à la frappe directe.
--- (le choc n'a pas de cause propre : il AMPLIFIE une frappe, donc compte dans "attack").
-local STATUS_CAUSES = { poison = true, burn = true, bleed = true, rot = true }
+-- (le choc a désormais sa cause propre : la DÉCHARGE du condensateur émet une instance cause="shock").
+local STATUS_CAUSES = { poison = true, burn = true, bleed = true, rot = true, shock = true }
 
 -- ── Build aléatoire valide (forme, slots débloqués, unités posées) ──
 local function randomBuild()

@@ -21,19 +21,19 @@ end
 
 local ok, err = pcall(function()
 
-  -- SYNERGIE 1 — CHOC amplifie les dégâts d'un ALLIÉ (effet inter-unités). Le stormcaller choque la
-  -- cible ; un SECOND attaquant frappe alors PLUS FORT dessus que sur une cible saine.
+  -- SYNERGIE 1 — CHOC : la charge se DÉCHARGE au coup d'un ALLIÉ. Un condensateur chargé (par le choqueur)
+  -- libère stacks × volt EN PLUS du coup du second attaquant, puis se consume (le coup vaut plus que sur cible saine).
   do
-    local shockEff = { { trigger = "on_hit", op = "shock", params = { add = 1, perStack = 0.10, cap = 8, dur = 600 } } }
-    local a = Arena.new({ left = { U("bandit", {}), U("stormcaller", shockEff) },
+    local a = Arena.new({ left = { U("bandit", {}), U("stormcaller", {}) },
       right = { U("marauder", {}) }, autoReset = false, seed = 1 })
     local hitter, storm, target = a.units[1], a.units[2], a.units[3]
-    local hp0 = target.hp; a:hit(hitter, target); local base = hp0 - target.hp -- cible SAINE
-    for _ = 1, 4 do a:hit(storm, target) end -- 4 stacks de choc
-    a:update(1.0, 1)                          -- recompute shockAmp
-    assert(target.shockAmp > 0, "choc: stormcaller a bien choque la cible")
+    local hp0 = target.hp; a:hit(hitter, target); local base = hp0 - target.hp -- cible SAINE (aucune charge)
+    assert(target.dots.shock == nil, "choc: pas de charge sur cible saine apres le coup du hitter")
+    -- on charge le condensateur (3 stacks, volt 3 -> décharge 9) : isole la synergie inter-unités
+    target.dots.shock = { stacks = 3, remaining = 600, cap = 8, volt = 3, source = storm }
     local hp1 = target.hp; a:hit(hitter, target); local amped = hp1 - target.hp
-    assert(amped > base, ("SYNERGIE choc: allie inflige + sur cible choquee (%d > %d)"):format(amped, base))
+    assert(amped > base, ("SYNERGIE choc: decharge au coup d'un allie (%d > %d)"):format(amped, base))
+    assert(target.dots.shock == nil, "choc: condensateur consume apres decharge")
   end
 
   -- SYNERGIE 2 — POISON multi-sources : DEUX unités empilent sur la MÊME cible (axe « nombre »), et
@@ -178,7 +178,7 @@ local ok, err = pcall(function()
     assert(#tgt.dots.poison == 12, ("SYNERGIE festering: cap leve, 12 stacks tiennent >8 (obtenu %d)"):format(#tgt.dots.poison))
   end
 
-  print("  synergies : choc-amplifie-allie / poison-multi-sources / weaken-reduit-output / bleed-ralentit-cadence / regen-contre-DoT")
+  print("  synergies : choc-decharge-allie / poison-multi-sources / weaken-reduit-output / bleed-ralentit-cadence / regen-contre-DoT")
   print("  synergies+: contagion / propagation-a-la-mort / aggravate / shieldEat (T2)")
   print("  synergies#: bleed->rot / poison->feu / festering-sans-cap (T3 croises) OK")
 end)

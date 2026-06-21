@@ -27,7 +27,8 @@ local CONNECT_AT = 0.5
 
 -- Statuts (DoT/altérations) — caps d'anti-dégénérescence (placeholders, cf. effects-design.md §4).
 local WEAKEN_CAP = 0.40    -- malus de valeur max (poison)
-local SHOCK_AMP_CAP = 2.00 -- +200% de dégâts-pris max (clamp dur, choc)
+local VOLT_PER_STACK = 3    -- CHOC : dégâts libérés PAR STACK à la décharge (instance cause="shock")
+local SHOCK_STACK_CAP = 8   -- CHOC : plafond DUR de stacks (anti-explosion ; clamp comme les autres familles)
 local AGGRO_STD = 10       -- aggro par défaut (standard) ; tank ~40, bruiser ~15, carry ~5 (porté par la data)
 
 -- FATIGUE (enrage ~17 s) : passé FATIGUE_START ticks, une USURE globale croissante frappe toutes les
@@ -98,7 +99,6 @@ function Arena:makeUnit(spec, team)
     dots = { poison = {} },
     weaken = 0,    -- malus de valeur (poison) : réduit les valeurs PRODUITES par l'unité
     atkSlow = 0,   -- slow de cadence (bleed) : rallonge le rechargement du timer d'attaque
-    shockAmp = 0,  -- amplification (choc) : l'unité prend +shockAmp de dégâts
     regen = 0, regenAcc = 0, -- contre-DoT : soin au fil du temps
     swinging = false, swingAge = 0, swingHit = false,
     alive = true, target = nil,
@@ -186,10 +186,6 @@ end
 -- opts : { ignoreShield?, silent?, poison?, source?, cause? }. Renvoie les PV réellement perdus.
 function Arena:damage(target, amount, opts)
   opts = opts or {}
-  -- CHOC : la cible choquée prend PLUS de dégâts (amplification AVANT le bouclier). Arrondi -> PV entiers.
-  if target.shockAmp and target.shockAmp > 0 and not opts.noShock then
-    amount = math.floor(amount * (1 + target.shockAmp) + 0.5)
-  end
   local raw = math.max(0, amount)
   local absorbed = 0
   amount = raw
@@ -244,12 +240,29 @@ function Arena:hit(a, target)
   ctx.dealt = dealt
   self.bus:emit("hit", a, target) -- le render déclenche l'anim "hurt" + l'impact
 
-  Effects.run(a, "on_hit", ctx) -- ex. vol de vie (soigne a), poison (applique a la victime)
+  Effects.run(a, "on_hit", ctx) -- ex. vol de vie (soigne a), poison (applique a la victime), pose de choc
+
+  if target.alive then self:dischargeShock(a, target) end -- CHOC : libère le condensateur de la cible
 
   if target.alive then
     ctx.source, ctx.victim = target, a -- le defenseur reagit
     Effects.run(target, "on_attacked", ctx) -- ex. epines (renvoie a l'attaquant)
   end
+end
+
+-- DÉCHARGE DU CONDENSATEUR (choc) — appelée par hit() APRÈS le coup. La charge stockée (stacks × volt)
+-- part d'un coup en une instance SÉPARÉE cause="shock" (visible / attribuée à l'event-log), IGNORE le
+-- bouclier (décharge électrique), puis le condensateur est vidé (consume total). Crédit au poseur s'il vit,
+-- sinon à l'attaquant. Déterministe (zéro RNG). Peut tuer -> self.deaths alimenté (on_death en fin de frame).
+function Arena:dischargeShock(a, target)
+  local sh = target.dots.shock
+  if not sh or (sh.stacks or 0) <= 0 then return end
+  local burst = sh.stacks * (sh.volt or VOLT_PER_STACK)
+  local src = (sh.source and sh.source.alive) and sh.source or a
+  if burst > 0 then
+    self:damage(target, burst, { ignoreShield = true, cause = "shock", source = src })
+  end
+  target.dots.shock = nil -- consume TOTAL : la charge se libère d'un seul coup
 end
 
 -- ── Tick des statuts (DoT / altérations) ──────────────────────────────────────────────────────
@@ -347,12 +360,12 @@ function Arena:tickDots(u, frameDt)
     if r.remaining <= 0 then d.rot = nil end
   end
 
-  -- CHOC : amplification glissante (recompute shockAmp). Expire -> plus d'amplification.
+  -- CHOC : condensateur. Le tick n'inflige RIEN ; la DÉCHARGE (stacks × volt) se fait à la frappe
+  -- (Arena:dischargeShock). Ici on n'écoule que la durée : non-déchargée à temps -> la charge se dissipe.
   local sh = d.shock
   if sh then
     sh.remaining = sh.remaining - frameDt
-    if sh.remaining <= 0 then d.shock = nil; u.shockAmp = 0
-    else u.shockAmp = math.min(SHOCK_AMP_CAP, sh.stacks * sh.perStack) end
+    if sh.remaining <= 0 then d.shock = nil end
   end
 
   -- REGEN (contre-DoT) : soin au fil du temps, accumulation entière.

@@ -42,6 +42,7 @@ local COL = {
   rotBrown  = H(0x4a2c1a),       -- spore de chair pourrie (brun)
   fly       = H(0x281438),       -- mouche (violet-noir)
   shield    = C.shield,          -- contour de bouclier (cyan)
+  shock     = C.shock,           -- étincelles de choc (jaune électrique)
 }
 
 local HALF_W = 5      -- demi-largeur de silhouette (~10px)
@@ -82,6 +83,7 @@ function AfflictionFx.new()
     parts = {}, -- particules transitoires {x,y,vx,vy,ay,age,life,kind,phase,floorY,alt}
     flies = {}, -- [u] = { {ph,ph2,stutAcc,stutOff,fade}, ... } (persistant tant que rot)
     acc = {},   -- [u] = { burn, bleed, poison, rot } accumulateurs d'émission
+    shockFlash = {}, -- [u] = { age, life } flash électrique bref à la décharge du choc
     n = 0,      -- compteur Weyl global
   }, AfflictionFx)
   -- Shader + canvas : créés une fois, gardés gracieusement (si GLSL/canvas indispo -> pas de contour, pas de crash).
@@ -99,7 +101,25 @@ function AfflictionFx.new()
 end
 
 function AfflictionFx:reset()
-  self.parts = {}; self.flies = {}; self.acc = {}; self.n = 0
+  self.parts = {}; self.flies = {}; self.acc = {}; self.shockFlash = {}; self.n = 0
+end
+
+-- CHOC : déclenché par le RENDER à la décharge (event "damage" cause="shock"). Étincelles radiales
+-- « Super Saiyan » + flash électrique bref autour de l'unité (façon paralysie). Purement visuel.
+function AfflictionFx:shockSpark(u)
+  if not u then return end
+  local cx, cy = u.x, u.y - 12
+  for i = 1, 10 do
+    local r, r2 = self:weyl()
+    local ang = (i / 10) * 6.2832 + (r - 0.5) * 0.6
+    local spd = 1.1 + r2 * 1.0
+    self.parts[#self.parts + 1] = {
+      kind = "spark", x = cx, y = cy,
+      vx = cos(ang) * spd, vy = sin(ang) * spd, ay = 0,
+      age = 0, life = 6 + r2 * 5,
+    }
+  end
+  self.shockFlash[u] = { age = 0, life = 10 }
 end
 
 -- Phase stable par unité (sans toucher au rig) -> désynchronise glows/oscillations entre monstres.
@@ -205,6 +225,12 @@ function AfflictionFx:update(units, dt, t)
     if not hasRot and not anyAlive then self.flies[u] = nil end
   end
 
+  -- Flash électrique de choc (bref).
+  for u, fl in pairs(self.shockFlash) do
+    fl.age = fl.age + dt
+    if fl.age >= fl.life then self.shockFlash[u] = nil end
+  end
+
   -- Intégration des particules transitoires (backward swap-remove).
   local parts = self.parts
   for i = #parts, 1, -1 do
@@ -303,6 +329,21 @@ function AfflictionFx:drawGlow(units, t)
       g.setColor(col[1], col[2], col[3], al)
       g.rectangle("fill", floor(p.x + wob), floor(p.y), w, h)
     end
+  end
+
+  -- Choc : étincelles radiales (blanc chaud -> jaune électrique) + flash bref autour de l'unité.
+  for _, p in ipairs(self.parts) do
+    if p.kind == "spark" then
+      local f = p.age / p.life
+      local col = (f < 0.4) and { 1, 1, 1 } or COL.shock
+      g.setColor(col[1], col[2], col[3], 1 - f)
+      g.rectangle("fill", floor(p.x), floor(p.y), 1, 1)
+    end
+  end
+  for u, fl in pairs(self.shockFlash) do
+    local f = fl.age / fl.life
+    g.setColor(COL.shock[1], COL.shock[2], COL.shock[3], 0.35 * (1 - f))
+    g.ellipse("fill", u.x, u.y - 11, 8 + f * 4, 11 + f * 4)
   end
 
   if blend then blend("alpha") end

@@ -176,15 +176,14 @@ local ok, err = pcall(function()
       assert(u.maxHp < mh0, "rot: ampute les PV max")
     end
 
-    do -- CHOC : amplification déterministe des dégâts-pris
-      local a = Arena.new({ left = { U2("marauder") }, right = {}, autoReset = false })
-      local u = a.units[1]
-      u.dots.shock = { stacks = 5, remaining = 300, perStack = 0.10, cap = 8 }
-      a:update(1.0, 1)
-      assert(math.abs(u.shockAmp - 0.5) < 1e-9, "choc: shockAmp = 5 x 0.10")
-      local hp0 = u.hp
-      a:damage(u, 10, {})
-      assert(u.hp == hp0 - 15, "choc: +50% degats-pris (10 -> 15)")
+    do -- CHOC : condensateur -> décharge (stacks × volt) au coup d'un attaquant, puis se consume
+      local a = Arena.new({ left = { U2("marauder") }, right = { U2("bandit") }, autoReset = false })
+      local target, hitter = a.units[1], a.units[2]
+      target.dots.shock = { stacks = 5, remaining = 300, cap = 8, volt = 3, source = hitter }
+      local hp0 = target.hp
+      a:hit(hitter, target) -- dégâts du coup + décharge 5×3=15, puis consume
+      assert(target.dots.shock == nil, "choc: condensateur consume apres decharge")
+      assert(hp0 - target.hp >= 15, "choc: la decharge (5x3=15) s'ajoute au coup")
     end
 
     do -- REGEN : contre-DoT, soigne au fil du temps
@@ -193,7 +192,7 @@ local ok, err = pcall(function()
       for i = 1, 60 do a:update(1.0, i) end
       assert(u.hp > 20, "regen: soigne au fil du temps")
     end
-    print("  statuts : poison-stacks+weaken / burn-decroit / bleed-slow / rot-ampute / choc-amplifie / regen OK")
+    print("  statuts : poison-stacks+weaken / burn-decroit / bleed-slow / rot-ampute / choc-decharge / regen OK")
   end
 
   -- Ciblage DÉTERMINISTE : les 4 couches (front/back par depth, tie-break haut->bas, aggro, taunt).

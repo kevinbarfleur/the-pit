@@ -75,9 +75,9 @@ local U = {
     id = "rot_hound", type = "bone", cost = 3, hp = 54, dmg = 5, cd = 56,
     effects = { { trigger = "on_hit", op = "rot", params = { base = 1, growth = 1, dur = 240, capDps = 10, maxHpFrac = 0.15 } } },
   },
-  stormcaller = { -- CHOC : amplifie les dégâts-pris de la cible
+  stormcaller = { -- CHOC : charge un condensateur ; la décharge (stacks × volt) part au prochain coup
     id = "stormcaller", type = "arcane", cost = 3, hp = 38, dmg = 6, cd = 58, aggro = 5,
-    effects = { { trigger = "on_hit", op = "shock", params = { add = 1, perStack = 0.07, cap = 8, dur = 150 } } },
+    effects = { { trigger = "on_hit", op = "shock", params = { add = 1, cap = 6, dur = 150 } } },
   },
   plague_doctor = { -- CONTRE-DoT : régénération (le contre livré avec les familles)
     id = "plague_doctor", type = "order", cost = 4, hp = 80, dmg = 6, cd = 66, aggro = 40,
@@ -293,31 +293,31 @@ local U = {
     effects = { { trigger = "on_attacked", op = "thorns", params = { value = 4 } } },
   },
 
-  -- ══ LADDER CHOC (5/3/2 — cf. CLAUDE.md §3). Le choc n'inflige RIEN : il amplifie les dégâts-PRIS de la
-  -- cible (frappes ET DoT), clampé à +200 % par l'arène. Mono-instance -> on joue cadence vs perStack vs cap.
-  -- DATA-ONLY (op `shock` réutilisé), golden-safe (hors compo golden). ══
-  live_wire = { -- T1 : cadence rapide, petit stack, plafond bas (empile vite, sature vite) — chaff semeur
+  -- ══ LADDER CHOC (5/3/2 — cf. CLAUDE.md §3). Le choc est un CONDENSATEUR : chaque pose ajoute des stacks ;
+  -- au prochain COUP sur la cible, la charge se DÉCHARGE d'un coup (stacks × volt, instance cause="shock",
+  -- ignore le bouclier) puis se consume. On joue cadence (add) vs volt (dégâts/stack) vs cap. DATA-ONLY, golden-safe. ══
+  live_wire = { -- T1 : cadence rapide, petite charge (empile vite) — chaff semeur de choc
     id = "live_wire", type = "arcane", cost = 2, hp = 28, dmg = 3, cd = 30, aggro = 5,
-    effects = { { trigger = "on_hit", op = "shock", params = { add = 1, perStack = 0.05, cap = 5, dur = 120 } } },
+    effects = { { trigger = "on_hit", op = "shock", params = { add = 1, cap = 5, dur = 120 } } },
   },
-  thunderhead = { -- T1 : gros coup lent, fort perStack (peu de stacks, mais lourds) — carry burst
+  thunderhead = { -- T1 : gros coup lent, charge DENSE (volt fort, peu de stacks) — carry burst
     id = "thunderhead", type = "arcane", cost = 3, hp = 40, dmg = 8, cd = 76, aggro = 5,
-    effects = { { trigger = "on_hit", op = "shock", params = { add = 1, perStack = 0.12, cap = 6, dur = 180 } } },
+    effects = { { trigger = "on_hit", op = "shock", params = { add = 1, volt = 6, cap = 4, dur = 180 } } },
   },
-  static_swarm = { -- T1 : cap élevé, montée régulière, longue durée — choqueur patient (combats longs)
+  static_swarm = { -- T1 : cap élevé, charge régulière, longue durée — choqueur patient (combats longs)
     id = "static_swarm", type = "abyss", cost = 3, hp = 44, dmg = 4, cd = 50, aggro = 5,
-    effects = { { trigger = "on_hit", op = "shock", params = { add = 1, perStack = 0.06, cap = 12, dur = 240 } } },
+    effects = { { trigger = "on_hit", op = "shock", params = { add = 1, cap = 8, dur = 240 } } },
   },
-  galvanizer = { -- T2 : pose le choc PUIS le punit lui-même (auto-synergie) — bruiser autonome
+  galvanizer = { -- T2 : charge PUIS déclenche sa propre décharge (auto-synergie) — bruiser autonome
     id = "galvanizer", type = "flesh", cost = 4, hp = 58, dmg = 11, cd = 64, aggro = 15,
     effects = {
       { trigger = "on_attack", op = "bonus_first", params = { value = 6 } },
-      { trigger = "on_hit", op = "shock", params = { add = 2, perStack = 0.08, cap = 8, dur = 180 } },
+      { trigger = "on_hit", op = "shock", params = { add = 2, cap = 6, dur = 180 } },
     },
   },
-  stormlord = { -- T2 : cap max + perStack fort + longue durée — l'amplificateur d'équipe (marque une proie)
+  stormlord = { -- T2 : add 2 + volt fort + cap max — marque une proie, les alliés font sauter la charge
     id = "stormlord", type = "arcane", cost = 4, hp = 50, dmg = 6, cd = 54, aggro = 5,
-    effects = { { trigger = "on_hit", op = "shock", params = { add = 2, perStack = 0.10, cap = 16, dur = 240 } } },
+    effects = { { trigger = "on_hit", op = "shock", params = { add = 2, volt = 4, cap = 8, dur = 240 } } },
   },
 
   -- ══ BOUCLIER (étoffe l'axe défensif : aujourd'hui seul `templar` en porte). `shield_aura` est RÉSOLU AU
