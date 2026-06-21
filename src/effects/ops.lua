@@ -13,6 +13,22 @@
 --   ctx.dealt   = PV réellement infligés (lisible par les ops on_hit, ex. vol de vie)
 
 local Effects = require("src.effects.engine")
+local Stats = require("src.effects.stats") -- couche de modificateurs : pose de DoT renforcée + cappée (framework payoff)
+
+local ceil, min, max = math.ceil, math.min, math.max
+
+-- Framework PAYOFF (cf. docs/research/payoff-framework.md) : une pose de DoT amplifiée = base × (1+Σinc),
+-- bornée à ×3 (cap par-axe anti-snowball). `inc` (nombre) vient de l'aura bakée sur le porteur au build.
+local DOT_CAP_MULT = 3
+local function ampDps(base, inc)
+  if not inc or inc == 0 then return base end
+  return Stats.resolve(base, { Stats.increased(inc) }, { max = base * DOT_CAP_MULT, round = "nearest" })
+end
+
+-- SPREAD proportionnel à l'investissement de la SOURCE (décision design #3), borné par famille.
+local function spreadValue(load, frac, lo, hi)
+  return max(lo, min(hi, ceil(load * frac)))
+end
 
 -- Brutalite (marauder) : +value dégâts sur la 1re frappe du combat.
 Effects.register("bonus_first", function(ctx, p)
@@ -41,7 +57,11 @@ Effects.register("poison", function(ctx, p)
   local stacks = v.dots.poison
   local tf = ctx.arena.teamFlags and ctx.arena.teamFlags[ctx.source.team] -- THE FESTERING : sans-cap + duree++
   local cap = (tf and tf.poisonNoCap) and 99 or 8
-  stacks[#stacks + 1] = { dps = p.dps or 0, remaining = (p.dur or 0) + ((tf and tf.poisonDurBonus) or 0),
+  local dps = ampDps(p.dps or 0, ctx.source.poisonInc) -- RENFORCÉ : aura d'ampli (increased), cappé ×3
+  if ctx.source.poisonInc and ctx.source.poisonInc > 0 then -- signal « ça s'allume » (RENDER, golden-safe)
+    ctx.arena.bus:emit("amped", { unit = v, family = "poison" })
+  end
+  stacks[#stacks + 1] = { dps = dps, remaining = (p.dur or 0) + ((tf and tf.poisonDurBonus) or 0),
     acc = 0, weaken = p.weaken or 0, source = ctx.source }
   if #stacks > cap then table.remove(stacks, 1) end -- POISON_STACK_CAP (levé par The Festering)
   if p.igniteAt then -- VENOM-CENSER : arme la détonation au seuil (poison->burn), tickée par tickDots
@@ -53,14 +73,18 @@ Effects.register("poison", function(ctx, p)
   if p.shieldEat and v.shield and v.shield > 0 then -- ACID-MAW : le venin DISSOUT l'armure (par pose)
     v.shield = math.floor(v.shield * (1 - p.shieldEat))
   end
-  if p.spread then -- PLAGUE-BEARER : CONTAGION aux voisins de la cible (proximité du champ de bataille)
-    local sp = p.spread
+  if p.spread then -- PLAGUE-BEARER : CONTAGION proportionnelle au FARDEAU de la cible (payoff ressenti, cappé)
+    local load = 0
+    for i = 1, #stacks do load = load + (stacks[i].dps or 0) end -- Σ dps des stacks de la cible = investissement
+    local sdps = spreadValue(load, 0.70, 4, 12)                  -- frac 0.70, MIN 4, CAP 12 (anti-snowball)
+    local sdur = max(120, min(240, ceil((p.dur or 180) * 0.66))) -- assez long pour tick ET être vu
+    local capped = sdps >= 12
     for _, nb in ipairs(ctx.arena:neighborsOf(v)) do
       local ns = nb.dots.poison
-      ns[#ns + 1] = { dps = sp.dps or 1, remaining = sp.dur or (p.dur or 0), acc = 0,
-        weaken = sp.weaken or 0, source = ctx.source }
+      ns[#ns + 1] = { dps = sdps, remaining = sdur, acc = 0, weaken = 0, source = ctx.source, viaSpread = true }
       if #ns > 8 then table.remove(ns, 1) end
-      ctx.arena.bus:emit("spread", { from = v, to = nb, family = "poison" }) -- RENDER : projectile de contagion (golden-safe : aucun abonné en SIM)
+      -- RENDER : arc dont la taille ∝ magnitude (golden-safe : aucun abonné SIM). viaSpread = profondeur 1.
+      ctx.arena.bus:emit("spread", { from = v, to = nb, family = "poison", magnitude = sdps, capped = capped })
     end
   end
 end)
@@ -79,7 +103,10 @@ end)
 -- BRÛLURE : pose/rallume une brûlure (intensité qui décroît). Garde la plus FORTE (remplace si dps >).
 Effects.register("burn", function(ctx, p)
   local v = ctx.victim
-  local dps = p.dps or 0
+  local dps = ampDps(p.dps or 0, ctx.source.burnInc) -- RENFORCÉ : aura d'ampli (increased), cappé ×3
+  if ctx.source.burnInc and ctx.source.burnInc > 0 then -- signal « ça s'allume » (RENDER, golden-safe)
+    ctx.arena.bus:emit("amped", { unit = v, family = "burn" })
+  end
   local cur = v.dots.burn
   if not cur or dps > cur.dps then
     v.dots.burn = { dps = dps, remaining = p.dur or 180, acc = 0,
@@ -150,21 +177,23 @@ end)
 -- WILDFIRE-HOUND / PLAGUE-PYRE : à la mort d'un ennemi EN FEU, la brûlure saute à ses voisins (+ venin pour Plague-Pyre).
 Effects.register("spread_burn_on_death", function(ctx, p)
   local dead = ctx.victim
-  if not (dead.dots and dead.dots.burn) then return end -- seulement si le mort BRÛLAIT
-  local dps = math.max(p.minDps or 3, math.floor((dead.dots.burn.dps or 0) * (p.frac or 0.6) + 0.5))
+  local db = dead.dots and dead.dots.burn
+  if not db or db.viaSpread then return end -- mort en feu DIRECT seulement (profondeur 1 : la contagion ne chaîne pas)
+  local dps = spreadValue(db.dps or 0, 0.75, 4, 14) -- proportionnel au feu du mort, CAP 14
+  local capped = dps >= 14
   for _, nb in ipairs(ctx.arena:neighborsOf(dead)) do
     local cur = nb.dots.burn
     if not cur or dps > cur.dps then
       nb.dots.burn = { dps = dps, remaining = p.dur or 120, acc = 0,
-        decayEvery = 60, decayAcc = 0, decayPct = 0.30, source = ctx.source }
-      ctx.arena.bus:emit("spread", { from = dead, to = nb, family = "burn" }) -- RENDER : le feu saute du mort au voisin
+        decayEvery = 60, decayAcc = 0, decayPct = 0.30, source = ctx.source, viaSpread = true }
+      ctx.arena.bus:emit("spread", { from = dead, to = nb, family = "burn", magnitude = dps, capped = capped })
     end
-    if p.alsoPoison then -- croisement feu->poison (Plague-Pyre) : le feu sème aussi le venin
-      local ap = p.alsoPoison
+    if p.alsoPoison then -- croisement feu->poison (Plague-Pyre) : le feu sème aussi le venin (proportionnel, cap 8)
+      local seed = spreadValue(db.dps or 0, 0.35, 2, 8)
       local ns = nb.dots.poison
-      ns[#ns + 1] = { dps = ap.dps or 2, remaining = ap.dur or 120, acc = 0, weaken = 0, source = ctx.source }
+      ns[#ns + 1] = { dps = seed, remaining = p.alsoPoison.dur or 120, acc = 0, weaken = 0, source = ctx.source, viaSpread = true }
       if #ns > 8 then table.remove(ns, 1) end
-      ctx.arena.bus:emit("spread", { from = dead, to = nb, family = "poison" }) -- RENDER : le venin saute aussi (croisement)
+      ctx.arena.bus:emit("spread", { from = dead, to = nb, family = "poison", magnitude = seed, capped = seed >= 8 })
     end
   end
 end)
@@ -172,12 +201,15 @@ end)
 -- BLIGHT-SPREADER : à la mort d'une cible POURRIE, la pourriture se pose sur ses voisins.
 Effects.register("spread_rot", function(ctx, p)
   local dead = ctx.victim
-  if not (dead.dots and dead.dots.rot) then return end -- seulement si le mort POURRISSAIT
+  local dr = dead.dots and dead.dots.rot
+  if not dr or dr.viaSpread then return end -- mort pourri DIRECT seulement (profondeur 1)
+  local dps = spreadValue(dr.dps or 2, 0.75, 4, 14) -- proportionnel à la pourriture (déjà enflée) du mort, CAP 14
+  local capped = dps >= 14
   for _, nb in ipairs(ctx.arena:neighborsOf(dead)) do
     if not nb.dots.rot then
-      nb.dots.rot = { dps = p.base or 2, remaining = p.dur or 240, acc = 0,
-        capDps = p.capDps or 10, maxHpFrac = p.maxHpFrac or 0, source = ctx.source }
-      ctx.arena.bus:emit("spread", { from = dead, to = nb, family = "rot" }) -- RENDER : la pourriture saute du mort au voisin
+      nb.dots.rot = { dps = dps, remaining = p.dur or 240, acc = 0,
+        capDps = p.capDps or 14, maxHpFrac = p.maxHpFrac or 0, source = ctx.source, viaSpread = true }
+      ctx.arena.bus:emit("spread", { from = dead, to = nb, family = "rot", magnitude = dps, capped = capped })
     end
   end
 end)

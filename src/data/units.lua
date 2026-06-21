@@ -145,17 +145,17 @@ local U = {
   -- ══ VAGUE 2 : AURAS d'adjacence (T1.5 « semeurs »). Build-résolues via le GRAPHE du sigil (buildComp +
   -- board:neighbors), comme shield_aura -> AUCUN op combat (ignorées gracieusement à combat_start). Elles
   -- ne posent PAS le DoT elles-mêmes : elles AMPLIFIENT le voisin qui le pose (la synergie positionnelle). ══
-  soot_acolyte = { -- BRÛLURE : +dps aux brûlures des voisins
+  soot_acolyte = { -- BRÛLURE : +50% dps (increased) aux brûlures des voisins (cappé ×3 à la lecture)
     id = "soot_acolyte", bodyplan = "robe", rank = 3, type = "arcane", cost = 3, hp = 46, dmg = 6, cd = 54,
-    effects = { { trigger = "combat_start", op = "aura_burn_dps", target = "neighbors", params = { bonus = 2 } } },
+    effects = { { trigger = "combat_start", op = "aura_burn_dps", target = "neighbors", params = { inc = 0.5 } } },
   },
   clot_mender = { -- SAIGNEMENT : les voisins appliquent AUSSI un petit bleed
     id = "clot_mender", bodyplan = "robe", rank = 3, type = "bone", cost = 3, hp = 44, dmg = 4, cd = 56,
     effects = { { trigger = "combat_start", op = "aura_grant_bleed", target = "neighbors", params = { dps = 1, dur = 180, slowPct = 0.10 } } },
   },
-  miasma_acolyte = { -- POISON : +dps aux stacks de poison des voisins
+  miasma_acolyte = { -- POISON : +50% dps (increased) aux stacks de poison des voisins (cappé ×3 ; hérité par le spread)
     id = "miasma_acolyte", bodyplan = "robe", rank = 3, type = "arcane", cost = 3, hp = 36, dmg = 4, cd = 60,
-    effects = { { trigger = "combat_start", op = "aura_poison_dps", target = "neighbors", params = { bonus = 1 } } },
+    effects = { { trigger = "combat_start", op = "aura_poison_dps", target = "neighbors", params = { inc = 0.5 } } },
   },
   decay_tender = { -- POURRITURE : +growth aux pourritures des voisins (enflent plus vite)
     id = "decay_tender", bodyplan = "robe", rank = 3, type = "bone", cost = 3, hp = 50, dmg = 4, cd = 60,

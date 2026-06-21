@@ -334,18 +334,21 @@ function Build:buildComp(side)
   -- lit le descripteur combat_start/aura_* (data) et on BAKE le bonus sur le voisin. Changer de sigil
   -- re-cible tout seul. shield_aura -> stat directe ; aura_* -> modifient les EFFETS du voisin (ci-dessous).
   -- NB : notre burn/poison sont en `dps` (pas en pct) -> aura_burn_dps/aura_poison_dps = +dps à plat. ──
+  -- Framework PAYOFF : poison/burn AMPLIFIÉS par un `increased` baké sur le PORTEUR (lu par la pose ET le
+  -- spread via Stats.resolve, cappé ×3) -> l'investissement se RESSENT partout. rot garde son `growth`
+  -- (axe rampe = son identité ; son ampli passe quand même au spread via le `load`). cf. payoff-framework.md §4.
   local shield = {}
-  local burnDps, poisonDps, rotGrowth, grantBleed = {}, {}, {}, {}
+  local burnInc, poisonInc, rotGrowth, grantBleed = {}, {}, {}, {}
   for _, p in ipairs(placed) do
-    local sm = LEVEL_MULT[p.level] or 1.0 -- l'aura scale avec le NIVEAU de la source (duplicatas)
+    local sm = LEVEL_MULT[p.level] or 1.0 -- l'aura scale avec le NIVEAU de la source (duplicatas) ; cap appliqué à la LECTURE
     for _, e in ipairs(Units[p.id].effects or {}) do
       if e.trigger == "combat_start" and e.target == "neighbors" then
         local op, pa = e.op, e.params or {}
         for _, nb in ipairs(self.board:neighbors(p.slot)) do
           if self.slotRigs[nb] then
             if op == "shield_aura" then shield[nb] = (shield[nb] or 0) + math.floor((pa.value or 0) * sm + 0.5)
-            elseif op == "aura_burn_dps" then burnDps[nb] = (burnDps[nb] or 0) + math.floor((pa.bonus or 0) * sm + 0.5)
-            elseif op == "aura_poison_dps" then poisonDps[nb] = (poisonDps[nb] or 0) + math.floor((pa.bonus or 0) * sm + 0.5)
+            elseif op == "aura_burn_dps" then burnInc[nb] = (burnInc[nb] or 0) + (pa.inc or 0.5) * sm
+            elseif op == "aura_poison_dps" then poisonInc[nb] = (poisonInc[nb] or 0) + (pa.inc or 0.5) * sm
             elseif op == "aura_rot_growth" then rotGrowth[nb] = (rotGrowth[nb] or 0) + math.floor((pa.bonus or 0) * sm + 0.5)
             elseif op == "aura_grant_bleed" then grantBleed[nb] = pa
             end
@@ -355,15 +358,14 @@ function Build:buildComp(side)
     end
   end
 
-  -- Matérialise les effets d'un voisin SOUS aura (copie -> mutation) ; sinon nil = base (golden-safe).
+  -- Matérialise les effets d'un voisin SOUS aura (rot growth + grant_bleed seulement ; poison/burn passent
+  -- par poisonInc/burnInc sur l'unité). Sinon nil = base (golden-safe).
   local function auraEffects(id, slot)
-    if not (burnDps[slot] or poisonDps[slot] or rotGrowth[slot] or grantBleed[slot]) then return nil end
+    if not (rotGrowth[slot] or grantBleed[slot]) then return nil end
     local out = {}
     for _, e in ipairs(Units[id].effects or {}) do
       local pa = {}
       for k, v in pairs(e.params or {}) do pa[k] = v end
-      if e.op == "burn" and burnDps[slot] then pa.dps = (pa.dps or 0) + burnDps[slot] end
-      if e.op == "poison" and poisonDps[slot] then pa.dps = (pa.dps or 0) + poisonDps[slot] end
       if e.op == "rot" and rotGrowth[slot] then pa.growth = (pa.growth or 1) + rotGrowth[slot] end
       out[#out + 1] = { trigger = e.trigger, op = e.op, params = pa, target = e.target, condition = e.condition }
     end
@@ -385,7 +387,8 @@ function Build:buildComp(side)
     comp[#comp + 1] = { id = p.id, slot = p.slot, level = p.level,
       hp = math.floor(u.hp * m + 0.5), dmg = math.floor(u.dmg * m + 0.5), cd = u.cd,
       depth = b.maxC - p.col, row = p.row, effects = auraEffects(p.id, p.slot),
-      shield = shield[p.slot] or 0, x = x, y = y, facing = facing }
+      shield = shield[p.slot] or 0, poisonInc = poisonInc[p.slot], burnInc = burnInc[p.slot],
+      x = x, y = y, facing = facing }
   end
   return comp
 end

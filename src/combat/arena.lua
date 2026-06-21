@@ -93,6 +93,7 @@ function Arena:makeUnit(spec, team)
     aggro = spec.aggro or (u and u.aggro) or AGGRO_STD,
     taunt = spec.taunt or (u and u.taunt) or false,
     shield = spec.shield or 0, maxShield = spec.shield or 0,
+    poisonInc = spec.poisonInc, burnInc = spec.burnInc, -- ampli d'aura (increased) lu par la pose de DoT (resolve+cap)
     atkTimer = self.rng:random() * spec.cd, -- décalage seedé -> pas de swings synchronisés
     firstHit = true,
     -- Statuts : poison = LISTE de stacks (axe « nombre ») ; burn/bleed/rot/shock = instances uniques.

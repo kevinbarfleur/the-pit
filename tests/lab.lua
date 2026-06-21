@@ -56,21 +56,18 @@ local ok, err = pcall(function()
   print(string.format("  lab : catalogue OK (%d compos, %d scenarios ; integrite + slots + refs)",
     #Compositions.list, #Compositions.scenarios))
 
-  -- 2) FIDÉLITÉ DU PONT : auras RÉSOLUES. spore_tick@2 est voisin de miasma_acolyte@5 sur diamant
-  -- (arête 2-5) -> son poison passe de dps 1 (base) à 2 (aura +1). Un builder naïf ne verrait pas ça.
-  local function poisonDpsOf(comp, id)
-    for _, s in ipairs(comp) do
-      if s.id == id and s.effects then
-        for _, e in ipairs(s.effects) do if e.op == "poison" then return e.params.dps end end
-      end
-    end
+  -- 2) FIDÉLITÉ DU PONT : auras RÉSOLUES (framework payoff). spore_tick@2 est voisin de miasma_acolyte@5
+  -- sur diamant (arête 2-5) -> reçoit `poisonInc` (increased) baké sur l'UNITÉ, lu à la pose ET hérité par
+  -- le spread (cf. payoff-framework.md). Un builder naïf ne verrait pas l'adjacence.
+  local function poisonIncOf(comp, id)
+    for _, s in ipairs(comp) do if s.id == id then return s.poisonInc end end
     return nil
   end
   local pc = Compositions.byId["poison_diamant_perfect"]
   local resolved = Compbuild.toComp(pc, -1)
   assert(#resolved == #pc.units, "pont: toutes les unites posees (" .. #resolved .. "/" .. #pc.units .. ")")
-  local dps = poisonDpsOf(resolved, "spore_tick")
-  assert(dps and dps >= 2, "pont: aura miasma resolue -> spore_tick poison dps >= 2 (obtenu " .. tostring(dps) .. ")")
+  local inc = poisonIncOf(resolved, "spore_tick")
+  assert(inc and inc > 0, "pont: aura miasma resolue -> spore_tick poisonInc > 0 (obtenu " .. tostring(inc) .. ")")
   for _, c in ipairs(Compositions.list) do
     local rc = Compbuild.toComp(c, -1)
     assert(#rc == #c.units, "pont: " .. c.id .. " -> " .. #rc .. "/" .. #c.units .. " unites posees")

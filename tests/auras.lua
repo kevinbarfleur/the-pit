@@ -27,7 +27,9 @@ local function fresh()
 end
 
 local ok, err = pcall(function()
-  -- 1) AURA ACTIVE : soot_acolyte au centre, emberling sur un VRAI voisin du graphe -> burn +2.
+  -- 1) AURA ACTIVE (framework payoff) : soot_acolyte au centre, emberling sur un VRAI voisin -> burnInc
+  -- (increased +0.50) baké sur l'UNITÉ (pas sur ses effets), lu à la POSE via Stats.resolve (cappé ×3).
+  local Stats = require("src.effects.stats")
   local b = fresh()
   local center = 5
   local nb = b.board:neighbors(center)[1]
@@ -35,8 +37,11 @@ local ok, err = pcall(function()
   b:placeId(center, "soot_acolyte")
   b:placeId(nb, "emberling")
   local comp = b:buildComp(-1)
-  local dps = burnDpsOf(comp, "emberling")
-  assert(dps == 8, "aura: burn du voisin = base 6 + bonus 2 = 8 (obtenu " .. tostring(dps) .. ")")
+  local inc
+  for _, s in ipairs(comp) do if s.id == "emberling" then inc = s.burnInc end end
+  assert(inc and math.abs(inc - 0.5) < 1e-6, "aura: emberling recoit burnInc = 0.50 (obtenu " .. tostring(inc) .. ")")
+  assert(Stats.resolve(6, { Stats.increased(inc) }, { max = 18, round = "nearest" }) == 9,
+    "aura: pose renforcee 6 -> 9 dps (increased +50%, cappee x3)")
 
   -- 2) GRANT : clot_mender donne un bleed au voisin qui n'en avait pas (marauder = vanille).
   local b2 = fresh()
@@ -58,9 +63,9 @@ local ok, err = pcall(function()
   local comp3 = b3:buildComp(-1)
   local iso
   for _, s in ipairs(comp3) do if s.id == "emberling" then iso = s end end
-  assert(iso and iso.effects == nil, "isolé: effects = nil (base, golden inchangé)")
+  assert(iso and iso.effects == nil and iso.burnInc == nil, "isolé: effects = nil ET burnInc = nil (base, golden inchangé)")
 
-  print("  auras : bake +dps sur voisin / grant d'effet / isolé = base (golden-safe) OK")
+  print("  auras : ampli increased sur voisin (lu a la pose) / grant d'effet / isolé = base (golden-safe) OK")
 end)
 
 if ok then

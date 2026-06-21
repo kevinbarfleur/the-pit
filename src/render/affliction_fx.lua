@@ -142,9 +142,10 @@ end
 -- (couleur de la famille) + traînée ; à l'arrivée, éclat d'impact. La couche PERSISTANTE prend ensuite
 -- le relais (la SIM a déjà posé le DoT sur `to` -> flammes/bulles/spores apparaissent d'elles-mêmes).
 -- Déclenché par l'event bus "spread" {from,to,family}. 100% RENDER, ne mute jamais la SIM.
-function AfflictionFx:spread(from, to, family)
+function AfflictionFx:spread(from, to, family, magnitude, capped)
   if not (from and to) then return end
   family = family or "poison"
+  local mag = max(0.4, min(1, (magnitude or 4) / 12)) -- normalisé : la taille du nuage ∝ l'investissement transmis
   local x0, y0 = from.x, from.y - 14          -- part du corps source
   local x1, y1 = to.x, to.y - 12              -- vise le torse de la cible
   local dx, dy = x1 - x0, y1 - y0
@@ -154,11 +155,13 @@ function AfflictionFx:spread(from, to, family)
     x0 = x0, y0 = y0, x1 = x1, y1 = y1, x = x0, y = y0,
     age = 0, life = max(26, min(46, dist * 0.85)), lift = 9 + dist * 0.22,
     family = family, trail = {}, moteAcc = 0, phase = self:weyl() * 6.2832,
+    mag = mag, capped = capped, -- échelle visuelle + flash blanc « tu as maxé cet axe »
   }
-  -- Bouffée de DÉPART : on VOIT l'affliction se détacher de la source (éjectée vers la cible).
+  -- Bouffée de DÉPART : on VOIT l'affliction se détacher de la source (éjectée vers la cible). Plus de
+  -- volutes quand la contagion est grosse.
   local fx = FAMILY_FX[family] or FAMILY_DEFAULT
   local nx, ny = dx / (dist + 0.001), dy / (dist + 0.001)
-  for i = 1, 6 do
+  for i = 1, 4 + floor(mag * 5) do
     local r, r2 = self:weyl()
     local sp = 0.5 + r2 * 1.0
     self.parts[#self.parts + 1] = {
@@ -191,6 +194,22 @@ function AfflictionFx:spawnImpact(x, y, family)
     }
   end
   self.parts[#self.parts + 1] = { kind = "bloom", x = x, y = y, vx = 0, vy = 0, ay = 0, age = 0, life = 9, col = fx.col }
+end
+
+-- Signal d'AMPLIFICATION : une affliction RENFORCÉE (aura d'ampli) vient d'être posée -> pulse bref de
+-- couleur de famille sur la cible (« tu sens que c'est boosté »). 100% RENDER, golden-safe.
+function AfflictionFx:amped(unit, family)
+  if not unit then return end
+  local fx = FAMILY_FX[family] or FAMILY_DEFAULT
+  local cx, cy = unit.x, unit.y - 12
+  self.parts[#self.parts + 1] = { kind = "bloom", x = cx, y = cy, vx = 0, vy = 0, ay = 0, age = 0, life = 10, col = fx.col }
+  for i = 1, 3 do
+    local r = self:weyl()
+    self.parts[#self.parts + 1] = {
+      kind = "mote", x = cx + (r - 0.5) * 6, y = cy, ay = 0,
+      vx = (r - 0.5) * 0.3, vy = -(0.5 + r * 0.4), age = 0, life = 10 + r * 6, col = fx.col, r = 2,
+    }
+  end
 end
 
 -- Phase stable par unité (sans toucher au rig) -> désynchronise glows/oscillations entre monstres.
@@ -460,26 +479,31 @@ function AfflictionFx:drawGlow(units, t)
   g.setLineStyle("rough")
   for _, pr in ipairs(self.projs) do
     local ffx = FAMILY_FX[pr.family] or FAMILY_DEFAULT
-    local tr = pr.trail -- traînée ÉPAISSE en dégradé (récent = large/vif) -> lecture « ça file »
+    local mag = pr.mag or 0.5
+    local tr = pr.trail -- traînée ÉPAISSE en dégradé (récent = large/vif), épaisseur ∝ investissement transmis
     for j = 1, #tr - 1 do
       local a, b = tr[j], tr[j + 1]
       local life = 1 - a.age / 11
-      g.setColor(ffx.col[1], ffx.col[2], ffx.col[3], life * 0.5)
-      g.setLineWidth(1 + life * 2)
+      g.setColor(ffx.col[1], ffx.col[2], ffx.col[3], life * (0.4 + mag * 0.3))
+      g.setLineWidth(1 + life * (1 + mag * 3))
       g.line(a.x, a.y, b.x, b.y)
     end
     g.setLineWidth(1)
-    -- tête = NUAGE pixel qui ondule (amas de rects additifs + cœur clair) -> impossible à rater
+    -- tête = NUAGE pixel qui ondule, TAILLE ∝ magnitude (1..3 px de débord) ; cœur BLANC si l'axe est maxé.
     local wob = floor(sin((pr.age + (pr.phase or 0)) * 0.5) * 1.5)
+    local sz = 1 + floor(mag * 2)
     local hx, hy = floor(pr.x), floor(pr.y)
     g.setColor(ffx.col[1], ffx.col[2], ffx.col[3], 0.45)
-    g.rectangle("fill", hx - 2 + wob, hy - 1, 2, 2)
-    g.rectangle("fill", hx + 1, hy - 2 - wob, 2, 2)
-    g.rectangle("fill", hx - 1, hy + 1, 2, 2)
+    g.rectangle("fill", hx - sz + wob, hy - 1, sz, sz)
+    g.rectangle("fill", hx + 1, hy - sz - wob, sz, sz)
+    g.rectangle("fill", hx - 1, hy + 1, sz, sz)
     g.setColor(ffx.col[1], ffx.col[2], ffx.col[3], 0.8)
     g.rectangle("fill", hx - 1, hy - 1, 3, 3)
-    g.setColor(ffx.head[1], ffx.head[2], ffx.head[3], 1)
-    g.rectangle("fill", hx, hy, 1, 1)
+    if pr.capped then -- flash blanc « tu as maxé l'axe » (le signal « ça s'allume »)
+      g.setColor(1, 1, 1, 1); g.rectangle("fill", hx - 1, hy - 1, 3, 3)
+    else
+      g.setColor(ffx.head[1], ffx.head[2], ffx.head[3], 1); g.rectangle("fill", hx, hy, 1, 1)
+    end
   end
   -- Choc : ÉCLAIRS en zigzag qui crépitent à plusieurs points de la silhouette (cœur blanc + halo jaune),
   -- scintillants (sous-ensemble d'ancres ré-tiré chaque frame) -> lecture « décharge électrique sur le corps ».

@@ -70,7 +70,11 @@ function ArenaDraw.new(arena, palette)
   -- TRANSMISSION (Partie 2) : une affliction saute d'une unité à une autre (contagion / propagation à la
   -- mort). La SIM émet "spread" {from,to,family} ; le RENDER lance un projectile en arc + impact.
   arena.bus:on("spread", function(ev)
-    if ev and ev.from and ev.to then self.fx:spread(ev.from, ev.to, ev.family) end
+    if ev and ev.from and ev.to then self.fx:spread(ev.from, ev.to, ev.family, ev.magnitude, ev.capped) end
+  end)
+  -- Signal « ça s'allume » : une pose d'affliction RENFORCÉE (aura d'ampli) -> pulse de couleur sur la cible.
+  arena.bus:on("amped", function(ev)
+    if ev and ev.unit then self.fx:amped(ev.unit, ev.family) end
   end)
   return self
 end
