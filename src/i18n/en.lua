@@ -314,6 +314,16 @@ return {
   ["relic.grave_cap.name"] = "GRAVE CAP",
   ["relic.grave_cap.effect"] = "Your rot festers 30% faster.",
   ["relic.grave_cap.flavor"] = "It fruits only on the dead, and the dead are never enough.",
+  -- C : paliers / payoffs
+  ["relic.famines_math.name"] = "FAMINE'S MATH",
+  ["relic.famines_math.effect"] = "Field 3 or fewer units: they hit and endure far harder.",
+  ["relic.famines_math.flavor"] = "It weighs a single bone against an empty pan, and finds them equal.",
+  ["relic.hollow_choir.name"] = "HOLLOW CHOIR",
+  ["relic.hollow_choir.effect"] = "Your afflictions pierce 40% of the enemy's healing.",
+  ["relic.hollow_choir.flavor"] = "A choir of empty throats, and not one will let a wound close.",
+  ["relic.feeding_frenzy.name"] = "FEEDING FRENZY",
+  ["relic.feeding_frenzy.effect"] = "Each enemy that dies makes your units strike harder.",
+  ["relic.feeding_frenzy.flavor"] = "Too many teeth, and never, ever enough.",
 
   -- ── Proving Ground (banc d'essai) : UI + archetypes + variants + scenarios + notes de compo (ASCII) ──
   ["pg.title"] = "The Proving Ground",

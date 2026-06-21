@@ -46,6 +46,29 @@ local ok, err = pcall(function()
   d:applyRelics(cd)
   assert(math.abs(cd[1].dmgReduce - 0.15) < 1e-9, "aegis: 0.15 dmgReduce")
 
+  --   PALIERS (vague 2). famines_math : conditionnel a la taille d'equipe.
+  local fm = RunState.new(4); fm:grantRelic("famines_math")
+  local few = { { id = "a", hp = 100, dmg = 10, cd = 36 }, { id = "b", hp = 50, dmg = 20, cd = 36 } } -- 2 unites (<=3)
+  fm:applyRelics(few)
+  assert(few[1].dmg == 13 and few[1].hp == 120, "famines_math: <=3 unites -> +30% dmg / +20% hp")
+  local fm2 = RunState.new(5); fm2:grantRelic("famines_math")
+  local many = {}
+  for i = 1, 4 do many[i] = { id = "u" .. i, hp = 100, dmg = 10, cd = 36 } end -- 4 unites (>3)
+  fm2:applyRelics(many)
+  assert(many[1].dmg == 10 and many[1].hp == 100, "famines_math: >3 unites -> inerte")
+
+  --   hollow_choir / feeding_frenzy : ajoutent leur effet (grant_team pierceHeal / on_death frenzy) a la compo.
+  local hc = RunState.new(6); hc:grantRelic("hollow_choir")
+  local chc = { { id = "a", hp = 50, dmg = 7, cd = 36 } }; hc:applyRelics(chc)
+  local hasPierce = false
+  for _, e in ipairs(chc[1].effects or {}) do if e.op == "grant_team" and e.params and e.params.pierceHeal then hasPierce = true end end
+  assert(hasPierce, "hollow_choir: ajoute grant_team{pierceHeal}")
+  local ff = RunState.new(7); ff:grantRelic("feeding_frenzy")
+  local cff = { { id = "a", hp = 50, dmg = 7, cd = 36 } }; ff:applyRelics(cff)
+  local hasFrenzy = false
+  for _, e in ipairs(cff[1].effects or {}) do if e.op == "frenzy_gain" then hasFrenzy = true end end
+  assert(hasFrenzy, "feeding_frenzy: ajoute on_death frenzy_gain")
+
   -- 3) OFFRE 1-parmi-3 SEEDEE (meme seed -> meme offre, rejouable).
   local x = RunState.new(777):rollRelicChoices(3)
   local y = RunState.new(777):rollRelicChoices(3)
@@ -59,7 +82,7 @@ local ok, err = pcall(function()
   assert(not Grimoire.learn("bloodstone"), "deja connu -> pas re-appris")
 
   Grimoire.wipe()
-  print("  reliques : grant lisible / ops more_dmg+flat_hp+affliction_inc+dmg_reduce / offre seedee / Grimoire OK")
+  print("  reliques : grant lisible / ops stats+amplis+paliers(few_units/pierceHeal/frenzy) / offre seedee / Grimoire OK")
 end)
 
 if ok then

@@ -203,6 +203,17 @@ Effects.register("regen", function(ctx, p)
   ctx.source.regen = (ctx.source.regen or 0) + (p.value or 0)
 end)
 
+-- FEEDING FRENZY (relique, snowball) : trigger on_death. L'arène ne diffuse on_death qu'aux ENNEMIS du mort
+-- (ctx.source = une de NOS unités qui survit au kill) -> chaque mort ennemie renforce nos frappes. BORNÉ (cap
+-- de stacks) : « renfort fort mais borné ». Mémorise la base -> pas de dérive d'arrondi du cumul.
+Effects.register("frenzy_gain", function(ctx, p)
+  local me = ctx.source
+  if not (me and me.alive) then return end
+  me.frenzyBase = me.frenzyBase or me.dmg
+  me.frenzyStacks = math.min(p.cap or 6, (me.frenzyStacks or 0) + 1)
+  me.dmg = math.floor(me.frenzyBase * (1 + me.frenzyStacks * (p.per or 0.08)) + 0.5)
+end)
+
 -- ── PROPAGATION À LA MORT (trigger on_death, broadcast par l'arène en fin de frame). « Voisins » =
 -- proximité du CHAMP DE BATAILLE (arena:neighborsOf), PAS le graphe du sigil (cf. décision d'archi dans
 -- arena.lua). On ne pose que des DoT (zéro dégât immédiat -> pas de cascade de mort). ctx.victim = le mort ;
@@ -258,6 +269,7 @@ Effects.register("grant_team", function(ctx, p)
     if p.burnNoDecay then tf.burnNoDecay = true end                         -- ASH-MAW : feux sans décroissance
     if p.poisonNoCap then tf.poisonNoCap = true end                         -- THE FESTERING : poison sans cap
     if p.poisonDurBonus then tf.poisonDurBonus = (tf.poisonDurBonus or 0) + p.poisonDurBonus end
+    if p.pierceHeal then tf.pierceHeal = math.max(tf.pierceHeal or 0, p.pierceHeal) end -- HOLLOW CHOIR : afflictions percent les soins
   end
   if p.slowEnemies then -- THE SLOW BLEED : aura de slow sur TOUTE l'équipe ennemie (immédiate)
     for _, w in ipairs(arena.units) do

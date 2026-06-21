@@ -368,6 +368,24 @@ end
 -- FIXE burn -> bleed -> poison -> rot -> choc -> regen (déterminisme). Accumulation ENTIÈRE (jamais de
 -- float infligé) -> reproductible à l'octet. Ajouter une famille = +1 bloc ICI + 1 op de pose.
 -- cf. docs/research/effects-design.md §1.B, effects-dot-families.md.
+-- HOLLOW CHOIR (relique anti-sustain) : fraction de soin RONGÉE si u porte une affliction posée par une
+-- équipe « pierceHeal ». Scanne les sources des DoT actifs. Gated : aucune équipe pierceHeal -> 0 -> golden-safe.
+local function pierceOf(tf, src)
+  if src and tf[src.team] and tf[src.team].pierceHeal then return tf[src.team].pierceHeal end
+  return 0
+end
+function Arena:healPierceOn(u)
+  local tf = self.teamFlags
+  if not tf then return 0 end
+  local d, best = u.dots, 0
+  best = math.max(best, pierceOf(tf, d.burn and d.burn.source))
+  best = math.max(best, pierceOf(tf, d.bleed and d.bleed.source))
+  best = math.max(best, pierceOf(tf, d.rot and d.rot.source))
+  best = math.max(best, pierceOf(tf, d.shock and d.shock.source))
+  for i = 1, #d.poison do best = math.max(best, pierceOf(tf, d.poison[i].source)) end
+  return best
+end
+
 function Arena:tickDots(u, frameDt)
   local d = u.dots
 
@@ -482,7 +500,12 @@ function Arena:tickDots(u, frameDt)
   -- REGEN (contre-DoT) : soin au fil du temps, accumulation entière. La POURRITURE l'ÉTOUFFE (chair morte
   -- ne guérit pas) -> rot = anti-heal, le contre désigné du mur-regen. ANTI-HEAL borné par ROT_HEAL_CUT.
   if u.regen > 0 and u.hp < u.maxHp then
-    local rg = d.rot and (u.regen * (1 - ROT_HEAL_CUT)) or u.regen
+    -- ANTI-HEAL : la POURRITURE étouffe le soin (ROT_HEAL_CUT) ; HOLLOW CHOIR (relique) ronge aussi le soin si
+    -- u porte une affliction d'une équipe « pierceHeal ». On garde la coupe la PLUS FORTE (jamais cumulées).
+    local cut = d.rot and ROT_HEAL_CUT or 0
+    local pierce = self:healPierceOn(u)
+    if pierce > cut then cut = pierce end
+    local rg = (cut > 0) and (u.regen * (1 - cut)) or u.regen
     u.regenAcc = u.regenAcc + rg * (frameDt / 60)
     if u.regenAcc >= 1 then local n = math.floor(u.regenAcc); u.regenAcc = u.regenAcc - n
       u.hp = math.min(u.maxHp, u.hp + n) end

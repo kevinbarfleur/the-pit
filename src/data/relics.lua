@@ -27,14 +27,26 @@ local R = {
   ember_heart  = { id = "ember_heart",  op = "relic_affliction_inc", params = { family = "burn",   inc = 0.30 }, tier = 2 },
   weeping_nail = { id = "weeping_nail", op = "relic_affliction_inc", params = { family = "bleed",  inc = 0.30 }, tier = 2 },
   grave_cap    = { id = "grave_cap",    op = "relic_affliction_inc", params = { family = "rot",    inc = 0.30 }, tier = 2 },
+
+  -- ── C — paliers / payoffs (récompense NON-LINÉAIRE d'un build / archétype ; cf. doc §4-C) ──
+  -- FAMINE'S MATH (« tall ») : ≤3 unités -> elles frappent ET encaissent plus. HOLLOW CHOIR (anti-sustain) :
+  -- afflictions percent les soins ennemis (règle burn/DoT vs tank/regen). FEEDING FRENZY : chaque kill renforce.
+  famines_math = { id = "famines_math", op = "relic_few_units",
+    params = { max = 3, dmgInc = 0.30, hpInc = 0.20 }, tier = 3 },
+  hollow_choir = { id = "hollow_choir", op = "relic_add_effect", tier = 3,
+    params = { effect = { trigger = "combat_start", op = "grant_team", params = { pierceHeal = 0.40 } } } },
+  feeding_frenzy = { id = "feeding_frenzy", op = "relic_add_effect", tier = 3,
+    params = { effect = { trigger = "on_death", op = "frenzy_gain", params = { per = 0.08, cap = 6 } } } },
 }
 
-R.order = { "bloodstone", "carapace", "aegis", "kings_bowl", "ember_heart", "weeping_nail", "grave_cap" }
+R.order = { "bloodstone", "carapace", "aegis", "kings_bowl", "ember_heart", "weeping_nail", "grave_cap",
+  "famines_math", "hollow_choir", "feeding_frenzy" }
 
 -- Applique l'effet d'une relique à une compo (liste de specs d'unités), au BUILD. Modifie en place.
 -- Les amplis (poisonInc/…/dmgReduce) sont ADDITIFS (cumul avec une aura d'adjacence qui poserait le même champ).
 function R.apply(comp, relic)
   local op, p = relic.op, relic.params or {}
+  local n = #comp -- taille de l'équipe, pour les paliers conditionnels (ex. « ≤3 unités »)
   for _, spec in ipairs(comp) do
     if op == "relic_more_dmg" then
       if spec.dmg then spec.dmg = math.floor(spec.dmg * (1 + (p.mult or 0)) + 0.5) end
@@ -45,6 +57,11 @@ function R.apply(comp, relic)
     elseif op == "relic_affliction_inc" then
       local key = (p.family or "") .. "Inc" -- poisonInc/burnInc/bleedInc/rotInc : lu par ampDps à la pose du DoT
       spec[key] = (spec[key] or 0) + (p.inc or 0)
+    elseif op == "relic_few_units" then -- FAMINE'S MATH : si l'équipe est petite (≤max), elle frappe/encaisse plus
+      if n <= (p.max or 3) then
+        if spec.dmg then spec.dmg = math.floor(spec.dmg * (1 + (p.dmgInc or 0)) + 0.5) end
+        if spec.hp then spec.hp = math.floor(spec.hp * (1 + (p.hpInc or 0)) + 0.5) end
+      end
     elseif op == "relic_add_effect" and p.effect then
       local base = spec.effects or (Units[spec.id] and Units[spec.id].effects) or {}
       local eff = {}
