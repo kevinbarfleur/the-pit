@@ -46,9 +46,11 @@ def main() -> int:
                            f"  ({res.get('ticks')}t, hp left {res.get('hpFrac', {}).get('left', 0):.1f}"
                            f" vs {res.get('hpFrac', {}).get('right', 0):.1f})")
                 if r.get("relicChoices"):
-                    log.append(f"  >> RELIC OFFER (pick 1-of-3): {r['relicChoices']}")
+                    g.pick_relic(1)  # reliques cryptiques (effet inconnu) -> auto-pick #1 par defaut
+                    log.append(f"  >> RELIC: auto-pick {r['relicChoices'][0]} (parmi {r['relicChoices']})")
                 if r.get("over"):
                     log.append(f"  >> RUN OVER: {r['over'].upper()}")
+                    break  # run terminee -> on ignore les actions restantes (blind-batch propre)
             else:
                 log.append(f"  (! action inconnue: {a})")
 
