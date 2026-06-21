@@ -160,6 +160,18 @@ function AfflictionFx:shockSpark(u)
   self.shockFlash[u] = { age = 0, life = 12, phase = (self:weyl()) * 6.2832 }
 end
 
+-- CRÉPITEMENT PERSISTANT (état CHARGÉ) : petite étincelle qui jaillit brièvement d'un point du corps. Émise
+-- en continu tant que l'unité porte des stacks de choc (rate ∝ stacks dans update) -> « charge qui monte ».
+function AfflictionFx:spawnShockMote(u, stacks)
+  local r, r2, r3 = self:weyl()
+  local anc = SHOCK_ANCHORS[1 + floor(r3 * #SHOCK_ANCHORS)]
+  self.parts[#self.parts + 1] = {
+    kind = "spark", x = u.x + anc[1] + (r - 0.5) * 2, y = u.y + anc[2] + (r2 - 0.5) * 2,
+    vx = (r - 0.5) * 1.3, vy = (r3 - 0.5) * 1.3 - 0.2, ay = 0,
+    age = 0, life = 4 + r2 * 5, col = COL.shock,
+  }
+end
+
 -- ── TRANSMISSION (Partie 2) ─────────────────────────────────────────────────────────────────────
 -- Une affliction saute de `from` vers `to` (contagion / propagation à la mort). Projectile en ARC
 -- (couleur de la famille) + traînée ; à l'arrivée, éclat d'impact. La couche PERSISTANTE prend ensuite
@@ -326,7 +338,7 @@ function AfflictionFx:update(units, dt, t)
     if u.alive then
       local d = u.dots
       local a = self.acc[u]
-      if not a then a = { burn = 0, bleed = 0, poison = 0, rot = 0 }; self.acc[u] = a end
+      if not a then a = { burn = 0, bleed = 0, poison = 0, rot = 0, shock = 0 }; self.acc[u] = a end
 
       if d.burn then
         local rate = (d.burn.dps and d.burn.dps >= 8) and 0.55 or 0.36 -- feu nettement plus dense (retour user)
@@ -346,6 +358,11 @@ function AfflictionFx:update(units, dt, t)
         a.rot = a.rot + 0.08 * dt
         while a.rot >= 1 do a.rot = a.rot - 1; self:spawnSpore(u) end
         self:ensureFlies(u)
+      end
+      if d.shock and (d.shock.stacks or 0) > 0 then -- ÉTAT CHARGÉ : crépitement continu, intensité ∝ stacks
+        local stk = d.shock.stacks
+        a.shock = a.shock + (0.16 + 0.06 * min(stk, 8)) * dt
+        while a.shock >= 1 do a.shock = a.shock - 1; self:spawnShockMote(u, stk) end
       end
     end
   end
