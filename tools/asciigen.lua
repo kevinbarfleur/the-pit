@@ -76,7 +76,9 @@ end
 
 local function printCreature(id, type_, bodyplan, rank)
   local spec = Units[id] or {}
-  local def = CreatureGen.build({ id = id, type = type_ or spec.type, effects = spec.effects, bodyplan = bodyplan, rank = rank })
+  -- id nu -> on prend le bodyplan/rank RÉEL de l'unité (units.lua) ; override possible via args.
+  local def = CreatureGen.build({ id = id, type = type_ or spec.type, effects = spec.effects,
+    bodyplan = bodyplan or spec.bodyplan, rank = rank or spec.rank })
   local canvas, W, H = composite(def)
   print(string.format("─── %s  [%s/%s R%d]  (%dx%d, scale %.2f)", id, type_ or spec.type or "?",
     bodyplan or def.bodyplan or "?", def.rank or 1, W, H, def.scale or 1))

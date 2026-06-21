@@ -115,7 +115,12 @@ function Gallery.new(palette, vw, vh, host)
       or CreatureGen.cached({ id = id, type = spec.type, effects = spec.effects, bodyplan = spec.bodyplan, rank = spec.rank })
     local char = Rig.new(def, palette)
     char.facing = 1
-    self.items[#self.items + 1] = { id = id, char = char, type = spec.type, gen = not handmade }
+    -- rank/bodyplan portés sur l'item -> cadre+pips+glow de rareté visibles sur les VRAIES unités
+    -- (pas que les démos) dès qu'units.lua porte ces champs. Vanille (handmade) : spec.rank nil -> pas de cadre.
+    self.items[#self.items + 1] = {
+      id = id, char = char, type = spec.type, gen = not handmade,
+      bodyplan = spec.bodyplan, rank = spec.rank,
+    }
     if handmade then self.nHand = self.nHand + 1 else self.nGen = self.nGen + 1 end
   end
 
