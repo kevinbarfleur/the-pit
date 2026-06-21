@@ -31,6 +31,7 @@ local Snapshot = require("src.net.snapshot")
 local Snapstore = require("src.net.snapstore")
 local Run = require("src.run.state")
 local RelicGen = require("src.gen.relicgen") -- icones de reliques (rangee type Slay the Spire + hover)
+local Bestiary = require("src.core.bestiary") -- marque les créatures vues en boutique (codex)
 local Theme = require("src.ui.theme")
 local Draw = require("src.ui.draw")
 local Ambient = require("src.fx.ambient")
@@ -614,6 +615,7 @@ function Build:drawWorld()
   if run then
     for i, rect in ipairs(self.shopSlots) do
       local o = run.shop[i]
+      if o then Bestiary.mark(o.id) end -- BESTIAIRE : une offre vue en boutique = créature rencontrée (idempotent)
       if o and not o.sold then
         local c = self.previewRigs[o.id]
         if c then

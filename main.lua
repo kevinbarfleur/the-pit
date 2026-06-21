@@ -20,6 +20,7 @@ local Playground = require("src.scenes.playground")
 local RunState = require("src.run.state")
 local Grimoire = require("src.core.grimoire")
 local Dev = require("src.core.dev") -- MODE DEV (cheat) : toggle full-unlock du codex (menu) ; master switch Dev.ENABLED
+local Bestiary = require("src.core.bestiary") -- codex des créatures rencontrées (persistant, full-unlock-aware)
 local Theme = require("src.ui.theme")
 local T = require("src.core.i18n").t
 
@@ -124,6 +125,7 @@ function love.load()
   Theme.load() -- charge polices + DA une fois (pré-chauffe les tailles courantes ; fallback si TTF absent)
   Grimoire.load() -- charge le codex persistant (reliques identifiées, méta-progression cross-run)
   Dev.load()      -- MODE DEV : restaure l'état du toggle full-unlock (inerte si Dev.ENABLED = false)
+  Bestiary.load() -- codex des créatures rencontrées (méta cross-run)
   host.goto("menu") -- écran titre ; "ENTER THE PIT" lance une run (host.newRun)
 end
 
