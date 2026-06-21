@@ -128,6 +128,38 @@ local ok, err = pcall(function()
   assert(Stats.resolve(20, { Stats.increased(5) }, { max = 60, round = "nearest" }) == 60, "resolve plafonne à max (×3)")
   assert(Stats.resolve(6, { Stats.increased(0.5) }, { max = 18, round = "nearest" }) == 9, "resolve +50% sous cap = 9")
   print("  payoff : cap de resolve (×3) OK")
+
+  -- ════════ 5. MODIFICATEURS RARES DU CHOC (persist / transfer / chain) ════════
+  -- CHAIN : la décharge arque vers un voisin (fraction des dégâts).
+  do
+    local a = Arena.new({ left = { U("bandit") },
+      right = { U("marauder", { row = 0 }), U("marauder", { row = 1 }) }, autoReset = false, seed = 5 })
+    local atk, t0, t1 = a.units[1], a.units[2], a.units[3]
+    t0.dots.shock = { stacks = 3, remaining = 180, cap = 8, volt = 3, source = atk, chain = 1 }
+    local hp1 = t1.hp
+    a:dischargeShock(atk, t0)
+    assert(t1.hp < hp1, "chain: l'arc touche un voisin")
+    assert(t0.dots.shock == nil, "chain seul -> la charge se consume")
+  end
+  -- TRANSFER : la moitié des stacks saute sur un voisin (profondeur 1).
+  do
+    local a = Arena.new({ left = { U("bandit") },
+      right = { U("marauder", { row = 0 }), U("marauder", { row = 1 }) }, autoReset = false, seed = 6 })
+    local atk, t0, t1 = a.units[1], a.units[2], a.units[3]
+    t0.dots.shock = { stacks = 4, remaining = 180, cap = 8, volt = 3, source = atk, transfer = 0.5 }
+    a:dischargeShock(atk, t0)
+    assert(t1.dots.shock and t1.dots.shock.stacks == 2, "transfer: moitié des stacks (2) saute sur le voisin")
+    assert(not t1.dots.shock.transfer, "transfer: profondeur 1 (le stack transféré ne re-transfère pas)")
+  end
+  -- PERSIST : la charge garde la moitié de ses stacks après décharge.
+  do
+    local a = Arena.new({ left = { U("bandit") }, right = { U("marauder") }, autoReset = false, seed = 7 })
+    local atk, t0 = a.units[1], a.units[2]
+    t0.dots.shock = { stacks = 4, remaining = 180, cap = 8, volt = 3, source = atk, persist = 0.5 }
+    a:dischargeShock(atk, t0)
+    assert(t0.dots.shock and t0.dots.shock.stacks == 2, "persist: garde la moitié (2) après décharge")
+  end
+  print("  payoff : choc rare — chain (arc) / transfer (saut, profondeur 1) / persist (garde la charge) OK")
 end)
 
 if ok then

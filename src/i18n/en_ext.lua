@@ -122,4 +122,20 @@ return {
   ["scenario.ward_wall.note"]       = "Periodic wards re-dress the front over and over, reflecting blows - watch the cyan pulses and the spite-sparks on the attacker.",
   ["scenario.breach.label"]         = "Breach",
   ["scenario.breach.note"]          = "The same-batch counter: sunder-strikes dissolve the periodic wards faster than they can re-cast.",
+
+  -- ── Modificateurs rares du choc ──
+  ["unit.dynamo_priest.name"]         = "DYNAMO PRIEST",
+  ["unit.dynamo_priest.passive_name"] = "Conduction",
+  ["unit.dynamo_priest.passive_desc"] = "When a charge discharges, half its stacks leap to a neighbor - the shock spreads instead of ending.",
+  ["unit.arc_warden.name"]            = "ARC WARDEN",
+  ["unit.arc_warden.passive_name"]    = "Forked Bolt",
+  ["unit.arc_warden.passive_desc"]    = "Discharges arc to 2 nearby foes for 60% of the burst - a charge that cleans a line.",
+  ["unit.storm_anchor.name"]          = "STORM ANCHOR",
+  ["unit.storm_anchor.passive_name"]  = "Held Charge",
+  ["unit.storm_anchor.passive_desc"]  = "The charge never fully empties - half the stacks remain after each discharge, a relentless current.",
+
+  -- ── Compo & duel modificateurs de choc ──
+  ["comp.shock_arc_carre.note"]     = "A storm that forks and lingers - charges chain across the line, leap to neighbors, and never fully discharge.",
+  ["scenario.arc_storm.label"]      = "Forked Storm",
+  ["scenario.arc_storm.note"]       = "Rare shock modifiers on show: discharges chain to nearby foes, charges leap to neighbors, and never fully drain.",
 }

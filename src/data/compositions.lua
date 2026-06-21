@@ -429,6 +429,19 @@ Compositions.list = {
     },
     noteKey = "comp.siege_carre.note",
   },
+  -- CHOC à modificateurs rares : la décharge ARQUE (arc_warden), SAUTE aux voisins (dynamo_priest) et
+  -- PERSISTE (storm_anchor) -> une tempête qui se propage et ne s'éteint jamais vraiment.
+  {
+    id = "shock_arc_carre", archetype = "shock", variant = "amp", sigil = "carre", boardLevel = 8,
+    units = {
+      { id = "arc_warden", slot = 5 },    -- CHAIN : la décharge arque sur 2 voisins
+      { id = "dynamo_priest", slot = 2 }, -- TRANSFER : la charge saute
+      { id = "storm_anchor", slot = 4 },  -- PERSIST : la charge ne se vide pas
+      { id = "stormcaller", slot = 6 },   -- chargeur de base (alimente la décharge)
+      { id = "gravewarden", slot = 8 },   -- taunt : tient le front pendant que ça charge
+    },
+    noteKey = "comp.shock_arc_carre.note",
+  },
 }
 
 -- ── Matchups FEATURED (la liste de scénarios « j'ai qu'à choisir »). seed FIXE -> match rejouable.
@@ -472,6 +485,7 @@ Compositions.scenarios = {
   -- ── Boucliers périodiques (re-cast + réflexion + surcharge) et leur counter (perce-bouclier) ──
   { id = "ward_wall",        a = "ward_fortress_carre", b = "bruiser_carre",        seed = 1031, tags = { "vfx" },                  noteKey = "scenario.ward_wall.note" },
   { id = "breach",           a = "siege_carre",         b = "ward_fortress_carre",  seed = 1032, tags = { "vfx" },                  noteKey = "scenario.breach.note" },
+  { id = "arc_storm",        a = "shock_arc_carre",     b = "bruiser_carre",        seed = 1033, tags = { "vfx" },                  noteKey = "scenario.arc_storm.note" },
 }
 
 -- ── Index (construits au load ; DATA pure, aucun love/require) ──

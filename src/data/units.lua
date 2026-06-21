@@ -319,6 +319,19 @@ local U = {
     id = "stormlord", bodyplan = "eye", rank = 4, type = "arcane", cost = 4, hp = 50, dmg = 6, cd = 54, aggro = 5,
     effects = { { trigger = "on_hit", op = "shock", params = { add = 2, volt = 4, cap = 8, dur = 240 } } },
   },
+  -- MODIFICATEURS RARES du choc (cf. dischargeShock) : la décharge n'est plus un simple « tout d'un coup ».
+  dynamo_priest = { -- TRANSFER : à la décharge, la moitié des stacks SAUTE sur un voisin (la charge se propage)
+    id = "dynamo_priest", bodyplan = "robe", rank = 4, type = "arcane", cost = 4, hp = 48, dmg = 5, cd = 58, aggro = 5,
+    effects = { { trigger = "on_hit", op = "shock", params = { add = 1, cap = 6, dur = 180, transfer = 0.5 } } },
+  },
+  arc_warden = { -- CHAIN : la décharge ARQUE vers 2 ennemis proches (60% des dégâts) — nettoyage de ligne
+    id = "arc_warden", bodyplan = "arachnid", rank = 4, type = "abyss", cost = 4, hp = 52, dmg = 6, cd = 60, aggro = 5,
+    effects = { { trigger = "on_hit", op = "shock", params = { add = 1, volt = 4, cap = 6, dur = 180, chain = 2 } } },
+  },
+  storm_anchor = { -- PERSIST : la charge ne se consume pas entièrement (garde la moitié) — pression continue
+    id = "storm_anchor", bodyplan = "eye", rank = 4, type = "arcane", cost = 4, hp = 56, dmg = 5, cd = 62, aggro = 15,
+    effects = { { trigger = "on_hit", op = "shock", params = { add = 2, cap = 8, dur = 240, persist = 0.5 } } },
+  },
 
   -- ══ BOUCLIER (étoffe l'axe défensif : aujourd'hui seul `templar` en porte). `shield_aura` est RÉSOLU AU
   -- BUILD (build.lua) sur les voisins du sigil -> stat `shield` cuite, aucun op combat. Plus de porteurs à
@@ -392,6 +405,7 @@ U.order = { "marauder", "templar", "skeleton", "bandit", "witch", "demon",
   "gravewarden",
   -- ladder choc (5) + bouclier (4)
   "live_wire", "thunderhead", "static_swarm", "galvanizer", "stormlord",
+  "dynamo_priest", "arc_warden", "storm_anchor",
   "shieldbearer", "aegis_warden", "oath_keeper", "bulwark_acolyte",
   -- boucliers périodiques (caster + renforts + counter)
   "ward_weaver", "barrier_savant", "mirror_ward", "surge_warden", "siege_breaker" }
@@ -414,6 +428,7 @@ U.pool = { "marauder", "templar", "skeleton", "bandit", "witch", "demon",
   "pit_maw", "wither_bloom",
   "gravewarden",
   "live_wire", "thunderhead", "static_swarm", "galvanizer", "stormlord",
+  "dynamo_priest", "arc_warden", "storm_anchor",
   "shieldbearer", "aegis_warden", "oath_keeper", "bulwark_acolyte",
   "ward_weaver", "barrier_savant", "mirror_ward", "surge_warden", "siege_breaker" }
 

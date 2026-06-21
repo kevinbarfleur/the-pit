@@ -163,11 +163,15 @@ Effects.register("shock", function(ctx, p)
   local cur = v.dots.shock
   if not cur then
     v.dots.shock = { stacks = math.min(cap, p.add or 1), remaining = p.dur or 180,
-      cap = cap, volt = p.volt, source = ctx.source }
+      cap = cap, volt = p.volt, source = ctx.source,
+      persist = p.persist, transfer = p.transfer, chain = p.chain } -- MODIFICATEURS RARES (cf. dischargeShock)
   else
     cur.stacks = math.min(cur.cap, cur.stacks + (p.add or 1))
     cur.remaining = p.dur or cur.remaining
     if p.volt and (not cur.volt or p.volt > cur.volt) then cur.volt = p.volt end
+    if p.persist then cur.persist = p.persist end -- un porteur de modificateur « upgrade » la charge
+    if p.transfer then cur.transfer = p.transfer end
+    if p.chain then cur.chain = p.chain end
   end
 end)
 

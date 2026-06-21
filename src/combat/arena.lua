@@ -288,12 +288,51 @@ end
 function Arena:dischargeShock(a, target)
   local sh = target.dots.shock
   if not sh or (sh.stacks or 0) <= 0 then return end
-  local burst = sh.stacks * (sh.volt or VOLT_PER_STACK)
+  local volt = sh.volt or VOLT_PER_STACK
+  local burst = sh.stacks * volt
   local src = (sh.source and sh.source.alive) and sh.source or a
   if burst > 0 then
     self:damage(target, burst, { ignoreShield = true, cause = "shock", source = src })
   end
-  target.dots.shock = nil -- consume TOTAL : la charge se libère d'un seul coup
+  -- CHAIN (modificateur rare) : l'arc saute à N ennemis proches pour 60% de la décharge (sparks auto).
+  if sh.chain and sh.chain > 0 and burst > 0 then
+    local arc = math.floor(burst * 0.6)
+    if arc > 0 then
+      local n = 0
+      for _, nb in ipairs(self:neighborsOf(target)) do
+        if nb.alive then
+          self:damage(nb, arc, { ignoreShield = true, cause = "shock", source = src })
+          n = n + 1; if n >= sh.chain then break end
+        end
+      end
+    end
+  end
+  -- TRANSFER (modificateur rare) : une fraction des stacks SAUTE sur un voisin (profondeur 1 : sans modifs).
+  if sh.transfer and sh.transfer > 0 then
+    local moved = math.floor(sh.stacks * sh.transfer)
+    if moved > 0 then
+      for _, nb in ipairs(self:neighborsOf(target)) do
+        if nb.alive then
+          local ns = nb.dots.shock
+          if not ns then
+            nb.dots.shock = { stacks = math.min(SHOCK_STACK_CAP, moved), remaining = sh.remaining,
+              cap = SHOCK_STACK_CAP, volt = volt, source = src }
+          else
+            ns.stacks = math.min(ns.cap, ns.stacks + moved)
+            if volt > (ns.volt or 0) then ns.volt = volt end
+          end
+          self.bus:emit("spread", { from = target, to = nb, family = "shock", magnitude = moved, capped = false })
+          break -- un seul voisin
+        end
+      end
+    end
+  end
+  -- PERSIST (modificateur rare) : la charge ne se consume PAS entièrement (garde une fraction des stacks).
+  if sh.persist and math.floor(sh.stacks * sh.persist) >= 1 then
+    sh.stacks = math.floor(sh.stacks * sh.persist)
+  else
+    target.dots.shock = nil -- défaut : consume TOTAL (la charge se libère d'un seul coup)
+  end
 end
 
 -- ── Tick des statuts (DoT / altérations) ──────────────────────────────────────────────────────
