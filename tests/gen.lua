@@ -21,7 +21,10 @@ local PART_NAMES = { head = true, torso = true, armBack = true, armFront = true,
 local function validPartName(name)
   if PART_NAMES[name] then return true end
   if name == "bulb" or name == "mantle" or name == "body" then return true end
-  if name:match("^tentacle%d+$") then return true end -- céphalopode : tentacle1..N
+  if name == "core" or name == "orb" then return true end -- swarm : core ; eye : orb (masse base-pivot)
+  if name:match("^tentacle%d+$") then return true end  -- céphalopode : tentacle1..N
+  if name:match("^segment%d+$") then return true end   -- serpent : segment1..N (chaîne)
+  if name:match("^leg%d+$") then return true end       -- arachnide : leg1..N (pattes rayonnantes)
   if name:match("^leg%u%u$") then return true end      -- quadrupède : legFL/FR/BL/BR
   return false
 end
@@ -138,7 +141,7 @@ end
 -- ─────────────────────────── 2a-bis. BODY-PLANS non-bipèdes (blob/quadruped/cephalopod) ───────────────────────────
 -- Construits explicitement (axe bodyplan) à travers les familles : structure valide + déterminisme + rendu.
 do
-  local plans = { "blob", "quadruped", "cephalopod" }
+  local plans = { "blob", "quadruped", "cephalopod", "swarm", "serpent", "arachnid", "eye" }
   local fams = { "flesh", "order", "bone", "arcane", "abyss" }
   local count = 0
   for _, bp in ipairs(plans) do
@@ -161,6 +164,10 @@ do
     { id = "rank_ceph", type = "arcane", bodyplan = "cephalopod" },
     { id = "rank_quad", type = "bone", bodyplan = "quadruped" },
     { id = "rank_blob", type = "abyss", bodyplan = "blob" },
+    { id = "rank_swarm", type = "flesh", bodyplan = "swarm" },   -- ornement sur le core
+    { id = "rank_serp", type = "arcane", bodyplan = "serpent" }, -- ornement sur la gueule (racine)
+    { id = "rank_arac", type = "abyss", bodyplan = "arachnid" }, -- ornement dorsal
+    { id = "rank_eye", type = "bone", bodyplan = "eye" },        -- couronne d'épines autour de l'orbe
   }
   for _, rc in ipairs(rankCombos) do
     for rank = 1, 5 do

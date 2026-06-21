@@ -99,6 +99,10 @@ elseif os.getenv("PLANS") then
     { "blob_a", "abyss", "blob" }, { "blob_b", "bone", "blob" }, { "blob_c", "arcane", "blob" },
     { "quad_a", "flesh", "quadruped" }, { "quad_b", "bone", "quadruped" }, { "quad_c", "abyss", "quadruped" },
     { "ceph_a", "arcane", "cephalopod" }, { "ceph_b", "abyss", "cephalopod" }, { "ceph_c", "order", "cephalopod" },
+    { "swarm_a", "abyss", "swarm" }, { "swarm_b", "bone", "swarm" }, { "swarm_c", "flesh", "swarm" },
+    { "serp_a", "abyss", "serpent" }, { "serp_b", "arcane", "serpent" }, { "serp_c", "bone", "serpent" },
+    { "arac_a", "abyss", "arachnid" }, { "arac_b", "bone", "arachnid" }, { "arac_c", "flesh", "arachnid" },
+    { "eye_a", "arcane", "eye" }, { "eye_b", "abyss", "eye" }, { "eye_c", "order", "eye" },
   }
   for _, d in ipairs(demos) do printCreature(d[1], d[2], d[3]) end
 else

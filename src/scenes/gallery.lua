@@ -44,6 +44,19 @@ local DEMOS = {
   { label = "ELDRITCH", type = "abyss", bodyplan = "cephalopod" },
   { label = "ELDRITCH", type = "order", bodyplan = "cephalopod" },
   { label = "ELDRITCH", type = "bone", bodyplan = "cephalopod" },
+  -- nouveaux body-plans (axe découplé) : masse grouillante / chaîne en S / empreinte radiale / orbe.
+  { label = "SWARM", type = "abyss", bodyplan = "swarm" },
+  { label = "SWARM", type = "bone", bodyplan = "swarm" },
+  { label = "SWARM", type = "flesh", bodyplan = "swarm" },
+  { label = "SERPENT", type = "abyss", bodyplan = "serpent" },
+  { label = "SERPENT", type = "arcane", bodyplan = "serpent" },
+  { label = "SERPENT", type = "bone", bodyplan = "serpent" },
+  { label = "ARACHNID", type = "abyss", bodyplan = "arachnid" },
+  { label = "ARACHNID", type = "bone", bodyplan = "arachnid" },
+  { label = "ARACHNID", type = "flesh", bodyplan = "arachnid" },
+  { label = "EYE", type = "arcane", bodyplan = "eye" },
+  { label = "EYE", type = "abyss", bodyplan = "eye" },
+  { label = "EYE", type = "order", bodyplan = "eye" },
 }
 
 -- ÉCHELLE DE RANGS (rareté) : une même créature aux 5 rangs -> on lit la montée échelle+ornement+glow+cadre.

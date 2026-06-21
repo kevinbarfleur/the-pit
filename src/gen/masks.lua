@@ -419,6 +419,143 @@ M.cephalopod = {
   } },
 }
 
+-- ═══════════════════════════ SWARM : amas de petits corps (charognards / insectes) ═══════════════════════════
+-- Silhouette = MASSE BASSE & LARGE (cols=6 -> fullW=12), TEXTURÉE par PLUSIEURS yeux étagés (E). On ne lit
+-- PAS un corps unique mais un grouillement : 3-4 marqueurs E à hauteurs/colonnes variées (chaque E = un
+-- petit corps). Trapue (haut bombé doux, base large à plat). Idle = micro-jitter désynchronisé par E + bob.
+M.swarm = {
+  core = { variants = {
+    -- A : tas compact (yeux sur 2 rangées)
+    {
+      { 0, 0, 1, 3, 3, 3 },
+      { 0, 1, 3, 3, "E", 3 },
+      { 1, 3, "E", 3, 3, 3 },
+      { 3, "E", 3, 3, "E", 3 },
+      { 3, 3, 3, 3, 3, 3 },
+      { 1, 3, 3, 3, 3, 3 },
+    },
+    -- B : nuée allongée (plus basse, 4 yeux dispersés)
+    {
+      { 0, 1, 3, 3, 3, 3 },
+      { 1, 3, "E", 3, "E", 3 },
+      { 3, "E", 3, 3, 3, 3 },
+      { 3, 3, 3, 3, "E", 3 },
+      { 1, 3, 3, 3, 3, 3 },
+    },
+    -- C : grappe haute (corps empilés, yeux étagés sur 3 niveaux)
+    {
+      { 0, 0, 1, 3, 3, 3 },
+      { 0, 1, 3, "E", 3, 3 },
+      { 1, 3, "E", 3, 3, 3 },
+      { 3, 3, 3, 3, "E", 3 },
+      { 3, "E", 3, 3, 3, 3 },
+      { 1, 3, 3, 3, 3, 3 },
+    },
+  } },
+}
+
+-- ═══════════════════════════ SERPENT : chaîne verticale de segments décroissants ═══════════════════════════
+-- Silhouette = COLONNE VERTICALE qui s'effile, gueule en haut. Le builder chaîne des `segmentN` (parent->enfant)
+-- en décalant `at` G/D pour le S et en rétrécissant via dummyHalf décroissant ; la TÊTE (gueule + yeux) est un
+-- mask à part. Reconnaissance : verticalité + ondulation. Têtes = mâchoires basses larges.
+M.serpent = {
+  head = { variants = {
+    -- A : gueule trapue (mâchoire large)
+    {
+      { 0, 3, 3, 3 },
+      { 3, 3, "E", 3 },
+      { 3, 3, 3, 3 },
+      { 1, 3, 3, 3 },
+    },
+    -- B : crâne effilé (museau qui monte)
+    {
+      { 0, 0, 3, 3 },
+      { 0, 3, 3, 3 },
+      { 3, 3, "E", 3 },
+      { 3, 3, 3, 3 },
+    },
+    -- C : tête à fanons (yeux étagés)
+    {
+      { 0, 1, 3, 3 },
+      { 3, 3, "E", 3 },
+      { 3, 3, 3, "E" },
+      { 1, 3, 3, 3 },
+    },
+  } },
+}
+
+-- ═══════════════════════════ ARACHNID : corps central compact + pattes rayonnantes ═══════════════════════════
+-- Silhouette = corps RAMASSÉ (cols=4 -> fullW=8) sur 6-8 PATTES anguleuses en éventail (large empreinte au sol).
+-- Les pattes (buildArm `legN`) sont posées par le builder de part et d'autre, positions seedées. Yeux groupés
+-- bas sur le corps (regard d'araignée). Corps base-pivot (ornement dorsal). Reconnaissance : empreinte radiale.
+M.arachnid = {
+  body = { variants = {
+    -- A : abdomen rond (yeux bas en grappe)
+    {
+      { 0, 1, 3, 3 },
+      { 1, 3, 3, 3 },
+      { 3, "E", 3, 3 },
+      { 3, 3, "E", 3 },
+      { 1, 3, 3, 3 },
+    },
+    -- B : corps trapu large (céphalothorax marqué)
+    {
+      { 1, 3, 3, 3 },
+      { 3, 3, "E", 3 },
+      { 3, 3, 3, "E" },
+      { 1, 3, 3, 3 },
+    },
+    -- C : abdomen bombé haut (gros arrière-corps)
+    {
+      { 0, 0, 3, 3 },
+      { 0, 3, 3, 3 },
+      { 3, 3, "E", 3 },
+      { 3, 3, 3, 3 },
+      { 3, 3, 3, 3 },
+      { 1, 3, 3, 3 },
+    },
+  } },
+}
+
+-- ═══════════════════════════ EYE : œil / orbe flottant ═══════════════════════════
+-- Silhouette = DISQUE unique (cols=5 -> fullW=10), RIEN d'autre : la plus distincte du roster. Miroir bilatéral
+-- + sommet/base arrondis = rondeur. Marqueur E central = la grosse pupille. Anneau de petits yeux (E
+-- supplémentaires) sur les flancs aux variantes plus complexes. Orbe base-pivot ; flotte (anim + at).
+M.eye = {
+  orb = { variants = {
+    -- A : orbe lisse (pupille centrale unique)
+    {
+      { 0, 0, 1, 3, 3 },
+      { 0, 3, 3, 3, 3 },
+      { 1, 3, 3, 3, 3 },
+      { 3, 3, "E", 3, 3 },
+      { 1, 3, 3, 3, 3 },
+      { 0, 3, 3, 3, 3 },
+      { 0, 0, 1, 3, 3 },
+    },
+    -- B : orbe à yeux satellites (anneau de regards)
+    {
+      { 0, 0, 1, 3, 3 },
+      { 0, 1, 3, 3, 3 },
+      { 1, 3, "E", 3, 3 },
+      { 3, "E", 3, "E", 3 },
+      { 1, 3, "E", 3, 3 },
+      { 0, 1, 3, 3, 3 },
+      { 0, 0, 1, 3, 3 },
+    },
+    -- C : orbe haut / ovale (pupille + œil sommital)
+    {
+      { 0, 0, 0, 3, 3 },
+      { 0, 0, 3, 3, 3 },
+      { 0, 1, 3, "E", 3 },
+      { 1, 3, "E", 3, 3 },
+      { 3, 3, "E", 3, 3 },
+      { 1, 3, 3, 3, 3 },
+      { 0, 0, 3, 3, 3 },
+    },
+  } },
+}
+
 function M.get(skeleton)
   return M[skeleton] or M.humanoid
 end

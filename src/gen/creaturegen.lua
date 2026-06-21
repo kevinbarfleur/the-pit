@@ -500,6 +500,19 @@ local function dummyHalf(n)
   return t
 end
 
+-- Segment de serpent : bloc plein RECTANGULAIRE (contour latéral + corps), pivot TOP-center -> il s'empile
+-- proprement (le top de l'enfant se pose dans le corps du parent = chaîne CONNEXE, jamais de gap). w impair.
+local function buildSegment(fac, ramp, w, h)
+  local K, body = fac.outline, ramp[2]
+  local grid = {}
+  for _ = 1, h do
+    local row = K
+    for _ = 2, w - 1 do row = row .. body end
+    grid[#grid + 1] = row .. K
+  end
+  return { grid = grid, pivot = { x = math.floor(w / 2), y = 0 } } -- pivot sommet (chaînage vers le haut)
+end
+
 -- ── Anims de plan (écrivent rot/sx/sy ; le scale se fait AUTOUR du pivot -> base-pivot = pousse vers le haut) ──
 -- BLOB : la masse PULSE (squash/stretch volume-ish). Aucun membre.
 local BLOB_ANIM = { idle = function(char, t)
@@ -609,7 +622,163 @@ local function planCephalopod(rng, fac, lv)
   return parts, rig, {}, cephAnim()
 end
 
-local PlanBuilders = { blob = planBlob, quadruped = planQuadruped, cephalopod = planCephalopod }
+-- ── SWARM : amas grouillant. La masse-« core » micro-jitter par sous-élément (yeux désynchronisés via les
+-- positions des E -> chaque colonne tremble à sa phase) + bob lent. On déphase par la PARITÉ de la colonne du
+-- pixel pour donner l'illusion de plusieurs petits corps qui s'agitent (pas un bloc rigide). ──
+local SWARM_ANIM = { idle = function(char, t)
+  local ph = char.idlePhase
+  local c = char.parts.core
+  if c then
+    -- squash/stretch léger asymétrique (la masse « bout »).
+    c.sx = 1 + math.sin(t * 0.07 + ph) * 0.03
+    c.sy = 1 + math.cos(t * 0.06 + ph * 1.7) * 0.025
+    c.rot = math.sin(t * 0.05 + ph) * 0.02 -- frémit
+  end
+  return { rootDx = math.sin(t * 0.08 + ph * 2.3) * 0.5, rootDy = math.sin(t * 0.04 + ph) * 0.5 }
+end }
+
+-- ── SERPENT : onde sinusoïdale le long de la chaîne de segments (rot indexée) + gueule qui tangue. ──
+local SERPENT_ANIM = { idle = function(char, t)
+  local ph = char.idlePhase
+  for name, part in pairs(char.parts) do
+    local idx = name:match("^segment(%d+)$")
+    if idx then part.rot = math.sin(t * 0.07 + ph + tonumber(idx) * 0.6) * 0.18 end
+  end
+  if char.parts.head then char.parts.head.rot = math.sin(t * 0.06 + ph) * 0.08 end
+  return { rootDx = 0, rootDy = math.sin(t * 0.04 + ph) * 0.6 }
+end }
+
+-- ── ARACHNID : pattes qui « tapotent » par paires déphasées (gauche vs droite alternées) + corps micro-bob. ──
+local ARACHNID_ANIM = { idle = function(char, t)
+  local ph = char.idlePhase
+  if char.parts.body then char.parts.body.sy = 1 + math.sin(t * 0.05 + ph) * 0.02 end
+  if char.parts.head then char.parts.head.rot = math.sin(t * 0.05 + ph) * 0.04 end
+  for name, part in pairs(char.parts) do
+    local idx = name:match("^leg(%d+)$")
+    if idx then
+      local i = tonumber(idx)
+      -- déphasage par patte : pattes voisines tapotent en décalé (effet « marche sur place » nerveuse).
+      part.rot = math.sin(t * 0.09 + ph + i * 1.3) * 0.05
+    end
+  end
+  return { rootDx = 0, rootDy = math.sin(t * 0.045 + ph) * 0.5 }
+end }
+
+-- ── EYE : orbe qui FLOTTE (rootDy fort & lent) + pupille qui pulse (sy/alpha léger). ──
+local EYE_ANIM = { idle = function(char, t)
+  local ph = char.idlePhase
+  local o = char.parts.orb
+  if o then
+    -- pulse de l'orbe (respiration de globe) + très léger roulis.
+    o.sy = 1 + math.sin(t * 0.045 + ph) * 0.035
+    o.sx = 1 - math.sin(t * 0.045 + ph) * 0.025
+    o.rot = math.sin(t * 0.03 + ph) * 0.03
+  end
+  -- flottaison ample et lente (il LÉVITE, ne marche pas) + dérive horizontale douce.
+  return { rootDx = math.sin(t * 0.025 + ph) * 1.2, rootDy = math.sin(t * 0.028 + ph) * 2.6 }
+end }
+
+-- SWARM : une masse-core unique (base-pivot, porte l'ornement) ; toute la diversité vient des E du mask.
+local function planSwarm(rng, fac, lv)
+  local variants = Masks.get("swarm").core.variants
+  local core = (buildPart(rng, variants[((lv.torsoIdx - 1) % #variants) + 1], fac, lv.accentPair, fac.asym, {
+    ramp = lv.ramp, density = lv.density, corp = lv.corp, eyeCfg = lv.eyeCfg,
+    detailChance = lv.detailChance, pivotMode = "base", ornament = lv.ornament,
+  }, true))
+  return { core = core }, { { part = "core", at = { 0, 0 } } }, {}, SWARM_ANIM
+end
+
+-- SERPENT : cobra dressé. La GUEULE (tête, base-pivot, yeux + ornement) est la RACINE en haut ; la queue
+-- s'effile vers le BAS en segments chaînés (parent->enfant) qui se RECOUVRENT d'1 px (chaîne CONNEXE,
+-- jamais de gap), décalés G/D alternés = l'ondulation en S. Pivots TOP-center (buildSegment) : l'enfant
+-- pend SOUS son parent. Largeur décroissante (5->3) -> conicité ; verticalité + S = lecture « serpent ».
+local function planSerpent(rng, fac, lv)
+  local nSeg = 5 + rng:random(0, 2) -- 5-7 segments de queue (seedé)
+  local parts = {}
+  -- gueule = racine en haut (base-pivot pour porter l'ornement/couronne au sommet).
+  local headV = Masks.get("serpent").head.variants
+  parts.head = (buildPart(rng, headV[((lv.headIdx - 1) % #headV) + 1], fac, lv.accentPair, fac.asym, {
+    ramp = lv.ramp, density = lv.density, corp = 0, eyeCfg = lv.eyeCfg,
+    detailChance = lv.detailChance, pivotMode = "base", ornament = lv.ornament,
+  }, true))
+  local hw = partWH(parts.head.grid)
+
+  local segH = {}
+  for i = 1, nSeg do
+    segH[i] = 2 + rng:random(0, 1)                   -- 2-3 px de haut par segment
+    -- largeur décroissante du cou (5) vers la queue (3), impaire pour un axe propre.
+    local w = 5 - 2 * math.floor((i - 1) * 2 / nSeg) -- 5 puis 3
+    if w < 3 then w = 3 end
+    parts["segment" .. i] = buildSegment(fac, lv.ramp, w, segH[i])
+  end
+
+  -- rig : head (racine) -> segment1 pendu sous la gueule -> segment2 sous segment1 -> ... (queue qui tombe).
+  -- La tête est en base-pivot : sa rangée du BAS est à y=0 dans son espace local. segment1 (pivot TOP) se
+  -- pose à y=-1 (recouvrement 1px = connexité). Chaque segment suivant pend de (segH-1) sous son parent.
+  local _ = hw
+  local rig = { { part = "head", at = { 0, 0 } } }
+  rig[#rig + 1] = { part = "segment1", parent = "head", at = { 0, -1 } }
+  for i = 2, nSeg do
+    local sway = ((i % 2 == 0) and 1 or -1)
+    rig[#rig + 1] = { part = "segment" .. i, parent = "segment" .. (i - 1), at = { sway, segH[i - 1] - 1 } }
+  end
+  return parts, rig, {}, SERPENT_ANIM
+end
+
+-- ARACHNID : corps central compact (base-pivot, ornement) + 6-8 pattes anguleuses rayonnantes.
+-- Pattes = buildArm `legN` (limbes fins) écartées en éventail bas de part et d'autre, longueurs/positions
+-- seedées. Le corps est relevé d'une longueur de patte pour que les pieds touchent ~le sol.
+local function planArachnid(rng, fac, lv)
+  local variants = Masks.get("arachnid").body.variants
+  local body = (buildPart(rng, variants[((lv.torsoIdx - 1) % #variants) + 1], fac, lv.accentPair, fac.asym, {
+    ramp = lv.ramp, density = lv.density, corp = lv.corp, eyeCfg = lv.eyeCfg,
+    detailChance = lv.detailChance, pivotMode = "base", ornament = lv.ornament,
+  }, true))
+  local bw, bh = partWH(body.grid)
+  local nLeg = 6 + rng:random(0, 1) * 2 -- 6 ou 8 (paires)
+  local perSide = nLeg / 2
+  local parts = { body = body }
+  -- pattes plus LONGUES vers l'extérieur (la patte la plus écartée touche le sol comme les internes alors
+  -- qu'elle attache plus haut -> aspect anguleux rayonnant). longueurs seedées légèrement.
+  local legLen, maxLen = {}, 0
+  for i = 1, nLeg do
+    local k = ((i - 1) % perSide) + 1                    -- rang 1..perSide sur le côté
+    legLen[i] = 3 + k + rng:random(0, 1)                 -- interne court .. externe longue
+    if legLen[i] > maxLen then maxLen = legLen[i] end
+    parts["leg" .. i] = (buildArm(rng, dummyHalf(legLen[i]), fac, lv.ramp, lv.accentPair, false))
+  end
+  -- EMPREINTE RADIALE : les attaches s'ÉCARTENT horizontalement DE PART ET D'AUTRE du corps (k=1 collé au
+  -- flanc, k=perSide loin dehors) et MONTENT (attache plus haute => patte plus longue => pieds au même sol).
+  -- C'est l'étalement des x d'attache (pas une rotation au build) qui crée la large empreinte d'araignée.
+  local rig = {}
+  for i = 1, nLeg do
+    local side = (i <= perSide) and -1 or 1               -- gauche / droite
+    local k = ((i - 1) % perSide) + 1                     -- 1 (interne) .. perSide (externe)
+    local fx = (side < 0) and (1 - (k - 1)) or (bw + (k - 1)) -- s'écarte hors du corps
+    local fy = math.floor(bh * 0.35) - (k - 1)            -- externe = épaule plus HAUTE (patte plus longue)
+    rig[#rig + 1] = { part = "leg" .. i, parent = "body", at = { fx, fy } }
+  end
+  -- corps dessiné PAR-DESSUS les pattes (inséré en tête), relevé pour que les pattes atteignent ~le sol.
+  table.insert(rig, 1, { part = "body", at = { 0, -maxLen + 2 } })
+  return parts, rig, {}, ARACHNID_ANIM
+end
+
+-- EYE : orbe unique flottant (base-pivot, porte l'ornement = couronne d'épines au rang haut). Une seule grosse
+-- idée : le disque. Il flotte AU-DESSUS du sol -> l'`at` le remonte (et l'anim ajoute un rootDy ample).
+local function planEye(rng, fac, lv)
+  local variants = Masks.get("eye").orb.variants
+  local orb = (buildPart(rng, variants[((lv.headIdx - 1) % #variants) + 1], fac, lv.accentPair, fac.asym, {
+    ramp = lv.ramp, density = lv.density, corp = 0, eyeCfg = lv.eyeCfg,
+    detailChance = lv.detailChance, pivotMode = "base", ornament = lv.ornament,
+  }, true))
+  -- remonté de quelques pixels : il lévite (les pieds-de-sol des autres plans ne s'appliquent pas).
+  return { orb = orb }, { { part = "orb", at = { 0, -4 } } }, {}, EYE_ANIM
+end
+
+local PlanBuilders = {
+  blob = planBlob, quadruped = planQuadruped, cephalopod = planCephalopod,
+  swarm = planSwarm, serpent = planSerpent, arachnid = planArachnid, eye = planEye,
+}
 
 -- ═══════════════════════════ CHIMÈRE (légendaire R5) : « Le Puits ne crée pas, il assemble. » ═══════════════════════════
 -- Fusion de DEUX body-plans : le HAUT (masse-tête) + le BAS (locomotion) viennent de plans distincts.
