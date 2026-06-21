@@ -270,6 +270,7 @@ Effects.register("grant_team", function(ctx, p)
     if p.poisonNoCap then tf.poisonNoCap = true end                         -- THE FESTERING : poison sans cap
     if p.poisonDurBonus then tf.poisonDurBonus = (tf.poisonDurBonus or 0) + p.poisonDurBonus end
     if p.pierceHeal then tf.pierceHeal = math.max(tf.pierceHeal or 0, p.pierceHeal) end -- HOLLOW CHOIR : afflictions percent les soins
+    if p.invulnT then tf.invulnT = math.max(tf.invulnT or 0, p.invulnT) end             -- SACRED SHIELD : invuln d'ouverture (t < invulnT)
   end
   if p.slowEnemies then -- THE SLOW BLEED : aura de slow sur TOUTE l'équipe ennemie (immédiate)
     for _, w in ipairs(arena.units) do

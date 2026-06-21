@@ -71,7 +71,7 @@ do
       fail(id .. " : bake dimensions " .. tostring(baked.w) .. "x" .. tostring(baked.h) .. " (attendu " .. SIZE .. ")")
     end
   end
-  print("  bake : OK (12 icônes bakées sous mock, dimensions 16x16)")
+  print("  bake : OK (" .. #RelicGen.order .. " icônes bakées sous mock, dimensions 16x16)")
 end
 
 -- 3. Cache déterministe : .cached(id) renvoie deux fois la même table (mémoïsation par id).
@@ -82,6 +82,25 @@ do
   if RelicGen.grid("does_not_exist") ~= nil then fail("grid(id inconnu) devrait être nil") end
   if RelicGen.bake("does_not_exist", Palette) ~= nil then fail("bake(id inconnu) devrait être nil") end
   print("  cache : OK (mémoïsation par id + id inconnu -> nil)")
+end
+
+-- 4. Intégrité de l'ORDRE (append-only) : aucun doublon, et chaque vague livrée y est listée.
+--    (Une icône absente de .order ne s'afficherait jamais dans le cabinet alors que les tests
+--     1-3 passeraient : on verrouille donc explicitement la présence des ajouts récents.)
+do
+  local seen = {}
+  for _, id in ipairs(RelicGen.order) do
+    if seen[id] then fail("order : id en double '" .. id .. "'") end
+    seen[id] = true
+  end
+  local mustHave = {
+    "second_breath", "thornguard", "forked_tongue",
+    "everburn", "plague_communion", "open_wounds",
+  }
+  for _, id in ipairs(mustHave) do
+    if not seen[id] then fail("order : '" .. id .. "' livré mais absent de RelicGen.order (invisible au cabinet)") end
+  end
+  print("  ordre : OK (" .. #RelicGen.order .. " ids, sans doublon, vagues 3-4 présentes)")
 end
 
 print("=> RELIC-ICONS OK.")

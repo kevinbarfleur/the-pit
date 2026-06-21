@@ -288,6 +288,140 @@ local ICONS = {
     "   K   KK   K   ",
     "       KK       ",
   },
+
+  -- ═══════════════ VAGUES 3-4 (append-only) ═══════════════
+
+  -- SECOND BREATH — survit une fois à un coup fatal (reste à 1 PV). « One last grain of air. »
+  -- Sablier d'os (S/s) presque vide : ampoule haute VIDÉE, étranglement, ampoule basse où il ne
+  -- reste qu'un ULTIME grain de vie (q/R) — le dernier souffle. Lueur sacrée 'W' au verre = focus.
+  second_breath = {
+    "                ",
+    "   KKKKKKKKKK   ",
+    "   KSSSSSSSSK   ",
+    "   KsWssssssK   ",
+    "    KssssssK    ",
+    "     KssssK     ",
+    "      KssK      ",
+    "      KssK      ",
+    "      KssK      ",
+    "     KssssK     ",
+    "    KssssssK    ",
+    "   KsssssssK    ",
+    "   KsssqRsssK   ",
+    "   KSSqRRqSSK   ",
+    "   KKKKKKKKKK   ",
+    "                ",
+  },
+
+  -- THORNGUARD — tes unités renvoient des dégâts quand on les frappe (reflect). « Cruel to hold. »
+  -- Collier/cotte d'épines : anneau de fer (A/a + liseré I) hérissé de BARBES pointant vers
+  -- l'extérieur, dont les pointes saignent (q/R) — défensif mais cruel. Éclat de fer 'I' = focus.
+  thornguard = {
+    "   q   qq   q   ",
+    "  KqK KqqK KqK  ",
+    "   KaKKaaKKaK   ",
+    " qK KIIIIII K Kq",
+    "KqaKIaaaaaaIKaqK",
+    " K KIaAAAAaIK K ",
+    "qaKIaAaaaaAaIKaq",
+    " KKIaAa  aAaIKK ",
+    "qaKIaAa  aAaIKaq",
+    " K KIaAAAAaIK K ",
+    "KqaKIaaaaaaIKaqK",
+    " qK KIIIIII K Kq",
+    "   KaKKaaKKaK   ",
+    "  KqK KqqK KqK  ",
+    "   q   qq   q   ",
+    "                ",
+  },
+
+  -- FORKED TONGUE — ton choc rebondit sur un 2e ennemi (chain). « It speaks twice. »
+  -- Langue de serpent (R/q) sortant en bas, qui se FEND en deux pointes — chacune crachant un
+  -- éclair de choc (Q braise-choc + T éclat). La bifurcation EST le message. Éclat 'T' = focus.
+  forked_tongue = {
+    "  T          T  ",
+    "  QK        KQ  ",
+    "   TK      KT   ",
+    "    QK    KQ    ",
+    "    KqK  KqK    ",
+    "    KqK  KqK    ",
+    "     KqKKqK     ",
+    "     KRqqRK     ",
+    "      KRRK      ",
+    "      KRRK      ",
+    "      KRqK      ",
+    "      KqRK      ",
+    "      KRqK      ",
+    "      KqRK      ",
+    "      KRRK      ",
+    "       KK       ",
+  },
+
+  -- EVERBURN — tes feux ne décroissent jamais (no-decay burn). « It refuses the dark. »
+  -- Morceau de charbon (r/O/o) à cœur INCANDESCENT (Q braise + T éclat) qui ne s'éteint pas :
+  -- bloc irrégulier, fissures de feu qui courent, aucune cendre froide. Éclat 'T' au cœur = focus.
+  everburn = {
+    "                ",
+    "     KKKKK      ",
+    "   KKrOOrKK     ",
+    "  KrOoQQOrrK    ",
+    " KrOoQTTQoOrK   ",
+    " KOoQTQQTQoOK   ",
+    "KrOQTQOOQTQOrK  ",
+    "KrOoQQOOQQoOrK  ",
+    "KrOoOQTTQOoOrK  ",
+    " KrOoQTTQoOrK   ",
+    " KKrOoQQoOrKK   ",
+    "  KKrOooOrKK    ",
+    "    KKrrOKK     ",
+    "     KKrKK      ",
+    "      KKK       ",
+    "                ",
+  },
+
+  -- PLAGUE COMMUNION — un ennemi sous plusieurs afflictions souffre davantage. « Drink of many. »
+  -- Calice d'or terni (Y/y) empli d'une bile de venins MÊLÉS (Z sombre + z clair, surface trouble
+  -- qui bouillonne) ; deux gouttes de poison débordent. Le mélange = le sens. Résidu 'z' = focus.
+  plague_communion = {
+    "                ",
+    "  KKKKKKKKKKKK  ",
+    "  KYzZzzZzZzYK  ",
+    "  KYZzzZzzZzYK z",
+    "  KYzZzZzZzzYK Z",
+    "   KKYzZzzYKK   ",
+    "    KYyzZyYK    ",
+    "  z KYyYYyYK    ",
+    "  Z  KYyYyYK    ",
+    "     KYyyYK     ",
+    "      KYYK      ",
+    "      KYYK      ",
+    "    KKYYYYKK    ",
+    "   KYYYYYYYYK   ",
+    "   KKKKKKKKKK   ",
+    "                ",
+  },
+
+  -- OPEN WOUNDS — tes saignements ne se referment jamais (no-decay bleed). « It will not knit. »
+  -- Une PLAIE maintenue ouverte : entaille verticale, lèvres de chair écartées (r) tenues par des
+  -- agrafes de fer (I) qui empêchent la suture, sang vif au fond (D/R/q qui sourd). 'q' = focus.
+  open_wounds = {
+    "      KK        ",
+    "     KrrK       ",
+    "    KIrRrIK     ",
+    "    KrRDRrK     ",
+    "   KIrDqDrIK    ",
+    "   KrRDqDRrK    ",
+    "   KrDqRqDrK    ",
+    "  KIrDqRqDrIK   ",
+    "   KrDqRqDrK    ",
+    "   KrRDqDRrK    ",
+    "   KIrDqDrIK    ",
+    "    KrRDRrK     ",
+    "    KIrRrIK     ",
+    "     KrrK       ",
+    "      KK        ",
+    "                ",
+  },
 }
 
 -- ─────────────────────────── API ───────────────────────────
@@ -298,6 +432,9 @@ RelicGen.order = {
   "bloodstone", "carapace", "whetstone", "aegis",
   "kings_bowl", "ember_heart", "weeping_nail", "grave_cap",
   "hollow_choir", "famines_math", "feeding_frenzy", "sacred_shield",
+  -- vagues 3-4 (append-only)
+  "second_breath", "thornguard", "forked_tongue", "everburn",
+  "plague_communion", "open_wounds",
 }
 
 -- Grille brute d'une relique (ou nil si id inconnu). DATA pure (aucun love.*).

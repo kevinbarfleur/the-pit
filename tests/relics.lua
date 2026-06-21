@@ -69,6 +69,25 @@ local ok, err = pcall(function()
   for _, e in ipairs(cff[1].effects or {}) do if e.op == "frenzy_gain" then hasFrenzy = true end end
   assert(hasFrenzy, "feeding_frenzy: ajoute on_death frenzy_gain")
 
+  --   DEFENSIVES / cadence (vague 3). whetstone : pose haste ; second_breath : pose le flag de survie.
+  local ws = RunState.new(8); ws:grantRelic("whetstone")
+  local cws = { { id = "a", hp = 50, dmg = 7, cd = 36 } }; ws:applyRelics(cws)
+  assert(math.abs(cws[1].haste - 0.15) < 1e-9, "whetstone: +0.15 haste")
+  local sb = RunState.new(9); sb:grantRelic("second_breath")
+  local csb = { { id = "a", hp = 50, dmg = 7, cd = 36 } }; sb:applyRelics(csb)
+  assert(csb[1].secondBreath == true, "second_breath: pose le flag de survie")
+  --   sacred_shield : ajoute grant_team{invulnT} ; thornguard : ajoute on_attacked thorns.
+  local ss = RunState.new(10); ss:grantRelic("sacred_shield")
+  local css = { { id = "a", hp = 50, dmg = 7, cd = 36 } }; ss:applyRelics(css)
+  local hasInvuln = false
+  for _, e in ipairs(css[1].effects or {}) do if e.op == "grant_team" and e.params and e.params.invulnT then hasInvuln = true end end
+  assert(hasInvuln, "sacred_shield: ajoute grant_team{invulnT}")
+  local tg = RunState.new(11); tg:grantRelic("thornguard")
+  local ctg = { { id = "a", hp = 50, dmg = 7, cd = 36 } }; tg:applyRelics(ctg)
+  local hasThorns = false
+  for _, e in ipairs(ctg[1].effects or {}) do if e.op == "thorns" then hasThorns = true end end
+  assert(hasThorns, "thornguard: ajoute on_attacked thorns")
+
   -- 3) OFFRE 1-parmi-3 SEEDEE (meme seed -> meme offre, rejouable).
   local x = RunState.new(777):rollRelicChoices(3)
   local y = RunState.new(777):rollRelicChoices(3)
@@ -82,7 +101,7 @@ local ok, err = pcall(function()
   assert(not Grimoire.learn("bloodstone"), "deja connu -> pas re-appris")
 
   Grimoire.wipe()
-  print("  reliques : grant lisible / ops stats+amplis+paliers(few_units/pierceHeal/frenzy) / offre seedee / Grimoire OK")
+  print("  reliques : grant lisible / ops stats+amplis+paliers+defensives(haste/invuln/secondBreath/thorns) / offre seedee / Grimoire OK")
 end)
 
 if ok then

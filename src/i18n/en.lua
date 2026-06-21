@@ -324,6 +324,19 @@ return {
   ["relic.feeding_frenzy.name"] = "FEEDING FRENZY",
   ["relic.feeding_frenzy.effect"] = "Each enemy that dies makes your units strike harder.",
   ["relic.feeding_frenzy.flavor"] = "Too many teeth, and never, ever enough.",
+  -- A (suite) cadence / D : defensives
+  ["relic.whetstone.name"] = "WHETSTONE",
+  ["relic.whetstone.effect"] = "Your units attack 15% faster.",
+  ["relic.whetstone.flavor"] = "Honed on something that bled freely, and was glad to.",
+  ["relic.thornguard.name"] = "THORNGUARD",
+  ["relic.thornguard.effect"] = "Attackers that strike your units take 4 damage back.",
+  ["relic.thornguard.flavor"] = "Worn by saints who wished their suffering shared.",
+  ["relic.sacred_shield.name"] = "SACRED SHIELD",
+  ["relic.sacred_shield.effect"] = "Your team is invulnerable for the first half-second.",
+  ["relic.sacred_shield.flavor"] = "A halo that holds, but only for a breath.",
+  ["relic.second_breath.name"] = "SECOND BREATH",
+  ["relic.second_breath.effect"] = "Each of your units survives one lethal blow at 1 health.",
+  ["relic.second_breath.flavor"] = "The Pit lets some fall twice before it keeps them.",
 
   -- ── Proving Ground (banc d'essai) : UI + archetypes + variants + scenarios + notes de compo (ASCII) ──
   ["pg.title"] = "The Proving Ground",

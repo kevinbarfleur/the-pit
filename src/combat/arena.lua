@@ -117,6 +117,7 @@ function Arena:makeUnit(spec, team)
     poisonInc = spec.poisonInc, burnInc = spec.burnInc, -- ampli d'aura (increased) lu par la pose de DoT (resolve+cap)
     bleedInc = spec.bleedInc, rotInc = spec.rotInc,     -- idem bleed/rot (aura OU relique team-wide) ; nil = inerte
     dmgReduce = spec.dmgReduce,                          -- DÉFENSE : -frac dégâts d'ATTAQUE subis (relique) ; nil = inerte
+    haste = spec.haste, secondBreath = spec.secondBreath, -- WHETSTONE (cadence) / SECOND BREATH (survie 1×) ; nil = inerte
     atkTimer = self.rng:random() * spec.cd, -- décalage seedé -> pas de swings synchronisés
     firstHit = true,
     -- Statuts : poison = LISTE de stacks (axe « nombre ») ; burn/bleed/rot/shock = instances uniques.
@@ -231,6 +232,9 @@ end
 -- opts : { ignoreShield?, silent?, poison?, source?, cause? }. Renvoie les PV réellement perdus.
 function Arena:damage(target, amount, opts)
   opts = opts or {}
+  -- SACRED SHIELD (relique) : invulnérabilité d'OUVERTURE — l'équipe ne subit RIEN tant que t < invulnT. Gated.
+  local itf = self.teamFlags and self.teamFlags[target.team]
+  if itf and itf.invulnT and self.t < itf.invulnT then return 0 end
   -- DÉFENSE (relique Aegis) : réduit les dégâts d'ATTAQUE subis (pas les DoT ni la fatigue). Gated -> nil =
   -- inerte (golden-safe). Arrondi au plus proche : le chip à 1 n'est pas annulé, les gros coups sont amputés.
   if opts.cause == "attack" and target.dmgReduce and target.dmgReduce > 0 then
@@ -250,9 +254,14 @@ function Arena:damage(target, amount, opts)
   local overkill = amount - dealt  -- dégâts au-delà de 0 PV
   local died = false
   if target.hp <= 0 then
-    target.hp = 0
-    target.alive = false
-    died = true
+    if target.secondBreath then -- SECOND BREATH (relique) : survit une fois à un coup fatal, reste à 1 PV
+      target.hp = 1
+      target.secondBreath = false
+    else
+      target.hp = 0
+      target.alive = false
+      died = true
+    end
   end
   if raw > 0 and not opts.silent then
     self.bus:emit("damage", {
@@ -550,7 +559,7 @@ function Arena:update(frameDt, t)
       u.atkTimer = u.atkTimer - frameDt
       if not u.swinging and u.target and u.atkTimer <= 0 then
         u.swinging = true; u.swingAge = 0; u.swingHit = false
-        u.atkTimer = u.cd * (1 + u.atkSlow) -- bleed ralentit la cadence
+        u.atkTimer = u.cd * (1 + u.atkSlow) * (1 - (u.haste or 0)) -- bleed ralentit ; WHETSTONE (haste) accélère ; gated
         u.target = self:chooseTarget(u)
         self.bus:emit("attack", u) -- le render joue l'anim d'attaque
         local blz = u.dots.bleed -- BLOODLETTER : le saignement ÉCLATE quand la cible agit (aggravate)

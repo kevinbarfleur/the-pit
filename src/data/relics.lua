@@ -37,10 +37,19 @@ local R = {
     params = { effect = { trigger = "combat_start", op = "grant_team", params = { pierceHeal = 0.40 } } } },
   feeding_frenzy = { id = "feeding_frenzy", op = "relic_add_effect", tier = 3,
     params = { effect = { trigger = "on_death", op = "frenzy_gain", params = { per = 0.08, cap = 6 } } } },
+
+  -- ── A (suite) cadence · D — défensives / globales (intra-combat ; cf. doc §4-A/D) ──
+  whetstone     = { id = "whetstone",     op = "relic_haste", params = { value = 0.15 }, tier = 1 }, -- +15% cadence
+  thornguard    = { id = "thornguard",    op = "relic_add_effect", tier = 2, -- épines d'équipe (renvoie en étant frappé)
+    params = { effect = { trigger = "on_attacked", op = "thorns", params = { value = 4 } } } },
+  sacred_shield = { id = "sacred_shield", op = "relic_add_effect", tier = 3, -- 0,5 s d'invulnérabilité d'ouverture (t<30)
+    params = { effect = { trigger = "combat_start", op = "grant_team", params = { invulnT = 30 } } } },
+  second_breath = { id = "second_breath", op = "relic_second_breath", tier = 3 }, -- chaque unité survit 1× à 1 PV
 }
 
 R.order = { "bloodstone", "carapace", "aegis", "kings_bowl", "ember_heart", "weeping_nail", "grave_cap",
-  "famines_math", "hollow_choir", "feeding_frenzy" }
+  "famines_math", "hollow_choir", "feeding_frenzy",
+  "whetstone", "thornguard", "sacred_shield", "second_breath" }
 
 -- Applique l'effet d'une relique à une compo (liste de specs d'unités), au BUILD. Modifie en place.
 -- Les amplis (poisonInc/…/dmgReduce) sont ADDITIFS (cumul avec une aura d'adjacence qui poserait le même champ).
@@ -62,6 +71,10 @@ function R.apply(comp, relic)
         if spec.dmg then spec.dmg = math.floor(spec.dmg * (1 + (p.dmgInc or 0)) + 0.5) end
         if spec.hp then spec.hp = math.floor(spec.hp * (1 + (p.hpInc or 0)) + 0.5) end
       end
+    elseif op == "relic_haste" then -- WHETSTONE : cadence d'attaque (lu par le timer de l'arène, gated)
+      spec.haste = (spec.haste or 0) + (p.value or 0)
+    elseif op == "relic_second_breath" then -- SECOND BREATH : survie 1× à 1 PV (lu par Arena:damage)
+      spec.secondBreath = true
     elseif op == "relic_add_effect" and p.effect then
       local base = spec.effects or (Units[spec.id] and Units[spec.id].effects) or {}
       local eff = {}

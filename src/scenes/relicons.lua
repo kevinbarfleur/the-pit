@@ -29,6 +29,13 @@ local META = {
   famines_math   = { name = "FAMINE'S MATH",  mech = "few units hit harder",   flavor = "It weighs a bone against nothing." },
   feeding_frenzy = { name = "FEEDING FRENZY", mech = "snowball on each kill",  flavor = "Too many teeth, never enough." },
   sacred_shield  = { name = "SACRED SHIELD",  mech = "0.5s opening invuln",    flavor = "A false halo, flickering." },
+  -- vagues 3-4
+  second_breath    = { name = "SECOND BREATH",    mech = "survive one fatal blow (1 HP)", flavor = "One last grain of air." },
+  thornguard       = { name = "THORNGUARD",       mech = "your units reflect when struck", flavor = "Cruel to wear, crueler to grip." },
+  forked_tongue    = { name = "FORKED TONGUE",    mech = "shock chains to a 2nd enemy",   flavor = "It speaks twice, and lies both times." },
+  everburn         = { name = "EVERBURN",         mech = "your burns never decay",        flavor = "It refuses the dark." },
+  plague_communion = { name = "PLAGUE COMMUNION", mech = "multi-afflicted enemies suffer more", flavor = "Drink of many poisons at once." },
+  open_wounds      = { name = "OPEN WOUNDS",      mech = "your bleeds never close",       flavor = "It will not knit." },
 }
 
 -- Teinte d'accent par « famille mécanique » (cadre/nom au survol) : la couleur EST un indice (cf. relicgen).
@@ -40,11 +47,18 @@ local ACCENT = {
   carapace = { 0.42, 0.46, 0.26 }, whetstone = { 0.55, 0.53, 0.49 },       -- chitine / fer
   aegis = { 0.45, 0.52, 0.58 }, famines_math = { 0.55, 0.53, 0.49 },       -- acier / fer
   feeding_frenzy = { 0.66, 0.57, 0.44 },                                   -- os
+  -- vagues 3-4
+  second_breath = { 0.66, 0.57, 0.44 },                                    -- os (survie / dernier souffle)
+  thornguard = { 0.55, 0.53, 0.49 },                                       -- fer (renvoi / défense)
+  forked_tongue = { 0.80, 0.50, 0.28 }, everburn = { 0.80, 0.50, 0.28 },   -- braise (choc chain / burn)
+  plague_communion = { 0.48, 0.54, 0.20 },                                 -- poison (afflictions)
+  open_wounds = { 0.66, 0.32, 0.24 },                                      -- sang (bleed)
 }
 
--- Mise en page (pixels virtuels). 4 colonnes × 3 rangées = 12 cases (toute la vague d'un coup).
-local COLS, ROWS = 4, 3
-local CELL_W, CELL_H = 62, 50
+-- Mise en page (pixels virtuels). 6 colonnes × 3 rangées = 18 cases (toutes les vagues d'un coup).
+-- CELL_W resserré pour tenir dans le canvas 320 : GX0 + COLS*CELL_W = 18 + 6*48 = 306 ≤ 320.
+local COLS, ROWS = 6, 3
+local CELL_W, CELL_H = 48, 50
 local GX0, GY0 = 18, 30
 local ICON_SCALE = 2 -- 16×16 -> 32×32 dans la grille (lecture d'ensemble)
 
