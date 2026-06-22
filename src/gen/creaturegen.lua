@@ -210,6 +210,7 @@ local function colorize(filled, fullW, hh, fac, ramp)
 end
 
 -- ─────────────────────────── Injection des détails (hybride B+A) ───────────────────────────
+-- detail = sous-grille de RÔLES (O contour / B body moyen / A,a accents) injectée à (cx,cy). ax/ay = ancre 0-indexée.
 local function stampDetail(g, fullW, hh, detail, cx, cy, fac, ramp, accentPair)
   local dgrid = detail.grid
   for dy = 1, #dgrid do
@@ -232,6 +233,8 @@ local function stampDetail(g, fullW, hh, detail, cx, cy, fac, ramp, accentPair)
     end
   end
 end
+
+-- (tweak D/C « visage authored hybride » retiré au nettoyage 2026-06 — remplacé par la refonte src/gen/forge.lua.)
 
 -- Place l'accent (œil/orbite) aux marqueurs "E" du mask, en coords pleines (markers en moitié gauche).
 -- eyeCfg = { count=1|2|3, spread=0|1 } : varie le nombre et l'écartement par unité.
@@ -991,8 +994,16 @@ function CreatureGen.build(opts)
 end
 
 -- Cache module-level (mémoïsation par id) : une def générée une fois, réutilisée (le rig la bake).
+-- ROLLOUT REFONTE (2026-06) : `cached` DÉLÈGUE à la Forge (parts authored, src/gen/forge.lua) pour tout
+-- body-plan qu'elle supporte — c'est le POINT DE BASCULE UNIQUE du jeu (galerie/build/Grimoire/combat passent
+-- tous ici). Le legacy `build` reste pour ce que la Forge ne couvrirait pas (sécurité) + le test `gen` (qui
+-- appelle build directement). Les 6 créatures DESSINÉES MAIN sont gérées AVANT cet appel par les scènes
+-- (Creatures[id]) -> jamais touchées. require paresseux de la Forge (zéro cycle : forge ne require pas gen).
 local CACHE = {}
 function CreatureGen.cached(opts)
+  local Forge = require("src.gen.forge")
+  local bp = opts.bodyplan or (Factions.get(opts.type) or {}).skeleton or "humanoid"
+  if Forge.supports(bp) then return Forge.cached(opts) end
   local key = opts.id or "anon"
   local def = CACHE[key]
   if not def then
