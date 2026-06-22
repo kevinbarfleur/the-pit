@@ -173,6 +173,22 @@ local ok, err = pcall(function()
   -- changement de label/disabled -> regenere la config (pas de crash).
   Forge.uiButton("t.cta", 100, 600, 152, 60, "PLACE A UNIT", { tone = "cta", disabled = true })
 
+  -- ── LABEL VIVANT (Forge.label) : remplace le label BAKÉ -> il S'AFFICHE TOUJOURS, sans readback de glyphe
+  -- ni cache à empoisonner (le bug des « boîtes laiton sans texte »). On vérifie : (1) Forge.label est
+  -- appelable (overlay love.graphics, no-op headless) ; (2) le label N'EST PLUS baké -> drawButton/drawEcoBtn
+  -- ne consomment plus textMask pour le texte (le label est dessiné par uiButton APRÈS le blit). ──
+  assert(type(Forge.label) == "function", "Forge.label : overlay vivant present")
+  assert(type(Forge.hexF) == "function", "Forge.hexF : hex -> floats 0..1 (couleur d'overlay)")
+  do
+    local f = Forge.hexF("#f0d68e")
+    assert(f[1] > 0 and f[1] <= 1 and f[2] <= 1 and f[3] <= 1, "hexF : floats normalises 0..1")
+  end
+  -- smoke : tous les alignements + un glow de survol, sous le mock (no crash, pas de readback requis).
+  Forge.label("FIGHT", 200, 600, 16, Forge.hexF("#f0d68e"), { bold = true, glow = 0.6 })
+  Forge.label("REROLL", 200, 640, 16, Forge.hexF("#e8cd84"), {})
+  Forge.label("1", 320, 640, 16, Forge.hexF("#e8dcc0"), { right = true })
+  Forge.label("PLACE A UNIT", 200, 680, 16, Forge.hexF("#a4895a"), { bold = true })
+
   -- ── Forge.socket / uiSocket / uiPlate / diamondAt / accentFrom (cases & cartes du build). ──
   local acc = Forge.accentFrom({ 0.77, 0.63, 0.29 }) -- depuis Theme.c (floats 0..1)
   assert(acc.dark and acc.mid and acc.bright, "accentFrom : triple {dark,mid,bright}")

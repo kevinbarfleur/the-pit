@@ -580,7 +580,20 @@ local function genEyes(W, hslab, seed, label, size, opts)
   opts = opts or {}
   local rnd = mulberry32(floor(seed * 9301 + 7))
   local m = textMask(label, size or 9)
+  -- KEEP-OUT du label : largeur/hauteur du masque baké. ROBUSTE : si le masque est dégénéré (readback vide,
+  -- mock headless), on retombe sur une ESTIMATION via la vraie police -> les yeux évitent quand même la zone
+  -- du LABEL VIVANT (dessiné en overlay par-dessus). Le label est de toute façon dessiné AU-DESSUS des yeux.
   local lw, lhh = m.w, m.h
+  -- ROBUSTE (réel seulement) : si le masque baké est dégénéré (readback vide, cache empoisonné) MAIS qu'on
+  -- est en GL réel, on estime la zone du label via la vraie police -> les yeux évitent le LABEL VIVANT. Sous
+  -- le mock headless, on garde le masque vide (les yeux s'étalent : pas de readback, comportement de test).
+  if real() and (not m.pix or #m.pix == 0) and label and #label > 0 then
+    local font = Theme.ui(size or 9)
+    local okW, fw = pcall(function() return font and font:getWidth(label) end)
+    local okH, fh = pcall(function() return font and font:getHeight() end)
+    if okW and fw and fw > 1 then lw = fw end
+    if okH and fh and fh > 1 then lhh = fh end
+  end
   local cy = hslab / 2
   local pad = opts.pad or 0
   local lx0 = floor(W / 2 - lw / 2) - pad -- bord gauche du label (+ padding) = keep-out
@@ -683,13 +696,11 @@ local function drawButton(buf, W, H, press, eyeOpen, glow, seed, label, disabled
       buf:set(dx, y0 + 1, hexRgb("#2a200f")); buf:set(dx, y1 - 1, hexRgb("#2a200f"))
     end
   end
-  -- Label centré sur la VRAIE hauteur du masque (net, pas une estimation) -> texte qui RESPIRE au centre.
-  -- DISABLED : laiton TERNE mais LISIBLE (#a4895a) + ombre marquée — JAMAIS l'ancien #5a5040 illisible qui
-  -- faisait passer le bouton pour une « boîte vide cassée » (le label de COMBAT au repos d'un début de run).
-  local lh = textMask(label, size).h
-  text(buf, label, W / 2, slabY + floor((hslab - lh) / 2 + 0.5),
-    disabled and hexRgb("#a4895a") or hexRgb("#f0d68e"),
-    { size = size, glow = disabled and 0 or glow * 0.6, shadow = hexRgb("#0e0a04") })
+  -- ⚠️ LE LABEL N'EST PLUS BAKÉ ICI. Il est dessiné en OVERLAY VIVANT (vraie police, par-dessus l'image
+  -- blittée) par Forge.uiButton -> il S'AFFICHE TOUJOURS, quel que soit le timing de bake. Raison : le
+  -- masque de glyphe (Canvas + readback alpha) pouvait revenir VIDE au 1er bake (render-target/transform
+  -- live, police froide), et `textMask` mettait alors EN CACHE ce masque vide DÉFINITIVEMENT (#pix==0 ->
+  -- _tc[key]=empty) ; le gating de re-bake ne corrigeait jamais -> « boîtes laiton sans texte » en jeu.
 end
 Forge.drawButton = drawButton
 
@@ -702,16 +713,11 @@ local function drawEcoBtn(buf, W, H, press, glow, seed, label, cost, disabled, t
   frame(buf, x0, y0, x1, y1, { t = 2, accent = not disabled, disabled = disabled })
   frameWeather(buf, x0, y0, x1, y1, 2, seed + 5, METAL, disabled) -- patine
   rivet(buf, x0 + 2, y0 + 2, METAL); rivet(buf, x0 + 2, y1 - 3, METAL)
-  local lh = textMask(label, 8).h
-  local cy = slabY + floor((hslab - lh) / 2 + 0.5) -- centré sur la vraie hauteur du masque (respire)
-  text(buf, label, (W - (cost ~= nil and 10 or 0)) / 2, cy,
-    disabled and hexRgb("#a4895a") or hexRgb("#e8cd84"),
-    { size = 8, glow = disabled and 0 or glow * 0.5, shadow = hexRgb("#0e0a04") })
+  -- LABEL + valeur de coût : OVERLAY VIVANT (Forge.uiButton), plus baké (cf. drawButton). On bake SEULEMENT
+  -- le DIAMANT de coût (forme, pas de readback de glyphe) ; le chiffre est dessiné en overlay par-dessus.
   if cost ~= nil then
     local gx, gy = x1 - 7, slabY + hslab / 2
     diamond(buf, gx, gy, 2, disabled and ACC.dark or ACC.bright, ACC.dark, (not disabled) and { 255, 255, 255 } or nil)
-    text(buf, tostring(cost), gx - 7, gy - 3, disabled and hexRgb("#a4895a") or hexRgb("#e8dcc0"),
-      { left = true, size = 8 })
   end
 end
 Forge.drawEcoBtn = drawEcoBtn
@@ -1208,6 +1214,61 @@ function Forge.blit(image, x, y, px)
   g.setColor(1, 1, 1, 1)
 end
 
+-- hexRgb255 : "#rrggbb" -> {r,g,b} en FLOATS 0..1 (pour love.graphics.setColor des OVERLAYS vivants ;
+-- distinct de hexRgb qui rend des OCTETS 0..255 pour le tampon). Mémoïsé.
+local _hexF = {}
+local function hexRgb255(h)
+  local v = _hexF[h]
+  if v then return v end
+  local o = hexRgb(h)
+  v = { o[1] / 255, o[2] / 255, o[3] / 255 }
+  _hexF[h] = v
+  return v
+end
+Forge.hexF = hexRgb255
+
+-- ── Forge.label(txt, cx, cy, px, color, opts) : dessine un LABEL VIVANT (vraie police du projet) en ESPACE
+-- DESIGN, centré (ou aligné à droite via opts.right / gauche via opts.left), avec OMBRE portée pour le
+-- détacher de la pierre, et un léger halo doré au survol (opts.glow 0..1). px = TAILLE de police (design).
+-- C'est le remplacement du label baké : il S'AFFICHE TOUJOURS (aucun readback de glyphe, aucun cache à
+-- empoisonner). No-op headless (police/print absents) -> pas de crash, golden inchangé (RENDER pur).
+-- color = {r,g,b} FLOATS 0..1. opts = { bold?, right?, left?, glow?, shadow? (false pour couper l'ombre) }.
+function Forge.label(txt, cx, cy, px, color, opts)
+  opts = opts or {}
+  local g = love.graphics
+  if not (g and g.print and g.setFont) then return end
+  local fontPx = max(6, floor((px or 16) + 0.5))
+  local font = opts.bold and Theme.uiBold(fontPx) or Theme.ui(fontPx)
+  if not font then return end
+  local okW, fw = pcall(function() return font:getWidth(txt) end)
+  local okH, fh = pcall(function() return font:getHeight() end)
+  if not (okW and okH) then return end
+  local tx
+  if opts.right then tx = floor(cx - fw + 0.5)
+  elseif opts.left then tx = floor(cx + 0.5)
+  else tx = floor(cx - fw / 2 + 0.5) end
+  local ty = floor(cy - fh / 2 + 0.5)
+  pcall(g.setFont, font)
+  -- OMBRE portée (sauf opts.shadow==false) : le label se détache de la pierre gravée.
+  if opts.shadow ~= false then
+    g.setColor(0.055, 0.04, 0.016, 0.9)
+    pcall(g.print, txt, tx + 1, ty + 1)
+  end
+  -- halo doré au survol (additif léger, comme la lueur des runes héros) : 4 passes décalées en dim.
+  local glow = opts.glow or 0
+  if glow > 0.02 and g.setBlendMode then
+    pcall(g.setBlendMode, "add")
+    g.setColor(0.95, 0.82, 0.45, glow * 0.22)
+    for _, o2 in ipairs({ { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }) do
+      pcall(g.print, txt, tx + o2[1], ty + o2[2])
+    end
+    pcall(g.setBlendMode, "alpha")
+  end
+  g.setColor(color[1], color[2], color[3], color[4] or 1)
+  pcall(g.print, txt, tx, ty)
+  g.setColor(1, 1, 1, 1)
+end
+
 -- Forge.diamondAt(cx, cy, r, color, edge?) : un DIAMANT forge dessiné DIRECTEMENT (love.graphics, pas un
 -- tampon) — pour les décorations d'overlay (pips de niveau, etc.) en ESPACE DESIGN. color = {r,g,b} 0..1
 -- (Theme.c). Centre clair + bord sombre, petit spec. No-op headless / pcall-gardé.
@@ -1353,6 +1414,28 @@ function Forge.uiButton(id, x, y, w, h, label, opts)
     e.dirty = false
   end
   Forge.blit(e.image, x, y, px)
+
+  -- ── LABEL (+ valeur de coût) = OVERLAY VIVANT, vraie police, par-dessus l'image blittée. JAMAIS baké ->
+  -- aucune dépendance au timing de bake ni au readback de glyphe (le bug des « boîtes sans texte »). Dessiné
+  -- chaque frame en ESPACE DESIGN, centré dans la dalle, avec l'offset de press (la pierre s'enfonce). ──
+  if label and label ~= "" then
+    local pressPx = (st.press or 0) * DROP * px          -- enfoncement (px design)
+    local slabH = (ah - DROP) * px                        -- hauteur de la dalle (px design)
+    local cyDesign = y + pressPx + slabH / 2              -- centre vertical de la dalle
+    local reserve = (tone == "eco" and opts.cost ~= nil) and (10 * px) or 0 -- place du diamant de coût (droite)
+    local cxDesign = x + (w - reserve) / 2
+    local litGold  = hexRgb255(disabled and "#a4895a" or (tone == "cta" and "#f0d68e" or "#e8cd84"))
+    Forge.label(label, cxDesign, cyDesign, fontSz * px, litGold, { bold = (tone == "cta"),
+      glow = (not disabled) and (st.glow or 0) or 0 })
+  end
+  if tone == "eco" and opts.cost ~= nil then
+    -- valeur du coût (chiffre) en overlay à GAUCHE du diamant baké (x1-7 art -> bord droit).
+    local pressPx = (st.press or 0) * DROP * px
+    local cyDesign = y + pressPx + (ah - DROP) * px / 2
+    local diamondX = x + (aw - 7) * px                    -- centre du diamant (art x1-7) en design
+    local col = hexRgb255(disabled and "#a4895a" or "#e8dcc0")
+    Forge.label(tostring(opts.cost), diamondX - 7 * px, cyDesign, fontSz * px, col, { right = true })
+  end
   return true
 end
 
