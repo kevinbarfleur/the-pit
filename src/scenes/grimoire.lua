@@ -313,6 +313,31 @@ function Screen:drawDetail(c)
         cx, DET_Y + 224, c.muted, Theme.ui(13))
       Draw.textC(T("unit." .. e.id .. ".passive_name"), cx, DET_Y + 254, c.goldBright, Theme.ui(12))
       Draw.textWrap(T("unit." .. e.id .. ".passive_desc"), DET_X + 60, DET_Y + 278, DET_W - 120, c.body, Theme.ui(12), "center")
+      -- PALIERS : la même bête aux 5 rangs de rareté (échelle/glow/cadre/pips croissants). Le rang réel de
+      -- l'unité est surligné -> on lit le système de rareté directement sur la créature sélectionnée.
+      local ly = DET_Y + 452
+      Draw.textC(T("grimoire.tiers"), cx, ly - 22, c.muted, Theme.uiBold(11))
+      for k = 1, 5 do
+        local rar = Rarity.get(k)
+        local fr = Rarity.frame(k)
+        local ccx = DET_X + DET_W * (k - 0.5) / 5
+        local feet = ly + 48
+        if rar.glow and rar.glow > 0 then
+          love.graphics.setBlendMode("add")
+          for j = 2, 1, -1 do
+            love.graphics.setColor(fr[1], fr[2], fr[3], rar.glow * 0.12 * j)
+            love.graphics.circle("fill", ccx, feet - 20, 15 * (j / 2))
+          end
+          love.graphics.setBlendMode("alpha"); love.graphics.setColor(1, 1, 1, 1)
+        end
+        love.graphics.setColor(fr[1], fr[2], fr[3], (k == (e.rank or 1)) and 0.95 or 0.4)
+        love.graphics.rectangle("line", ccx - 26, ly - 6, 52, 66)
+        love.graphics.setColor(1, 1, 1, 1)
+        drawRigC(e.char, ccx, feet, 1.9 * (rar.scale or 1))
+        love.graphics.setColor(fr[1], fr[2], fr[3], 0.95)
+        for p = 1, k do love.graphics.rectangle("fill", ccx - 12 + (p - 1) * 5, ly + 54, 3, 3) end
+        love.graphics.setColor(1, 1, 1, 1)
+      end
     else
       Draw.textWrap(T("grimoire.beast_unknown"), DET_X + 60, DET_Y + 200, DET_W - 120, c.dim, Theme.loreRoman(16), "center")
     end

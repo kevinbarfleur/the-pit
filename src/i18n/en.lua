@@ -96,6 +96,7 @@ return {
   ["grimoire.back"] = "[esc] back",
   ["grimoire.tab_relics"] = "RELICS",
   ["grimoire.tab_bestiary"] = "BESTIARY",
+  ["grimoire.tiers"] = "RARITY TIERS  -  R1 > R5",
   ["grimoire.sort"] = "SORT: {mode}",
   ["grimoire.unseen"] = "UNENCOUNTERED",
   ["grimoire.beast_unknown"] = "Something moved in the dark of the Pit. You have not yet met it face to face.",
