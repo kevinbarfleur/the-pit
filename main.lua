@@ -54,8 +54,10 @@ function host.goto(name, payload)
     host.menu = host.menu or Menu.new(Palette, VW, VH, host)
     host.scene = host.menu
   elseif name == "grimoire" then
-    -- Codex persistant : recréé à chaque ouverture (relit l'état d'identification courant).
-    host.scene = GrimoireScene.new(Palette, VW, VH, host)
+    -- Codex persistant (reliques + bestiaire) : mémoïsé (rigs construits une fois) ; refresh() relit connu/vu.
+    host.grimoire = host.grimoire or GrimoireScene.new(Palette, VW, VH, host)
+    host.grimoire:refresh()
+    host.scene = host.grimoire
   elseif name == "playground" then
     -- Banc d'essai (Proving Ground) : mémoïsé (indépendant du run ; lit le catalogue de compos).
     host.playground = host.playground or Playground.new(Palette, VW, VH, host)
