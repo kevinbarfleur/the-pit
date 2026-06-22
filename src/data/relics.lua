@@ -17,16 +17,16 @@ local Units = require("src.data.units")
 
 local R = {
   -- ── A — stats plates (communes, universelles) ──
-  bloodstone = { id = "bloodstone", op = "relic_more_dmg",   params = { mult = 0.20 }, tier = 1 },
-  carapace   = { id = "carapace",   op = "relic_flat_hp",    params = { value = 15 },  tier = 1 },
+  bloodstone = { id = "bloodstone", op = "relic_more_dmg",   params = { mult = 0.14 }, tier = 1 }, -- 0.20->0.14 (calibrage)
+  carapace   = { id = "carapace",   op = "relic_flat_hp",    params = { value = 8 },   tier = 1 }, -- 15->8 (flat ×5 unités = trop)
   aegis      = { id = "aegis",      op = "relic_dmg_reduce", params = { frac = 0.15 }, tier = 1 },
 
   -- ── B — amplis d'affliction (le cœur build-shaping : récompense le mono-archétype) ──
   -- Poison = APEX -> ampli CONSERVATEUR (0.20) ; familles faibles (burn/bleed/rot) -> ampli plus généreux (0.30).
   kings_bowl   = { id = "kings_bowl",   op = "relic_affliction_inc", params = { family = "poison", inc = 0.20 }, tier = 2 },
   ember_heart  = { id = "ember_heart",  op = "relic_affliction_inc", params = { family = "burn",   inc = 0.30 }, tier = 2 },
-  weeping_nail = { id = "weeping_nail", op = "relic_affliction_inc", params = { family = "bleed",  inc = 0.30 }, tier = 2 },
-  grave_cap    = { id = "grave_cap",    op = "relic_affliction_inc", params = { family = "rot",    inc = 0.30 }, tier = 2 },
+  weeping_nail = { id = "weeping_nail", op = "relic_affliction_inc", params = { family = "bleed",  inc = 0.18 }, tier = 2 }, -- 0.30->0.18 (calibrage)
+  grave_cap    = { id = "grave_cap",    op = "relic_affliction_inc", params = { family = "rot",    inc = 0.18 }, tier = 2 }, -- 0.30->0.18 (calibrage)
 
   -- ── C — paliers / payoffs (récompense NON-LINÉAIRE d'un build / archétype ; cf. doc §4-C) ──
   -- FAMINE'S MATH (« tall ») : ≤3 unités -> elles frappent ET encaissent plus. HOLLOW CHOIR (anti-sustain) :
@@ -41,7 +41,7 @@ local R = {
   -- ── A (suite) cadence · D — défensives / globales (intra-combat ; cf. doc §4-A/D) ──
   whetstone     = { id = "whetstone",     op = "relic_haste", params = { value = 0.15 }, tier = 1 }, -- +15% cadence
   thornguard    = { id = "thornguard",    op = "relic_add_effect", tier = 2, -- épines d'équipe (renvoie en étant frappé)
-    params = { effect = { trigger = "on_attacked", op = "thorns", params = { value = 4 } } } },
+    params = { effect = { trigger = "on_attacked", op = "thorns", params = { value = 2 } } } }, -- 4->2 (brutal vs taunt-tank)
   sacred_shield = { id = "sacred_shield", op = "relic_add_effect", tier = 3, -- 0,5 s d'invulnérabilité d'ouverture (t<30)
     params = { effect = { trigger = "combat_start", op = "grant_team", params = { invulnT = 30 } } } },
   second_breath = { id = "second_breath", op = "relic_second_breath", tier = 3 }, -- chaque unité survit 1× à 1 PV

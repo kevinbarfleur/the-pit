@@ -25,13 +25,13 @@ local ok, err = pcall(function()
   --   more_dmg (bloodstone +20%) : 10->12, 13->16.
   local comp = { { id = "bandit", hp = 46, dmg = 10, cd = 36 }, { id = "witch", hp = 36, dmg = 13, cd = 72 } }
   a:applyRelics(comp)
-  assert(comp[1].dmg == 12 and comp[2].dmg == 16, "bloodstone: +20% dmg")
+  assert(comp[1].dmg == 11 and comp[2].dmg == 15, "bloodstone: +14% dmg (calibre)")
 
   --   flat_hp (carapace +15).
   local h = RunState.new(3); h:grantRelic("carapace")
   local ch = { { id = "bandit", hp = 46, dmg = 7, cd = 36 } }
   h:applyRelics(ch)
-  assert(ch[1].hp == 61, "carapace: +15 max HP")
+  assert(ch[1].hp == 54, "carapace: +8 max HP (calibre)")
 
   --   affliction_inc (kings_bowl) : poisonInc ADDITIF sur chaque spec (cumule avec une aura).
   local p = RunState.new(1); p:grantRelic("kings_bowl")

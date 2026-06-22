@@ -128,6 +128,17 @@ Compositions.list = {
     noteKey = "comp.tank_carre.note",
   },
 
+  -- ── SUSTAIN (carré : self-heal LOURD — regen + lifesteal empilés). La CIBLE des reliques anti-soin (Hollow
+  -- Choir / everburn / open_wounds) : survit par le SOIN (pas le HP brut) -> percer/dépasser le soin la fait choir. ──
+  {
+    id = "sustain_carre", archetype = "sustain", variant = "wall", sigil = "carre", boardLevel = 8,
+    units = {
+      { id = "plague_doctor", slot = 5 }, { id = "plague_doctor", slot = 2 }, -- regen 3 (self-heal)
+      { id = "demon", slot = 4 }, { id = "demon", slot = 6 }, { id = "demon", slot = 8 }, -- lifesteal 0.4 (self-heal)
+    },
+    noteKey = "comp.sustain_carre.note",
+  },
+
   -- ── BRUISER (carré = stats brutes, zéro DoT : la compo TÉMOIN / baseline) ──
   {
     id = "bruiser_carre", archetype = "bruiser", variant = "baseline", sigil = "carre", boardLevel = 8,
@@ -501,7 +512,7 @@ for _, c in ipairs(Compositions.list) do
 end
 
 -- Archétypes connus (l'analyseur d'équilibrage s'en sert ; l'intégrité du catalogue le vérifie).
-Compositions.archetypes = { "poison", "burn", "bleed", "rot", "tank", "bruiser", "shock", "shield" }
+Compositions.archetypes = { "poison", "burn", "bleed", "rot", "tank", "bruiser", "shock", "shield", "sustain" }
 
 -- Tags THÉMATIQUES (facette de filtre transversale du Proving Ground, en plus des archétypes). Ordre =
 -- ordre d'affichage des chips. L'intégrité du catalogue vérifie que tout tag de scénario est connu.
