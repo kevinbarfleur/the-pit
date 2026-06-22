@@ -71,6 +71,9 @@ luajit tests/props.lua
 echo "== gen (generateur de creatures : determinisme + validation + smoke rendu) =="
 luajit tests/gen.lua
 
+echo "== forge (refonte : assemblage de parts authored, atlas + recolor + couverture) =="
+luajit tests/forge.lua
+
 echo "== relic-icons (icones de reliques : 16x16 + palette + contour + focus + bake) =="
 luajit tests/relics_icons.lua
 
