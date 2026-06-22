@@ -100,6 +100,51 @@ Theme.types = {
 }
 function Theme.type(name) return Theme.types[name] or Theme.types.bone end
 
+-- ─────────────── États interactifs (vocabulaire UNIFIÉ hover/clic/désactivé) ───────────────
+-- Un SEUL jeu de descripteurs d'état pour toute l'UI (fin des hover gold/eco/blood divergents par scène).
+-- Consommé par src/ui/frame.lua : fill = fond intérieur ; text = couleur de label ; accent = studs dorés.
+-- glow -> lueur interne au survol ; inset -> biseau inversé + label enfoncé (pressed) ; flat -> sans biseau
+-- (disabled) ; gild -> studs dorés forcés même en niveau "bevel" (selected/danger = héros).
+local c = Theme.c
+Theme.state = {
+  idle     = { fill = c.panelDeep, text = c.body,      accent = c.gold },
+  hover    = { fill = c.panel,     text = c.inkBright,  accent = c.goldBright, glow = 0.5 },
+  pressed  = { fill = c.panelDeep, text = c.ctaText,    accent = c.goldBright, inset = true },
+  disabled = { fill = c.panelDeep, text = c.ghost,      accent = c.line,       flat = true },
+  selected = { fill = c.panel,     text = c.inkBright,  accent = c.goldBright, gild = true },
+  danger   = { fill = c.bloodDeep, text = c.ctaText,    accent = c.gold,       gild = true },
+  drop     = { fill = c.panel,     text = c.drop,       accent = c.drop,       gild = true },
+}
+function Theme.stateOf(name) return Theme.state[name] or Theme.state.idle end
+
+-- TONS de bouton (variante sémantique) × interaction. Un bouton = un TON (default/eco/cta/drop) + des
+-- drapeaux (enabled/hover/pressed). Theme.btnState combine les deux en un descripteur d'état pour Frame :
+-- les héros (cta/drop) sont GILDÉS (studs dorés), default/eco restent en biseau bronze (« dorures héros »).
+Theme.tones = {
+  default = { fill = c.panelDeep, fillHot = c.panel,    text = c.body,    textHot = c.inkBright, accent = c.gold,      gild = false },
+  eco     = { fill = c.ecoBg,     fillHot = c.ecoBgHot,  text = c.title,   textHot = c.inkBright, accent = c.ecoBorder, gild = false },
+  cta     = { fill = c.bloodDeep, fillHot = c.blood,     text = c.ctaText, textHot = c.ctaText,   accent = c.gold,      gild = true  },
+  drop    = { fill = c.panel,     fillHot = c.panel,     text = c.drop,    textHot = c.drop,      accent = c.drop,      gild = true  },
+}
+-- o = { tone?, enabled?, hover?, pressed? }. enabled==false -> état désactivé (à plat). Sinon ton + hover
+-- (lueur interne + fond/texte chauds) + pressed (biseau enfoncé). Retourne un descripteur d'état (table).
+function Theme.btnState(o)
+  o = o or {}
+  if o.enabled == false then
+    return { fill = c.panelDeep, text = c.ghost, accent = c.line, flat = true }
+  end
+  local tone = Theme.tones[o.tone or "default"] or Theme.tones.default
+  local hot = o.hover and true or false
+  return {
+    fill   = hot and tone.fillHot or tone.fill,
+    text   = hot and tone.textHot or tone.text,
+    accent = tone.accent,
+    gild   = tone.gild,
+    glow   = hot and 0.5 or nil,
+    inset  = o.pressed and true or nil,
+  }
+end
+
 -- ───────────────────────────────── Polices ─────────────────────────────────
 -- 3 familles. RÈGLE DE LISIBILITÉ (retour user) : le FONCTIONNEL passe en Silkscreen ; le gothique et
 -- l'italique sont réservés à de courtes touches.

@@ -291,13 +291,12 @@ function Playground:drawOverlay(view)
   Draw.textC(T("pg.vs"), (AX + PANEL_W + BX) / 2, PANEL_Y + PANEL_H / 2 - 24, c.bloodBright, Theme.display(34))
 
   -- Boutons WATCH / SIM + lecture du résultat (contextualisée par l'investissement).
-  self:drawButton(AX, BTN_Y, 200, BTN_H, T("pg.watch"), c.bloodDeep, c.blood, c.ctaText)
+  self:drawButton(AX, BTN_Y, 200, BTN_H, T("pg.watch"), "cta", self.watchHover)
   if self.sim then
-    self:drawButton(AX + 216, BTN_Y, 200, BTN_H, T("pg.simming", { done = self.sim.done, n = self.sim.n }),
-      c.ecoBgHot, c.ecoBorder, c.muted)
+    self:drawButton(AX + 216, BTN_Y, 200, BTN_H, T("pg.simming", { done = self.sim.done, n = self.sim.n }), "eco", false)
     Draw.bar(AX + 216, BTN_Y + BTN_H - 5, 200, 4, self.sim.done / self.sim.n, c.gold, c.ecoBg, nil)
   else
-    self:drawButton(AX + 216, BTN_Y, 200, BTN_H, T("pg.sim", { n = SIM_N }), c.ecoBg, c.ecoBorder, c.body)
+    self:drawButton(AX + 216, BTN_Y, 200, BTN_H, T("pg.sim", { n = SIM_N }), "eco", self.simHover)
   end
   self:drawResult(c)
 
@@ -306,8 +305,10 @@ function Playground:drawOverlay(view)
   Draw.finish()
 end
 
-function Playground:drawButton(x, y, w, h, label, fill, border, text)
-  Draw.button(x, y, w, h, label, Theme.uiBold(15), { fill = fill, border = border, text = text, bw = 2 })
+-- Bouton du banc d'essai : un TON (cta = WATCH, eco = SIM) + survol -> état Frame (biseau + dorures CTA).
+function Playground:drawButton(x, y, w, h, label, tone, hover)
+  Draw.button(x, y, w, h, label, Theme.uiBold(15),
+    { state = Theme.btnState({ tone = tone, enabled = true, hover = hover }) })
 end
 
 function Playground:drawResult(c)
@@ -363,6 +364,8 @@ function Playground:inList(dx, dy) return dx >= LIST_X and dx <= LIST_X + LIST_W
 
 function Playground:mousemoved(vx, vy)
   local dx, dy = vx * 4, vy * 4
+  self.watchHover = ptIn(dx, dy, { x = AX, y = BTN_Y, w = 200, h = BTN_H })
+  self.simHover = ptIn(dx, dy, { x = AX + 216, y = BTN_Y, w = 200, h = BTN_H })
   self.hover = nil
   if not self:inList(dx, dy) then return end
   for i = 1, #self.scenarios do if ptIn(dx, dy, self:rowRect(i)) then self.hover = i; return end end

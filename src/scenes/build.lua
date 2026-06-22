@@ -713,8 +713,7 @@ function Build:drawOverlay(view)
   local r = self.button
   local over = inRect(self.mx, self.my, r)
   Draw.button(r.x * 4, r.y * 4, r.w * 4, r.h * 4, enabled and T("ui.fight") or T("ui.place_unit"), Theme.uiBold(13),
-    { fill = enabled and (over and c.blood or c.bloodDeep) or c.panelDeep,
-      border = enabled and c.blood or c.bloodEdge, text = enabled and c.ctaText or c.fainter })
+    { state = Theme.btnState({ tone = "cta", enabled = enabled, hover = over }) })
 
   -- Rangée de reliques possédées (au-dessus de la boutique) + infobulles (relique prioritaire sur unité).
   self:drawRelicRow()
@@ -764,11 +763,9 @@ end
 
 -- Bouton d'économie (REROLL / LEVEL) : brun DA, état actif/désactivé + survol. rect en coords virtuelles.
 function Build:drawEcoButton(rect, label, enabled)
-  local c = Theme.c
   local hot = inRect(self.mx, self.my, rect)
   Draw.button(rect.x * 4, rect.y * 4, rect.w * 4, rect.h * 4, label, Theme.ui(11),
-    { fill = not enabled and c.panelDeep or (hot and c.ecoBgHot or c.ecoBg),
-      border = enabled and c.ecoBorder or c.hair, text = enabled and c.title or c.fainter })
+    { state = Theme.btnState({ tone = "eco", enabled = enabled, hover = hot }) })
 end
 
 -- Infobulle (espace design ; appelée sous Draw.begin de drawOverlay). Style DA : nom + type coloré,

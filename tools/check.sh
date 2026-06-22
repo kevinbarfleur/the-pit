@@ -83,6 +83,9 @@ luajit tests/golden.lua
 echo "== lab (banc d'essai : catalogue compos + pont auras + runner partage + cout) =="
 luajit tests/lab.lua
 
+echo "== ui (fondation visuelle : Frame bevel/gilded/etats + Chip + Keywords afflictions + Theme.state) =="
+luajit tests/ui.lua
+
 if command -v luacheck >/dev/null 2>&1; then
   echo "== luacheck =="
   luacheck src main.lua conf.lua --codes

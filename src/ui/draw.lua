@@ -9,6 +9,7 @@
 -- dépendance à la variante table de love.graphics.setColor).
 
 local Theme = require("src.ui.theme")
+local Frame = require("src.ui.frame")
 
 local Draw = { W = 1280, H = 720 }
 
@@ -129,9 +130,17 @@ function Draw.textWidth(str, font)
 end
 
 -- ─────────────────────────────────── Widgets ───────────────────────────────────
--- Bouton : rect bordé + label centré (h/v). opts = {fill, border, text, bw}. font = police du label.
+-- Bouton. Deux modes :
+--   * MODERNE (recommandé) : opts.state -> encadré « runique » Frame (biseau bronze + dorures héros +
+--     hover/clic/désactivé). Construire l'état via Theme.btnState{ tone, enabled, hover }.
+--   * LEGACY : opts = {fill, border, text, bw} -> rect bordé plat (rétrocompat, appels non encore migrés).
+-- font = police du label.
 function Draw.button(x, y, w, h, label, font, opts)
   opts = opts or {}
+  if opts.state then
+    return Frame.button(x, y, w, h, label,
+      { state = opts.state, level = opts.level, font = font, text = opts.text, accent = opts.accent, px = opts.px })
+  end
   Draw.rect(x, y, w, h, opts.fill, opts.border, opts.bw or 2)
   if label then
     font = font or love.graphics.getFont()

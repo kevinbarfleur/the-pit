@@ -138,4 +138,16 @@ return {
   ["comp.shock_arc_carre.note"]     = "A storm that forks and lingers - charges chain across the line, leap to neighbors, and never fully discharge.",
   ["scenario.arc_storm.label"]      = "Forked Storm",
   ["scenario.arc_storm.note"]       = "Rare shock modifiers on show: discharges chain to nearby foes, charges leap to neighbors, and never fully drain.",
+
+  -- ── Mots-clés d'AFFLICTION (chips icône+nom : registre src/ui/keywords.lua, consommés par carte/codex/reliques) ──
+  ["kw.poison.name"]  = "POISON",
+  ["kw.poison.blurb"] = "Stacking venom - damage over time that also weakens the victim's blows.",
+  ["kw.bleed.name"]   = "BLEED",
+  ["kw.bleed.blurb"]  = "Open wounds - light damage over time that slows the victim's attacks.",
+  ["kw.burn.name"]    = "BURN",
+  ["kw.burn.blurb"]   = "Searing fire - heavy damage that fades as the flames die down.",
+  ["kw.rot.name"]     = "ROT",
+  ["kw.rot.blurb"]    = "Necrosis - damage over time that eats away the victim's maximum life.",
+  ["kw.shock.name"]   = "SHOCK",
+  ["kw.shock.blurb"]  = "Charge - stacks pile up, then discharge to amplify the next hit.",
 }

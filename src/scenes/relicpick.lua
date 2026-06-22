@@ -97,11 +97,11 @@ function Relicpick:drawOverlay(view)
     Draw.rect(card.x + 24, card.y + card.h - 14, card.w - 48, 2, emblem.color)
   end
 
-  -- Bouton BIND (actif seulement si une carte est choisie).
+  -- Bouton BIND (CTA gildé ; actif seulement si une carte est choisie).
   local ok = self.sel ~= nil
   Draw.button(self.bind.x, self.bind.y, self.bind.w, self.bind.h,
     ok and T("relicpick.bind") or T("relicpick.choose"), Theme.uiBold(14),
-    { fill = ok and c.bloodDeep or c.panelDeep, border = ok and c.blood or c.bloodEdge, text = ok and c.ctaText or c.fainter })
+    { state = Theme.btnState({ tone = "cta", enabled = ok, hover = self.bindHover }) })
 
   Draw.finish()
 end
@@ -110,6 +110,7 @@ function Relicpick:mousemoved(vx, vy)
   local dx, dy = vx * 4, vy * 4
   self.hover = nil
   for i, card in ipairs(self.cards) do if ptIn(dx, dy, card) then self.hover = i; break end end
+  self.bindHover = self.bind ~= nil and ptIn(dx, dy, self.bind) or false
 end
 
 function Relicpick:mousepressed(vx, vy, button)
