@@ -35,6 +35,8 @@ local Bestiary = require("src.core.bestiary") -- marque les créatures vues en b
 local Theme = require("src.ui.theme")
 local Draw = require("src.ui.draw")
 local Frame = require("src.ui.frame") -- encadré runique réutilisable (cases / cartes shop / plaque HUD)
+local Forge = require("src.ui.forge") -- KIT « nightmare forge » : bouton-œil CTA + boutons éco + orbe de vie
+local Layout = require("src.ui.layout") -- MOTEUR de layout flex (alignement parfait, fill-to-container)
 local Ambient = require("src.fx.ambient")
 local T = require("src.core.i18n").t
 
@@ -84,9 +86,8 @@ function Build.new(palette, vw, vh, host)
     local c = self:newRig(id); c.x, c.y = 0, 0
     self.previewRigs[id] = c
   end
-  self.button = { x = vw - 98, y = 150, w = 92, h = 26 } -- COMBAT
-  self.rerollBtn = { x = 172, y = 149, w = 44, h = 12 }
-  self.declineBtn = { x = 172, y = 163, w = 44, h = 12 } -- REFUSER un grant de slot (+or) ; visible si offre en attente
+  -- self.button / rerollBtn / declineBtn + les rects du layout (orbe, cartes) sont calculés par
+  -- computeShop() via le moteur Layout (déjà appelé ci-dessus) -> alignement parfait, fill-to-container.
   self.ambient = Ambient.new(3) -- fond calme (mode "build" : dégradé, pas de particules d'ambiance)
   if self.host.run then self:syncSlots() end
   return self
@@ -130,13 +131,60 @@ function Build:computeLayout()
   end
 end
 
--- Emplacements (rects) des cartes de boutique : positions FIXES, le contenu vit dans host.run.shop.
+-- ── BARRE DU BAS = une RANGÉE flex (moteur Layout) en ESPACE DESIGN ────────────────────────────────
+-- [ colonne ORBE DE VIE (gauche) | rangée OFFRES (flex, remplit le milieu) | colonne BOUTONS (droite) ].
+-- TOUT est aligné/snappé, sans trou : la rangée des offres ABSORBE l'espace restant (flex) et chaque carte
+-- a la MÊME taille avec des gouttières ÉGALES ; l'orbe REMPLIT la hauteur de sa colonne (pas un petit orbe
+-- flottant dans une grande boîte). Les widgets forge sont BAKÉS À LA TAILLE CALCULÉE (fill réel). On
+-- calcule les rects DESIGN une fois ; les hit-tests souris (en VIRTUEL) sont dérivés (÷4) -> self.shopSlots.
+local STRIP = { x = 16, y = 564, w = 1280 - 32, h = 720 - 564 - 12 } -- bandeau du bas (design), marges propres
+local STRIP_GAP = 18
+
 function Build:computeShop()
+  -- 1) découpe principale : orbe (largeur fixe) | offres (flex) | boutons (largeur fixe).
+  local cols = Layout.row(STRIP, {
+    { size = 116 },  -- colonne orbe de vie
+    { flex = 1 },    -- rangée des offres (remplit le milieu)
+    { size = 360 },  -- colonne des boutons (COMBAT large + REROLL)
+  }, { gap = STRIP_GAP, align = "stretch" })
+  self.lay = { orbCol = cols[1], shopBox = cols[2], btnCol = cols[3] }
+
+  -- 2) ORBE DE VIE : colonne [ compteur (fixe) | orbe (flex -> remplit la hauteur restante) ].
+  local oc = Layout.column(cols[1], { { size = 16 }, { flex = 1 } }, { gap = 4, align = "stretch" })
+  self.lay.lifeLabel = oc[1]
+  self.lay.lifeOrbBox = oc[2]
+
+  -- 3) OFFRES : N cartes de MÊME taille avec gouttières ÉGALES qui REMPLISSENT la largeur (flex chacune).
+  local specs = {}
+  for _ = 1, Run.SHOP_SIZE do specs[#specs + 1] = { flex = 1 } end
+  self.lay.cards = Layout.row(cols[2], specs, { gap = 8, align = "stretch" })
+
+  -- 4) BOUTONS : COMBAT (gros, en haut) au-dessus d'une LIGNE éco. Sans grant : REROLL remplit toute la
+  -- ligne (pas de trou). Avec grant : la ligne se scinde en [ REROLL | REFUSER ]. On calcule les DEUX et on
+  -- choisit à l'affichage selon run.pendingSlotGrant -> jamais de poche vide.
+  local bc = Layout.column(cols[3], { { flex = 3 }, { size = 8 }, { flex = 2 } }, { gap = 0, align = "stretch" })
+  self.lay.combatBox = bc[1]
+  self.lay.ecoRowBox = bc[3]                              -- REROLL seul = toute la ligne
+  local ecoSplit = Layout.row(bc[3], { { flex = 1 }, { flex = 1 } }, { gap = 10, align = "stretch" })
+  self.lay.rerollSplitBox = ecoSplit[1]                  -- REROLL quand un grant attend
+  self.lay.declineBox = ecoSplit[2]                      -- REFUSER (visible seulement pendant un grant)
+
+  -- 5) hit-tests souris en VIRTUEL (÷4) — dérivés des rects DESIGN du layout (toujours synchrones).
+  -- Les rects REROLL/REFUSER sont (re)synchronisés à chaque frame par syncEcoRects(grant) (cf. drawOverlay).
+  local function toV(r) return { x = r.x / 4, y = r.y / 4, w = r.w / 4, h = r.h / 4 } end
+  self._toV = toV
   self.shopSlots = {}
-  local cw, ch, gap, x0, y0 = 31, 28, 2, 5, 149
-  for i = 1, Run.SHOP_SIZE do
-    self.shopSlots[i] = { x = x0 + (i - 1) * (cw + gap), y = y0, w = cw, h = ch }
-  end
+  for i = 1, Run.SHOP_SIZE do self.shopSlots[i] = toV(self.lay.cards[i]) end
+  self.button = toV(self.lay.combatBox)
+  self.declineBtn = toV(self.lay.declineBox)
+  self:syncEcoRects(false)
+end
+
+-- Synchronise le rect de hit-test REROLL selon qu'un grant attend (ligne scindée) ou non (ligne pleine).
+-- Appelé chaque frame avant les clics/le rendu -> le hit-test colle TOUJOURS à ce qui est dessiné.
+function Build:syncEcoRects(granting)
+  local box = granting and self.lay.rerollSplitBox or self.lay.ecoRowBox
+  self.rerollBtn = self._toV(box)
 end
 
 -- Rect (ESPACE DESIGN) de la i-ème relique possédée (rangée au-dessus de la boutique).
@@ -267,17 +315,20 @@ end
 function Build:mousepressed(vx, vy, button)
   if button ~= 1 then return end
   self.mx, self.my = vx, vy
-  if inRect(vx, vy, self.button) then self:startCombat(); return end
   local run = self.host.run
+  -- rect REROLL fidèle à l'état du grant (ligne pleine / scindée) AVANT le hit-test (mousepressed peut être
+  -- appelé sans update, ex. tests headless).
+  self:syncEcoRects(run and run.pendingSlotGrant)
+  if inRect(vx, vy, self.button) then self:startCombat(); return end
   if run then
-    if inRect(vx, vy, self.rerollBtn) then run:reroll(); return end
-    -- Grant d'emplacement timé en attente : REFUSER (bouton -> +or) ou ACCEPTER (clic sur une case
-    -- verrouillée -> ouvre CETTE case = placement libre, façon « pose ton slot où tu veux »).
+    -- Grant en attente : REFUSER prioritaire (son rect cohabite avec la moitié REROLL) ; sinon ACCEPTER
+    -- (clic sur une case verrouillée). Puis REROLL.
     if run.pendingSlotGrant then
       if inRect(vx, vy, self.declineBtn) then run:declineSlotGrant(); return end
       local lc = self:lockedCellAt(vx, vy)
       if lc then if run:acceptSlotGrant() then self.board:openCell(lc) end; return end
     end
+    if inRect(vx, vy, self.rerollBtn) then run:reroll(); return end
     local oi = self:shopAt(vx, vy)
     if oi then -- prend une offre achetable (consommée seulement au lâcher sur une case valide)
       local o = run.shop[oi]
@@ -537,6 +588,10 @@ end
 -- ── Update ──
 function Build:update(frameDt)
   self.t = self.t + frameDt
+  Forge.uiTick(frameDt / 60) -- horloge des boutons forge (en SECONDES ; frameDt ~1.0/tick au 1/60)
+  -- synchronise le rect REROLL avec l'état du grant (ligne pleine sans grant / scindée avec) -> hit-test
+  -- toujours fidèle à ce qui est dessiné (mousepressed s'exécute après update).
+  self:syncEcoRects(self.host.run and self.host.run.pendingSlotGrant)
   self.ambient:update(frameDt)
   if self.host.run and self.board.activeCount ~= self.host.run.slots then self:syncSlots() end
   for i, sr in pairs(self.slotRigs) do
@@ -590,7 +645,9 @@ function Build:drawBack(view)
       b.slots[i].unlocked and c.slot or c.slotLocked)
   end
 
-  -- Panneau boutique + fonds des cartes (derrière les rigs d'aperçu).
+  -- Panneau boutique + fonds des cartes (derrière les rigs d'aperçu). Carte = PLAQUE PLEINE plus claire que
+  -- le bandeau (c.slot) -> chaque offre lit comme une dalle solide qui remplit sa boîte, pas un cadre creux
+  -- sur un grand vide. Survol = cardHover ; hors-budget = slotLocked (mat) ; vendu = void.
   Draw.rect(0, 556, Draw.W, 164, c.panel)
   Draw.setColor(c.line); love.graphics.setLineWidth(2); love.graphics.line(0, 557, Draw.W, 557); love.graphics.setLineWidth(1)
   if run then
@@ -598,7 +655,7 @@ function Build:drawBack(view)
       local o = run.shop[i]
       if o then
         local aff = (not o.sold) and run.gold >= o.cost
-        local bg = o.sold and c.void or (aff and ((ui.shopHover == i) and c.cardHover or c.panel) or c.panelDeep)
+        local bg = o.sold and c.void or (aff and ((ui.shopHover == i) and c.cardHover or c.slot) or c.slotLocked)
         Draw.rect(rect.x * 4, rect.y * 4, rect.w * 4, rect.h * 4, bg)
       end
     end
@@ -621,9 +678,12 @@ function Build:drawWorld()
       if o and not o.sold then
         local c = self.previewRigs[o.id]
         if c then
+          -- aperçu REMPLISSANT la carte : ×1.0 -> 0.5 virtuel -> blit ×4 = ×2 natif (ENTIER -> NET), 2× plus
+          -- grand que l'ancien ×0.5. Pieds RELEVÉS (~13 virtuel du bas) -> le corps occupe le centre de la
+          -- carte, plus de grand vide en haut ; le bandeau nom/coût reste lisible en dessous.
           love.graphics.push()
-          love.graphics.translate(rect.x + rect.w / 2, rect.y + rect.h - 4)
-          love.graphics.scale(0.5, 0.5) -- ×0.5 -> sprite NET (0.5 WORLD_FIT × 0.5 × vue ×4 = ×1 natif) + plus petit
+          love.graphics.translate(rect.x + rect.w / 2, rect.y + rect.h - 13)
+          love.graphics.scale(1.0, 1.0)
           c.x, c.y, c.facing = 0, 0, 1
           Rig.draw(c)
           love.graphics.pop()
@@ -695,9 +755,10 @@ function Build:drawOverlay(view)
     end
   end
 
-  -- Boutique : label + cartes (bordure / coût / nom / SOLD) + boutons éco.
+  -- Boutique : cartes (bordure / coût / nom / SOLD) + boutons éco. Cartes calées par le moteur Layout
+  -- (mêmes tailles, gouttières égales, remplissent la largeur). Contenu positionné RELATIVEMENT à la carte
+  -- (pip haut-gauche, nom près du bas, coût bas-droite) -> aucun trou, quelle que soit la hauteur calculée.
   if run then
-    Draw.text(T("ui.offering"), 24, 566, c.faint, Theme.ui(10))
     for i, rect in ipairs(self.shopSlots) do
       local o = run.shop[i]
       if o then
@@ -716,24 +777,30 @@ function Build:drawOverlay(view)
             Frame.draw(x, y, w, h, { level = "bevel", fill = false })
           end
           Draw.pip(Units[o.id].type, x + 11, y + 11, 4)
-          Draw.textC(T("unit." .. o.id .. ".name"), x + w / 2, y + h - 36, c.name, Theme.ui(9))
-          Draw.textR(T("ui.cost", { n = o.cost }), x + w - 8, y + h - 20, aff and c.gold or c.fainter, Theme.ui(11))
+          Draw.textC(T("unit." .. o.id .. ".name"), x + w / 2, y + h - 30, c.name, Theme.ui(9))
+          Draw.textR(T("ui.cost", { n = o.cost }), x + w - 8, y + h - 16, aff and c.gold or c.fainter, Theme.ui(11))
         end
       end
     end
-    self:drawEcoButton(self.rerollBtn, T("ui.reroll", { n = Run.REROLL_COST }), run:canReroll())
+    self:drawEcoButton("build.reroll", self.rerollBtn, T("ui.reroll_label"), Run.REROLL_COST, run:canReroll())
     -- Bouton REFUSER : visible seulement quand un grant de slot attend (sinon les slots ne s'achètent plus).
     if run.pendingSlotGrant then
-      self:drawEcoButton(self.declineBtn, T("ui.decline_slot", { n = Run.SLOT_DECLINE_GOLD }), true)
+      self:drawEcoButton("build.decline", self.declineBtn, T("ui.refuse_label"), Run.SLOT_DECLINE_GOLD, true)
     end
   end
 
-  -- Bouton COMBAT (gros CTA sang).
+  -- ORBE DE VIE (extrême gauche de la barre du bas) : fluide = vies/START_LIVES, compteur au-dessus.
+  if run then self:drawLifeOrb(run) end
+
+  -- Bouton COMBAT = le GROS BOUTON-ŒIL forge (nuée d'yeux qui s'ouvrent et suivent le curseur au survol).
   local enabled = self:placedCount() > 0
   local r = self.button
   local over = inRect(self.mx, self.my, r)
-  Draw.button(r.x * 4, r.y * 4, r.w * 4, r.h * 4, enabled and T("ui.fight") or T("ui.place_unit"), Theme.uiBold(13),
-    { state = Theme.btnState({ tone = "cta", enabled = enabled, hover = over }) })
+  Forge.uiButton("build.combat", r.x * 4, r.y * 4, r.w * 4, r.h * 4,
+    enabled and T("ui.fight") or T("ui.place_unit"),
+    { tone = "cta", hover = over, active = over and love.mouse and love.mouse.isDown and love.mouse.isDown(1),
+      disabled = not enabled, mouse = { mx = self.mx * 4, my = self.my * 4 },
+      fontSz = 9, eyeR = 7 })
 
   -- Rangée de reliques possédées (au-dessus de la boutique) + infobulles (relique prioritaire sur unité).
   self:drawRelicRow()
@@ -758,9 +825,9 @@ end
 function Build:drawBanner(run)
   local c = Theme.c
   local font = Theme.ui(13)
+  -- VIES retirées du HUD : elles vivent désormais dans l'ORBE DE VIE (bas-gauche) -> pas de doublon.
   local seg = {
     { T("ui.gold") .. " ", tostring(run.gold) },
-    { T("ui.lives") .. " ", run.lives .. "/" .. Run.START_LIVES },
     { T("ui.wins") .. " ", run.wins .. "/" .. Run.WIN_TARGET },
     { T("ui.round") .. " ", tostring(run.round) },
     { T("ui.slots") .. " ", run.slots .. "/" .. Run.MAX_SLOTS },
@@ -783,11 +850,44 @@ function Build:drawBanner(run)
   end
 end
 
--- Bouton d'économie (REROLL / LEVEL) : brun DA, état actif/désactivé + survol. rect en coords virtuelles.
-function Build:drawEcoButton(rect, label, enabled)
+-- ORBE DE VIE (extrême gauche de la barre du bas) : un orbe forge rempli de SANG dont le niveau de fluide
+-- suit les vies (lives / START_LIVES). Compteur Silkscreen AU-DESSUS. L'orbe REMPLIT la hauteur de sa
+-- colonne (boîte de layout self.lay.lifeOrbBox) -> baké à la TAILLE CALCULÉE (pas un petit orbe flottant
+-- dans une grande boîte). Animé (vagues + nageuse) -> re-rendu chaque frame (1 seul widget).
+function Build:drawLifeOrb(run)
+  local c = Theme.c
+  local box = self.lay.lifeOrbBox
+  local px = 2
+  -- L'orbe est CARRÉ ; on prend min(largeur,hauteur) de la boîte pour qu'il tienne, divisé par px -> art.
+  local side = math.min(box.w, box.h)
+  local art = math.max(8, math.floor(side / px))
+  local diam = art * px
+  -- centré dans la boîte (la boîte fait toute la hauteur de la colonne ; l'orbe la remplit au max).
+  local ox = box.x + math.floor((box.w - diam) / 2)
+  local oy = box.y + math.floor((box.h - diam) / 2)
+  if not self.lifeOrbWidget or self.lifeOrbWidget.aw ~= art then
+    self.lifeOrbWidget = Forge.newWidget(art, art) -- (RE)BAKE à la taille calculée par le layout
+  end
+  local maxL = Run.START_LIVES
+  local level = maxL > 0 and (math.max(0, math.min(maxL, run.lives)) / maxL) or 0
+  local img = Forge.render(self.lifeOrbWidget,
+    function(b, W, H, t) Forge.drawOrb(b, W, H, level, Forge.LIQ.blood, 101, t) end, self.t / 60)
+  Forge.blit(img, ox, oy, px)
+  -- compteur centré dans sa boîte (self.lay.lifeLabel), au-dessus de l'orbe. Sang si vies basses.
+  local lab = self.lay.lifeLabel
+  local low = run.lives <= 1
+  Draw.textC(T("ui.lives_orb", { n = run.lives, max = maxL }), lab.x + lab.w / 2, lab.y + 2,
+    low and c.blood or c.gold, Theme.uiBold(12))
+end
+
+-- Bouton d'économie (REROLL / REFUSER) = ÉCO FORGE (métal patiné + diamant de coût). rect en virtuel.
+-- id = clé de cache stable ; label = texte ; cost = valeur du diamant (or) ; enabled = grise si faux.
+function Build:drawEcoButton(id, rect, label, cost, enabled)
   local hot = inRect(self.mx, self.my, rect)
-  Draw.button(rect.x * 4, rect.y * 4, rect.w * 4, rect.h * 4, label, Theme.ui(11),
-    { state = Theme.btnState({ tone = "eco", enabled = enabled, hover = hot }) })
+  Forge.uiButton(id, rect.x * 4, rect.y * 4, rect.w * 4, rect.h * 4, label,
+    { tone = "eco", cost = cost, hover = hot,
+      active = hot and love.mouse and love.mouse.isDown and love.mouse.isDown(1),
+      disabled = not enabled })
 end
 
 -- Infobulle (espace design ; appelée sous Draw.begin de drawOverlay). Style DA : nom + type coloré,

@@ -1169,4 +1169,113 @@ function Forge.easeSmall(st)
   st.press = elerp(st.press or 0, pp, 0.3)
 end
 
+-- ════════════════════════════ PONT BOUTON (uiButton) — pour les scènes ════════════════════════════
+-- Les widgets Forge sont STATEFUL (Image cachée + état d'interaction lissé + nuée d'yeux seedée), à la
+-- différence du Draw.button immédiat. uiButton encapsule tout ce cycle de vie derrière un `id` STABLE :
+-- l'Image, l'état (hover/active/glow/press/eyeOpen) et les yeux SURVIVENT entre les frames. La SCÈNE garde
+-- son propre hit-test/clic ; ce pont ne fait que DESSINER. PERF : on ne RE-BAKE (buffer->replacePixels) que
+-- si le widget ANIME (hover/easing en cours) ou si label/taille/disabled a changé ; sinon on blitte l'Image
+-- cachée telle quelle. Headless-safe (render/blit pcall-gardés ; pas de bake sous le mock).
+--
+-- Forge.uiButton(id, x, y, w, h, label, opts) :
+--   id       : clé stable de cache (ex. "build.combat", "build.reroll").
+--   x,y,w,h  : rect en ESPACE DESIGN (w,h = px écran ; on en dérive l'art = w/px × h/px).
+--   label    : texte du bouton.
+--   opts     : {
+--     hover, active   : booléens calculés par la scène (truthy).
+--     disabled        : grise + désactive l'effet.
+--     mouse = {mx,my} : curseur en ESPACE DESIGN -> converti en art-local pour le gaze des yeux (tone cta).
+--     tone            : "cta" (gros bouton-œil) | "eco" (petit + diamant de coût) | "icon" (carré sigil/…).
+--     cost            : valeur de coût (tone eco) ; icon = `kind` ("sigil"/"left"/"right"/"gear").
+--     seed            : graine de la nuée (défaut dérivée de l'id).
+--     px              : densité d'affichage (défaut Forge.PX=2).
+--     fontSz, pad, eyeR, frameTh : surcharges de taille (défaut = valeurs validées).
+--     t               : horloge (secondes) pour l'animation (défaut interne auto-incrémentée).
+--   }
+-- Retourne true (dessiné) — la scène gère le clic elle-même.
+Forge._btnCache = {}
+Forge._uiClock = 0
+local function strhash(s)
+  local h = 2166136261
+  for i = 1, #s do h = (h * 16777619 + s:byte(i)) % 4294967296 end
+  return h
+end
+function Forge.uiButton(id, x, y, w, h, label, opts)
+  opts = opts or {}
+  local px = opts.px or PX
+  local tone = opts.tone or "cta"
+  local disabled = opts.disabled and true or false
+  local aw, ah = max(1, floor(w / px)), max(1, floor(h / px))
+  local seed = opts.seed or (strhash(id) % 9973)
+  local fontSz = opts.fontSz or 8
+  local frameTh = opts.frameTh or 2
+  local pad = opts.pad or 5
+  local eyeR = opts.eyeR or 8
+
+  -- entrée de cache (par id). On la (ré)initialise si elle n'existe pas ou si la GÉOMÉTRIE/label/état change.
+  local e = Forge._btnCache[id]
+  local cfgKey = tone .. "|" .. aw .. "x" .. ah .. "|" .. tostring(label) .. "|" .. tostring(disabled)
+    .. "|" .. fontSz .. "|" .. eyeR .. "|" .. pad .. "|" .. tostring(opts.cost)
+  if not e or e.aw ~= aw or e.ah ~= ah then
+    e = { st = { hover = 0, active = 0, glow = 0, press = 0, eyeOpen = 0 },
+      widget = Forge.newWidget(aw, ah), aw = aw, ah = ah }
+    Forge._btnCache[id] = e
+  end
+  local configChanged = (e.cfgKey ~= cfgKey)
+  if configChanged then
+    e.cfgKey = cfgKey
+    if tone == "cta" and not disabled then
+      e.eyes = Forge.genEyes(aw, ah - DROP, seed, label or "", fontSz, { frameTh = frameTh, pad = pad, eyeR = eyeR })
+    else
+      e.eyes = nil
+    end
+    e.dirty = true
+  end
+
+  -- état d'interaction : on l'EASE vers hover/active. disabled -> tout retombe à 0.
+  local st = e.st
+  st.hover = (not disabled) and (opts.hover and 1 or 0) or 0
+  st.active = (not disabled) and (opts.active and 1 or 0) or 0
+  local before = st.glow + st.press + (st.eyeOpen or 0)
+  if tone == "cta" then Forge.easeBtn(st) else Forge.easeSmall(st) end
+  local after = st.glow + st.press + (st.eyeOpen or 0)
+  local animating = math.abs(after - before) > 0.0008 or st.glow > 0.001 or st.press > 0.001 or (st.eyeOpen or 0) > 0.001
+
+  -- horloge : opts.t (secondes) ou auto. L'animation des yeux/glint dépend de t -> on re-bake tant qu'on anime.
+  local t = opts.t or Forge._uiClock
+
+  -- gaze : curseur design -> art-local de CE bouton (les yeux suivent la souris).
+  local gz = nil
+  if tone == "cta" and not disabled and opts.mouse and (st.eyeOpen or 0) > 0.05 then
+    gz = { (opts.mouse.mx - x) / px, (opts.mouse.my - y) / px }
+  end
+
+  -- RE-BAKE seulement si nécessaire (anime / config changée / 1re fois), sinon on garde l'Image cachée.
+  if e.dirty or animating or not e.image then
+    local drawFn
+    if tone == "eco" then
+      drawFn = function(b, W, H, tt)
+        Forge.drawEcoBtn(b, W, H, st.press, st.glow, seed, label or "", opts.cost, disabled, tt)
+      end
+    elseif tone == "icon" then
+      drawFn = function(b, W, H, tt)
+        Forge.drawIconBtn(b, W, H, st.press, st.glow, seed, opts.cost or "sigil", tt)
+      end
+    else -- cta
+      drawFn = function(b, W, H, tt)
+        Forge.drawButton(b, W, H, st.press, st.eyeOpen, st.glow, seed, label or "", disabled, e.eyes, gz, fontSz, tt,
+          { frameTh = frameTh })
+      end
+    end
+    e.image = Forge.render(e.widget, drawFn, t)
+    e.dirty = false
+  end
+  Forge.blit(e.image, x, y, px)
+  return true
+end
+
+-- Avance l'horloge interne des uiButton (à appeler 1×/frame depuis une scène, en SECONDES). Optionnel si
+-- la scène passe opts.t elle-même. Idempotent / sans danger headless.
+function Forge.uiTick(dtSeconds) Forge._uiClock = Forge._uiClock + (dtSeconds or 0) end
+
 return Forge

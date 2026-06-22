@@ -12,6 +12,7 @@ local Frame = require("src.ui.frame")
 local Chip = require("src.ui.chip")
 local Keywords = require("src.ui.keywords")
 local Forge = require("src.ui.forge")
+local Layout = require("src.ui.layout")
 local Frameforge = require("src.scenes.frameforge")
 
 local ok, err = pcall(function()
@@ -132,6 +133,45 @@ local ok, err = pcall(function()
     { 12, 12, function(b, W, H, t) Forge.drawIconBtn(b, W, H, 0, 0.5, 1, "sigil", t) end },
   }
   for _, p in ipairs(probes) do Forge.render(Forge.newWidget(p[1], p[2]), p[3], 1.3) end
+
+  -- ── Layout : moteur flex (remplit EXACTEMENT, gouttières égales, stretch, no-hole). PUR (zero love). ──
+  do
+    local box = { x = 0, y = 0, w = 100, h = 50 }
+    local r = Layout.row(box, { { flex = 1 }, { flex = 1 }, { flex = 1 } }, { gap = 4 })
+    assert(#r == 3, "row : 3 enfants")
+    assert(r[3].x + r[3].w == 100, "row : remplit EXACTEMENT la largeur (zero trou)")
+    assert(r[2].x - (r[1].x + r[1].w) == 4 and r[3].x - (r[2].x + r[2].w) == 4, "row : gouttières ÉGALES")
+    assert(r[1].h == 50 and r[2].h == 50, "row : align stretch remplit la hauteur croisée")
+    -- fixed + flex : le flex absorbe le reste -> remplit pile.
+    local r2 = Layout.row(box, { 20, { flex = 1 }, 20 }, { gap = 5 })
+    assert(r2[1].w == 20 and r2[3].w == 20 and r2[3].x + r2[3].w == 100, "row : fixed+flex remplit pile")
+    -- colonne : remplit la hauteur, stretch la largeur.
+    local cc = Layout.column({ x = 0, y = 0, w = 40, h = 120 }, { { size = 14 }, { flex = 1 } }, { gap = 6 })
+    assert(cc[1].h == 14 and cc[2].y + cc[2].h == 120, "column : remplit la hauteur (zero trou)")
+    assert(cc[1].w == 40 and cc[2].w == 40, "column : align stretch remplit la largeur")
+    -- justify center (sans flex) : contenu centré.
+    local r3 = Layout.row({ x = 0, y = 0, w = 100, h = 10 }, { 20, 20 }, { gap = 10, justify = "center" })
+    assert(r3[1].x == 25, "row : justify center")
+    -- inset : sous-boîte rétrécie.
+    local ins = Layout.inset({ x = 10, y = 10, w = 80, h = 60 }, 5)
+    assert(ins.x == 15 and ins.w == 70, "inset : marge appliquée")
+  end
+
+  -- ── Forge.uiButton : pont STATEFUL (cache par id + easing + nuee). Headless-safe, ne crashe pas, et
+  -- l'etat est PERSISTANT entre appels (le meme id reutilise le meme widget/etat). ──
+  Forge.uiTick(1 / 60)
+  -- cta (gros bouton-oeil) avec gaze depuis la souris design ; eco (avec cout) ; icon (sigil).
+  Forge.uiButton("t.cta", 100, 600, 152, 60, "FIGHT",
+    { tone = "cta", hover = true, mouse = { mx = 130, my = 620 }, fontSz = 9, eyeR = 7 })
+  Forge.uiButton("t.eco", 300, 600, 100, 32, "REROLL", { tone = "eco", cost = 1, hover = false })
+  Forge.uiButton("t.icon", 420, 600, 32, 32, "", { tone = "icon", cost = "sigil", hover = false })
+  Forge.uiButton("t.dis", 460, 600, 152, 60, "SEALED", { tone = "cta", disabled = true })
+  assert(Forge._btnCache["t.cta"], "uiButton : cache par id cree")
+  local stBefore = Forge._btnCache["t.cta"].st.glow
+  for _ = 1, 30 do Forge.uiButton("t.cta", 100, 600, 152, 60, "FIGHT", { tone = "cta", hover = true, mouse = { mx = 130, my = 620 } }) end
+  assert(Forge._btnCache["t.cta"].st.glow >= stBefore, "uiButton : etat PERSISTE et s'ease au survol (meme id)")
+  -- changement de label/disabled -> regenere la config (pas de crash).
+  Forge.uiButton("t.cta", 100, 600, 152, 60, "PLACE A UNIT", { tone = "cta", disabled = true })
 
   -- ── Frameforge : la scène-showcase construit + update + draw headless sans crash ──
   local hostStub = { name = "menu", menu = {} }

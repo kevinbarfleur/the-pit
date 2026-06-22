@@ -142,6 +142,11 @@ return {
   -- ── Frame Forge (écran-showcase dev de la pierre gravée) ──
   ["menu.frameforge"] = "FRAME FORGE",
 
+  -- ── Barre du bas du BUILD (kit forge) : labels SANS le coût (le coût va dans le diamant du bouton éco) ──
+  ["ui.reroll_label"] = "REROLL",
+  ["ui.refuse_label"] = "REFUSE",
+  ["ui.lives_orb"]    = "LIVES {n}/{max}", -- compteur au-dessus de l'orbe de vie
+
   -- ── Mots-clés d'AFFLICTION (chips icône+nom : registre src/ui/keywords.lua, consommés par carte/codex/reliques) ──
   ["kw.poison.name"]  = "POISON",
   ["kw.poison.blurb"] = "Stacking venom - damage over time that also weakens the victim's blows.",
