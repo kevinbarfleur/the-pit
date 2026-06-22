@@ -34,6 +34,7 @@ local RelicGen = require("src.gen.relicgen") -- icones de reliques (rangee type 
 local Bestiary = require("src.core.bestiary") -- marque les créatures vues en boutique (codex)
 local Theme = require("src.ui.theme")
 local Draw = require("src.ui.draw")
+local Frame = require("src.ui.frame") -- encadré runique réutilisable (cases / cartes shop / plaque HUD)
 local Ambient = require("src.fx.ambient")
 local T = require("src.core.i18n").t
 
@@ -66,6 +67,7 @@ function Build.new(palette, vw, vh, host)
   local self = setmetatable({
     vw = vw, vh = vh, t = 0, palette = palette, host = host,
     daChrome = true, -- la scène porte sa propre chrome DA (pas de HUD générique)
+    nativeWorld = true, -- board + boutique rendus en RÉSOLUTION NATIVE (créatures nettes, cohérent avec le combat)
     titleKey = "scene.build",
     hintKey = "ui.hint_build",
     shapeIdx = 1,
@@ -96,7 +98,7 @@ function Build:newRig(id)
   local def = Creatures[id]
   if not def then
     local spec = Units[id] or {}
-    def = CreatureGen.cached({ id = id, type = spec.type, effects = spec.effects, bodyplan = spec.bodyplan, rank = spec.rank })
+    def = CreatureGen.cached({ id = id, type = spec.type, family = spec.family, effects = spec.effects, bodyplan = spec.bodyplan, rank = spec.rank })
   end
   local c = Rig.new(def, self.palette)
   c.facing = 1
@@ -621,7 +623,7 @@ function Build:drawWorld()
         if c then
           love.graphics.push()
           love.graphics.translate(rect.x + rect.w / 2, rect.y + rect.h - 4)
-          love.graphics.scale(0.7, 0.7)
+          love.graphics.scale(0.5, 0.5) -- ×0.5 -> sprite NET (0.5 WORLD_FIT × 0.5 × vue ×4 = ×1 natif) + plus petit
           c.x, c.y, c.facing = 0, 0, 1
           Rig.draw(c)
           love.graphics.pop()
@@ -656,29 +658,39 @@ function Build:drawOverlay(view)
     Draw.textC(T("ui.slot_grant"), Draw.W / 2, 134, c.gold, Theme.ui(12))
   end
 
-  -- Cases : bordure d'état + décor (verrou / pip de type / pips de niveau / nom).
+  -- Cases : SOCLE runique (biseau) selon l'état + décor (verrou / pip de type / pips de niveau / nom).
+  -- fill=false -> le biseau encadre le rig (dessiné dans drawWorld) sans le masquer. Studs dorés = interaction
+  -- (survol/drop), studs SANG = voisin (cue d'adjacence), bronze sobre au repos, arête sombre si scellé.
   local granting = run and run.pendingSlotGrant -- un slot à poser : les cases verrouillées deviennent des cibles
+  local S = SLOT_HALF * 2
   for i = 1, 9 do
     local p, slot = self.pos[i], b.slots[i]
     local x, y = p.x * 4 - SLOT_HALF, p.y * 4 - SLOT_HALF
-    local col
-    if not slot.unlocked then col = granting and c.goldBright or c.slotEdgeLck
-    elseif i == ui.dropTarget then col = c.drop
-    elseif i == ui.hover then col = c.goldBright
-    elseif ui.nbset[i] then col = c.blood
-    else col = c.slotEdge end
-    Draw.rect(x, y, SLOT_HALF * 2, SLOT_HALF * 2, nil, col, 2)
     if not slot.unlocked then
+      if granting then -- case scellée devenue cible de pose : socle doré invitant
+        Frame.draw(x, y, S, S, { level = "gilded", fill = false, accent = c.goldBright, state = { glow = 0.4 } })
+      else -- scellée : simple arête sombre (pas un socle « vivant »)
+        Draw.rect(x, y, S, S, nil, c.slotEdgeLck, 2)
+      end
       Draw.textC("+", p.x * 4, p.y * 4 - 12, granting and c.gold or c.lock, Theme.ui(18))
     else
+      if i == ui.dropTarget then
+        Frame.draw(x, y, S, S, { level = "gilded", fill = false, accent = c.drop, state = { glow = 0.4 } })
+      elseif i == ui.hover then
+        Frame.draw(x, y, S, S, { level = "gilded", fill = false, accent = c.goldBright, state = { glow = 0.5 } })
+      elseif ui.nbset[i] then
+        Frame.draw(x, y, S, S, { level = "gilded", fill = false, accent = c.blood })
+      else
+        Frame.draw(x, y, S, S, { level = "bevel", fill = false })
+      end
       local sr = self.slotRigs[i]
       if sr then
         Draw.pip(Units[sr.id].type, x + 13, y + 13, 5)
         local lvl = sr.level or 1
         for k = 1, (lvl > 1 and lvl or 0) do
-          Draw.rect(x + SLOT_HALF * 2 - 12 - (lvl - k) * 11, y + 7, 7, 7, c.goldBright)
+          Draw.rect(x + S - 12 - (lvl - k) * 11, y + 7, 7, 7, c.goldBright)
         end
-        Draw.textC(T("unit." .. sr.id .. ".name"), p.x * 4, y + SLOT_HALF * 2 + 3, c.name, Theme.ui(9))
+        Draw.textC(T("unit." .. sr.id .. ".name"), p.x * 4, y + S + 3, c.name, Theme.ui(9))
       end
     end
   end
@@ -691,10 +703,18 @@ function Build:drawOverlay(view)
       if o then
         local x, y, w, h = rect.x * 4, rect.y * 4, rect.w * 4, rect.h * 4
         local aff = (not o.sold) and run.gold >= o.cost
-        Draw.rect(x, y, w, h, nil, o.sold and c.line or (aff and c.gold or c.hair), 2)
         if o.sold then
+          Draw.rect(x, y, w, h, nil, c.line, 2)
           Draw.textC(T("ui.sold"), x + w / 2, y + h / 2 - 6, c.ghost, Theme.ui(10))
         else
+          -- Studs DORÉS = achetable (rappel « l'or t'ouvre la carte ») ; bronze sobre si hors-budget.
+          local hot = ui.shopHover == i
+          if aff then
+            Frame.draw(x, y, w, h, { level = "gilded", fill = false,
+              accent = hot and c.goldBright or c.gold, state = hot and { glow = 0.5 } or nil })
+          else
+            Frame.draw(x, y, w, h, { level = "bevel", fill = false })
+          end
           Draw.pip(Units[o.id].type, x + 11, y + 11, 4)
           Draw.textC(T("unit." .. o.id .. ".name"), x + w / 2, y + h - 36, c.name, Theme.ui(9))
           Draw.textR(T("ui.cost", { n = o.cost }), x + w - 8, y + h - 20, aff and c.gold or c.fainter, Theme.ui(11))
@@ -750,6 +770,8 @@ function Build:drawBanner(run)
   for _, s in ipairs(seg) do total = total + font:getWidth(s[1]) + font:getWidth(s[2]) end
   total = total + gap * (#seg - 1)
   local x = Draw.W / 2 - total / 2
+  -- Plaque runique : intègre le HUD (biseau bronze) au lieu d'un texte qui flotte sur le fond.
+  Frame.draw(x - 20, 14, total + 40, 28, { level = "bevel", fill = c.panel })
   for _, s in ipairs(seg) do
     Draw.setColor(c.fainter); love.graphics.print(s[1], math.floor(x), 22); x = x + font:getWidth(s[1])
     Draw.setColor(c.title); love.graphics.print(s[2], math.floor(x), 22); x = x + font:getWidth(s[2]) + gap

@@ -40,6 +40,18 @@ function Menu.new(palette, vw, vh, host)
     { id = "rites",    key = "menu.rites",    enabled = false },
     { id = "abandon",  key = "menu.abandon",  enabled = true,  action = function() love.event.quit() end },
   }
+  -- DEV-ONLY : écran-showcase « Frame Forge » (revue du kit UI « nightmare forge », src/ui/forge.lua).
+  -- Injecté directement (main.lua n'a pas à connaître la scène) ; le menu reste mémoïsé sur host.menu ->
+  -- retour depuis la scène. Inséré avant ABANDON (pied de liste). Présent uniquement si Dev.ENABLED.
+  if Dev.ENABLED then
+    table.insert(self.items, #self.items, {
+      id = "frameforge", key = "menu.frameforge", enabled = true,
+      action = function()
+        self.host.scene = require("src.scenes.frameforge").new(self.palette, self.vw, self.vh, self.host)
+        self.host.name = "frameforge"
+      end,
+    })
+  end
   self.hover = nil
   -- Toggle MODE DEV (cheat) — coin haut-gauche, présent UNIQUEMENT si Dev.ENABLED (masqué/inerte en release).
   self.devRect = Dev.ENABLED and { x = 16, y = 14, w = 252, h = 26 } or nil

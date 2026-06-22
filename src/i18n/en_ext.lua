@@ -139,6 +139,9 @@ return {
   ["scenario.arc_storm.label"]      = "Forked Storm",
   ["scenario.arc_storm.note"]       = "Rare shock modifiers on show: discharges chain to nearby foes, charges leap to neighbors, and never fully drain.",
 
+  -- ── Frame Forge (écran-showcase dev de la pierre gravée) ──
+  ["menu.frameforge"] = "FRAME FORGE",
+
   -- ── Mots-clés d'AFFLICTION (chips icône+nom : registre src/ui/keywords.lua, consommés par carte/codex/reliques) ──
   ["kw.poison.name"]  = "POISON",
   ["kw.poison.blurb"] = "Stacking venom - damage over time that also weakens the victim's blows.",
