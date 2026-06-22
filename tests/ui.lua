@@ -261,6 +261,43 @@ local ok, err = pcall(function()
   assert(#eA2 == #eA, "genEyes deterministe (meme seed -> meme nombre d'yeux)")
   local eB = Forge.genEyes(76, 24, 7, "DESCEND", 8, 2) -- ancienne signature (frameTh=number)
   assert(type(eB) == "table", "genEyes retro-compat (frameTh nombre)")
+
+  -- ── Forge.cardPanel / uiCard : fond de fiche monstre (plaque qui respire + cadre patiné). Headless-safe.
+  do
+    local wv = Forge.newWidget(150, 200)
+    Forge.render(wv, function(b, W, H, t)
+      Forge.cardPanel(b, W, H, t, { accentCol = Forge.accentFrom({ 200, 150, 70 }), rich = true, seed = 42 })
+    end, 1.0)
+    Forge.uiCard("t.card", 0, 0, 312, 380, { px = 2, seed = 5, rich = false })
+    Forge.uiCard("t.card", 0, 0, 312, 380, { px = 2, seed = 5, rich = true, accentCol = Forge.accentFrom({ 0.8, 0.6, 0.3 }) })
+    assert(Forge._cardCache["t.card"], "uiCard : cache par id cree")
+  end
+
+  -- ── Build : fiche monstre TCG (helpers PURS + smoke de rendu headless de la carte) ──────────────
+  do
+    local Build = require("src.scenes.build")
+    -- helpers PURS : rôle dérivé d'aggro/taunt + valeur d'affliction depuis les params.
+    assert(Build.roleOf({ taunt = true }) == "tank", "taunt -> tank")
+    assert(Build.roleOf({ aggro = 40 }) == "tank", "aggro>=30 -> tank")
+    assert(Build.roleOf({ aggro = 5 }) == "carry", "aggro<=7 -> carry")
+    assert(Build.roleOf({ aggro = 15 }) == "bruiser", "aggro intermediaire -> bruiser")
+    assert(Build.roleOf({}) == "carry", "sans aggro (=0) -> carry")
+    assert(Build.afflValue({ dps = 6, dur = 180 }) == "6 dps 3s", "afflValue : dps + duree en secondes")
+    assert(Build.afflValue({ dps = 2 }) == "2 dps", "afflValue : dps seul")
+    assert(Build.afflValue({}) == nil, "afflValue : sans dps/dur -> nil")
+    assert(Build.afflValue(nil) == nil, "afflValue : nil -> nil")
+
+    -- Smoke : construit la scène, pose une unité à afflictions (burn) ET un héros (rank>=4), et dessine la
+    -- fiche directement (hors hover) -> ne plante pas sous le mock LÖVE, golden non touché (RENDER pur).
+    local Palette = require("src.core.palette")
+    local b = Build.new(Palette, 320, 180, { goto = function() end })
+    b.view = { ox = 0, oy = 0, scale = 4 }
+    b.mx, b.my = 100, 60
+    b:drawTooltip("emberling")     -- pose burn (chip à valeurs) + R2 (cadre sobre)
+    b:drawTooltip("plague_doctor") -- regen, R4 (cadre riche + œil + halo)
+    b:drawTooltip("marauder")      -- vanille, pas d'affliction, pas de family/rank
+    b:drawTooltip("skull_colossus") -- R5 avec family
+  end
 end)
 
 if ok then

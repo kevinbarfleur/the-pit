@@ -147,6 +147,14 @@ return {
   ["ui.refuse_label"] = "REFUSE",
   ["ui.lives_orb"]    = "LIVES {n}/{max}", -- compteur au-dessus de l'orbe de vie
 
+  -- ── Fiche monstre TCG (carte au survol, src/scenes/build.lua) : rôles (tank/carry/bruiser) + tags ──
+  -- Le rôle est DÉRIVÉ d'aggro/taunt (taunt OU aggro>=30 -> TANK ; aggro<=7 -> CARRY ; sinon BRUISER).
+  ["kw.role.tank"]    = "TANK",
+  ["kw.role.carry"]   = "CARRY",
+  ["kw.role.bruiser"] = "BRUISER",
+  ["kw.chimera"]      = "CHIMERA", -- corps composite (bodyplan composé) ; tag pur
+  ["card.rank"]       = "RANK {n}/5",
+
   -- ── Mots-clés d'AFFLICTION (chips icône+nom : registre src/ui/keywords.lua, consommés par carte/codex/reliques) ──
   ["kw.poison.name"]  = "POISON",
   ["kw.poison.blurb"] = "Stacking venom - damage over time that also weakens the victim's blows.",

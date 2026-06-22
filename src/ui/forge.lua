@@ -949,6 +949,63 @@ local function drawTooltip(buf, W, H, t, lines)
 end
 Forge.drawTooltip = drawTooltip
 
+-- ════════════════════════════ FOND de CARTE TCG (fiche monstre F1) ════════════════════════════
+-- cardPanel(buf, W, H, t, opts) : FOND seul d'une fiche au survol (plaque qui RESPIRE + veines + cadre
+-- patiné + rivets). Le CONTENU (portrait, chips, stats, prose) est dessiné PAR-DESSUS par la scène en
+-- overlay (Layout + Chip) -> on garde la matière forge ici, la lisibilité TCG là-haut. opts :
+--   accentCol : triple {dark,mid,bright} (teinte de rareté) ; nil = liseré métal sobre.
+--   rich      : R4-R5 -> cadre PLUS épais (B=4) + œil qui guette qui s'ouvre/se ferme (héros « rayonnant »).
+--   seed      : graine de la patine/veines (stable par unité -> craquelures fixes).
+local function cardPanel(buf, W, H, t, opts)
+  opts = opts or {}
+  local rich = opts.rich and true or false
+  local B = rich and 4 or 3
+  local seed = opts.seed or 51
+  plate(buf, B, B, W - B - 1, H - B - 1, 0, false)
+  -- RESPIRATION de la plaque (mêmes ondes que drawPanel) : la matière vit, sans bruit.
+  for y = B + 1, H - B - 2 do
+    for x = B + 1, W - B - 2 do
+      local m = sin(x * 0.5 + t * 0.6) + sin(y * 0.6 - t * 0.5)
+      if m > 1.4 then buf:blend(x, y, { 6, 4, 12 }, 0.16 * (m - 1.4)) end
+    end
+  end
+  veins(buf, B, B, W - B - 1, H - B - 1, seed, t)
+  -- ŒIL qui guette (héros uniquement) : s'ouvre puis se referme en cycle, bas-droite, hors du contenu lourd.
+  if rich then
+    local ec = ((t * 0.07 + (seed % 7) * 0.13) % 1)
+    local eo = ec < 0.18 and sin(ec / 0.18 * math.pi) or 0
+    if eo > 0.01 then
+      drawEye(buf, floor(W * 0.86 + 0.5), floor(H * 0.9 + 0.5), 5, clamp(eo), 0.5, t, seed + 3, { blood = 0.6, squash = 0.7 })
+    end
+  end
+  frame(buf, 0, 0, W - 1, H - 1, { t = B, accent = true, accentCol = opts.accentCol })
+  if rich then frameWeather(buf, 0, 0, W - 1, H - 1, B, seed + 11, METAL, false) end
+  rivet(buf, B, B, METAL); rivet(buf, W - B - 1, B, METAL)
+  rivet(buf, B, H - B - 1, METAL); rivet(buf, W - B - 1, H - B - 1, METAL)
+end
+Forge.cardPanel = cardPanel
+
+-- uiCard(id, x, y, w, h, opts) : pont STATEFUL (caché par id) pour le FOND de la fiche monstre. La plaque
+-- RESPIRE -> on re-bake chaque frame (1 seul widget par carte visible ; la fiche au survol est unique).
+-- opts = { accentCol?, rich?, seed?, px?, t? }. Headless-safe (render/blit pcall-gardés).
+Forge._cardCache = {}
+function Forge.uiCard(id, x, y, w, h, opts)
+  opts = opts or {}
+  local px = opts.px or PX
+  local aw, ah = max(1, floor(w / px)), max(1, floor(h / px))
+  local e = Forge._cardCache[id]
+  if not e or e.aw ~= aw or e.ah ~= ah then
+    e = { widget = Forge.newWidget(aw, ah), aw = aw, ah = ah }
+    Forge._cardCache[id] = e
+  end
+  local t = opts.t or Forge._uiClock
+  e.image = Forge.render(e.widget, function(b, W, H, tt)
+    cardPanel(b, W, H, tt, { accentCol = opts.accentCol, rich = opts.rich, seed = opts.seed })
+  end, t)
+  Forge.blit(e.image, x, y, px)
+  return true
+end
+
 local function drawBanner(buf, W, H, word, kind, t)
   local col = kind == "defeat" and hexRgb("#c43830") or hexRgb("#dcb85c")
   local glo = kind == "defeat" and BLOOD.hot or ACC.bright

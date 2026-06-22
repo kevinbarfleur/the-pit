@@ -40,7 +40,9 @@ local Layout = require("src.ui.layout") -- MOTEUR de layout flex (alignement par
 local Keywords = require("src.ui.keywords") -- registre afflictions (mini-chips de carte)
 local Chip = require("src.ui.chip") -- pastilles keyword (icône d'affliction)
 local Ambient = require("src.fx.ambient")
-local T = require("src.core.i18n").t
+local Rarity = require("src.gen.rarity") -- rang -> couleur de cadre + glow (accent de rareté de la fiche)
+local I18n = require("src.core.i18n")
+local T = I18n.t
 
 local Build = {}
 Build.__index = Build
@@ -934,26 +936,241 @@ function Build:drawEcoButton(id, rect, label, cost, enabled)
       disabled = not enabled })
 end
 
--- Infobulle (espace design ; appelée sous Draw.begin de drawOverlay). Style DA : nom + type coloré,
--- stats éteintes, passif en or, description en lore italique. Position = curseur (mx,my) ×4.
+-- ── Fiche monstre (carte TCG forge, au survol) ────────────────────────────────────────────────────
+-- Remplace l'ancienne infobulle plate. Fond = plaque forge qui respire (Forge.uiCard, cadre patiné,
+-- œil qui guette pour R4-R5) + contenu posé PAR-DESSUS via Layout/Chip : header (nom+coût) > portrait
+-- (rig re-rendu, clippé) > identité (pip+type+famille+rareté) > tags (rôle/afflictions/chimère) > stats
+-- (PV/DMG/CD) > capacités (chip à VALEURS + nom de passif or + prose) > flavor. Suit le curseur,
+-- rebond sur les bords. Marche pour le survol PLATEAU et BOUTIQUE. PUR-RENDER (golden inchangé).
+
+-- Rôle dérivé d'aggro/taunt (lecture TCG : taunt OU aggro>=30 -> tank ; aggro<=7 -> carry ; sinon bruiser).
+local function roleOf(u)
+  local aggro = u.aggro or 0
+  if u.taunt or aggro >= 30 then return "tank" end
+  if aggro <= 7 then return "carry" end
+  return "bruiser"
+end
+Build.roleOf = roleOf -- exposé pour le test pur (tests/ui.lua)
+
+-- Valeur lisible d'un effet d'affliction (« 6 dps · 3s ») depuis ses params dps/dur (dur en FRAMES @60fps).
+-- Renvoie nil si l'effet n'expose pas de DoT chiffrable.
+local function afflValue(params)
+  if not params then return nil end
+  local bits = {}
+  local dps = params.dps or params.base
+  if dps then bits[#bits + 1] = tostring(dps) .. " dps" end
+  if params.dur then bits[#bits + 1] = string.format("%.0fs", params.dur / 60) end
+  if #bits == 0 then return nil end
+  return table.concat(bits, " ")
+end
+Build.afflValue = afflValue
+
+-- Rang de rareté -> teinte d'accent du cadre forge (Forge attend des octets 0..255). Rarity.frame = floats 0..1.
+local function rarityAccent(rank)
+  local fr = Rarity.frame(rank or 1)
+  return Forge.accentFrom(fr)
+end
+
 function Build:drawTooltip(id)
   local U, c = Units[id], Theme.c
-  local fontN, fontS, fontL = Theme.ui(12), Theme.ui(11), Theme.ui(11) -- desc en Silkscreen (lisible), pas en italique
-  local w = 300
-  local nameStr, descStr = T("unit." .. id .. ".name"), T("unit." .. id .. ".passive_desc")
-  local _, lines = fontL:getWrap(descStr, w - 28)
-  local h = 62 + math.max(1, #lines) * (fontL:getHeight() + 2) + 12
-  local x, y = self.mx * 4 + 18, self.my * 4 + 10
-  if x + w > Draw.W then x = x - w - 36 end
-  if y + h > Draw.H then y = Draw.H - h - 8 end
+  local rank = U.rank or 1
+  local rich = rank >= 4 -- héros R4-R5 : cadre plus riche + œil qui guette
+  local rarCol = Rarity.frame(rank)
 
-  Draw.rect(x, y, w, h, { c.void[1], c.void[2], c.void[3], 0.96 }, c.hair, 1)
-  local ix, iy = x + 14, y + 12
-  Draw.text(nameStr, ix, iy, c.title, fontN)
-  Draw.text("(" .. T("type." .. U.type) .. ")", ix + fontN:getWidth(nameStr) + 8, iy, Theme.type(U.type).color, fontN)
-  Draw.text(T("ui.unit_stats", { hp = U.hp, dmg = U.dmg, cd = U.cd }), ix, iy + 20, c.muted, fontS)
-  Draw.text(T("unit." .. id .. ".passive_name"), ix, iy + 40, c.goldBright, fontS)
-  Draw.textWrap(descStr, ix, iy + 58, w - 28, c.body, fontL)
+  -- ── 1) MESURE : on calcule la hauteur depuis le contenu (capacités + lignes de prose) -> jamais cramé. ──
+  local fontDesc = Theme.ui(11)
+  local W = 312
+  local PAD = 14
+  local contentW = W - PAD * 2
+  -- Capacités : pour chaque effet, un chip (si affliction) + nom de passif + description enroulée. Une unité
+  -- n'a qu'UN bloc de prose (passive_name/desc) mais peut poser PLUSIEURS afflictions (chips multiples).
+  local affl = Keywords.applied(U)
+  local passiveName = T("unit." .. id .. ".passive_name")
+  local passiveDesc = T("unit." .. id .. ".passive_desc")
+  local _, descLines = fontDesc:getWrap(passiveDesc, contentW)
+  local nDescLines = math.max(1, #descLines)
+  local hasPassiveName = passiveName ~= ("unit." .. id .. ".passive_name")
+  -- Flavor optionnel (clé unit.<id>.flavor si elle existe).
+  local flavorKey = "unit." .. id .. ".flavor"
+  local hasFlavor = I18n.has(flavorKey)
+
+  -- empilage vertical (px design) : header 26 + portrait 86 + identité 20 + tags 22 + div 8 + stats 22 +
+  -- div 8 + (capacités : chips 18 si afflictions + nom 18 si présent + prose) + flavor.
+  local PORTRAIT_H = 78
+  local h = PAD                       -- top pad
+  h = h + 22                          -- header (nom + coût)
+  h = h + 4 + PORTRAIT_H              -- portrait
+  h = h + 8 + 18                      -- identité (pip+type+famille+rareté)
+  h = h + 4 + 18                      -- tags (rôle + afflictions + chimère)
+  h = h + 8                           -- divider
+  h = h + 18                          -- stats
+  h = h + 8                           -- divider
+  if #affl > 0 then h = h + 18 end    -- rangée de chips de capacité (à valeurs)
+  if hasPassiveName then h = h + 16 end
+  h = h + 2 + nDescLines * (fontDesc:getHeight() + 1)
+  if hasFlavor then
+    local _, fLines = Theme.loreRoman(13):getWrap(T(flavorKey), contentW)
+    h = h + 8 + #fLines * (Theme.loreRoman(13):getHeight() + 1)
+  end
+  h = h + PAD                         -- bottom pad
+
+  -- ── 2) POSITION : suit le curseur, rebond sur les bords (jamais hors écran). ──
+  local x, y = self.mx * 4 + 18, self.my * 4 + 10
+  if x + W > Draw.W then x = self.mx * 4 - W - 18 end
+  if x < 4 then x = 4 end
+  if y + h > Draw.H then y = Draw.H - h - 6 end
+  if y < 4 then y = 4 end
+  x, y = math.floor(x), math.floor(y)
+
+  -- ── 3) FOND forge (plaque qui respire + cadre patiné, accent de rareté, œil qui guette si héros). ──
+  Forge.uiCard("build.card." .. id, x, y, W, h,
+    { px = 2, seed = 40 + (#id), accentCol = rarityAccent(rank), rich = rich, t = self.t / 60 })
+
+  -- ── 4) CONTENU posé par-dessus, en colonne Layout (aucune poche vide). ──
+  local box = { x = x, y = y, w = W, h = h }
+  local inner = Layout.inset(box, PAD)
+  local rows = Layout.column(inner, {
+    { size = 22 },        -- 1 header
+    { size = PORTRAIT_H }, -- 2 portrait
+    { size = 18 },        -- 3 identité
+    { size = 18 },        -- 4 tags
+    { size = 8 },         -- 5 divider
+    { size = 18 },        -- 6 stats
+    { size = 8 },         -- 7 divider
+    { flex = 1 },         -- 8 capacités + flavor (le reste)
+  }, { gap = 4, align = "stretch" })
+  local rHead, rPort, rIdent, rTags, rDiv1, rStats, rDiv2, rAbil = rows[1], rows[2], rows[3], rows[4], rows[5], rows[6], rows[7], rows[8]
+
+  -- (a) HEADER : nom (gauche) + coût (diamant forge + valeur, droite).
+  local fontName = Theme.uiBold(14)
+  Draw.text(T("unit." .. id .. ".name"), rHead.x, rHead.y + 2, c.title, fontName)
+  if U.cost then
+    local costStr = tostring(U.cost)
+    local fontCost = Theme.ui(13)
+    Draw.textR(costStr, rHead.x + rHead.w, rHead.y + 3, c.gold, fontCost)
+    Forge.diamondAt(rHead.x + rHead.w - fontCost:getWidth(costStr) - 8, rHead.y + 9, 4, c.goldBright)
+  end
+
+  -- (b) PORTRAIT : on RE-REND le rig de l'unité dans la région, clippé (Draw.scissor). Halo de rareté
+  -- additif derrière pour les héros (cohérent avec le bestiaire). Pieds calés en bas de la région.
+  self:drawCardPortrait(id, rPort, rank, rarCol, rich)
+
+  -- (c) IDENTITÉ : pip de type + type + famille (si présente) + étoiles de rareté (accent de rang).
+  local fontId = Theme.ui(10)
+  local ix = rIdent.x
+  local midI = rIdent.y + rIdent.h / 2
+  Draw.pip(U.type, ix + 5, midI, 5)
+  ix = ix + 14
+  local tcol = Theme.type(U.type).color
+  Draw.text(T("type." .. U.type):upper(), ix, midI - fontId:getHeight() / 2, tcol, fontId)
+  ix = ix + fontId:getWidth(T("type." .. U.type):upper()) + 8
+  if U.family then
+    local famStr = (U.family:gsub("^%l", string.upper))
+    Draw.text(famStr, ix, midI - fontId:getHeight() / 2, c.muted, fontId)
+  end
+  -- étoiles de rareté (rang) à droite : diamants forge teintés de la rareté.
+  local sx = rIdent.x + rIdent.w - rank * 9
+  for k = 1, rank do
+    Forge.diamondAt(sx + (k - 1) * 9 + 3, midI, 3, rarCol)
+  end
+
+  -- (d) TAGS (chips) : rôle (tank/carry/bruiser) + afflictions appliquées + chimère (bodyplan composite).
+  local fontChip = Theme.ui(9)
+  local tagSpecs = { { label = T("kw.role." .. roleOf(U)), color = c.gold, icon = false } }
+  for _, k in ipairs(affl) do tagSpecs[#tagSpecs + 1] = { key = k, icon = true } end
+  if U.bodyplan and U.bodyplan:find("+") then -- bodyplan composé = chimère (ex. "blob+arachnid")
+    tagSpecs[#tagSpecs + 1] = { label = T("kw.chimera"), color = c.rot, icon = false }
+  end
+  Chip.row(rTags.x, rTags.y + 1, tagSpecs, { font = fontChip, gap = 4 })
+
+  -- (e) divider forge entre identité/tags et stats.
+  Draw.divider(rDiv1.x + rDiv1.w / 2, rDiv1.y + rDiv1.h / 2, rDiv1.w - 8, c.gold, 0.7)
+  Forge.diamondAt(rDiv1.x + rDiv1.w / 2, rDiv1.y + rDiv1.h / 2, 2, c.goldBright)
+
+  -- (f) STATS : PV / DMG / CD à glyphes-pip + valeurs (3 colonnes égales).
+  self:drawCardStats(U, rStats)
+
+  -- (g) divider forge.
+  Draw.divider(rDiv2.x + rDiv2.w / 2, rDiv2.y + rDiv2.h / 2, rDiv2.w - 8, c.gold, 0.7)
+  Forge.diamondAt(rDiv2.x + rDiv2.w / 2, rDiv2.y + rDiv2.h / 2, 2, c.goldBright)
+
+  -- (h) CAPACITÉS : chips d'affliction à VALEURS (depuis les params dps/dur) + nom de passif (or) + prose.
+  local ay = rAbil.y
+  if #affl > 0 then
+    -- valeur par affliction : on relit le 1er effet qui pose chaque affliction pour ses params chiffrables.
+    local valBy = {}
+    for _, e in ipairs(U.effects or {}) do
+      local k = Keywords.opAffliction(e.op)
+      if k and not valBy[k] then valBy[k] = afflValue(e.params) end
+    end
+    local cx = rAbil.x
+    for _, k in ipairs(affl) do
+      local w2 = Chip.draw(cx, ay, { key = k, value = valBy[k], font = fontChip, h = 15 })
+      cx = cx + w2 + 4
+      if cx > rAbil.x + rAbil.w - 30 then break end
+    end
+    ay = ay + 18
+  end
+  if hasPassiveName then
+    Draw.text(passiveName, rAbil.x, ay, c.goldBright, Theme.uiBold(11))
+    ay = ay + 16
+  end
+  ay = ay + 2 + Draw.textWrap(passiveDesc, rAbil.x, ay, contentW, c.body, fontDesc)
+
+  -- (i) FLAVOR (si la clé existe) : serif d'ambiance, éteint, en pied de carte.
+  if hasFlavor then
+    Draw.textWrap(T(flavorKey), rAbil.x, ay + 6, contentW, c.dim, Theme.loreRoman(13))
+  end
+end
+
+-- Portrait de la fiche : re-rend le rig de l'unité dans une région, CLIPPÉ (Draw.scissor), halo de
+-- rareté additif derrière pour les héros. Réutilise self.previewRigs[id] (aperçu déjà animé) si présent,
+-- sinon en construit un éphémère. Tout en ESPACE DESIGN (sous Draw.begin de drawOverlay).
+function Build:drawCardPortrait(id, region, rank, rarCol, rich)
+  local rigc = self.previewRigs[id] or self:newRig(id)
+  -- cadre intérieur sombre (logement du portrait) pour détacher la créature de la plaque.
+  Draw.rect(region.x, region.y, region.w, region.h, Theme.c.void, Theme.c.hair, 1)
+  local cx = region.x + region.w / 2
+  local feet = region.y + region.h - 8
+  -- halo de rareté additif (héros) derrière la créature, cohérent avec le bestiaire. setBlendMode peut
+  -- manquer sous le mock LÖVE -> garde-fou (le halo est cosmétique, jamais bloquant).
+  if rich and love.graphics.setBlendMode and love.graphics.circle then
+    local rar = Rarity.get(rank)
+    if rar and rar.glow and rar.glow > 0 then
+      love.graphics.setBlendMode("add")
+      for k = 3, 1, -1 do
+        love.graphics.setColor(rarCol[1], rarCol[2], rarCol[3], rar.glow * 0.10 * k)
+        love.graphics.circle("fill", cx, region.y + region.h * 0.5, 26 * (k / 3))
+      end
+      love.graphics.setBlendMode("alpha"); love.graphics.setColor(1, 1, 1, 1)
+    end
+  end
+  if self.view then Draw.scissor(self.view, region.x, region.y, region.w, region.h) end
+  love.graphics.push()
+  love.graphics.translate(math.floor(cx), math.floor(feet))
+  love.graphics.scale(2, 2)
+  rigc.x, rigc.y, rigc.facing = 0, 0, 1
+  Rig.draw(rigc)
+  love.graphics.pop()
+  if self.view then Draw.noScissor() end
+  love.graphics.setColor(1, 1, 1, 1)
+end
+
+-- Stats de la fiche : 3 colonnes égales [PV] [DMG] [CD], chacune = glyphe-pip coloré + valeur. CD en
+-- secondes (frames/60). Pip dessiné à la main (cœur/lame/sablier conceptuels via Draw.pip-like).
+function Build:drawCardStats(U, region)
+  local c = Theme.c
+  local fontV = Theme.uiBold(13)
+  local fontK = Theme.ui(8)
+  local cols = Layout.row(region, { { flex = 1 }, { flex = 1 }, { flex = 1 } }, { gap = 6, align = "stretch" })
+  local function stat(col, key, value, col2)
+    local midY = col.y + col.h / 2
+    Draw.text(key, col.x, midY - 6, c.faint, fontK)
+    Draw.text(value, col.x + 26, midY - fontV:getHeight() / 2, col2, fontV)
+  end
+  stat(cols[1], "HP",  tostring(U.hp),  c.body)
+  stat(cols[2], "DMG", tostring(U.dmg), c.dmg)
+  stat(cols[3], "CD",  string.format("%.1fs", (U.cd or 60) / 60), c.muted)
 end
 
 -- Rangée de reliques possédées : icônes bakées (le vrai artefact) + cadre, surbrillance au survol.
