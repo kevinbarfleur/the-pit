@@ -173,6 +173,24 @@ local ok, err = pcall(function()
   -- changement de label/disabled -> regenere la config (pas de crash).
   Forge.uiButton("t.cta", 100, 600, 152, 60, "PLACE A UNIT", { tone = "cta", disabled = true })
 
+  -- ── Forge.socket / uiSocket / uiPlate / diamondAt / accentFrom (cases & cartes du build). ──
+  local acc = Forge.accentFrom({ 0.77, 0.63, 0.29 }) -- depuis Theme.c (floats 0..1)
+  assert(acc.dark and acc.mid and acc.bright, "accentFrom : triple {dark,mid,bright}")
+  assert(acc.mid[1] > 1, "accentFrom : converti en octets 0..255")
+  local acc2 = Forge.accentFrom({ 200, 50, 50 }) -- deja en octets -> inchange
+  assert(acc2.mid[1] == 200, "accentFrom : octets passes inchanges")
+  -- uiSocket : cache par id + accent change -> re-bake ; sans accent -> sobre. Headless-safe.
+  Forge.uiSocket("t.sock", 0, 0, 80, 80, { px = 2, accentCol = acc })
+  assert(Forge._sockCache["t.sock"], "uiSocket : cache par id")
+  Forge.uiSocket("t.sock", 0, 0, 80, 80, { px = 2, accentCol = nil }) -- accent retire -> re-bake
+  Forge.uiSocket("t.sock", 0, 0, 80, 80, { px = 2, accentCol = acc, weather = false })
+  -- uiPlate : fond plein cache par id ; etat disabled.
+  Forge.uiPlate("t.plate", 0, 0, 140, 140, { px = 2 })
+  Forge.uiPlate("t.plate", 0, 0, 140, 140, { px = 2, disabled = true })
+  assert(Forge._plateCache["t.plate"], "uiPlate : cache par id")
+  -- diamondAt : draw direct (no-op headless, ne crashe pas).
+  Forge.diamondAt(20, 20, 3, { 0.8, 0.7, 0.3 })
+
   -- ── Frameforge : la scène-showcase construit + update + draw headless sans crash ──
   local hostStub = { name = "menu", menu = {} }
   local scene = Frameforge.new({}, 320, 180, hostStub)

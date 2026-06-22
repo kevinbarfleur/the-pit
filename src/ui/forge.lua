@@ -309,6 +309,7 @@ local function frame(buf, x0, y0, x1, y1, o)
   o = o or {}
   local th = o.t or 3
   local M = o.metal or METAL
+  local AC = o.accentCol or ACC -- liseré : accent LOCAL ({dark,mid,bright}) prioritaire sur l'accent global
   for y = y0, y1 do
     for x = x0, x1 do
       local dT, dB, dL, dR = y - y0, y1 - y, x - x0, x1 - x
@@ -319,7 +320,7 @@ local function frame(buf, x0, y0, x1, y1, o)
         if dm == 0 then
           col = M.outline
         elseif dm == th - 1 then
-          col = o.accent and mix(ACC.dark, ACC.bright, lit and 0.75 or 0.28) or (lit and M.base or M.deep)
+          col = o.accent and mix(AC.dark, AC.bright, lit and 0.75 or 0.28) or (lit and M.base or M.deep)
         else
           col = lit and mix(M.hi, M.base, (dm - 1) / max(1, th - 2))
             or mix(M.deep, M.mid, (dm - 1) / max(1, th - 2))
@@ -1148,6 +1149,28 @@ function Forge.blit(image, x, y, px)
   g.setColor(1, 1, 1, 1)
 end
 
+-- Forge.diamondAt(cx, cy, r, color, edge?) : un DIAMANT forge dessiné DIRECTEMENT (love.graphics, pas un
+-- tampon) — pour les décorations d'overlay (pips de niveau, etc.) en ESPACE DESIGN. color = {r,g,b} 0..1
+-- (Theme.c). Centre clair + bord sombre, petit spec. No-op headless / pcall-gardé.
+function Forge.diamondAt(cx, cy, r, color, edge)
+  local g = love.graphics
+  if not (g and g.rectangle) then return end
+  cx, cy, r = floor(cx), floor(cy), max(1, floor(r))
+  local cr, cg, cb = color[1], color[2], color[3]
+  local er, eg, eb = (edge or color)[1] * 0.45, (edge or color)[2] * 0.45, (edge or color)[3] * 0.45
+  for y = -r, r do
+    local m = r - abs(y)
+    for x = -m, m do
+      local onEdge = (abs(x) + abs(y) >= r)
+      if onEdge then g.setColor(er, eg, eb, 1) else g.setColor(cr, cg, cb, 1) end
+      pcall(g.rectangle, "fill", cx + x, cy + y, 1, 1)
+    end
+  end
+  g.setColor(1, 1, 1, 1) -- spec
+  pcall(g.rectangle, "fill", cx - 1, cy - 1, 1, 1)
+  g.setColor(1, 1, 1, 1)
+end
+
 -- easing d'interaction (port de easeBtn / easeSmall du JS).
 -- ⚠️ PIÈGE LUA vs JS : la scène stocke st.hover / st.active en NOMBRES (0/1). En Lua, 0 est VRAI (seuls
 -- nil/false sont faux) -> `st.hover and 0.55 or 0` donnait 0.55 même au repos => le bouton se croyait
@@ -1277,5 +1300,87 @@ end
 -- Avance l'horloge interne des uiButton (à appeler 1×/frame depuis une scène, en SECONDES). Optionnel si
 -- la scène passe opts.t elle-même. Idempotent / sans danger headless.
 function Forge.uiTick(dtSeconds) Forge._uiClock = Forge._uiClock + (dtSeconds or 0) end
+
+-- ════════════════════════════ SOCKET (case forge, fond transparent) ════════════════════════════
+-- Une « socket » = un CADRE de métal PATINÉ à fond TRANSPARENT (le rig dessiné dessous transparaît). Sert
+-- aux 9 cases du plateau : la signature forge (frame + frameWeather) borde la créature SANS la masquer.
+-- accentCol = triple {dark,mid,bright} du liseré (état : or survol / sang voisin / vert drop / nil sobre).
+-- Forge.accentFrom(rgb255) construit un triple à partir d'une couleur de base (Theme.c en floats 0..1).
+function Forge.accentFrom(rgb)
+  -- rgb peut être en floats 0..1 (Theme.c) ou en octets ; on normalise en OCTETS (le kit travaille en 0..255).
+  local r, g, b = rgb[1], rgb[2], rgb[3]
+  if r <= 1 and g <= 1 and b <= 1 then r, g, b = r * 255, g * 255, b * 255 end
+  local mid = { r, g, b }
+  return {
+    dark   = { r * 0.5, g * 0.5, b * 0.5 },
+    mid    = mid,
+    bright = { r + (255 - r) * 0.45, g + (255 - g) * 0.45, b + (255 - b) * 0.45 },
+  }
+end
+
+-- socket(buf, W, H, opts) : opts = { accentCol?, frameTh=3, seed, weather=true }. Dessine UNIQUEMENT le
+-- cadre patiné (centre laissé transparent). accentCol nil -> liseré métal sobre ; sinon liseré teinté.
+local function socket(buf, W, H, opts)
+  opts = opts or {}
+  local fth = opts.frameTh or 3
+  local x0, y0, x1, y1 = 0, 0, W - 1, H - 1
+  frame(buf, x0, y0, x1, y1, { t = fth, accent = (opts.accentCol ~= nil), accentCol = opts.accentCol })
+  if opts.weather ~= false then frameWeather(buf, x0, y0, x1, y1, fth, opts.seed or 7, METAL, false) end
+  -- 4 rivets aux coins (cohérent avec les boutons).
+  local ri = max(2, fth)
+  rivet(buf, x0 + ri, y0 + ri, METAL); rivet(buf, x1 - ri - 1, y0 + ri, METAL)
+  rivet(buf, x0 + ri, y1 - ri - 1, METAL); rivet(buf, x1 - ri - 1, y1 - ri - 1, METAL)
+end
+Forge.socket = socket
+
+-- uiPlate(id, x, y, w, h, opts) : FOND de plaque forge PLEINE (matière + trame, SANS cadre) — caché par id.
+-- opts = { px?, press?, disabled? }. Sert de FOND de carte de boutique (derrière la créature), pour que la
+-- carte lise comme une dalle dense et remplie (≠ cadre creux). Re-bake seulement si la taille/l'état change.
+Forge._plateCache = {}
+function Forge.uiPlate(id, x, y, w, h, opts)
+  opts = opts or {}
+  local px = opts.px or PX
+  local aw, ah = max(1, floor(w / px)), max(1, floor(h / px))
+  local disabled = opts.disabled and true or false
+  local e = Forge._plateCache[id]
+  if not e or e.aw ~= aw or e.ah ~= ah then
+    e = { widget = Forge.newWidget(aw, ah), aw = aw, ah = ah }
+    Forge._plateCache[id] = e
+  end
+  local cfg = tostring(disabled)
+  if e.cfg ~= cfg or not e.image then
+    e.cfg = cfg
+    e.image = Forge.render(e.widget, function(b, W, H, _) plate(b, 0, 0, W - 1, H - 1, 0, disabled) end, 0)
+  end
+  Forge.blit(e.image, x, y, px)
+  return true
+end
+
+-- uiSocket(id, x, y, w, h, opts) : pont CACHÉ (par id) pour les cases. opts = { accentCol?, px?, seed?,
+-- frameTh?, weather? }. Re-bake seulement si l'accent/la taille change (les cases ne s'animent pas).
+-- Headless-safe. La scène garde son hit-test ; ce pont ne fait que dessiner le SOCLE (fond transparent).
+Forge._sockCache = {}
+function Forge.uiSocket(id, x, y, w, h, opts)
+  opts = opts or {}
+  local px = opts.px or PX
+  local aw, ah = max(1, floor(w / px)), max(1, floor(h / px))
+  local accentCol = opts.accentCol
+  -- clé de couleur d'accent (pour détecter un changement d'état -> re-bake).
+  local ak = accentCol and (floor(accentCol.mid[1]) .. "," .. floor(accentCol.mid[2]) .. "," .. floor(accentCol.mid[3])) or "none"
+  local e = Forge._sockCache[id]
+  if not e or e.aw ~= aw or e.ah ~= ah then
+    e = { widget = Forge.newWidget(aw, ah), aw = aw, ah = ah }
+    Forge._sockCache[id] = e
+  end
+  local cfg = ak .. "|" .. tostring(opts.frameTh) .. "|" .. tostring(opts.weather)
+  if e.cfg ~= cfg or not e.image then
+    e.cfg = cfg
+    e.image = Forge.render(e.widget, function(b, W, H, _)
+      socket(b, W, H, { accentCol = accentCol, frameTh = opts.frameTh or 3, seed = opts.seed, weather = opts.weather })
+    end, 0)
+  end
+  Forge.blit(e.image, x, y, px)
+  return true
+end
 
 return Forge

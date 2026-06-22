@@ -37,6 +37,8 @@ local Draw = require("src.ui.draw")
 local Frame = require("src.ui.frame") -- encadré runique réutilisable (cases / cartes shop / plaque HUD)
 local Forge = require("src.ui.forge") -- KIT « nightmare forge » : bouton-œil CTA + boutons éco + orbe de vie
 local Layout = require("src.ui.layout") -- MOTEUR de layout flex (alignement parfait, fill-to-container)
+local Keywords = require("src.ui.keywords") -- registre afflictions (mini-chips de carte)
+local Chip = require("src.ui.chip") -- pastilles keyword (icône d'affliction)
 local Ambient = require("src.fx.ambient")
 local T = require("src.core.i18n").t
 
@@ -88,6 +90,9 @@ function Build.new(palette, vw, vh, host)
   end
   -- self.button / rerollBtn / declineBtn + les rects du layout (orbe, cartes) sont calculés par
   -- computeShop() via le moteur Layout (déjà appelé ci-dessus) -> alignement parfait, fill-to-container.
+  -- ACCENTS de liseré des SOCKETS de case (construits une fois) : or(survol/grant) / vert(drop) / sang(voisin).
+  local c0 = Theme.c
+  self._cellAccents = { gold = Forge.accentFrom(c0.goldBright), drop = Forge.accentFrom(c0.drop), blood = Forge.accentFrom(c0.blood) }
   self.ambient = Ambient.new(3) -- fond calme (mode "build" : dégradé, pas de particules d'ambiance)
   if self.host.run then self:syncSlots() end
   return self
@@ -619,6 +624,7 @@ end
 -- ── Pre-pass natif (espace design) : atmosphère + arêtes + FONDS (cases / panneau / cartes) ──
 -- Tout ce qui doit passer DERRIÈRE les rigs (dessinés ensuite dans le canvas virtuel). pos[i] virtuel ×4.
 function Build:drawBack(view)
+  self.view = view -- mémorise la vue (drawWorld en a besoin pour clipper l'aperçu dans la carte)
   local ui = self:computeUi()
   local b, run, c = self.board, self.host.run, Theme.c
   Draw.begin(view)
@@ -645,18 +651,21 @@ function Build:drawBack(view)
       b.slots[i].unlocked and c.slot or c.slotLocked)
   end
 
-  -- Panneau boutique + fonds des cartes (derrière les rigs d'aperçu). Carte = PLAQUE PLEINE plus claire que
-  -- le bandeau (c.slot) -> chaque offre lit comme une dalle solide qui remplit sa boîte, pas un cadre creux
-  -- sur un grand vide. Survol = cardHover ; hors-budget = slotLocked (mat) ; vendu = void.
+  -- Panneau boutique + FONDS de carte = PLAQUES FORGE PLEINES (matière patinée, derrière les rigs d'aperçu)
+  -- -> chaque offre lit comme une dalle dense remplie (≠ cadre creux sur un grand vide). Vendu = void mat.
   Draw.rect(0, 556, Draw.W, 164, c.panel)
   Draw.setColor(c.line); love.graphics.setLineWidth(2); love.graphics.line(0, 557, Draw.W, 557); love.graphics.setLineWidth(1)
   if run then
     for i, rect in ipairs(self.shopSlots) do
       local o = run.shop[i]
       if o then
-        local aff = (not o.sold) and run.gold >= o.cost
-        local bg = o.sold and c.void or (aff and ((ui.shopHover == i) and c.cardHover or c.slot) or c.slotLocked)
-        Draw.rect(rect.x * 4, rect.y * 4, rect.w * 4, rect.h * 4, bg)
+        local x, y, w, h = rect.x * 4, rect.y * 4, rect.w * 4, rect.h * 4
+        if o.sold then
+          Draw.rect(x, y, w, h, c.void)
+        else
+          local aff = run.gold >= o.cost
+          Forge.uiPlate("build.card." .. i, x, y, w, h, { px = 2, disabled = not aff })
+        end
       end
     end
   end
@@ -678,15 +687,17 @@ function Build:drawWorld()
       if o and not o.sold then
         local c = self.previewRigs[o.id]
         if c then
-          -- aperçu REMPLISSANT la carte : ×1.0 -> 0.5 virtuel -> blit ×4 = ×2 natif (ENTIER -> NET), 2× plus
-          -- grand que l'ancien ×0.5. Pieds RELEVÉS (~13 virtuel du bas) -> le corps occupe le centre de la
-          -- carte, plus de grand vide en haut ; le bandeau nom/coût reste lisible en dessous.
+          -- aperçu qui REMPLIT la région créature de la carte : ×1.5 -> 0.75 virtuel -> blit ×4 = ×3 natif
+          -- (ENTIER -> NET). CLIPPÉ à la carte (Draw.scissor) -> les créatures hautes (arme/halo) ne
+          -- débordent pas hors de la carte (bord propre). Pieds calés au-dessus du bloc nom/coût.
+          if self.view then Draw.scissor(self.view, rect.x * 4, rect.y * 4, rect.w * 4, rect.h * 4) end
           love.graphics.push()
-          love.graphics.translate(rect.x + rect.w / 2, rect.y + rect.h - 13)
-          love.graphics.scale(1.0, 1.0)
+          love.graphics.translate(rect.x + rect.w / 2, rect.y + rect.h - 12)
+          love.graphics.scale(1.5, 1.5)
           c.x, c.y, c.facing = 0, 0, 1
           Rig.draw(c)
           love.graphics.pop()
+          if self.view then Draw.noScissor() end
         end
       end
     end
@@ -718,69 +729,49 @@ function Build:drawOverlay(view)
     Draw.textC(T("ui.slot_grant"), Draw.W / 2, 134, c.gold, Theme.ui(12))
   end
 
-  -- Cases : SOCLE runique (biseau) selon l'état + décor (verrou / pip de type / pips de niveau / nom).
-  -- fill=false -> le biseau encadre le rig (dessiné dans drawWorld) sans le masquer. Studs dorés = interaction
-  -- (survol/drop), studs SANG = voisin (cue d'adjacence), bronze sobre au repos, arête sombre si scellé.
-  local granting = run and run.pendingSlotGrant -- un slot à poser : les cases verrouillées deviennent des cibles
+  -- Cases = SOCKETS FORGE (métal patiné, fond transparent -> le rig de drawWorld transparaît). L'ÉTAT est
+  -- porté par l'ACCENT du liseré : sobre (vide) / or (survol, cible de grant) / vert (drop) / sang (voisin
+  -- d'adjacence) / sombre (scellé). On GARDE le placement sigil-graphe (self.pos[i], pas de grille). Décor
+  -- par-dessus : pip de type, pips de niveau (diamants forge), nom de l'unité. PX=2 (densité forge).
+  local granting = run and run.pendingSlotGrant
   local S = SLOT_HALF * 2
+  local A = self._cellAccents
   for i = 1, 9 do
     local p, slot = self.pos[i], b.slots[i]
     local x, y = p.x * 4 - SLOT_HALF, p.y * 4 - SLOT_HALF
     if not slot.unlocked then
-      if granting then -- case scellée devenue cible de pose : socle doré invitant
-        Frame.draw(x, y, S, S, { level = "gilded", fill = false, accent = c.goldBright, state = { glow = 0.4 } })
-      else -- scellée : simple arête sombre (pas un socle « vivant »)
-        Draw.rect(x, y, S, S, nil, c.slotEdgeLck, 2)
-      end
+      -- scellée : socket sombre (accent or seulement si c'est une cible de grant).
+      Forge.uiSocket("build.cell." .. i, x, y, S, S,
+        { px = 2, seed = 30 + i, accentCol = granting and A.gold or nil, weather = not granting })
       Draw.textC("+", p.x * 4, p.y * 4 - 12, granting and c.gold or c.lock, Theme.ui(18))
     else
-      if i == ui.dropTarget then
-        Frame.draw(x, y, S, S, { level = "gilded", fill = false, accent = c.drop, state = { glow = 0.4 } })
-      elseif i == ui.hover then
-        Frame.draw(x, y, S, S, { level = "gilded", fill = false, accent = c.goldBright, state = { glow = 0.5 } })
-      elseif ui.nbset[i] then
-        Frame.draw(x, y, S, S, { level = "gilded", fill = false, accent = c.blood })
-      else
-        Frame.draw(x, y, S, S, { level = "bevel", fill = false })
-      end
+      local acc
+      if i == ui.dropTarget then acc = A.drop
+      elseif i == ui.hover then acc = A.gold
+      elseif ui.nbset[i] then acc = A.blood
+      else acc = nil end -- vide/repos : socket sobre
+      Forge.uiSocket("build.cell." .. i, x, y, S, S, { px = 2, seed = 30 + i, accentCol = acc })
       local sr = self.slotRigs[i]
       if sr then
         Draw.pip(Units[sr.id].type, x + 13, y + 13, 5)
+        -- pips de niveau = DIAMANTS forge (dorés) en haut-droite, alignés.
         local lvl = sr.level or 1
         for k = 1, (lvl > 1 and lvl or 0) do
-          Draw.rect(x + S - 12 - (lvl - k) * 11, y + 7, 7, 7, c.goldBright)
+          local px2 = x + S - 12 - (lvl - k) * 11
+          Forge.diamondAt(px2 + 3, y + 10, 3, c.goldBright)
         end
         Draw.textC(T("unit." .. sr.id .. ".name"), p.x * 4, y + S + 3, c.name, Theme.ui(9))
       end
     end
   end
 
-  -- Boutique : cartes (bordure / coût / nom / SOLD) + boutons éco. Cartes calées par le moteur Layout
-  -- (mêmes tailles, gouttières égales, remplissent la largeur). Contenu positionné RELATIVEMENT à la carte
-  -- (pip haut-gauche, nom près du bas, coût bas-droite) -> aucun trou, quelle que soit la hauteur calculée.
+  -- Boutique : chaque carte = PLAQUE FORGE pleine (fond baké en drawBack) + cadre forge patiné + contenu
+  -- mis en page par Layout.column REMPLISSANT la carte (créature / nom / coût+chips d'affliction) -> aucune
+  -- poche vide. drawShopCard fait tout le contenu d'overlay.
   if run then
     for i, rect in ipairs(self.shopSlots) do
       local o = run.shop[i]
-      if o then
-        local x, y, w, h = rect.x * 4, rect.y * 4, rect.w * 4, rect.h * 4
-        local aff = (not o.sold) and run.gold >= o.cost
-        if o.sold then
-          Draw.rect(x, y, w, h, nil, c.line, 2)
-          Draw.textC(T("ui.sold"), x + w / 2, y + h / 2 - 6, c.ghost, Theme.ui(10))
-        else
-          -- Studs DORÉS = achetable (rappel « l'or t'ouvre la carte ») ; bronze sobre si hors-budget.
-          local hot = ui.shopHover == i
-          if aff then
-            Frame.draw(x, y, w, h, { level = "gilded", fill = false,
-              accent = hot and c.goldBright or c.gold, state = hot and { glow = 0.5 } or nil })
-          else
-            Frame.draw(x, y, w, h, { level = "bevel", fill = false })
-          end
-          Draw.pip(Units[o.id].type, x + 11, y + 11, 4)
-          Draw.textC(T("unit." .. o.id .. ".name"), x + w / 2, y + h - 30, c.name, Theme.ui(9))
-          Draw.textR(T("ui.cost", { n = o.cost }), x + w - 8, y + h - 16, aff and c.gold or c.fainter, Theme.ui(11))
-        end
-      end
+      if o then self:drawShopCard(i, rect, o, ui.shopHover == i) end
     end
     self:drawEcoButton("build.reroll", self.rerollBtn, T("ui.reroll_label"), Run.REROLL_COST, run:canReroll())
     -- Bouton REFUSER : visible seulement quand un grant de slot attend (sinon les slots ne s'achètent plus).
@@ -819,6 +810,59 @@ function Build:drawOverlay(view)
   end
 
   Draw.finish()
+end
+
+-- Carte de boutique = PLAQUE FORGE remplie + cadre patiné + contenu en COLONNE qui REMPLIT la carte :
+-- [ région créature (flex, l'aperçu de drawWorld y vit) | nom | rangée coût+chips d'affliction ]. Le bas
+-- ne flotte jamais : le moteur Layout colle nom/coût/chips au pied de la carte, et la région créature
+-- absorbe le reste. États : achetable (or, lit au survol) / hors-budget (sombre) / vendu (SOLD).
+-- rect = rect VIRTUEL de la carte ; o = l'offre {id, cost, sold} ; hot = survolée.
+function Build:drawShopCard(i, rect, o, hot)
+  local c = Theme.c
+  local x, y, w, h = rect.x * 4, rect.y * 4, rect.w * 4, rect.h * 4
+  local box = { x = x, y = y, w = w, h = h }
+
+  if o.sold then
+    Draw.rect(x, y, w, h, nil, c.line, 2)
+    Draw.textC(T("ui.sold"), x + w / 2, y + h / 2 - 6, c.ghost, Theme.ui(10))
+    return
+  end
+  local aff = (self.host.run.gold >= o.cost)
+
+  -- CADRE forge patiné (fond transparent : la plaque bakée de drawBack + la créature transparaissent).
+  -- accent : or si achetable (vif au survol), sombre/sobre si hors-budget.
+  local acc = aff and (hot and self._cellAccents.gold or self._cellAccents.gold) or nil
+  Forge.uiSocket("build.cardframe." .. i, x, y, w, h, { px = 2, seed = 70 + i, accentCol = acc })
+
+  -- COLONNE interne : région créature (flex) au-dessus du bloc d'info (nom + coût/chips), avec un padding.
+  local inner = Layout.inset(box, { l = 8, t = 8, r = 8, b = 8 })
+  local rows = Layout.column(inner, { { flex = 1 }, { size = 16 }, { size = 16 } }, { gap = 3, align = "stretch" })
+  local nameBox, costBox = rows[2], rows[3]
+
+  -- pip de type (haut-gauche de la carte, sur la créature).
+  Draw.pip(Units[o.id].type, x + 12, y + 12, 4)
+
+  -- NOM (centré dans sa rangée).
+  local nameCol = aff and c.name or c.dim
+  Draw.textC(T("unit." .. o.id .. ".name"), nameBox.x + nameBox.w / 2, nameBox.y + 2, nameCol, Theme.ui(9))
+
+  -- RANGÉE BAS : chips d'affliction (gauche) + coût (droite). Les chips = ce que l'unité APPLIQUE.
+  local font = Theme.ui(8)
+  love.graphics.setFont(font)
+  local affl = Keywords.applied(Units[o.id])
+  local cx = costBox.x
+  for _, k in ipairs(affl) do
+    -- mini-chip ICÔNE SEULE (pas de label : la place est rare) -> reconnaissable par sa couleur+forme.
+    local cw = Chip.draw(cx, costBox.y + 1, { key = k, label = "", icon = true, font = font, h = 13 })
+    cx = cx + cw + 3
+    if cx > costBox.x + costBox.w - 22 then break end -- ne déborde pas sous le coût
+  end
+  -- COÛT : diamant forge + valeur, callé à droite de la rangée.
+  local cd = aff and c.gold or c.fainter
+  local costStr = tostring(o.cost) .. "g"
+  Draw.textR(costStr, costBox.x + costBox.w, costBox.y + 3, cd, Theme.ui(11))
+  local cdx = costBox.x + costBox.w - font:getWidth(costStr) - 8
+  Forge.diamondAt(cdx, costBox.y + 8, 3, aff and c.goldBright or c.fainter)
 end
 
 -- Bannière de run (deux tons : label éteint + valeur claire), centrée en haut.
