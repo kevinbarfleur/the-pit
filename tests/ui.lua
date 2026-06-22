@@ -297,6 +297,20 @@ local ok, err = pcall(function()
     b:drawTooltip("plague_doctor") -- regen, R4 (cadre riche + œil + halo)
     b:drawTooltip("marauder")      -- vanille, pas d'affliction, pas de family/rank
     b:drawTooltip("skull_colossus") -- R5 avec family
+
+    -- ── FIT-TO-BOX (anti-débordement des créatures) : rigBounds renvoie une boîte SAINE (repli headless,
+    -- pas de canvas réel sous le mock) ; rigFitScale CONTIENT dans la boîte et RESPECTE maxScale (cap). ──
+    local bnd = b:rigBounds("marauder")
+    assert(bnd and bnd.w > 0 and bnd.h > 0 and bnd.bot, "rigBounds : boite { w, h, top, bot } valide")
+    assert(b:rigBounds("marauder") == bnd, "rigBounds : memoise par id (meme objet)")
+    -- cap par défaut = 1 (cases/cartes : on RÉTRÉCIT seulement, jamais d'agrandissement sauvage).
+    local sCell = b:rigFitScale("marauder", 18, 18, 0.94)
+    assert(sCell > 0 and sCell <= 1, "rigFitScale : borne (0,1] par défaut (case = downscale)")
+    -- la créature TIENT dans la boîte : étendue*scale <= boîte (jamais coupée).
+    assert(bnd.w * sCell <= 18 + 0.01 and bnd.h * sCell <= 18 + 0.01, "rigFitScale : contient (w,h) dans la case")
+    -- maxScale autorise l'AGRANDISSEMENT (portrait de fiche : petit sprite -> remplit le logement).
+    local sBig = b:rigFitScale("plague_doctor", 280, 72, 0.82, 3.5)
+    assert(sBig > 1 and sBig <= 3.5, "rigFitScale : maxScale autorise l'upscale du portrait (cap respecté)")
   end
 
   -- ── CHUNK C : re-skin forge des scènes relicpick / menu / runover (construit+update+draw+souris/clavier
@@ -343,6 +357,22 @@ local ok, err = pcall(function()
     assert(#mn.items >= 5, "menu : entrées construites")
     for _, it in ipairs(mn.items) do assert(it.rect and it.rect.w > 0, "menu : chaque entrée a un rect Layout") end
     assert(mn.items[1].tone == "cta", "menu : ENTER = bouton-œil cta")
+    -- LAYOUT (FIX overflow) : TOUTES les entrées tiennent à l'ÉCRAN (jamais coupées sous le pied @690) et
+    -- restent SOUS le diviseur (444). Les entrées secondaires gardent une gouttière ÉGALE (rythme régulier).
+    for _, it in ipairs(mn.items) do
+      assert(it.rect.y >= 444, "menu : entrée sous le diviseur (pas de chevauchement du titre)")
+      assert(it.rect.y + it.rect.h <= 690, "menu : entrée AU-DESSUS du pied (jamais coupée hors écran)")
+    end
+    local sec = {} -- entrées secondaires (hors CTA), dans l'ordre vertical
+    for _, it in ipairs(mn.items) do if it.tone ~= "cta" then sec[#sec + 1] = it.rect end end
+    table.sort(sec, function(a, b) return a.y < b.y end)
+    if #sec >= 3 then
+      local g1 = sec[2].y - (sec[1].y + sec[1].h)
+      for k = 2, #sec - 1 do
+        local gk = sec[k + 1].y - (sec[k].y + sec[k].h)
+        assert(math.abs(gk - g1) <= 1, "menu : gouttières ÉGALES entre entrées secondaires")
+      end
+    end
     mn:update(1.0)
     mn:drawBack(view); mn:drawWorld(); mn:drawOverlay(view)
     -- survol + clic-relâché sur ENTER -> déclenche newRun.

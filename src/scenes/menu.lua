@@ -29,10 +29,11 @@ local CX = Draw.W / 2
 -- Disposition des entrées (colonne centrée, espace design). Le bouton-œil ENTER est un peu plus haut
 -- (héros) ; les autres entrées plus compactes. La pile est CENTRÉE dans la bande disponible sous le
 -- diviseur (BAND_TOP..BAND_BOTTOM) -> tient quel que soit le nombre d'entrées (dev = +1 « Frame Forge »).
-local CTA_W, CTA_H = 300, 58     -- ENTER THE PIT (bouton-œil)
-local ITEM_W, ITEM_H = 264, 36   -- entrées secondaires (forge éco)
-local ITEMS_GAP = 12
-local BAND_TOP, BAND_BOTTOM = 462, 686 -- bande verticale réservée aux entrées (sous le diviseur, au-dessus du pied)
+local CTA_W, CTA_H = 308, 54      -- ENTER THE PIT (bouton-œil)
+local ITEM_W, ITEM_H = 270, 36    -- entrées secondaires (forge éco)
+local ITEMS_GAP = 13              -- gouttière entre entrées secondaires
+local CTA_GAP = 20                -- gouttière SUPPLÉMENTAIRE sous le CTA héros (le détache du groupe secondaire)
+local BAND_TOP, BAND_BOTTOM = 460, 680 -- bande des entrées : sous le diviseur (444), marge de pied (footer @690)
 
 function Menu.new(palette, vw, vh, host)
   local self = setmetatable({}, Menu)
@@ -79,26 +80,43 @@ function Menu:layout()
   local n = #self.items
   local bandH = BAND_BOTTOM - BAND_TOP
   -- Hauteur d'entrée FITTÉE : on part des tailles de référence, et si la pile déborde la bande (cas DEV
-  -- = 1 entrée de plus), on RABOTE la hauteur des entrées secondaires (et le gap) jusqu'à ce que ça tienne
-  -- -> aligné, centré, jamais coupé, quel que soit le nombre d'entrées.
+  -- = 1 entrée de plus), on RABOTE la hauteur des entrées secondaires (et les gaps) jusqu'à ce que ça
+  -- tienne -> aligné, centré, jamais coupé, gouttières ÉGALES, quel que soit le nombre d'entrées. Le CTA
+  -- garde une gouttière SUPPLÉMENTAIRE (ctaGap) qui le détache visuellement du groupe secondaire.
   local nSec = n - 1 -- entrées secondaires (toutes sauf le CTA)
   local gap = ITEMS_GAP
+  local ctaGap = CTA_GAP
   local itemH = ITEM_H
-  local function pileH() return CTA_H + nSec * itemH + (n - 1) * gap end
-  while pileH() > bandH and (itemH > 26 or gap > 6) do
-    if gap > 6 then gap = gap - 1 end
-    if itemH > 26 and pileH() > bandH then itemH = itemH - 1 end
+  local ctaH = CTA_H
+  -- pile = CTA + ctaGap + nSec entrées séparées par `gap` (donc nSec-1 gaps internes).
+  local function pileH() return ctaH + ctaGap + nSec * itemH + math.max(0, nSec - 1) * gap end
+  -- RABOTE par paliers (ctaGap -> gap -> itemH -> ctaH) tant que ça déborde, avec des planchers lisibles.
+  local guard = 0
+  while pileH() > bandH and guard < 200 do
+    guard = guard + 1
+    if ctaGap > 12 then ctaGap = ctaGap - 1
+    elseif gap > 8 then gap = gap - 1
+    elseif itemH > 26 then itemH = itemH - 1
+    elseif ctaH > 46 then ctaH = ctaH - 1
+    else break end
   end
   local totalH = pileH()
   local y0 = math.floor(BAND_TOP + math.max(0, (bandH - totalH) / 2))
+  -- spacer (ctaGap - gap) inséré entre le CTA et la 1re entrée secondaire -> Layout.column garde un gap
+  -- uniforme mais le CTA respire davantage. align=center -> chaque bouton centré à sa propre largeur.
   local band = { x = math.floor(CX - CTA_W / 2), y = y0, w = CTA_W, h = totalH }
-  local specs = {}
+  local specs, map = {}, {}
   for i, it in ipairs(self.items) do
     local cta = (it.tone == "cta")
-    specs[i] = { size = cta and CTA_H or itemH, w = cta and CTA_W or ITEM_W }
+    specs[#specs + 1] = { size = cta and ctaH or itemH, w = cta and CTA_W or ITEM_W }
+    map[#specs] = i
+    if cta and i == 1 then -- spacer juste après le CTA (largeur 0 -> invisible, mais occupe ctaGap-gap px)
+      specs[#specs + 1] = { size = math.max(0, ctaGap - gap), w = 0 }
+      map[#specs] = nil
+    end
   end
   local rows = Layout.column(band, specs, { gap = gap, align = "center" })
-  for i, it in ipairs(self.items) do it.rect = rows[i] end
+  for ri, it in pairs(map) do self.items[it].rect = rows[ri] end
 end
 
 -- Indice de l'entrée sous (dx,dy) en coords design, ou nil (entrées scellées ignorées).

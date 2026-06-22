@@ -121,6 +121,78 @@ function Build:newRig(id)
   return c
 end
 
+-- ── FIT-TO-BOX (FIX overflow) : on borne l'étendue OPAQUE RÉELLE d'un rig en le rendant UNE FOIS sur un
+-- canvas hors-écran (pose idle) et en scannant les pixels non transparents -> { w, h, top, bot } en unités
+-- VIRTUELLES, relatives à l'origine du rig (l'origine est au SOL ~pieds). Mémoïsé par id (déterministe :
+-- la silhouette idle ne bouge pas). On ne mesure PAS les coins des grilles (64px pleines de transparence)
+-- mais les VRAIS pixels -> le scale qui en découle CONTIENT la créature sans la rapetisser à l'excès. Sert
+-- à caler chaque créature dans son conteneur (case 80px / carte boutique / portrait) -> jamais coupée.
+-- Headless-safe : sans canvas réel, on retourne une boîte de repli (la scène ne crashe pas, no-op visuel).
+Build._rigBounds = {}
+local FIT_PROBE = 96 -- demi-canvas de mesure (origine du rig au centre) : couvre toute créature (max ~27)
+function Build:rigBounds(id)
+  local cached = Build._rigBounds[id]
+  if cached then return cached end
+  -- repli (mock LÖVE / pas de canvas) : boîte conservatrice (≈ plus grande créature observée).
+  local fallback = { w = 28, h = 26, top = -24, bot = 2 }
+  if not (love.graphics and love.graphics.newCanvas and love.graphics.getCanvas) then
+    Build._rigBounds[id] = fallback; return fallback
+  end
+  local okCv, cv = pcall(love.graphics.newCanvas, FIT_PROBE * 2, FIT_PROBE * 2)
+  if not okCv or not cv then Build._rigBounds[id] = fallback; return fallback end
+  pcall(cv.setFilter, cv, "nearest", "nearest")
+  local c = self:newRig(id)
+  c.facing, c.x, c.y = 1, FIT_PROBE, FIT_PROBE -- origine du rig au centre du canvas de mesure
+  Rig.update(c, 0, 0)
+  local ok = pcall(function()
+    local prev = love.graphics.getCanvas()
+    love.graphics.push("all")
+    love.graphics.origin()
+    love.graphics.setCanvas(cv)
+    love.graphics.clear(0, 0, 0, 0)
+    love.graphics.setColor(1, 1, 1, 1)
+    Rig.draw(c)
+    love.graphics.setCanvas(prev)
+    love.graphics.pop()
+  end)
+  if not ok then Build._rigBounds[id] = fallback; return fallback end
+  local okI, idata = pcall(function() return cv:newImageData() end)
+  if not okI or not idata then Build._rigBounds[id] = fallback; return fallback end
+  local minx, miny, maxx, maxy = math.huge, math.huge, -math.huge, -math.huge
+  local W2 = FIT_PROBE * 2
+  for y = 0, W2 - 1 do
+    for x = 0, W2 - 1 do
+      local okp, _, _, _, a = pcall(function() return idata:getPixel(x, y) end)
+      if okp and a and a > 0.2 then
+        if x < minx then minx = x end; if x > maxx then maxx = x end
+        if y < miny then miny = y end; if y > maxy then maxy = y end
+      end
+    end
+  end
+  if minx == math.huge then Build._rigBounds[id] = fallback; return fallback end
+  -- relatif à l'origine (FIT_PROBE,FIT_PROBE). demi-largeur = max(|left|,|right|) -> contient le côté le
+  -- plus large sans couper. bot ~= pieds (sert à caler la créature au sol de son conteneur).
+  local left, right = minx - FIT_PROBE, maxx - FIT_PROBE
+  local top, bot = miny - FIT_PROBE, maxy - FIT_PROBE
+  local halfW = math.max(math.abs(left), math.abs(right))
+  local res = { w = halfW * 2, h = bot - top, top = top, bot = bot }
+  Build._rigBounds[id] = res
+  return res
+end
+
+-- Échelle qui CONTIENT le rig (id) dans une boîte virtuelle (boxW × boxH), avec une marge (0..1). On prend
+-- le min des deux axes -> la créature tient ENTIÈREMENT (jamais coupée). maxScale plafonne l'agrandissement
+-- (défaut 1 : cases/cartes = on RÉTRÉCIT seulement ; le PORTRAIT de fiche passe ~3 pour REMPLIR un grand
+-- logement avec un petit sprite, plus de vide noir).
+function Build:rigFitScale(id, boxW, boxH, margin, maxScale)
+  margin = margin or 0.86
+  maxScale = maxScale or 1
+  local bnd = self:rigBounds(id)
+  local sw = (bnd.w > 0) and (boxW * margin / bnd.w) or 1
+  local sh = (bnd.h > 0) and (boxH * margin / bnd.h) or 1
+  return math.min(maxScale, sw, sh)
+end
+
 -- Centre la forme courante dans la moitié haute du canvas.
 function Build:computeLayout()
   local cells = self.board.shape.cells
@@ -686,10 +758,33 @@ function Build:drawBack(view)
 end
 
 -- ── Rendu monde (canvas virtuel, pixel-perfect) : UNIQUEMENT les rigs (unités/aperçus/drag) ──
+-- Toutes les créatures sont AJUSTÉES À LEUR CONTENEUR (fit-to-box, cf. rigFitScale) -> aucune ne déborde
+-- ni n'est coupée par le bord de sa case / carte. update() pose char.x,char.y ; on les SCALE à l'affichage.
 function Build:drawWorld()
   local b = self.board
+  -- CASE : 80 design = 20 virtuel. Zone utile (hors cadre forge) ~18 virtuel. On vise une boîte ~18×18
+  -- avec marge -> la créature REMPLIT la case sans déborder ni être coupée, pieds calés au sol de la case.
+  local CELL_FIT_W, CELL_FIT_H = 18, 18
   for i, sr in pairs(self.slotRigs) do
-    if b.slots[i].unlocked then Rig.draw(sr.char) end
+    if b.slots[i].unlocked then
+      local c = sr.char
+      -- maxScale 1.5 : on grossit un peu les petites créatures pour qu'elles remplissent la case (sans couper).
+      local s = self:rigFitScale(sr.id, CELL_FIT_W, CELL_FIT_H, 0.94, 1.5)
+      local bnd = self:rigBounds(sr.id)
+      love.graphics.push()
+      -- on scale AUTOUR du SOL de la case : char.y = p.y+9 ; le sol visé est ~le bas de la case (p.y + ~9).
+      -- On pose les pieds (bnd.bot) au sol puis on rétrécit autour de ce point -> créature centrée et footée.
+      local groundX = math.floor(c.x + 0.5)
+      local groundY = math.floor(c.y + 0.5) + 1
+      love.graphics.translate(groundX, groundY)
+      love.graphics.scale(s, s)
+      love.graphics.translate(0, -bnd.bot)
+      local sx, sy = c.x, c.y
+      c.x, c.y = 0, 0
+      Rig.draw(c)
+      c.x, c.y = sx, sy
+      love.graphics.pop()
+    end
   end
   local run = self.host.run
   if run then
@@ -699,13 +794,20 @@ function Build:drawWorld()
       if o and not o.sold then
         local c = self.previewRigs[o.id]
         if c then
-          -- aperçu qui REMPLIT la région créature de la carte : ×1.5 -> 0.75 virtuel -> blit ×4 = ×3 natif
-          -- (ENTIER -> NET). CLIPPÉ à la carte (Draw.scissor) -> les créatures hautes (arme/halo) ne
-          -- débordent pas hors de la carte (bord propre). Pieds calés au-dessus du bloc nom/coût.
+          -- aperçu AJUSTÉ à la région créature de la carte (flex en haut, au-dessus du bloc nom/coût) ->
+          -- la créature tient ENTIÈREMENT dans la carte, jamais coupée. Région ≈ carte moins l'inset (8) et
+          -- les deux rangées d'info (~32 design) en bas. Pieds calés au-dessus du bloc nom/coût.
+          local artH = math.max(20, rect.h - 12) -- hauteur de la région créature (virtuel)
+          local artW = rect.w - 4
+          -- maxScale 1.8 : on grossit les petites créatures pour qu'elles remplissent la carte (sans couper).
+          local s = self:rigFitScale(o.id, artW, artH, 0.9, 1.8)
+          local bnd = self:rigBounds(o.id)
+          local feet = rect.y + rect.h - 14
           if self.view then Draw.scissor(self.view, rect.x * 4, rect.y * 4, rect.w * 4, rect.h * 4) end
           love.graphics.push()
-          love.graphics.translate(rect.x + rect.w / 2, rect.y + rect.h - 12)
-          love.graphics.scale(1.5, 1.5)
+          love.graphics.translate(rect.x + rect.w / 2, feet)
+          love.graphics.scale(s, s)
+          love.graphics.translate(0, -bnd.bot)
           c.x, c.y, c.facing = 0, 0, 1
           Rig.draw(c)
           love.graphics.pop()
@@ -1004,17 +1106,20 @@ function Build:drawTooltip(id)
   local flavorKey = "unit." .. id .. ".flavor"
   local hasFlavor = I18n.has(flavorKey)
 
-  -- empilage vertical (px design) : header 26 + portrait 86 + identité 20 + tags 22 + div 8 + stats 22 +
-  -- div 8 + (capacités : chips 18 si afflictions + nom 18 si présent + prose) + flavor.
-  local PORTRAIT_H = 78
+  -- empilage vertical (px design), RYTHME RÉGULIER (gaps égaux) : header 22 + portrait 72 + identité 18 +
+  -- tags 18 + div 8 + stats 20 + div 8 + (capacités : chips 18 si afflictions + nom 16 si présent + prose)
+  -- + flavor. Le gap de Layout.column (GAPV) sépare chaque rangée -> rythme uniforme « posé par un designer ».
+  local GAPV = 6
+  local PORTRAIT_H = 72
   local h = PAD                       -- top pad
   h = h + 22                          -- header (nom + coût)
-  h = h + 4 + PORTRAIT_H              -- portrait
-  h = h + 8 + 18                      -- identité (pip+type+famille+rareté)
-  h = h + 4 + 18                      -- tags (rôle + afflictions + chimère)
-  h = h + 8                           -- divider
-  h = h + 18                          -- stats
-  h = h + 8                           -- divider
+  h = h + GAPV + PORTRAIT_H           -- portrait
+  h = h + GAPV + 18                   -- identité (pip+type+famille+rareté)
+  h = h + GAPV + 18                   -- tags (rôle + afflictions + chimère)
+  h = h + GAPV + 8                    -- divider
+  h = h + GAPV + 20                   -- stats
+  h = h + GAPV + 8                    -- divider
+  h = h + GAPV                        -- (gap avant le bloc capacités)
   if #affl > 0 then h = h + 18 end    -- rangée de chips de capacité (à valeurs)
   if hasPassiveName then h = h + 16 end
   h = h + 2 + nDescLines * (fontDesc:getHeight() + 1)
@@ -1036,7 +1141,7 @@ function Build:drawTooltip(id)
   Forge.uiCard("build.card." .. id, x, y, W, h,
     { px = 2, seed = 40 + (#id), accentCol = rarityAccent(rank), rich = rich, t = self.t / 60 })
 
-  -- ── 4) CONTENU posé par-dessus, en colonne Layout (aucune poche vide). ──
+  -- ── 4) CONTENU posé par-dessus, en colonne Layout (rythme RÉGULIER : gap = GAPV partout). ──
   local box = { x = x, y = y, w = W, h = h }
   local inner = Layout.inset(box, PAD)
   local rows = Layout.column(inner, {
@@ -1045,43 +1150,48 @@ function Build:drawTooltip(id)
     { size = 18 },        -- 3 identité
     { size = 18 },        -- 4 tags
     { size = 8 },         -- 5 divider
-    { size = 18 },        -- 6 stats
+    { size = 20 },        -- 6 stats
     { size = 8 },         -- 7 divider
     { flex = 1 },         -- 8 capacités + flavor (le reste)
-  }, { gap = 4, align = "stretch" })
+  }, { gap = GAPV, align = "stretch" })
   local rHead, rPort, rIdent, rTags, rDiv1, rStats, rDiv2, rAbil = rows[1], rows[2], rows[3], rows[4], rows[5], rows[6], rows[7], rows[8]
 
-  -- (a) HEADER : nom (gauche) + coût (diamant forge + valeur, droite).
+  -- (a) HEADER : nom (gauche) + coût (diamant forge + valeur, droite). Le coût est la SEULE diamant-valeur
+  -- du header -> aucune ambiguïté avec la rareté (qui vit dans la rangée d'identité, voir (c)).
   local fontName = Theme.uiBold(14)
-  Draw.text(T("unit." .. id .. ".name"), rHead.x, rHead.y + 2, c.title, fontName)
+  Draw.text(T("unit." .. id .. ".name"), rHead.x, rHead.y + 3, c.title, fontName)
   if U.cost then
     local costStr = tostring(U.cost)
     local fontCost = Theme.ui(13)
-    Draw.textR(costStr, rHead.x + rHead.w, rHead.y + 3, c.gold, fontCost)
-    Forge.diamondAt(rHead.x + rHead.w - fontCost:getWidth(costStr) - 8, rHead.y + 9, 4, c.goldBright)
+    Draw.textR(costStr, rHead.x + rHead.w, rHead.y + 4, c.gold, fontCost)
+    Forge.diamondAt(rHead.x + rHead.w - fontCost:getWidth(costStr) - 8, rHead.y + 10, 4, c.goldBright)
   end
 
-  -- (b) PORTRAIT : on RE-REND le rig de l'unité dans la région, clippé (Draw.scissor). Halo de rareté
-  -- additif derrière pour les héros (cohérent avec le bestiaire). Pieds calés en bas de la région.
+  -- (b) PORTRAIT : on RE-REND le rig de l'unité dans la région (AJUSTÉ pour REMPLIR, fit-to-box), clippé.
+  -- Halo de rareté additif derrière pour les héros (cohérent avec le bestiaire). Pieds calés au sol.
   self:drawCardPortrait(id, rPort, rank, rarCol, rich)
 
-  -- (c) IDENTITÉ : pip de type + type + famille (si présente) + étoiles de rareté (accent de rang).
+  -- (c) IDENTITÉ : une seule rangée alignée [ pip · TYPE · Famille ........ ◆◆ rareté ]. La rareté = N
+  -- diamants teintés du rang, callés à DROITE de la rangée (place FIXE et unique -> plus de diamants qui
+  -- flottent en double). Lecture TCG : on voit le type, la famille et le rang d'un coup d'œil.
   local fontId = Theme.ui(10)
   local ix = rIdent.x
-  local midI = rIdent.y + rIdent.h / 2
+  local midI = math.floor(rIdent.y + rIdent.h / 2)
   Draw.pip(U.type, ix + 5, midI, 5)
   ix = ix + 14
   local tcol = Theme.type(U.type).color
-  Draw.text(T("type." .. U.type):upper(), ix, midI - fontId:getHeight() / 2, tcol, fontId)
-  ix = ix + fontId:getWidth(T("type." .. U.type):upper()) + 8
+  local typeStr = T("type." .. U.type):upper()
+  Draw.text(typeStr, ix, midI - fontId:getHeight() / 2, tcol, fontId)
+  ix = ix + fontId:getWidth(typeStr) + 8
   if U.family then
     local famStr = (U.family:gsub("^%l", string.upper))
     Draw.text(famStr, ix, midI - fontId:getHeight() / 2, c.muted, fontId)
   end
-  -- étoiles de rareté (rang) à droite : diamants forge teintés de la rareté.
-  local sx = rIdent.x + rIdent.w - rank * 9
+  -- rareté : N diamants forge teintés du rang, callés à droite (cluster serré, place unique).
+  local DSP = 8
+  local rx0 = rIdent.x + rIdent.w - (rank * DSP) + 1
   for k = 1, rank do
-    Forge.diamondAt(sx + (k - 1) * 9 + 3, midI, 3, rarCol)
+    Forge.diamondAt(rx0 + (k - 1) * DSP, midI, 3, rarCol)
   end
 
   -- (d) TAGS (chips) : rôle (tank/carry/bruiser) + afflictions appliquées + chimère (bodyplan composite).
@@ -1141,7 +1251,12 @@ function Build:drawCardPortrait(id, region, rank, rarCol, rich)
   -- cadre intérieur sombre (logement du portrait) pour détacher la créature de la plaque.
   Draw.rect(region.x, region.y, region.w, region.h, Theme.c.void, Theme.c.hair, 1)
   local cx = region.x + region.w / 2
-  local feet = region.y + region.h - 8
+  -- FIT : la créature REMPLIT la région (plus de petit sprite perdu dans un grand vide noir). On scale pour
+  -- contenir l'étendue OPAQUE réelle (rigBounds) dans la région, pieds calés au sol -> grande et entière.
+  -- maxScale 3.5 : on AGRANDIT un petit sprite jusqu'à remplir le logement (sans jamais le couper).
+  local bnd = self:rigBounds(id)
+  local s = self:rigFitScale(id, region.w, region.h, 0.82, 3.5)
+  local feet = region.y + region.h - 5
   -- halo de rareté additif (héros) derrière la créature, cohérent avec le bestiaire. setBlendMode peut
   -- manquer sous le mock LÖVE -> garde-fou (le halo est cosmétique, jamais bloquant).
   if rich and love.graphics.setBlendMode and love.graphics.circle then
@@ -1150,7 +1265,7 @@ function Build:drawCardPortrait(id, region, rank, rarCol, rich)
       love.graphics.setBlendMode("add")
       for k = 3, 1, -1 do
         love.graphics.setColor(rarCol[1], rarCol[2], rarCol[3], rar.glow * 0.10 * k)
-        love.graphics.circle("fill", cx, region.y + region.h * 0.5, 26 * (k / 3))
+        love.graphics.circle("fill", cx, region.y + region.h * 0.5, region.h * 0.42 * (k / 3))
       end
       love.graphics.setBlendMode("alpha"); love.graphics.setColor(1, 1, 1, 1)
     end
@@ -1158,7 +1273,8 @@ function Build:drawCardPortrait(id, region, rank, rarCol, rich)
   if self.view then Draw.scissor(self.view, region.x, region.y, region.w, region.h) end
   love.graphics.push()
   love.graphics.translate(math.floor(cx), math.floor(feet))
-  love.graphics.scale(2, 2)
+  love.graphics.scale(s, s)
+  love.graphics.translate(0, -bnd.bot)
   rigc.x, rigc.y, rigc.facing = 0, 0, 1
   Rig.draw(rigc)
   love.graphics.pop()
@@ -1168,19 +1284,27 @@ end
 
 -- Stats de la fiche : 3 colonnes égales [PV] [DMG] [CD], chacune = glyphe-pip coloré + valeur. CD en
 -- secondes (frames/60). Pip dessiné à la main (cœur/lame/sablier conceptuels via Draw.pip-like).
+-- STATS : 3 colonnes ÉGALES [HP] [DMG] [CD]. Chaque colonne = label (petit, éteint) CENTRÉ au-dessus de sa
+-- valeur (gras, teinte de la stat) CENTRÉE -> styles UNIFORMES, kerning régulier, plus de « 3 » rouge isolé
+-- ni d'écart variable. Séparateurs verticaux entre colonnes pour le rythme TCG.
 function Build:drawCardStats(U, region)
   local c = Theme.c
   local fontV = Theme.uiBold(13)
   local fontK = Theme.ui(8)
-  local cols = Layout.row(region, { { flex = 1 }, { flex = 1 }, { flex = 1 } }, { gap = 6, align = "stretch" })
-  local function stat(col, key, value, col2)
-    local midY = col.y + col.h / 2
-    Draw.text(key, col.x, midY - 6, c.faint, fontK)
-    Draw.text(value, col.x + 26, midY - fontV:getHeight() / 2, col2, fontV)
+  local cols = Layout.row(region, { { flex = 1 }, { flex = 1 }, { flex = 1 } }, { gap = 4, align = "stretch" })
+  local function stat(col, key, value, vcol)
+    local cx = col.x + col.w / 2
+    Draw.textC(key, cx, col.y, c.faint, fontK)               -- label en haut, centré
+    Draw.textC(value, cx, col.y + 9, vcol, fontV)            -- valeur dessous, centrée
   end
   stat(cols[1], "HP",  tostring(U.hp),  c.body)
   stat(cols[2], "DMG", tostring(U.dmg), c.dmg)
   stat(cols[3], "CD",  string.format("%.1fs", (U.cd or 60) / 60), c.muted)
+  -- séparateurs verticaux entre colonnes (1px, dégradé sobre) -> 3 colonnes lisibles, alignées.
+  for k = 1, 2 do
+    local gx = math.floor((cols[k].x + cols[k].w + cols[k + 1].x) / 2)
+    Draw.rect(gx, region.y + 2, 1, region.h - 4, c.hair)
+  end
 end
 
 -- Rangée de reliques possédées : SOCLES forge patinés (Forge.uiSocket, fond transparent) bordant

@@ -684,10 +684,12 @@ local function drawButton(buf, W, H, press, eyeOpen, glow, seed, label, disabled
     end
   end
   -- Label centré sur la VRAIE hauteur du masque (net, pas une estimation) -> texte qui RESPIRE au centre.
+  -- DISABLED : laiton TERNE mais LISIBLE (#a4895a) + ombre marquée — JAMAIS l'ancien #5a5040 illisible qui
+  -- faisait passer le bouton pour une « boîte vide cassée » (le label de COMBAT au repos d'un début de run).
   local lh = textMask(label, size).h
   text(buf, label, W / 2, slabY + floor((hslab - lh) / 2 + 0.5),
-    disabled and hexRgb("#5a5040") or hexRgb("#f0d68e"),
-    { size = size, glow = disabled and 0 or glow * 0.6, shadow = hexRgb("#1a1206") })
+    disabled and hexRgb("#a4895a") or hexRgb("#f0d68e"),
+    { size = size, glow = disabled and 0 or glow * 0.6, shadow = hexRgb("#0e0a04") })
 end
 Forge.drawButton = drawButton
 
@@ -703,12 +705,12 @@ local function drawEcoBtn(buf, W, H, press, glow, seed, label, cost, disabled, t
   local lh = textMask(label, 8).h
   local cy = slabY + floor((hslab - lh) / 2 + 0.5) -- centré sur la vraie hauteur du masque (respire)
   text(buf, label, (W - (cost ~= nil and 10 or 0)) / 2, cy,
-    disabled and hexRgb("#5a5040") or hexRgb("#e8cd84"),
-    { size = 8, glow = disabled and 0 or glow * 0.5, shadow = hexRgb("#1a1206") })
+    disabled and hexRgb("#a4895a") or hexRgb("#e8cd84"),
+    { size = 8, glow = disabled and 0 or glow * 0.5, shadow = hexRgb("#0e0a04") })
   if cost ~= nil then
     local gx, gy = x1 - 7, slabY + hslab / 2
     diamond(buf, gx, gy, 2, disabled and ACC.dark or ACC.bright, ACC.dark, (not disabled) and { 255, 255, 255 } or nil)
-    text(buf, tostring(cost), gx - 7, gy - 3, disabled and hexRgb("#5a5040") or hexRgb("#e8dcc0"),
+    text(buf, tostring(cost), gx - 7, gy - 3, disabled and hexRgb("#a4895a") or hexRgb("#e8dcc0"),
       { left = true, size = 8 })
   end
 end
