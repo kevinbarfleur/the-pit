@@ -98,9 +98,15 @@ function Rig.new(def, palette)
   }
 
   for name, spec in pairs(def.parts) do
-    local baked = Sprite.bake(spec.grid, palette)
+    local tex, pw, ph
+    if spec.image then -- part PRE-BAKEE (ex. générateur par primitives) : Image fournie directement, pas de grille
+      tex, pw, ph = spec.image, spec.w, spec.h
+    else
+      local baked = Sprite.bake(spec.grid, palette)
+      tex, pw, ph = baked.image, baked.w, baked.h
+    end
     char.parts[name] = {
-      name = name, tex = baked.image, w = baked.w, h = baked.h,
+      name = name, tex = tex, w = pw, h = ph,
       ox = spec.pivot.x, oy = spec.pivot.y,
       x = 0, y = 0, rot = 0, sx = 1, sy = 1,
       children = {}, parent = nil,

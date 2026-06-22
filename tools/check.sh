@@ -71,6 +71,9 @@ luajit tests/props.lua
 echo "== gen (generateur de creatures : determinisme + validation + smoke rendu) =="
 luajit tests/gen.lua
 
+echo "== primgen (bestiaire v7 : 41 familles / 93 archetypes non-vides + determinisme) =="
+luajit tests/primgen.lua
+
 echo "== forge (refonte : assemblage de parts authored, atlas + recolor + couverture) =="
 luajit tests/forge.lua
 

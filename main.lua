@@ -17,6 +17,7 @@ local Menu = require("src.scenes.menu")
 local Relicpick = require("src.scenes.relicpick")
 local GrimoireScene = require("src.scenes.grimoire")
 local Playground = require("src.scenes.playground")
+local ForgeIter = require("src.scenes.forge_iter") -- vue d'iteration dev : isole les creatures en cours de refonte
 local RunState = require("src.run.state")
 local Grimoire = require("src.core.grimoire")
 local Dev = require("src.core.dev") -- MODE DEV (cheat) : toggle full-unlock du codex (menu) ; master switch Dev.ENABLED
@@ -62,6 +63,10 @@ function host.goto(name, payload)
     -- Banc d'essai (Proving Ground) : mémoïsé (indépendant du run ; lit le catalogue de compos).
     host.playground = host.playground or Playground.new(Palette, VW, VH, host)
     host.scene = host.playground
+  elseif name == "forge_iter" then
+    -- Vue d'ITÉRATION (dev) : revue isolée des créatures en cours de refonte. Mémoïsée (rigs bakés une fois).
+    host.forgeIter = host.forgeIter or ForgeIter.new(Palette, VW, VH, host)
+    host.scene = host.forgeIter
   else
     host.scene = host.build
   end
@@ -168,11 +173,16 @@ function love.keypressed(key)
   if key == "escape" then
     -- Depuis le Grimoire ou le Proving Ground (ouverts via le menu) : retour menu ; sinon quitte.
     if host.name == "grimoire" or host.name == "playground" then host.goto("menu"); return end
+    if host.name == "forge_iter" then host.goto("build"); return end -- vue d'itération : retour build
     love.event.quit(); return
   end
   -- [g] bascule build <-> galerie (revue visuelle des entités). Réservé aux scènes de revue.
   if key == "g" and (host.name == "build" or host.name == "gallery" or host.name == "relicons") then
     host.goto(host.name == "gallery" and "build" or "gallery"); return
+  end
+  -- [i] bascule build/galerie <-> vue d'ITÉRATION (dev) : créatures en cours de refonte, isolées et en grand.
+  if key == "i" and (host.name == "build" or host.name == "gallery" or host.name == "forge_iter") then
+    host.goto(host.name == "forge_iter" and "build" or "forge_iter"); return
   end
   -- [r] bascule build/galerie <-> cabinet de reliques (revue visuelle des icônes d'artefacts).
   if key == "r" and (host.name == "build" or host.name == "gallery" or host.name == "relicons") then

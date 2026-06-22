@@ -993,21 +993,93 @@ function CreatureGen.build(opts)
   return def
 end
 
--- Cache module-level (mémoïsation par id) : une def générée une fois, réutilisée (le rig la bake).
--- ROLLOUT REFONTE (2026-06) : `cached` DÉLÈGUE à la Forge (parts authored, src/gen/forge.lua) pour tout
--- body-plan qu'elle supporte — c'est le POINT DE BASCULE UNIQUE du jeu (galerie/build/Grimoire/combat passent
--- tous ici). Le legacy `build` reste pour ce que la Forge ne couvrirait pas (sécurité) + le test `gen` (qui
--- appelle build directement). Les 6 créatures DESSINÉES MAIN sont gérées AVANT cet appel par les scènes
--- (Creatures[id]) -> jamais touchées. require paresseux de la Forge (zéro cycle : forge ne require pas gen).
+-- ─────────────── MAPPING unité -> famille visuelle (GÉNÉRATEUR PAR PRIMITIVES v3, src/gen/primgen.lua) ───────────────
+-- ROLLOUT « ALL IN » (2026-06-22) : `cached` est le POINT DE BASCULE UNIQUE du jeu (galerie/build/Grimoire/
+-- combat passent TOUS ici) -> il délègue au générateur par PRIMITIVES pour TOUTES les unités, les 6
+-- ex-dessinées-main comprises (src/data/creatures.lua est désormais vide -> les scènes tombent toutes sur cet
+-- appel). Le `type` MÉCANIQUE choisit le THÈME visuel (famille v3) ; l'id (FNV-1a) tire l'archétype + la palette
+-- DANS cette famille + le seed de corruption -> chaque unité est UNIQUE et DÉTERMINISTE (snapshot-safe).
+--   Le legacy `build` (masks + Forge) reste INTACT : il n'est plus sur le chemin du jeu mais le test `gen`
+--   l'appelle directement (couverture conservée). require paresseux de Primgen (zéro cycle : primgen n'importe
+--   pas creaturegen). Échelle/halo de rareté préservés via Rarity (rangs hauts plus imposants).
+-- BASCULE v7 (2026-06-22) : le `type` n'est plus 1 famille mais 1 PÔLE (liste de familles, cf. TYPE_TO_FAMILIES
+-- plus bas). `deriveFamily` tire la famille DANS le pôle, biaisée par l'affliction primaire de l'unité
+-- (tendance-pôle : un poison-caster eldritch -> spore/plante/cauchemar, pas golem) -> visuel cohérent + varié +
+-- déterministe (snapshot-safe). Une unité peut forcer `opts.family` (override). Les 41 familles sont ainsi en jeu.
+
+-- HACHAGE MULTIPLICATIF (nombre d'or) : range un hash entier en n seaux de façon UNIFORME, même quand n est
+-- une puissance de 2 (cas où `h % n` s'effondre : les bits faibles de FNV-1a sont mal mélangés -> sinon 13/15
+-- unités tombaient sur le même archetype). Le sel est mis en PRÉFIXE (`"arch."..id`) : la queue variable de la
+-- chaîne mélange mieux FNV que le suffixe. Arithmétique flottante pure (IEEE déterministe) -> snapshot-safe.
+local PHI = 0.6180339887498949
+local function bucket(h, n) return 1 + math.floor(((h * PHI) % 1) * n) end
+
+-- PÔLES : type mécanique -> familles visuelles candidates (les 41 réparties sur 5 pôles).
+local TYPE_TO_FAMILIES = {
+  arcane = { "cauchemar", "oeil", "cristal", "golem", "spore", "plante", "cocon", "chimere" },
+  abyss  = { "demon", "cephalo", "abyssal", "kraken", "gelatine", "hydre", "meduse", "ombre" },
+  bone   = { "mortvivant", "spectre", "crane", "pendu", "wendigo", "larve", "annelide" },
+  flesh  = { "bete", "canide", "bandit", "rongeur", "colosse", "reptile", "echassier", "crustace", "arachnide" },
+  order  = { "templier", "inquisiteur", "seraphin", "griffon", "automate", "insecte", "essaim" },
+}
+-- TENDANCE : familles qui PENCHENT vers chaque affliction (cf. plan §1). On INTERSECTE avec le pôle ;
+-- si l'intersection est vide (affliction hors-thème du pôle), on retombe sur tout le pôle (variété préservée).
+local LEAN = {
+  poison = { cauchemar = 1, spore = 1, plante = 1, cocon = 1, cephalo = 1, kraken = 1, hydre = 1, insecte = 1, essaim = 1, arachnide = 1, reptile = 1, rongeur = 1 },
+  rot    = { mortvivant = 1, larve = 1, annelide = 1, pendu = 1, gelatine = 1, ombre = 1, colosse = 1, wendigo = 1, spore = 1 },
+  shock  = { oeil = 1, cristal = 1, abyssal = 1, meduse = 1, ombre = 1, automate = 1 },
+  bleed  = { bete = 1, canide = 1, echassier = 1, bandit = 1, spectre = 1, wendigo = 1, aile = 1, kraken = 1, griffon = 1 },
+  burn   = { demon = 1, culte = 1, crane = 1, inquisiteur = 1, chimere = 1 },
+  tank   = { golem = 1, templier = 1, seraphin = 1, griffon = 1, crustace = 1, mortvivant = 1 },
+}
+local AFFL_CAT = {
+  poison = "poison", aura_poison_dps = "poison",
+  rot = "rot", aura_rot_growth = "rot", convert_to_rot = "rot", spread_rot = "rot",
+  burn = "burn", aura_burn_dps = "burn", spread_burn_on_death = "burn",
+  bleed = "bleed", aura_grant_bleed = "bleed",
+  shock = "shock",
+  shield_aura = "tank", aura_shield = "tank", shield_caster = "tank", thorns = "tank",
+}
+local function primaryOp(effects)
+  if type(effects) == "table" then
+    for _, e in ipairs(effects) do if e.op then return e.op end end
+  end
+  return nil
+end
+-- (type, affliction, id) -> famille DANS le pôle (tendance respectée si possible), pick par hash d'id.
+local function deriveFamily(typ, effects, id)
+  local pool = TYPE_TO_FAMILIES[typ] or TYPE_TO_FAMILIES.arcane
+  local cat = AFFL_CAT[primaryOp(effects) or ""]
+  local lean = cat and LEAN[cat]
+  local cands = pool
+  if lean then
+    local sub = {}
+    for _, f in ipairs(pool) do if lean[f] then sub[#sub + 1] = f end end
+    if #sub > 0 then cands = sub end
+  end
+  return cands[bucket(hashId("fam." .. id), #cands)]
+end
+
 local CACHE = {}
 function CreatureGen.cached(opts)
-  local Forge = require("src.gen.forge")
-  local bp = opts.bodyplan or (Factions.get(opts.type) or {}).skeleton or "humanoid"
-  if Forge.supports(bp) then return Forge.cached(opts) end
-  local key = opts.id or "anon"
+  local id = opts.id or "anon"
+  local rank = opts.rank or 1
+  local key = id .. "#" .. rank
   local def = CACHE[key]
   if not def then
-    def = CreatureGen.build(opts)
+    local Primgen = require("src.gen.primgen")
+    local fam = opts.family or deriveFamily(opts.type, opts.effects, id)
+    local nArch, nPal = Primgen.familyShape(fam)
+    -- index DANS la famille, dérivés de l'id (un hash distinct par axe) -> variété par unité sans table dédiée.
+    local archIndex = bucket(hashId("arch." .. id), nArch)
+    local palIndex  = bucket(hashId("palette." .. id), nPal)
+    local rar = Rarity.get(rank)
+    def = Primgen.def({
+      id = id, family = fam, archIndex = archIndex, paletteIndex = palIndex,
+      -- AJUSTEMENT-MONDE : sprite primgen 64px -> ~empreinte de l'ancien générateur dans le board/combat 320x180
+      -- (cf. Primgen.WORLD_FIT) -> toutes les scènes (dont arena_draw protégé) fonctionnent sans retouche.
+      seed = hashId(id), rank = rank, scale = Primgen.WORLD_FIT * rar.scale, glow = rar.glow,
+    })
     CACHE[key] = def
   end
   return def
