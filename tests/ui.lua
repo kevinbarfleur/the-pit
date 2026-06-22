@@ -298,6 +298,92 @@ local ok, err = pcall(function()
     b:drawTooltip("marauder")      -- vanille, pas d'affliction, pas de family/rank
     b:drawTooltip("skull_colossus") -- R5 avec family
   end
+
+  -- ── CHUNK C : re-skin forge des scènes relicpick / menu / runover (construit+update+draw+souris/clavier
+  -- headless sans crash ; golden inchangé car RENDER pur). On vérifie aussi le hit-test/layout (logique pure).
+  local view = { ox = 0, oy = 0, scale = 4 }
+  local Palette = require("src.core.palette")
+
+  -- Relicpick : 3 cartes forge (Layout.row, gouttières égales) + BIND bouton-œil. host stub recoit le pick.
+  do
+    local Relicpick = require("src.scenes.relicpick")
+    local picked = nil
+    local host = { finishRelicPick = function(id) picked = id end }
+    local rp = Relicpick.new(Palette, 320, 180, host, { choices = { "bloodstone", "ember_heart", "aegis" } })
+    assert(#rp.cards == 3, "relicpick : 3 cartes")
+    -- gouttières ÉGALES entre cartes (Layout.row) ; pas de carte hors-bande.
+    assert(rp.cards[2].x - (rp.cards[1].x + rp.cards[1].w) == rp.cards[3].x - (rp.cards[2].x + rp.cards[2].w),
+      "relicpick : cartes à gouttières égales")
+    rp:update(1.0)
+    rp:drawBack(view); rp:drawWorld(); rp:drawOverlay(view)
+    -- survol d'une carte (coords virtuelles : centre de la carte 1 ÷4) -> hover ; clic -> sélection.
+    local c1 = rp.cards[1]
+    rp:mousemoved((c1.x + c1.w / 2) / 4, (c1.y + c1.h / 2) / 4)
+    assert(rp.hover == 1, "relicpick : survol carte 1")
+    rp:mousepressed((c1.x + c1.w / 2) / 4, (c1.y + c1.h / 2) / 4, 1)
+    assert(rp.sel == 1, "relicpick : clic sélectionne la carte 1")
+    rp:drawOverlay(view) -- carte sélectionnée = rich (œil) + BIND actif
+    -- BIND : survol + clic -> confirme le pick.
+    local bd = rp.bind
+    rp:mousemoved((bd.x + bd.w / 2) / 4, (bd.y + bd.h / 2) / 4)
+    assert(rp.bindHover, "relicpick : survol BIND")
+    rp:mousepressed((bd.x + bd.w / 2) / 4, (bd.y + bd.h / 2) / 4, 1)
+    rp:mousereleased()
+    assert(picked == "bloodstone", "relicpick : BIND confirme le pick de la carte 1")
+    rp:keypressed("2"); assert(rp.sel == 2, "relicpick : touche 2 sélectionne")
+    rp:keypressed("return") -- confirme via clavier (no crash)
+  end
+
+  -- Menu : entrées = boutons forge (ENTER = cta), Layout.column centrée. host stub recoit les actions.
+  do
+    local Menu = require("src.scenes.menu")
+    local went = nil
+    local host = { newRun = function() went = "run" end, goto = function(n) went = n end }
+    local mn = Menu.new(Palette, 320, 180, host)
+    assert(#mn.items >= 5, "menu : entrées construites")
+    for _, it in ipairs(mn.items) do assert(it.rect and it.rect.w > 0, "menu : chaque entrée a un rect Layout") end
+    assert(mn.items[1].tone == "cta", "menu : ENTER = bouton-œil cta")
+    mn:update(1.0)
+    mn:drawBack(view); mn:drawWorld(); mn:drawOverlay(view)
+    -- survol + clic-relâché sur ENTER -> déclenche newRun.
+    local r1 = mn.items[1].rect
+    mn:mousemoved((r1.x + r1.w / 2) / 4, (r1.y + r1.h / 2) / 4)
+    assert(mn.hover == 1, "menu : survol de ENTER")
+    mn:mousepressed((r1.x + r1.w / 2) / 4, (r1.y + r1.h / 2) / 4, 1)
+    mn:drawOverlay(view) -- pressé (active)
+    mn:mousereleased((r1.x + r1.w / 2) / 4, (r1.y + r1.h / 2) / 4, 1)
+    assert(went == "run", "menu : clic sur ENTER lance la run")
+    mn:keypressed("down"); mn:keypressed("up"); mn:keypressed("return") -- navigation clavier (no crash)
+    -- entrée scellée (rites) : non hoverable.
+    local sealed
+    for i, it in ipairs(mn.items) do if it.id == "rites" then sealed = i end end
+    local rs = mn.items[sealed].rect
+    assert(mn:itemAt(rs.x + 1, rs.y + 1) == nil, "menu : entrée scellée ignorée au hit-test")
+  end
+
+  -- Runover : panneau forge + bannière (win/defeat) + bouton-œil de relance. host stub recoit newRun.
+  do
+    local Runover = require("src.scenes.runover")
+    for _, res in ipairs({ "win", "lose" }) do
+      local restarted = false
+      local host = { newRun = function() restarted = true end }
+      local ro = Runover.new(Palette, 320, 180, host,
+        { result = res, run = { wins = 7, losses = 2, round = 12, level = 5 } })
+      assert(ro.panel and ro.cta, "runover : panneau + bouton construits")
+      ro:update(1.0)
+      ro:drawBack(view); ro:drawWorld(); ro:drawOverlay(view)
+      local cta = ro.cta
+      ro:mousemoved((cta.x + cta.w / 2) / 4, (cta.y + cta.h / 2) / 4)
+      assert(ro.ctaHover, "runover : survol du bouton de relance")
+      ro:drawOverlay(view) -- bouton survolé (œil ouvert)
+      ro:mousepressed((cta.x + cta.w / 2) / 4, (cta.y + cta.h / 2) / 4, 1)
+      ro:mousereleased()
+      assert(restarted, "runover : clic relance la run (" .. res .. ")")
+    end
+    -- relance clavier [r] (no crash).
+    local ro2 = Runover.new(Palette, 320, 180, { newRun = function() end }, { result = "lose" })
+    ro2:keypressed("r")
+  end
 end)
 
 if ok then

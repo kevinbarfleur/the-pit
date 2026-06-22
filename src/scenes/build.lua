@@ -53,8 +53,16 @@ local SLOT_HALF = 40 -- demi-côté d'une case en espace DESIGN (80x80 ; centre 
 -- (bande design x22.. y512 — libre pour tous les sigils : board centré x536+ ou plat) ; survol -> infobulle.
 local RELIC_ICON_SCALE = 2          -- icône 16x16 -> 32x32 design (scale entier -> net)
 local RELIC_ICON_PX = 16 * RELIC_ICON_SCALE
-local RELIC_CELL = 42               -- pas horizontal (icône + gap)
-local RELIC_X0, RELIC_Y = 22, 512   -- ancrage design
+local RELIC_CELL = 44               -- pas horizontal (icône + cadre forge + gap)
+local RELIC_X0, RELIC_Y = 22, 510   -- ancrage design
+local RELIC_FRAME = 4               -- débord du socle forge autour de l'icône (cadre patiné)
+
+-- Famille forge par relique (forme + couleur de la gem d'accent) -> liseré teinté de la fiche/du socle.
+-- Clés ∈ Forge.FAM (flesh/bone/order/abyss/arcane). Aligné sur src/scenes/relicpick.lua.
+local RELIC_TYPE = {
+  bloodstone = "flesh", carapace = "bone", aegis = "order",
+  kings_bowl = "abyss", ember_heart = "arcane", weeping_nail = "flesh", grave_cap = "abyss",
+}
 
 local SPACING = 26
 local BOARD_OY = 90 -- centre du plateau (virtuel) : ×4 = ~360 design, sous l'en-tête, au-dessus de la boutique
@@ -194,9 +202,11 @@ function Build:syncEcoRects(granting)
   self.rerollBtn = self._toV(box)
 end
 
--- Rect (ESPACE DESIGN) de la i-ème relique possédée (rangée au-dessus de la boutique).
+-- Rect (ESPACE DESIGN) de la i-ème relique possédée (rangée au-dessus de la boutique). Inclut le cadre
+-- forge (RELIC_FRAME de débord) -> le SOCLE entier est la cible de survol (hit-test = ce qui est dessiné).
 function Build:relicRowRect(i)
-  return { x = RELIC_X0 + (i - 1) * RELIC_CELL, y = RELIC_Y, w = RELIC_ICON_PX, h = RELIC_ICON_PX }
+  local s = RELIC_ICON_PX + RELIC_FRAME * 2
+  return { x = RELIC_X0 + (i - 1) * RELIC_CELL, y = RELIC_Y, w = s, h = s }
 end
 
 -- Index de la relique survolée (souris en VIRTUEL -> testée ×4 contre les rects design), ou nil.
@@ -1173,7 +1183,8 @@ function Build:drawCardStats(U, region)
   stat(cols[3], "CD",  string.format("%.1fs", (U.cd or 60) / 60), c.muted)
 end
 
--- Rangée de reliques possédées : icônes bakées (le vrai artefact) + cadre, surbrillance au survol.
+-- Rangée de reliques possédées : SOCLES forge patinés (Forge.uiSocket, fond transparent) bordant
+-- l'artefact baké (RelicGen.cached). Liseré teinté de la famille de la relique ; ALLUMÉ (or vif) au survol.
 function Build:drawRelicRow()
   local run, c = self.host.run, Theme.c
   if not run or #run.relics == 0 then return end
@@ -1181,34 +1192,71 @@ function Build:drawRelicRow()
   for i, rel in ipairs(run.relics) do
     local r = self:relicRowRect(i)
     local on = (hov == i)
-    Draw.rect(r.x - 3, r.y - 3, r.w + 6, r.h + 6, c.panelDeep, on and c.gold or c.hair, on and 2 or 1)
+    local fam = RELIC_TYPE[rel.id] or "bone"
+    -- accent : or vif au survol, sinon teinte sobre de la famille (le socle ne s'éteint jamais complètement).
+    local acc = on and Forge.accentFrom(c.goldBright) or Forge.accentFrom(Theme.type(fam).color)
+    Forge.uiSocket("build.relic." .. i, r.x, r.y, r.w, r.h,
+      { px = 2, seed = 90 + i, frameTh = 3, accentCol = acc })
+    -- artefact baké centré DANS le socle (le cadre borde sans masquer).
     local baked = RelicGen.cached(rel.id, self.palette)
     if baked and baked.image then
       love.graphics.setColor(1, 1, 1, 1)
-      love.graphics.draw(baked.image, r.x, r.y, 0, RELIC_ICON_SCALE, RELIC_ICON_SCALE)
+      love.graphics.draw(baked.image, r.x + RELIC_FRAME, r.y + RELIC_FRAME, 0, RELIC_ICON_SCALE, RELIC_ICON_SCALE)
     end
   end
   Draw.reset()
 end
 
--- Infobulle de relique (survol de la rangée) : nom + effet clair (or) + flavor d'ambiance (lore). Style DA.
+-- Infobulle de relique (survol de la rangée) = CARTE forge (même langage que src/scenes/relicpick.lua) :
+-- plaque qui respire (Forge.uiCard) + artefact baké en cœur + gem de famille + nom (or) + effet clair + flavor.
+-- Suit le curseur, rebond sur les bords. PUR-RENDER (golden inchangé).
 function Build:drawRelicTooltip(id)
   local c = Theme.c
-  local fontN, fontE, fontF = Theme.uiBold(13), Theme.ui(11), Theme.loreRoman(13)
-  local w = 320
+  local fam = RELIC_TYPE[id] or "bone"
+  local emblem = Theme.type(fam)
+  local fontE, fontF = Theme.ui(12), Theme.loreRoman(13)
+  local W, PAD = 300, 20
+  local contentW = W - PAD * 2
+
+  -- MESURE : header (gem+nom) + effet enroulé + flavor enroulé -> hauteur exacte (jamais cramé).
   local effStr, flavStr = T("relic." .. id .. ".effect"), T("relic." .. id .. ".flavor")
-  local _, eLines = fontE:getWrap(effStr, w - 28)
-  local _, fLines = fontF:getWrap(flavStr, w - 28)
-  local h = 30 + #eLines * (fontE:getHeight() + 2) + 8 + #fLines * (fontF:getHeight() + 1) + 14
+  local _, eLines = fontE:getWrap(effStr, contentW)
+  local _, fLines = fontF:getWrap(flavStr, contentW)
+  local headH, effH = 26, #eLines * (fontE:getHeight() + 2)
+  local flavH = #fLines * (fontF:getHeight() + 1)
+  local h = PAD + headH + 10 + effH + 10 + flavH + PAD
+
+  -- POSITION : suit le curseur, rebond sur les bords.
   local x, y = self.mx * 4 + 18, self.my * 4 + 10
-  if x + w > Draw.W then x = x - w - 36 end
-  if y + h > Draw.H then y = Draw.H - h - 8 end
-  Draw.rect(x, y, w, h, { c.void[1], c.void[2], c.void[3], 0.96 }, c.gold, 1)
-  local ix, iy = x + 14, y + 12
-  Draw.text(T("relic." .. id .. ".name"), ix, iy, c.title, fontN)
-  iy = iy + 22
-  iy = iy + Draw.textWrap(effStr, ix, iy, w - 28, c.goldBright, fontE) + 6
-  Draw.textWrap(flavStr, ix, iy, w - 28, c.dim, fontF)
+  if x + W > Draw.W then x = self.mx * 4 - W - 18 end
+  if x < 4 then x = 4 end
+  if y + h > Draw.H then y = Draw.H - h - 6 end
+  if y < 4 then y = 4 end
+  x, y = math.floor(x), math.floor(y)
+
+  -- FOND forge (plaque qui respire + cadre patiné, accent de la famille).
+  Forge.uiCard("build.reliccard." .. id, x, y, W, h,
+    { px = 2, seed = 60 + (#id), accentCol = Forge.accentFrom(emblem.color), rich = false, t = self.t / 60 })
+
+  -- CONTENU posé par-dessus, en colonne Layout.
+  local inner = Layout.inset({ x = x, y = y, w = W, h = h }, PAD)
+  local rows = Layout.column(inner, {
+    { size = headH },         -- 1 gem + nom
+    { size = effH + 10 },     -- 2 effet clair (or)
+    { flex = 1 },             -- 3 flavor (pied)
+  }, { gap = 0, align = "stretch" })
+  local rHead, rEff, rFlav = rows[1], rows[2], rows[3]
+
+  -- (1) HEADER : gem de famille (diamant forge) + nom (or).
+  local midH = rHead.y + rHead.h / 2
+  Forge.diamondAt(rHead.x + 5, midH, 4, emblem.color, emblem.dark)
+  Draw.text(T("relic." .. id .. ".name"), rHead.x + 16, rHead.y + 2, c.title, Theme.uiBold(14))
+
+  -- (2) EFFET CLAIR (or vif) : le coeur du modèle lisible.
+  Draw.textWrap(effStr, rEff.x, rEff.y, rEff.w, c.goldBright, fontE)
+
+  -- (3) FLAVOR (serif d'ambiance, éteint).
+  Draw.textWrap(flavStr, rFlav.x, rFlav.y, rFlav.w, c.dim, fontF)
 end
 
 return Build

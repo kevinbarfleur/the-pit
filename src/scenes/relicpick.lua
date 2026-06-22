@@ -3,26 +3,39 @@
 -- UNE relique parmi 3 offertes. L'EFFET est AFFICHÉ clairement (modèle lisible, cf. docs/research/relics-design.md) ;
 -- le choix est confirmé par BIND THE FRAGMENT.
 --
+-- DA « nightmare forge » (kit src/ui/forge.lua) : chaque carte = une PLAQUE forge qui respire (Forge.uiCard :
+-- matière + cadre laiton patiné + veines + œil qui guette sur la sélection « héros »), avec l'ARTEFACT baké
+-- (RelicGen.cached) en cœur de carte, posé PAR-DESSUS via Layout (gem d'accent + nom + effet clair + flavor).
+-- États : repos (sobre) / survol (liseré accent) / SÉLECTIONNÉE (liseré allumé + œil + gem qui pulse = héros).
+-- Le BIND est le bouton-œil SIGNATURE (Forge.uiButton tone='cta', regard piloté par la souris de la scène).
+--
 -- Couche scène (love.graphics) : atmosphère native (drawBack) + cartes en overlay design. daChrome=true.
 -- Le host fournit les choix (ids de reliques, tirés seedé par RunState:rollRelicChoices) et reçoit le
--- pick via host.finishRelicPick(id). Glyphes Unicode non garantis -> EMBLÈME procédural (Draw.pip) par relique.
+-- pick via host.finishRelicPick(id).
 
 local Theme = require("src.ui.theme")
 local Draw = require("src.ui.draw")
+local Layout = require("src.ui.layout")
 local Ambient = require("src.fx.ambient")
+local Forge = require("src.ui.forge")       -- KIT « nightmare forge » : plaque-carte + bouton-œil CTA
 local RelicGen = require("src.gen.relicgen") -- icones bakees des reliques (le vrai artefact)
 local T = require("src.core.i18n").t
 
 local Relicpick = {}
 Relicpick.__index = Relicpick
 
--- Emblème par relique = un type (forme + couleur du pip). Variété visuelle sans glyphe Unicode.
+-- Emblème par relique = une FAMILLE forge (forme + couleur de la gem d'accent). Variété visuelle, sans
+-- glyphe Unicode. Les clés correspondent à Forge.FAM (flesh/bone/order/abyss/arcane).
 local RELIC_TYPE = {
   bloodstone = "flesh", carapace = "bone", aegis = "order",
   kings_bowl = "abyss", ember_heart = "arcane", weeping_nail = "flesh", grave_cap = "abyss",
 }
 
+-- Géométrie (espace design 1280×720). Les cartes sont disposées par Layout.row (gouttières égales,
+-- bande centrée) -> jamais de trou ni de carte mal alignée.
 local CARD_W, CARD_H, GAP, CARD_Y = 300, 372, 36, 206
+local BIND_W, BIND_H, BIND_Y = 320, 60, 622
+local ICON_SCALE = 6 -- artefact 16×16 -> 96×96 (scale entier net), cœur de carte
 
 function Relicpick.new(palette, vw, vh, host, payload)
   payload = payload or {}
@@ -32,20 +45,25 @@ function Relicpick.new(palette, vw, vh, host, payload)
     titleKey = "scene.build", hintKey = "ui.empty",
     choices = payload.choices or {},
     sel = nil, hover = nil,
+    mx = 0, my = 0, -- souris en ESPACE DESIGN (pour le regard du bouton-œil)
     ambient = Ambient.new(33),
   }, Relicpick)
 
-  -- Géométrie des cartes (espace design), centrée selon le nombre de choix.
+  -- Géométrie des cartes (espace design), bande centrée via Layout.row.
   local n = #self.choices
   self.cards = {}
-  local total = n * CARD_W + (n - 1) * GAP
-  local x0 = (Draw.W - total) / 2
-  for i = 1, n do
-    self.cards[i] = { x = x0 + (i - 1) * (CARD_W + GAP), y = CARD_Y, w = CARD_W, h = CARD_H }
+  if n > 0 then
+    local total = n * CARD_W + (n - 1) * GAP
+    local band = { x = math.floor((Draw.W - total) / 2), y = CARD_Y, w = total, h = CARD_H }
+    local specs = {}
+    for i = 1, n do specs[i] = { size = CARD_W } end
+    local cols = Layout.row(band, specs, { gap = GAP, align = "stretch" })
+    for i = 1, n do self.cards[i] = cols[i] end
   end
-  self.icons = {} -- icone bakee par choix (le vrai artefact ; pip procedural en repli si absente)
+  -- Artefacts bakés (le vrai objet maudit) par choix.
+  self.icons = {}
   for i = 1, n do self.icons[i] = RelicGen.cached(self.choices[i], palette) end
-  self.bind = { x = (Draw.W - 300) / 2, y = 628, w = 300, h = 52 } -- bouton BIND (design)
+  self.bind = { x = math.floor((Draw.W - BIND_W) / 2), y = BIND_Y, w = BIND_W, h = BIND_H }
   return self
 end
 
@@ -54,6 +72,7 @@ local function ptIn(px, py, r) return px >= r.x and px <= r.x + r.w and py >= r.
 function Relicpick:update(frameDt)
   self.t = self.t + frameDt
   self.ambient:update(frameDt)
+  Forge.uiTick(frameDt / 60) -- horloge des widgets forge (en SECONDES ; frameDt ~1.0/tick au 1/60)
 end
 
 function Relicpick:drawBack(view)
@@ -64,6 +83,61 @@ end
 
 function Relicpick:drawWorld() end
 
+-- Une carte de relique forge : FOND = plaque qui respire (Forge.uiCard, accent de la famille, œil qui
+-- guette quand sélectionnée = « héros »), puis le contenu posé PAR-DESSUS en colonne Layout.
+function Relicpick:drawCard(i)
+  local card, c = self.cards[i], Theme.c
+  local id = self.choices[i]
+  local sel, hov = (self.sel == i), (self.hover == i)
+  local fam = RELIC_TYPE[id] or "bone"
+  local emblem = Theme.type(fam)
+  -- accent du cadre : allumé (or vif) si sélectionné, tiède au survol, sobre au repos.
+  local accCol = sel and Forge.accentFrom(c.goldBright)
+    or (hov and Forge.accentFrom(c.gold) or nil)
+
+  -- FOND forge : plaque qui respire + cadre patiné. `rich` (œil + cadre épais) sur la SÉLECTION (héros).
+  Forge.uiCard("relicpick.card." .. i, card.x, card.y, card.w, card.h,
+    { px = 2, seed = 60 + (#id), accentCol = accCol, rich = sel, t = self.t / 60 })
+
+  -- CONTENU en colonne Layout (aucune poche vide) : artefact > gem+nom > effet clair > flavor.
+  local inner = Layout.inset(card, 22)
+  local rows = Layout.column(inner, {
+    { size = 110 },  -- 1 artefact baké (cœur lumineux)
+    { size = 16 },   -- 2 gem d'accent (famille)
+    { size = 30 },   -- 3 nom (or)
+    { flex = 1 },    -- 4 effet clair (le reste haut)
+    { size = 46 },   -- 5 flavor (pied)
+  }, { gap = 6, align = "stretch" })
+  local rArt, rGem, rName, rEff, rFlav = rows[1], rows[2], rows[3], rows[4], rows[5]
+
+  -- (1) ARTEFACT : l'icône bakée (le vrai objet), centrée, scale entier net.
+  local baked = self.icons[i]
+  if baked and baked.image then
+    love.graphics.setColor(1, 1, 1, 1)
+    local ix = math.floor(rArt.x + rArt.w / 2 - 8 * ICON_SCALE)
+    local iy = math.floor(rArt.y + rArt.h / 2 - 8 * ICON_SCALE)
+    love.graphics.draw(baked.image, ix, iy, 0, ICON_SCALE, ICON_SCALE)
+  else
+    Draw.pip(fam, rArt.x + rArt.w / 2, rArt.y + rArt.h / 2, 30)
+  end
+
+  -- (2) GEM d'accent (famille) centrée : un diamant forge teinté, qui pulse sur la sélection.
+  Forge.diamondAt(rGem.x + rGem.w / 2, rGem.y + rGem.h / 2, sel and 4 or 3,
+    sel and c.goldBright or emblem.color, emblem.dark)
+
+  -- (3) NOM (or, gothique-fonctionnel) centré.
+  Draw.textC(T("relic." .. id .. ".name"), rName.x + rName.w / 2, rName.y + 2,
+    sel and c.inkBright or c.title, Theme.uiBold(20))
+
+  -- (4) EFFET CLAIR (le coeur du modèle lisible) : enroulé, or vif sur la sélection.
+  Draw.textWrap(T("relic." .. id .. ".effect"), rEff.x, rEff.y, rEff.w,
+    sel and c.goldBright or c.name, Theme.ui(13), "center")
+
+  -- (5) FLAVOR (serif d'ambiance, éteint) en pied de carte.
+  Draw.textWrap(T("relic." .. id .. ".flavor"), rFlav.x, rFlav.y, rFlav.w,
+    c.dim, Theme.loreRoman(15), "center")
+end
+
 function Relicpick:drawOverlay(view)
   local c = Theme.c
   Draw.begin(view)
@@ -72,42 +146,22 @@ function Relicpick:drawOverlay(view)
   Draw.textC(T("relicpick.kicker"), Draw.W / 2, 64, c.faint, Theme.loreRoman(18))
   Draw.textC(T("relicpick.title"), Draw.W / 2, 92, c.title, Theme.display(52))
 
-  -- Cartes.
-  for i, card in ipairs(self.cards) do
-    local id = self.choices[i]
-    local sel, hov = (self.sel == i), (self.hover == i)
-    local emblem = Theme.type(RELIC_TYPE[id] or "bone")
-    local border = sel and c.gold or (hov and c.ecoBorder or c.hair)
-    local fill = sel and c.panel or c.panelDeep
-    Draw.rect(card.x, card.y, card.w, card.h, fill, border, 2)
+  -- Cartes forge.
+  for i = 1, #self.cards do self:drawCard(i) end
 
-    local baked = self.icons[i]
-    if baked and baked.image then -- le vrai artefact baké (16x16), centré, scale entier net
-      local s = 5
-      love.graphics.setColor(1, 1, 1, 1)
-      love.graphics.draw(baked.image, math.floor(card.x + card.w / 2 - 8 * s), math.floor(card.y + 74 - 8 * s), 0, s, s)
-    else
-      Draw.pip(RELIC_TYPE[id] or "bone", card.x + card.w / 2, card.y + 74, 30)
-    end
-    Draw.textC(T("relic." .. id .. ".name"), card.x + card.w / 2, card.y + 124, sel and c.title or c.name, Theme.uiBold(20))
-    Draw.textWrap(T("relic." .. id .. ".flavor"), card.x + 28, card.y + 168, card.w - 56, c.dim, Theme.loreRoman(16), "center")
-    Draw.textWrap(T("relic." .. id .. ".effect"), card.x + 24, card.y + card.h - 72, card.w - 48,
-      sel and c.gold or c.name, Theme.ui(13), "center")
-    -- liseré coloré (rappel d'emblème) en pied de carte
-    Draw.rect(card.x + 24, card.y + card.h - 14, card.w - 48, 2, emblem.color)
-  end
-
-  -- Bouton BIND (CTA gildé ; actif seulement si une carte est choisie).
+  -- BIND : bouton-œil SIGNATURE (tone='cta'), regard piloté par la souris ; actif si une carte est choisie.
   local ok = self.sel ~= nil
-  Draw.button(self.bind.x, self.bind.y, self.bind.w, self.bind.h,
-    ok and T("relicpick.bind") or T("relicpick.choose"), Theme.uiBold(14),
-    { state = Theme.btnState({ tone = "cta", enabled = ok, hover = self.bindHover }) })
+  Forge.uiButton("relicpick.bind", self.bind.x, self.bind.y, self.bind.w, self.bind.h,
+    ok and T("relicpick.bind") or T("relicpick.choose"),
+    { tone = "cta", hover = self.bindHover, active = self.bindDown, disabled = not ok,
+      mouse = { mx = self.mx, my = self.my }, fontSz = 9, eyeR = 7, t = self.t / 60 })
 
   Draw.finish()
 end
 
 function Relicpick:mousemoved(vx, vy)
   local dx, dy = vx * 4, vy * 4
+  self.mx, self.my = dx, dy
   self.hover = nil
   for i, card in ipairs(self.cards) do if ptIn(dx, dy, card) then self.hover = i; break end end
   self.bindHover = self.bind ~= nil and ptIn(dx, dy, self.bind) or false
@@ -116,11 +170,14 @@ end
 function Relicpick:mousepressed(vx, vy, button)
   if button ~= 1 then return end
   local dx, dy = vx * 4, vy * 4
+  self.mx, self.my = dx, dy
   for i, card in ipairs(self.cards) do
     if ptIn(dx, dy, card) then self.sel = i; return end
   end
-  if self.sel and ptIn(dx, dy, self.bind) then self:confirm() end
+  if self.sel and ptIn(dx, dy, self.bind) then self.bindDown = true; self:confirm() end
 end
+
+function Relicpick:mousereleased() self.bindDown = false end
 
 function Relicpick:keypressed(key)
   if key == "1" or key == "2" or key == "3" then

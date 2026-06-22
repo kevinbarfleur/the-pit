@@ -142,6 +142,9 @@ return {
   -- ── Frame Forge (écran-showcase dev de la pierre gravée) ──
   ["menu.frameforge"] = "FRAME FORGE",
 
+  -- ── Run-over (CTA forge de relance) : libellé court du bouton-œil « descendre à nouveau » ──
+  ["runover.descend"] = "DESCEND AGAIN",
+
   -- ── Barre du bas du BUILD (kit forge) : labels SANS le coût (le coût va dans le diamant du bouton éco) ──
   ["ui.reroll_label"] = "REROLL",
   ["ui.refuse_label"] = "REFUSE",
