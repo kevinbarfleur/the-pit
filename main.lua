@@ -256,15 +256,17 @@ function love.draw()
   -- 5. Overlay MODAL (La Chronique) par-dessus tout, si ouvert.
   if host.overlay then host.overlay:draw(view) end
 
-  -- 6. SURCOUCHE CAUCHEMARDESQUE : décroche le canvas et le blit 1:1 à travers le shader. La `tension` (0..1)
-  -- ferme la vignette quand le run tourne mal (vies perdues) -> l'écran « se ferme ». 100% RENDER (firewall SIM).
+  -- 6. SURCOUCHE CAUCHEMARDESQUE : rend le MASQUE des bandes-bordures (sous le MÊME `view` que l'UI), décroche
+  -- le canvas et le blit 1:1 à travers le shader -> la distorsion d'UV est CONFINÉE aux bordures des box (le
+  -- fond/monde/centre des box restent nets). La `tension` (0..1) ferme la vignette quand le run tourne mal (vies
+  -- perdues) -> l'écran « se ferme ». 100% RENDER (firewall SIM). `view` est requis pour aligner l'anneau.
   if fxOn then
     local tension = 0
     local run = host.run
     if run and run.lives and RunState.START_LIVES then
       tension = math.max(0, math.min(1, 1 - run.lives / RunState.START_LIVES))
     end
-    postfx:endFrame(tension)
+    postfx:endFrame(view, tension)
   end
 end
 

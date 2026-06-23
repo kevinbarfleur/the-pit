@@ -36,17 +36,36 @@ local Theme = require("src.ui.theme")
 local PostFX = {}
 PostFX.__index = PostFX
 
+-- ★ INSTANCE ACTIVE (hook module-niveau) : les composants d'UI (Panel/Button) n'ont PAS de référence à
+-- l'objet PostFX (créé dans main.lua). Ils appellent `PostFX.markBox(...)` (fonction du MODULE) qui forwarde
+-- à l'instance courante enregistrée par new(). Découplé (pas de cycle de require) ET inerte sans instance/GPU
+-- (markBox module = no-op si aucune instance, ou si l'instance est headless/désactivée). Une seule instance
+-- vit à la fois (main.lua) -> un simple champ suffit (pas de pile).
+local active = nil
+
+-- Fonction MODULE appelée par les composants d'UI avec leur rect en ESPACE DESIGN. Forwarde à l'instance
+-- active (no-op si aucune / headless / désactivée). C'est le point d'entrée léger demandé.
+function PostFX.markBox(x, y, w, h)
+  if active then active:_markBox(x, y, w, h) end
+end
+
 -- ╔═══════════════════════════════════════════════════════════════════════════════════════════════╗
 -- ║ LEVIERS DE DISTORSION ONIRIQUE — dose ici en UNE ligne (le user préfère trop fort puis réduire). ║
--- ║ L'intensité globale est `PostFX.distort` (≈0..1.5, voir new()). Ces constantes en règlent le grain.║
+-- ║ L'intensité globale est `PostFX.distort` (≈0..1, voir new()). Ces constantes en règlent le grain.  ║
+-- ║                                                                                                   ║
+-- ║ ★ DÉSORMAIS CONFINÉE AUX BORDURES DES BOX D'UI (panels/boutons/cartes) via un MASQUE de bandes.    ║
+-- ║   Le FOND, le MONDE et le CENTRE des box (où vit le texte) restent NETS (offset d'UV = 0 hors      ║
+-- ║   masque). Seul l'ANNEAU autour du périmètre de chaque box ondule + dérive vers le violet/abysse.  ║
 -- ╚═══════════════════════════════════════════════════════════════════════════════════════════════╝
 local DISTORT = {
-  AMP_PX    = 7.0,   -- amplitude MAX du décalage d'UV, en PIXELS écran (à la périphérie ; ×distort). FRANCO.
+  AMP_PX    = 3.5,   -- amplitude MAX du décalage d'UV, en PIXELS écran (dans les bordures ; ×distort). RÉDUITE.
   SPEED     = 0.85,  -- vitesse d'écoulement des ondes (rad/s) : lent = onirique, organique
   SCALE     = 5.5,   -- échelle SPATIALE des ondes (≈ nb de lobes en travers de l'écran) : bas = larges houles
-  MASK_IN   = 0.34,  -- rayon (0=centre,1=coin) où la distorsion COMMENCE à monter (centre net = lisible)
-  MASK_OUT  = 0.95,  -- rayon où la distorsion atteint son MAX (bords). [IN..OUT] = la rampe du masque radial
   CHROMA    = 0.45,  -- force de la dérive chromatique violet/abysse sur la zone déformée (0 = aucune)
+  -- ── MASQUE DE BANDES-BORDURES (remplace l'ancien masque RADIAL) ──────────────────────────────────
+  -- La distorsion ne s'applique QUE dans une bande autour du périmètre de chaque box enregistrée.
+  RING_PX   = 11.0,  -- largeur de l'anneau (bande-bordure) en px ÉCRAN. ~8-14 : on doit SENTIR le bord onduler.
+  RING_FEATHER = 4.0,-- fondu doux (px écran) vers l'intérieur ET l'extérieur de l'anneau (pas de coupe nette)
 }
 
 -- ── Teintes de palette-lock (palette Wraeclast, depuis Theme.c -> floats 0..1) ─────────────────────
@@ -71,13 +90,19 @@ extern vec3 hiliteTint;    // pôle chaud du palette-lock (braise)
 extern vec3 rotTint;       // pôle de la dérive chromatique onirique (violet pourriture)
 
 // ── DISTORSION ONIRIQUE (displacement) : leviers passés depuis Lua (DISTORT.*) ──────────────────────
-extern number dAmp;        // amplitude du décalage d'UV en PIXELS écran (×dStrength) à la périphérie
+extern number dAmp;        // amplitude du décalage d'UV en PIXELS écran (×dStrength) dans les bordures
 extern number dSpeed;      // vitesse d'écoulement des ondes (rad/s)
 extern number dScale;      // échelle spatiale des ondes (nb de lobes en travers de l'écran)
-extern number dMaskIn;     // rayon où la distorsion commence (centre épargné -> texte lisible)
-extern number dMaskOut;    // rayon où la distorsion atteint son max (bords)
 extern number dChroma;     // force de la dérive chromatique violet/abysse sur la zone déformée
 extern number dStrength;   // maître d'intensité de la SEULE distorsion (PostFX.distort)
+
+// ★ MASQUE DE BANDES-BORDURES : canvas natif blanc UNIQUEMENT dans l'anneau autour du périmètre de
+// chaque box d'UI (panels/boutons/cartes), noir partout ailleurs (fond/monde/intérieur des box). La
+// valeur [0..1] MULTIPLIE l'amplitude du displacement -> distorsion CONFINÉE aux bordures ; hors masque
+// (= la quasi-totalité de l'écran, dont le texte au centre des box) l'offset d'UV est NUL -> pixels NETS.
+extern Image mask;         // R = appartenance à la bande-bordure (rendu sous le MÊME transform que l'UI)
+extern number maskOn;      // 1 = masque valide (distorsion confinée aux bordures) ; 0 = fallback NET (aucune
+                           //     distorsion nulle part — si le canvas masque n'a pas pu être créé). Sûr par défaut.
 
 // Hash 2D bon marché et stable (Wraeclast n'a pas besoin de bruit cher) -> grain/dither.
 number hash21(vec2 p) {
@@ -121,14 +146,15 @@ vec4 effect(vec4 color, Image tex, vec2 tc, vec2 sc) {
   // Offset Y : porté par X (les lignes ondulent horizontalement -> bords haut/bas) ; idem, déphasé.
   number oy = sin(sx * 0.91 - tt * 0.83) + 0.5 * sin(sx * 0.47 + tt * 1.17 + sy * 0.19);
 
-  // MASQUE RADIAL (vignette inversée) : ≈0 au CENTRE (là où on lit -> NET), monte vers la PÉRIPHÉRIE.
-  // smoothstep(in,out) -> rampe douce ; le texte central reste piqué, les bords « voient flou et tanguent ».
-  number mask = smoothstep(dMaskIn, dMaskOut, r);
-  // Amplitude finale en UV : pixels -> UV (÷screen), modulée par le masque, l'intensité distorsion et la
-  // tension (l'écran tangue plus quand ça tourne mal). `strength` global la borne aussi (cohérence surcouche).
-  number ampUV = dAmp * mask * dStrength * (0.85 + 0.6 * tension) * strength;
+  // ★ MASQUE DE BANDES-BORDURES : on échantillonne le canvas masque à l'UV NON DÉCALÉE (`tc`) — il répond
+  // « ce pixel de sortie est-il dans l'anneau d'une box d'UI ? ». 0 = fond/monde/intérieur des box (NET) ;
+  // 1 = pleine bande-bordure (ondule). Remplace l'ancien masque RADIAL (qui distordait toute la périphérie).
+  number bmask = Texel(mask, tc).r * maskOn;
+  // Amplitude finale en UV : pixels -> UV (÷screen), modulée par le MASQUE de bordure, l'intensité distorsion
+  // et la tension (les bords tanguent plus quand ça tourne mal). `strength` global la borne aussi.
+  number ampUV = dAmp * bmask * dStrength * (0.85 + 0.6 * tension) * strength;
   vec2 disp = vec2(ox / max(screen.x, 1.0), oy / max(screen.y, 1.0)) * ampUV;
-  vec2 dtc = tc + disp;   // UV DÉCALÉE : tout l'échantillonnage qui suit lit les VRAIS pixels déformés
+  vec2 dtc = tc + disp;   // UV DÉCALÉE : l'échantillonnage qui suit lit les VRAIS pixels déformés (bordures only)
 
   // ── Aberration chromatique RADIALE : décale R/B le long du rayon, AMPLITUDE ∝ r² (centre intact). ──
   // r² -> quasi nul au centre (texte net) et marqué aux bords. Bornée ≈1px (à la résolution native).
@@ -142,10 +168,10 @@ vec4 effect(vec4 color, Image tex, vec2 tc, vec2 sc) {
   vec3 col = src;
 
   // ── DÉRIVE CHROMATIQUE violet/abysse sur la ZONE DÉFORMÉE : les pixels qui ondulent tirent vers le violet
-  // pourriture (rotTint) -> couleur « bizarre, malsaine ». Force ∝ amplitude locale du displacement (donc
-  // périphérie only) ; faible, EN MIX -> teinte sans LAVER l'image (le centre net garde ses vraies couleurs).
+  // pourriture (rotTint) -> couleur « bizarre, malsaine ». Force ∝ amplitude locale du displacement -> nulle
+  // hors des bandes-bordures (disp=0 quand bmask=0). EN MIX -> teinte sans LAVER (le reste garde ses couleurs).
   number warp = clamp(length(disp) * max(screen.x, screen.y), 0.0, 1.0); // px de déplacement local [0..1+]
-  col = mix(col, mix(col, rotTint, 0.5), warp * dChroma * mask);
+  col = mix(col, mix(col, rotTint, 0.5), warp * dChroma * bmask);
 
   // ── Palette-lock DOUX : tire ombres -> abysse, lumières -> braise (le « même artiste »). ──────────
   // Mélange par luminance, faible (×strength) -> teinte sans laver les couleurs ni écraser le contraste.
@@ -192,7 +218,9 @@ local function graphicsReady()
   return g and g.newShader and g.newCanvas and g.setCanvas and g.setShader and g.getDimensions and true or false
 end
 
--- Crée le canvas natif à la taille (w,h). pcall-gardé : un échec laisse self.canvas=nil -> bypass.
+-- Crée les canvas natifs à la taille (w,h) : le canvas de CAPTURE (toute la frame) ET le canvas MASQUE (bandes-
+-- bordures). pcall-gardé : un échec laisse self.canvas=nil -> bypass. Le masque est créé au mieux : s'il échoue,
+-- self.mask=nil -> la passe masque se by-passe et le shader reçoit un masque PLEIN (1.0) en fallback (cf. endFrame).
 function PostFX:_ensureCanvas(w, h)
   if not self.available then return end
   if self.canvas and self.cw == w and self.ch == h then return end
@@ -202,6 +230,17 @@ function PostFX:_ensureCanvas(w, h)
     self.canvas, self.cw, self.ch = cv, w, h
   else
     self.canvas = nil -- échec -> on bypass cette frame (et les suivantes tant que la taille ne change pas)
+    self.mask = nil
+    return
+  end
+  -- Canvas MASQUE (même taille native). 'linear' EN ÉCHANTILLONNAGE -> le shader lit un masque légèrement lissé
+  -- (bords d'anneau plus doux) ; le contenu reste binaire/ramp, pas du texte -> aucun impact sur la netteté.
+  local okm, mk = pcall(love.graphics.newCanvas, w, h)
+  if okm and mk then
+    pcall(mk.setFilter, mk, "linear", "linear")
+    self.mask = mk
+  else
+    self.mask = nil -- pas de masque -> fallback masque plein (1.0) côté shader (distorsion non confinée, mais pas de crash)
   end
 end
 
@@ -210,11 +249,15 @@ function PostFX.new()
     enabled = true,     -- défaut ON, mais SUBTIL (strength modeste) — la lisibilité prime
     available = false,  -- passe à true si le shader compile (sinon NO-OP partout)
     strength = 0.85,    -- maître d'intensité (subtilité par défaut ; <1 garde l'UI lisible)
-    distort = 1.0,      -- ★ maître d'intensité de la DISTORSION onirique (displacement). FRANCO (visible) ;
-                        --   dose-le ici en une ligne (0 = off, 1 = nominal, >1 = plus fort). Inclus au [F9].
+    distort = 0.7,      -- ★ maître d'intensité de la DISTORSION onirique (displacement), CONFINÉE aux bordures.
+                        --   RÉDUIT (on doit la SENTIR sur les bords sans que ça gondole). Dose en 1 ligne
+                        --   (0 = off, 1 = AMP_PX nominal). Inclus au [F9].
     t = 0,              -- horloge murale accumulée (s)
     active = false,     -- vrai entre beginFrame() et endFrame() (canvas engagé cette frame)
     cw = 0, ch = 0,
+    boxes = {},         -- ★ COLLECTEUR DE RECTS : box d'UI {x,y,w,h} (espace DESIGN) enregistrées cette frame
+    nboxes = 0,         -- nb d'entrées valides dans `boxes` (on RÉUTILISE la table -> zéro churn GC/frame)
+    mask = nil,         -- canvas natif du MASQUE de bandes-bordures (créé une fois, redessiné/frame)
   }, PostFX)
 
   if graphicsReady() then
@@ -229,13 +272,96 @@ function PostFX.new()
       pcall(sh.send, sh, "dAmp",     DISTORT.AMP_PX)
       pcall(sh.send, sh, "dSpeed",   DISTORT.SPEED)
       pcall(sh.send, sh, "dScale",   DISTORT.SCALE)
-      pcall(sh.send, sh, "dMaskIn",  DISTORT.MASK_IN)
-      pcall(sh.send, sh, "dMaskOut", DISTORT.MASK_OUT)
       pcall(sh.send, sh, "dChroma",  DISTORT.CHROMA)
     end
     -- Si newShader échoue (driver/GLSL), self.available reste false -> le jeu rend sans surcouche (pas de crash).
   end
+  active = self -- enregistre l'instance courante -> PostFX.markBox (module) la trouve. main n'en crée qu'une.
   return self
+end
+
+-- ★ COLLECTEUR DE RECTS (méthode d'INSTANCE) — appelée via le forwarder MODULE `PostFX.markBox` (en tête de
+-- fichier) par les composants d'UI (Panel.draw, Button.*) avec LEUR rect en ESPACE DESIGN (celui qu'ils
+-- dessinent). Simple push dans une table réutilisée -> INERTE sans GPU (aucune ressource graphique touchée
+-- ici). La liste est VIDÉE en début de frame (beginFrame) ; elle est CONSOMMÉE par la passe masque (endFrame,
+-- sous le MÊME transform que l'UI) pour que l'anneau de distorsion coïncide pixel-pour-pixel avec la VRAIE
+-- bordure de chaque box. Garde-fous : no-op si la surcouche est inactive (rien à masquer) et w/h positifs.
+-- (Nom `_markBox` distinct du forwarder module `PostFX.markBox` : sinon l'un écraserait l'autre sur la table.)
+function PostFX:_markBox(x, y, w, h)
+  if not (self.available and self.enabled) then return end
+  if not (w and h) or w <= 0 or h <= 0 then return end
+  local n = self.nboxes + 1
+  local b = self.boxes[n]
+  if b then b[1], b[2], b[3], b[4] = x, y, w, h
+  else self.boxes[n] = { x, y, w, h } end
+  self.nboxes = n
+end
+
+-- Largeur de l'anneau exposée au reste du module (px écran ; lue par la passe masque).
+PostFX.RING_PX = DISTORT.RING_PX
+PostFX.RING_FEATHER = DISTORT.RING_FEATHER
+
+-- Rend le CANVAS MASQUE (résolution native) : pour chaque box enregistrée, un ANNEAU blanc autour du PÉRIMÈTRE
+-- (~RING_PX de large, à fondu doux RING_FEATHER vers l'intérieur ET l'extérieur), noir partout ailleurs. CRITIQUE :
+-- on applique le MÊME transform que l'UI (translate ox/oy + scale view.scale/4, cf. Draw.begin) -> l'anneau colle
+-- aux vrais pixels de bordure. Le CENTRE des box (texte) reste hors anneau -> non distordu -> NET.
+--   L'anneau = DIFFÉRENCE de deux rectangles pleins : on remplit la bande [extérieur..intérieur] en 4 quads
+--   (haut/bas/gauche/droite). Le fondu (alpha en rampe) est approximé par 2-3 passes concentriques d'alpha
+--   décroissant (cheap, pixel-art-friendly) — pas besoin d'un vrai gradient par-pixel pour une bande de ~11px.
+-- HEADLESS-SAFE : tout est pcall-gardé et ne s'exécute QUE si le canvas masque a pu être créé (sinon bypass).
+function PostFX:_drawMask(view)
+  if not self.mask then return false end
+  local ringW = DISTORT.RING_PX
+  local feather = DISTORT.RING_FEATHER
+  local ox = (view and view.ox) or 0
+  local oy = (view and view.oy) or 0
+  local s = ((view and view.scale) or 4) / 4
+  -- L'épaisseur de l'anneau et le fondu sont définis en px ÉCRAN ; sous le scale `s` du transform, on dessine
+  -- en unités DESIGN -> on convertit (÷s) pour que la bande mesure bien ~RING_PX à l'écran quel que soit le zoom.
+  local rwD = (s > 0) and (ringW / s) or ringW
+  local ftD = (s > 0) and (feather / s) or feather
+  local ok = pcall(function()
+    love.graphics.setCanvas(self.mask)
+    love.graphics.clear(0, 0, 0, 1) -- masque NOIR = aucune distorsion par défaut (fond/monde/intérieur)
+    love.graphics.push()
+    love.graphics.translate(ox, oy)
+    love.graphics.scale(s, s)
+    love.graphics.setColor(1, 1, 1, 1)
+    -- 3 passes concentriques : cœur de l'anneau (plein) + 2 fondus (intérieur/extérieur, alpha décroissant).
+    -- Chaque passe dessine un anneau via 4 quads (haut/bas/gauche/droite) entre un rect EXTÉRIEUR et un INTÉRIEUR.
+    local PASSES = { { off = 0,        w = rwD,           a = 1.0 },   -- cœur plein de la bande
+                     { off = -ftD,     w = ftD,           a = 0.5 },   -- fondu vers l'EXTÉRIEUR de la box
+                     { off = rwD,      w = ftD,           a = 0.5 } }  -- fondu vers l'INTÉRIEUR de la box
+    for i = 1, self.nboxes do
+      local b = self.boxes[i]
+      local bx, by, bw, bh = b[1], b[2], b[3], b[4]
+      for p = 1, #PASSES do
+        local pass = PASSES[p]
+        love.graphics.setColor(1, 1, 1, pass.a)
+        -- Bande [o0..o1] mesurée vers L'INTÉRIEUR depuis le bord de la box (off>0) ou vers l'extérieur (off<0).
+        local o0 = pass.off            -- bord de bande le plus proche du périmètre
+        local o1 = pass.off + pass.w   -- bord opposé
+        local lo = math.min(o0, o1)
+        local hi = math.max(o0, o1)
+        local t = hi - lo              -- épaisseur de cette passe (unités design)
+        if t > 0 then
+          -- Anneau = 4 quads peignant le périmètre (jamais le centre plein) entre les insets `lo` et `hi`.
+          local x0, y0 = bx + lo, by + lo            -- coin sup-gauche de la bande extérieure de cette passe
+          local wMid = bw - 2 * lo                   -- largeur des quads haut/bas
+          local hMid = bh - 2 * lo                   -- hauteur des quads gauche/droite
+          love.graphics.rectangle("fill", x0, y0, wMid, t)                  -- haut
+          love.graphics.rectangle("fill", x0, by + bh - hi, wMid, t)        -- bas
+          love.graphics.rectangle("fill", x0, y0, t, hMid)                  -- gauche
+          love.graphics.rectangle("fill", bx + bw - hi, y0, t, hMid)        -- droite
+        end
+      end
+    end
+    love.graphics.pop()
+    love.graphics.setColor(1, 1, 1, 1)
+  end)
+  -- On a changé de cible (setCanvas(mask)) : il appartient à l'APPELANT (endFrame) de RE-ENGAGER sa cible
+  -- (le canvas de capture) ensuite. On renvoie le succès pour qu'il sache si le masque est exploitable.
+  return ok
 end
 
 -- TOGGLE [F9] : comparer ON/OFF. No-op si la surcouche n'est pas disponible (headless).
@@ -256,6 +382,7 @@ end
 -- dt = secondes murales (horloge des effets animés). w,h = dimensions NATIVES (love.graphics.getDimensions()).
 function PostFX:beginFrame(dt, w, h)
   self.active = false
+  self.nboxes = 0 -- ★ VIDE le collecteur de rects en début de frame (les composants ré-enregistrent au draw)
   if not (self.available and self.enabled) then return false end
   self.t = self.t + (dt or 0)
   self:_ensureCanvas(w, h)
@@ -272,22 +399,32 @@ function PostFX:beginFrame(dt, w, h)
   return true
 end
 
--- Ferme la frame : décroche le canvas, puis le blit 1:1 (scale 1, position 0,0) à travers le shader.
--- 1:1 = ZÉRO rééchantillonnage -> le texte natif reste exactement net. tension = 0..1 (optionnel).
-function PostFX:endFrame(tension)
+-- Ferme la frame : (1) rend le CANVAS MASQUE des bandes-bordures sous le MÊME transform que l'UI (`view`),
+-- (2) décroche le canvas (retour écran), (3) blit la capture 1:1 (scale 1, pos 0,0) à travers le shader, le
+-- masque envoyé en `extern Image mask`. 1:1 = ZÉRO rééchantillonnage -> texte INTACT. La distorsion d'UV est
+-- multipliée par le masque -> elle n'existe QUE dans l'anneau des box (fond/monde/centre des box = NETS).
+--   `view` (main.lua : {scale,ox,oy}) est REQUIS pour que l'anneau coïncide avec les vrais pixels de bordure.
+--   tension = 0..1 (optionnel). Si le canvas masque manque (création échouée), maskOn=0 -> fallback NET (aucune
+--   distorsion) plutôt que de distordre tout l'écran.
+function PostFX:endFrame(view, tension)
   if not self.active then return end
   self.active = false
   local sh = self.shader
+  -- (1) Passe MASQUE : redessine l'anneau de chaque box (laisse la cible sur self.mask). maskOK pilote maskOn.
+  local maskOK = self:_drawMask(view)
   pcall(function()
-    love.graphics.setCanvas() -- retour à l'écran
+    love.graphics.setCanvas() -- (2) retour à l'écran (après la passe masque qui ciblait self.mask)
     love.graphics.setShader(sh)
     sh:send("time", self.t)
     sh:send("tension", math.max(0, math.min(1, tension or 0)))
     sh:send("strength", self.strength)
     sh:send("dStrength", math.max(0, self.distort or 0)) -- ★ maître de la distorsion (≥0), réglable à chaud
     sh:send("screen", { self.cw, self.ch })
+    -- Masque : la vraie image si dispo, sinon le canvas de capture en DUMMY (jamais lu car maskOn=0 -> bmask=0).
+    sh:send("mask", (maskOK and self.mask) or self.canvas)
+    sh:send("maskOn", (maskOK and self.mask) and 1 or 0)
     love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.draw(self.canvas, 0, 0) -- 1:1, pas de scale -> texte intact
+    love.graphics.draw(self.canvas, 0, 0) -- (3) blit 1:1, pas de scale -> texte intact
     love.graphics.setShader()
   end)
 end

@@ -9,6 +9,7 @@
 
 local Draw = require("src.ui.draw")
 local Theme = require("src.ui.theme")
+local PostFX = require("src.render.postfx") -- COLLECTEUR de rects : la distorsion onirique se confine aux BORDURES des box
 local C = Theme.c
 
 local Panel = {}
@@ -38,6 +39,7 @@ end
 function Panel.draw(x, y, w, h, opts)
   opts = opts or {}
   x, y, w, h = math.floor(x + 0.5), math.floor(y + 0.5), math.floor(w + 0.5), math.floor(h + 0.5)
+  PostFX.markBox(x, y, w, h) -- ★ enregistre le rect (espace design) : l'anneau de distorsion suivra cette bordure
   if opts.fill then
     Draw.rect(x, y, w, h, opts.fill)
   else

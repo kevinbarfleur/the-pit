@@ -12,6 +12,7 @@ local Draw = require("src.ui.draw")
 local Theme = require("src.ui.theme")
 local Panel = require("src.ui.panel")
 local Forge = require("src.ui.forge")
+local PostFX = require("src.render.postfx") -- COLLECTEUR de rects : la distorsion onirique se confine aux BORDURES des box
 local C = Theme.c
 local H = Theme.hex
 
@@ -78,6 +79,7 @@ function Button.draw(x, y, w, h, variant, text, opts)
   if press > 4 then press = 4 end
   local yy = y - lift + press           -- repos relevé par le survol, enfoncé par le press
   local hh = h - press
+  PostFX.markBox(x, yy, w, hh) -- ★ enregistre la box RÉELLEMENT dessinée (lift/press inclus) -> l'anneau colle au bord
 
   if press == 0 then fillRect(x, yy + h - 1, w, 2, SHADOW) end -- ombre portée (relief 0 2px 0)
   Panel.vgrad(x, yy, w, hh, s[1], s[2])
@@ -185,6 +187,7 @@ function Button.icon(x, y, size, kind, opts)
   local st = (opts.hover and not opts.disabled) and "hover" or "idle"
   local bg = ICONBG[st]
   local press = (opts.pressed and not opts.disabled) and 1 or 0
+  PostFX.markBox(x, y + press, size, size - press) -- ★ box réellement dessinée -> anneau de distorsion sur son bord
   Panel.vgrad(x, y + press, size, size - press, bg[1], bg[2])
   if not opts.disabled then fillRect(x + 1, y + 1 + press, size - 2, 1, { C.brassS[1], C.brassS[2], C.brassS[3], 0.10 }) end
   Draw.rect(x, y + press, size, size - press, nil, C.iron, 1)
