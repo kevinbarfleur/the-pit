@@ -166,20 +166,12 @@ local function info(id)
   return c
 end
 
--- DESSINE `id` dans la boîte (x,y,boxW,boxH) en ESPACE DESIGN, à l'échelle UNIFORME du cadre natif (les tailles
--- relatives sont conservées). t = secondes. facing : 1 = vers la droite, -1 = miroir. fill (0..~1.2) : remplissage
--- du cadre dans la hauteur de boîte (défaut 1.0). Pieds ancrés ~en bas de la boîte (via groundY du cadre).
-function Critter.draw(view, id, x, y, boxW, boxH, t, facing, fill)
-  if not (love.graphics and love.graphics.newSpriteBatch and love.graphics.newImage) then return end
-  local c = info(id)
-  if not c or #c.cells == 0 then return end
-  t = t or 0
-  facing = (facing == -1) and -1 or 1
-  fill = fill or 1.0
-  local scale = (boxH / c.h) * fill
+local EMPTY = {}
+
+-- Remplit le SpriteBatch (espace GRILLE : chaque cellule à (gx+dx, gy+dy)) + renvoie la fn `disp` (pour les yeux).
+local function fillBatch(c, t)
   if not c.batch then c.batch = love.graphics.newSpriteBatch(pixel(), #c.cells, "stream") end
   local disp = makeDisp(t, c.prof, c.cx, c.cy, c.bodyR, c.bellyY, c.groundY, c.headSpan)
-
   local b = c.batch
   b:clear()
   local off = (CELL - 1) * 0.5
@@ -190,23 +182,19 @@ function Critter.draw(view, id, x, y, boxW, boxH, t, facing, fill)
     b:add(cell[1] + dx - off, cell[2] + dy - off, 0, CELL, CELL)
   end
   b:setColor(1, 1, 1, 1)
+  return disp
+end
 
-  love.graphics.push()
-  if facing < 0 then
-    love.graphics.translate(x + boxW * 0.5 + 32 * scale, y); love.graphics.scale(-scale, scale)
-  else
-    love.graphics.translate(x + boxW * 0.5 - 32 * scale, y); love.graphics.scale(scale, scale)
+-- Dessine ombre + corps + yeux en ESPACE GRILLE (le caller a déjà posé le transform : (32, groundY) -> pieds).
+local function paint(c, t, disp, alpha, shadow)
+  if shadow then -- ombre au sol (subtile) ; les flottants la laissent en bas en montant -> lecture de lévitation
+    love.graphics.setColor(0, 0, 0, 0.22 * alpha)
+    love.graphics.ellipse("fill", 32, c.groundY + (c.float and 3 or 1), c.halfW * 1.05, c.float and 1.6 or 2.4)
   end
-
-  -- ombre au sol (subtile) ; les flottants la laissent en bas pendant qu'ils montent -> lecture de lévitation
-  love.graphics.setColor(0, 0, 0, 0.22)
-  love.graphics.ellipse("fill", 32, c.groundY + (c.float and 3 or 1), c.halfW * 1.05, c.float and 1.6 or 2.4)
-  love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.draw(b, 0, 0)
-
-  -- yeux PAR-DESSUS : clignement (carré sombre) ou globe + saccade de pupille
+  love.graphics.setColor(1, 1, 1, alpha) -- l'alpha global multiplie les couleurs par-cellule du batch (fondu de mort)
+  love.graphics.draw(c.batch, 0, 0)
   local e = c.prof.eyes
-  if e and #c.eyes > 0 then
+  if e and #c.eyes > 0 then -- yeux PAR-DESSUS : clignement (carré sombre) ou globe + saccade de pupille
     local blink, dart = e[1] or 0.9, e[2] or 1.4
     for k = 1, #c.eyes do
       local ey = c.eyes[k]
@@ -214,22 +202,52 @@ function Critter.draw(view, id, x, y, boxW, boxH, t, facing, fill)
       local qx, qy, r = ey[1] + ddx, ey[2] + ddy, ey[3]
       local ph = ey[1] * 1.3 + ey[2] * 0.7
       if sin(t * blink + ph) > 0.93 then
-        love.graphics.setColor(c.shCol[1], c.shCol[2], c.shCol[3], 1)
+        love.graphics.setColor(c.shCol[1], c.shCol[2], c.shCol[3], alpha)
         love.graphics.rectangle("fill", qx - r, qy - r, 2 * r + 1, 2 * r + 1)
       elseif r >= 2 then
-        love.graphics.setColor(c.eyeCol[1], c.eyeCol[2], c.eyeCol[3], 1)
+        love.graphics.setColor(c.eyeCol[1], c.eyeCol[2], c.eyeCol[3], alpha)
         local rr = r - 1
         love.graphics.rectangle("fill", qx - rr, qy - rr, 2 * rr + 1, 2 * rr + 1)
         local pdx, pdy = floor(sin(t * dart + ph) + 0.5), floor(cos(t * dart * 1.3 + ph) + 0.5)
         local pr = (r >= 3) and 1 or 0
-        love.graphics.setColor(c.outCol[1], c.outCol[2], c.outCol[3], 1)
+        love.graphics.setColor(c.outCol[1], c.outCol[2], c.outCol[3], alpha)
         love.graphics.rectangle("fill", qx + pdx - pr, qy + pdy - pr, 2 * pr + 1, 2 * pr + 1)
       end
     end
   end
+end
 
+-- DESSINE `id` ANCRÉ AUX PIEDS : la base du cadre (grille col 32, ligne groundY) tombe sur (footX, footY), à
+-- l'échelle `scale` (cadre natif 64 -> 64*scale px ; les tailles RELATIVES sont conservées). t = SECONDES.
+-- facing 1/-1 (miroir). opts = { alpha = fondu (défaut 1), shadow = false si la scène dessine déjà son ombre }.
+function Critter.drawAt(view, id, footX, footY, scale, t, facing, opts)
+  if not (love.graphics and love.graphics.newSpriteBatch and love.graphics.newImage) then return end
+  local c = info(id)
+  if not c or #c.cells == 0 then return end
+  t = t or 0
+  facing = (facing == -1) and -1 or 1
+  scale = scale or 1
+  opts = opts or EMPTY
+  local alpha = opts.alpha or 1
+  if alpha <= 0 then return end
+  local disp = fillBatch(c, t)
+  love.graphics.push()
+  love.graphics.translate(footX, footY)
+  love.graphics.scale(facing * scale, scale)
+  love.graphics.translate(-32, -c.groundY)
+  paint(c, t, disp, alpha, opts.shadow ~= false)
   love.graphics.pop()
   love.graphics.setColor(1, 1, 1, 1)
+end
+
+-- DESSINE `id` dans une BOÎTE (x,y,boxW,boxH) : échelle = hauteur de boîte (cadre natif), pieds ancrés ~en bas.
+-- fill (~1.0) ajuste le remplissage. Pratique pour les vignettes (galerie, fiches au survol).
+function Critter.draw(view, id, x, y, boxW, boxH, t, facing, fill, opts)
+  local c = info(id)
+  if not c then return end
+  fill = fill or 1.0
+  local scale = (boxH / c.h) * fill
+  Critter.drawAt(view, id, x + boxW * 0.5, y + (c.groundY / c.h) * boxH * fill, scale, t, facing, opts)
 end
 
 -- Réinitialise le cache (changement de palette / tests). La grille live elle-même est cachée côté CreatureGen.

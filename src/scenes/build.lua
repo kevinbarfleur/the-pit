@@ -24,6 +24,7 @@ local Rig = require("src.core.rig")
 local Creatures = require("src.data.creatures")
 local Units = require("src.data.units")
 local CreatureGen = require("src.gen.creaturegen") -- visuel généré pour les unités sans rig dessiné main
+local Critter = require("src.render.critter") -- rendu VIVANT (cadre natif : taille relative + mouvement par-pixel/famille)
 local Encounters = require("src.data.encounters")
 local Place = require("src.combat.place")
 local Stats = require("src.effects.stats") -- caps du framework payoff (value bouclier ×3 à la lecture)
@@ -814,25 +815,31 @@ function Build:drawWorld()
   -- CASE : 80 design = 20 virtuel. Zone utile (hors cadre forge) ~18 virtuel. On vise une boîte ~18×18
   -- avec marge -> la créature REMPLIT la case sans déborder ni être coupée, pieds calés au sol de la case.
   local CELL_FIT_W, CELL_FIT_H = 18, 18
+  -- Échelles du rendu VIVANT (cadre natif 64) par surface — placeholders à affiner au screenshot.
+  local SLOT_SCALE, SHOP_SCALE, DRAG_SCALE = 0.36, 0.5, 0.36
   for i, sr in pairs(self.slotRigs) do
     if b.slots[i].unlocked then
       local c = sr.char
-      -- maxScale 1.5 : on grossit un peu les petites créatures pour qu'elles remplissent la case (sans couper).
-      local s = self:rigFitScale(sr.id, CELL_FIT_W, CELL_FIT_H, 0.94, 1.5)
-      local bnd = self:rigBounds(sr.id)
-      love.graphics.push()
-      -- on scale AUTOUR du SOL de la case : char.y = p.y+9 ; le sol visé est ~le bas de la case (p.y + ~9).
-      -- On pose les pieds (bnd.bot) au sol puis on rétrécit autour de ce point -> créature centrée et footée.
+      -- on cale les pieds au SOL de la case : char.y = p.y+9 ; le sol visé est ~le bas de la case (p.y + ~9).
       local groundX = math.floor(c.x + 0.5)
       local groundY = math.floor(c.y + 0.5) + 1
-      love.graphics.translate(groundX, groundY)
-      love.graphics.scale(s, s)
-      love.graphics.translate(0, -bnd.bot)
-      local sx, sy = c.x, c.y
-      c.x, c.y = 0, 0
-      Rig.draw(c)
-      c.x, c.y = sx, sy
-      love.graphics.pop()
+      if Critter.has(sr.id) then
+        -- RENDU VIVANT : cadre natif (taille relative + mouvement par famille), pieds calés au sol.
+        Critter.drawAt(nil, sr.id, groundX, groundY, SLOT_SCALE, self.t / 60, c.facing or 1)
+      else
+        -- fallback rig baké (créatures dessinées-main) : fit-silhouette historique, pieds (bnd.bot) au sol.
+        local s = self:rigFitScale(sr.id, CELL_FIT_W, CELL_FIT_H, 0.94, 1.5)
+        local bnd = self:rigBounds(sr.id)
+        love.graphics.push()
+        love.graphics.translate(groundX, groundY)
+        love.graphics.scale(s, s)
+        love.graphics.translate(0, -bnd.bot)
+        local sx, sy = c.x, c.y
+        c.x, c.y = 0, 0
+        Rig.draw(c)
+        c.x, c.y = sx, sy
+        love.graphics.pop()
+      end
     end
   end
   local run = self.host.run
@@ -843,29 +850,38 @@ function Build:drawWorld()
       if o and not o.sold then
         local c = self.previewRigs[o.id]
         if c then
-          -- aperçu AJUSTÉ à la région créature de la carte (flex en haut, au-dessus du bloc nom/coût) ->
-          -- la créature tient ENTIÈREMENT dans la carte, jamais coupée. Région ≈ carte moins l'inset (8) et
-          -- les deux rangées d'info (~32 design) en bas. Pieds calés au-dessus du bloc nom/coût.
-          local artH = math.max(20, rect.h - 12) -- hauteur de la région créature (virtuel)
-          local artW = rect.w - 4
-          -- maxScale 1.8 : on grossit les petites créatures pour qu'elles remplissent la carte (sans couper).
-          local s = self:rigFitScale(o.id, artW, artH, 0.9, 1.8)
-          local bnd = self:rigBounds(o.id)
+          -- aperçu calé au-dessus du bloc nom/coût (pieds = bas de la région créature), clippé à la carte.
           local feet = rect.y + rect.h - 14
           if self.view then Draw.scissor(self.view, rect.x * 4, rect.y * 4, rect.w * 4, rect.h * 4) end
-          love.graphics.push()
-          love.graphics.translate(rect.x + rect.w / 2, feet)
-          love.graphics.scale(s, s)
-          love.graphics.translate(0, -bnd.bot)
-          c.x, c.y, c.facing = 0, 0, 1
-          Rig.draw(c)
-          love.graphics.pop()
+          if Critter.has(o.id) then
+            -- RENDU VIVANT : cadre natif (taille relative + mouvement par famille).
+            Critter.drawAt(nil, o.id, rect.x + rect.w / 2, feet, SHOP_SCALE, self.t / 60, 1)
+          else
+            -- fallback rig baké : fit-silhouette à la région créature (flex au-dessus du bloc nom/coût).
+            local artH = math.max(20, rect.h - 12)
+            local artW = rect.w - 4
+            local s = self:rigFitScale(o.id, artW, artH, 0.9, 1.8)
+            local bnd = self:rigBounds(o.id)
+            love.graphics.push()
+            love.graphics.translate(rect.x + rect.w / 2, feet)
+            love.graphics.scale(s, s)
+            love.graphics.translate(0, -bnd.bot)
+            c.x, c.y, c.facing = 0, 0, 1
+            Rig.draw(c)
+            love.graphics.pop()
+          end
           if self.view then Draw.noScissor() end
         end
       end
     end
   end
-  if self.drag then Rig.draw(self.drag.char) end
+  if self.drag then
+    if Critter.has(self.drag.id) then
+      Critter.drawAt(nil, self.drag.id, self.drag.char.x, self.drag.char.y, DRAG_SCALE, self.t / 60, self.drag.char.facing or 1)
+    else
+      Rig.draw(self.drag.char)
+    end
+  end
   love.graphics.setColor(1, 1, 1, 1)
 end
 
