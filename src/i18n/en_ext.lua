@@ -169,4 +169,9 @@ return {
   ["kw.rot.blurb"]    = "Necrosis - damage over time that eats away the victim's maximum life.",
   ["kw.shock.name"]   = "SHOCK",
   ["kw.shock.blurb"]  = "Charge - stacks pile up, then discharge to amplify the next hit.",
+
+  -- ── Étiquettes de stats FRAMELESS de la fiche monstre (src/scenes/build.lua:drawCardStats) ──
+  ["ui.stat_hp"]  = "HP",
+  ["ui.stat_dmg"] = "DMG",
+  ["ui.stat_cd"]  = "CD",
 }

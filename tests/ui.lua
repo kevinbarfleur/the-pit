@@ -204,6 +204,28 @@ local ok, err = pcall(function()
   Forge.uiPlate("t.plate", 0, 0, 140, 140, { px = 2 })
   Forge.uiPlate("t.plate", 0, 0, 140, 140, { px = 2, disabled = true })
   assert(Forge._plateCache["t.plate"], "uiPlate : cache par id")
+
+  -- ── LAVAGE de rareté (A3/B5/B6) : tintFrom construit un descripteur { col octets, amt } depuis une
+  -- couleur (floats OU octets) ; tintKey en fait une cle de cache STABLE (re-bake quand la teinte change,
+  -- ex. survol). Le tint passe a plate/uiPlate/uiCard LAVE la pierre vers l'accent (subtil, baké). ──
+  do
+    local tf = Forge.tintFrom({ 0.55, 0.40, 0.66 }, 0.16) -- depuis Theme/Rarity (floats 0..1)
+    assert(tf.col and tf.amt == 0.16, "tintFrom : { col, amt }")
+    assert(tf.col[1] > 1, "tintFrom : couleur convertie en octets 0..255")
+    local tf2 = Forge.tintFrom({ 200, 150, 70 }) -- deja en octets -> inchange, amt par defaut
+    assert(tf2.col[1] == 200 and tf2.amt > 0, "tintFrom : octets inchanges + amt defaut")
+    -- tintKey : nil/sans amt -> "none" ; teinte differente -> cle differente (declenche un re-bake).
+    assert(Forge.tintKey(nil) == "none", "tintKey : nil -> none")
+    assert(Forge.tintKey({ col = { 1, 2, 3 }, amt = 0 }) == "none", "tintKey : amt 0 -> none")
+    local k1 = Forge.tintKey(tf)
+    local k2 = Forge.tintKey(Forge.tintFrom({ 0.55, 0.40, 0.66 }, 0.30)) -- amt different (survol)
+    assert(k1 ~= "none" and k1 ~= k2, "tintKey : teinte/amt different -> cle differente (re-bake)")
+    -- uiPlate teinte : re-bake quand la teinte change (repos -> survol).
+    Forge.uiPlate("t.plate.tint", 0, 0, 120, 120, { px = 2, tint = tf })
+    local cfgRest = Forge._plateCache["t.plate.tint"] and Forge._plateCache["t.plate.tint"].cfg
+    Forge.uiPlate("t.plate.tint", 0, 0, 120, 120, { px = 2, tint = Forge.tintFrom({ 0.55, 0.40, 0.66 }, 0.30) })
+    assert(Forge._plateCache["t.plate.tint"].cfg ~= cfgRest, "uiPlate : teinte survol -> nouvelle cfg (re-bake)")
+  end
   -- valueTag : plaque forge bordée (cadre baké) + label/valeur en OVERLAY VIVANT (toujours lisible). Cache
   -- par id ; re-bake si accent/taille change. Headless-safe (no crash, pas de readback requis pour le texte).
   Forge.valueTag("t.vtag", 0, 0, 64, 34, "HP", "40", { px = 2, accentCol = acc,
@@ -294,6 +316,8 @@ local ok, err = pcall(function()
     Forge.uiCard("t.card", 0, 0, 312, 380, { px = 2, seed = 5, rich = false })
     Forge.uiCard("t.card", 0, 0, 312, 380, { px = 2, seed = 5, rich = true, accentCol = Forge.accentFrom({ 0.8, 0.6, 0.3 }) })
     assert(Forge._cardCache["t.card"], "uiCard : cache par id cree")
+    -- A3 : uiCard avec FOND LAVÉ vers la rareté (tint) -> re-bake chaque frame (la plaque respire), no crash.
+    Forge.uiCard("t.card", 0, 0, 312, 380, { px = 2, seed = 5, tint = Forge.tintFrom({ 0.8, 0.6, 0.3 }, 0.16) })
   end
 
   -- ── Build : fiche monstre TCG MINIMALE (helpers PURS + smoke de rendu headless de la carte) ──────
@@ -309,15 +333,27 @@ local ok, err = pcall(function()
 
     -- Smoke : construit la scène, pose une unité à afflictions (burn) ET un héros (rank>=4), et dessine la
     -- fiche directement (hors hover) -> ne plante pas sous le mock LÖVE, golden non touché (RENDER pur).
-    -- Couvre les value-tags de stats (Forge.valueTag) + les value-chips d'affliction.
+    -- Couvre les STATS FRAMELESS (Forge.label, plus de value-tag bordée), le portrait SANS boîte noire, le
+    -- fond LAVÉ par la rareté + les value-chips d'affliction.
     local Palette = require("src.core.palette")
     local b = Build.new(Palette, 320, 180, { goto = function() end })
     b.view = { ox = 0, oy = 0, scale = 4 }
     b.mx, b.my = 100, 60
-    b:drawTooltip("emberling")     -- pose burn (value-chip) + R2 (cadre sobre)
-    b:drawTooltip("plague_doctor") -- regen, R4 (cadre riche + œil + halo)
+    b:drawTooltip("emberling")     -- pose burn (value-chip) + R2 (cadre sobre, fond peu teinté)
+    b:drawTooltip("plague_doctor") -- regen, R4 (cadre riche + œil + halo + fond teinté sigil)
     b:drawTooltip("marauder")      -- vanille, pas d'affliction, pas de family/rank
-    b:drawTooltip("skull_colossus") -- R5 avec family
+    b:drawTooltip("skull_colossus") -- R5 avec family (fond teinté or malsain)
+
+    -- drawShopCard (B4/B6 : pip de type GROS + survol). On câble une run-stub minimale (gold + shop) -> la
+    -- carte se dessine au repos ET au survol sans crash (le fond teinté/hover vit dans drawBack, ici = cadre
+    -- + pip + nom + coût). Couvre le pip type-coloré, le halo de survol, l'accent de liseré par type.
+    b.host.run = { gold = 99, shop = { { id = "emberling", cost = 2 } } }
+    local srect = b.shopSlots[1]
+    b:drawShopCard(1, srect, b.host.run.shop[1], false) -- repos
+    b:drawShopCard(1, srect, b.host.run.shop[1], true)  -- survol (halo + liseré or)
+    b.host.run.gold = 0                                  -- hors-budget (sobre)
+    b:drawShopCard(1, srect, b.host.run.shop[1], false)
+    b.host.run = nil
 
     -- ── FIT-TO-BOX (anti-débordement des créatures) : rigBounds renvoie une boîte SAINE (repli headless,
     -- pas de canvas réel sous le mock) ; rigFitScale CONTIENT dans la boîte et RESPECTE maxScale (cap). ──

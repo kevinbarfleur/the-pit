@@ -284,13 +284,23 @@ local function blit(buf, bmp, x, y, color)
 end
 
 -- ════════════════════════════ PRIMITIVES NETTES ════════════════════════════
-local function plate(buf, x0, y0, x1, y1, press, disabled)
+-- plate(buf, x0,y0,x1,y1, press, disabled, tint?) : matière de plaque (dégradé top->bot + vignette + trame).
+-- tint = { col = {r,g,b 0..255}, amt = 0..1 } : LAVE subtilement la pierre vers une couleur d'accent (teinte
+-- de RARETÉ/TYPE), bakée dans l'image -> chaque dalle « lit » sa rareté par le FOND, sans cesser d'être du
+-- métal grimdark sombre (amt RETENU, ~0.10-0.22). Le lavage est dérivé du dégradé (plus fort en bas = ombre
+-- colorée), jamais un aplat plat. nil = pierre pourpre par défaut (golden-safe : aucune teinte appelée ailleurs).
+local function plate(buf, x0, y0, x1, y1, press, disabled, tint)
   press = press or 0
   local top, bot = PLATE.top, PLATE.bot
+  local tcol, tamt
+  if tint and tint.col and (tint.amt or 0) > 0 then tcol, tamt = tint.col, tint.amt end
   for y = y0, y1 do
     for x = x0, x1 do
       local vy = (y - y0) / max(1, y1 - y0)
       local col = mix(top, bot, vy)
+      -- LAVAGE de rareté : mélange vers l'accent, plus marqué dans l'ombre du bas (vy) -> teinte minérale,
+      -- pas un calque uni. Posé AVANT vignette/trame/press pour rester dominé par le grain (métal d'abord).
+      if tcol then col = mix(col, tcol, tamt * (0.45 + 0.55 * vy)) end
       local ed = min(x - x0, x1 - x, y - y0, y1 - y)
       if ed < 2 then col = mix(col, PLATE.vig, 0.5 * (2 - ed) / 2) end
       if (y % 2) == 0 then col = mix(col, { 0, 0, 0 }, 0.10) end
@@ -964,12 +974,14 @@ Forge.drawTooltip = drawTooltip
 --   accentCol : triple {dark,mid,bright} (teinte de rareté) ; nil = liseré métal sobre.
 --   rich      : R4-R5 -> cadre PLUS épais (B=4) + œil qui guette qui s'ouvre/se ferme (héros « rayonnant »).
 --   seed      : graine de la patine/veines (stable par unité -> craquelures fixes).
+--   tint      : { col={r,g,b 0..255}, amt 0..1 } -> LAVE le FOND de la fiche vers la teinte de RARETÉ (subtil,
+--               baké) ; la plaque reste du métal sombre, juste teintée par la rareté de la créature.
 local function cardPanel(buf, W, H, t, opts)
   opts = opts or {}
   local rich = opts.rich and true or false
   local B = rich and 4 or 3
   local seed = opts.seed or 51
-  plate(buf, B, B, W - B - 1, H - B - 1, 0, false)
+  plate(buf, B, B, W - B - 1, H - B - 1, 0, false, opts.tint)
   -- RESPIRATION de la plaque (mêmes ondes que drawPanel) : la matière vit, sans bruit.
   for y = B + 1, H - B - 2 do
     for x = B + 1, W - B - 2 do
@@ -1008,7 +1020,7 @@ function Forge.uiCard(id, x, y, w, h, opts)
   end
   local t = opts.t or Forge._uiClock
   e.image = Forge.render(e.widget, function(b, W, H, tt)
-    cardPanel(b, W, H, tt, { accentCol = opts.accentCol, rich = opts.rich, seed = opts.seed })
+    cardPanel(b, W, H, tt, { accentCol = opts.accentCol, rich = opts.rich, seed = opts.seed, tint = opts.tint })
   end, t)
   Forge.blit(e.image, x, y, px)
   return true
@@ -1460,6 +1472,15 @@ function Forge.accentFrom(rgb)
   }
 end
 
+-- Forge.tintFrom(rgb, amt) : construit un descripteur de LAVAGE de plaque { col = {r,g,b 0..255}, amt } à
+-- partir d'une couleur (floats 0..1 OU octets) -> à passer en opts.tint à uiPlate/uiCard. amt = retenue du
+-- lavage (subtil par défaut). Le kit travaille en OCTETS : on normalise comme accentFrom.
+function Forge.tintFrom(rgb, amt)
+  local r, g, b = rgb[1], rgb[2], rgb[3]
+  if r <= 1 and g <= 1 and b <= 1 then r, g, b = r * 255, g * 255, b * 255 end
+  return { col = { r, g, b }, amt = amt or 0.14 }
+end
+
 -- socket(buf, W, H, opts) : opts = { accentCol?, frameTh=3, seed, weather=true }. Dessine UNIQUEMENT le
 -- cadre patiné (centre laissé transparent). accentCol nil -> liseré métal sobre ; sinon liseré teinté.
 local function socket(buf, W, H, opts)
@@ -1475,24 +1496,36 @@ local function socket(buf, W, H, opts)
 end
 Forge.socket = socket
 
+-- tintKey(tint) : clé de cache STABLE d'une teinte (col arrondie + amt) pour re-baker quand elle change.
+-- nil -> "none". Octets plancher (la teinte vient d'une couleur de rareté/type stable -> clé stable).
+local function tintKey(tint)
+  if not (tint and tint.col and (tint.amt or 0) > 0) then return "none" end
+  return floor(tint.col[1]) .. "," .. floor(tint.col[2]) .. "," .. floor(tint.col[3]) .. "@"
+    .. floor((tint.amt or 0) * 100)
+end
+Forge.tintKey = tintKey
+
 -- uiPlate(id, x, y, w, h, opts) : FOND de plaque forge PLEINE (matière + trame, SANS cadre) — caché par id.
--- opts = { px?, press?, disabled? }. Sert de FOND de carte de boutique (derrière la créature), pour que la
--- carte lise comme une dalle dense et remplie (≠ cadre creux). Re-bake seulement si la taille/l'état change.
+-- opts = { px?, press?, disabled?, tint? }. Sert de FOND de carte de boutique (derrière la créature), pour
+-- que la carte lise comme une dalle dense et remplie (≠ cadre creux). tint = { col={r,g,b 0..255}, amt 0..1 }
+-- LAVE la pierre vers une teinte de RARETÉ (subtil, baké) -> au survol on passe une teinte PLUS forte (le
+-- fond s'éclaire visiblement). Re-bake seulement si la taille / l'état / la teinte change.
 Forge._plateCache = {}
 function Forge.uiPlate(id, x, y, w, h, opts)
   opts = opts or {}
   local px = opts.px or PX
   local aw, ah = max(1, floor(w / px)), max(1, floor(h / px))
   local disabled = opts.disabled and true or false
+  local tint = opts.tint
   local e = Forge._plateCache[id]
   if not e or e.aw ~= aw or e.ah ~= ah then
     e = { widget = Forge.newWidget(aw, ah), aw = aw, ah = ah }
     Forge._plateCache[id] = e
   end
-  local cfg = tostring(disabled)
+  local cfg = tostring(disabled) .. "|" .. tintKey(tint)
   if e.cfg ~= cfg or not e.image then
     e.cfg = cfg
-    e.image = Forge.render(e.widget, function(b, W, H, _) plate(b, 0, 0, W - 1, H - 1, 0, disabled) end, 0)
+    e.image = Forge.render(e.widget, function(b, W, H, _) plate(b, 0, 0, W - 1, H - 1, 0, disabled, tint) end, 0)
   end
   Forge.blit(e.image, x, y, px)
   return true

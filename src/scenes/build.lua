@@ -748,7 +748,13 @@ function Build:drawBack(view)
           Draw.rect(x, y, w, h, c.void)
         else
           local aff = run.gold >= o.cost
-          Forge.uiPlate("build.card." .. i, x, y, w, h, { px = 2, disabled = not aff })
+          -- FOND de carte LAVÉ vers la rareté de l'offre (chaque dalle « lit » sa rareté). Au SURVOL le
+          -- lavage MONTE nettement (0.30) -> le fond s'éclaire visiblement, pas seulement le liseré.
+          local rk = (Units[o.id] and Units[o.id].rank) or 1
+          local hot = (ui.shopHover == i)
+          local amt = hot and 0.30 or 0.15
+          Forge.uiPlate("build.card." .. i, x, y, w, h,
+            { px = 2, disabled = not aff, tint = Forge.tintFrom(Rarity.frame(rk), amt) })
         end
       end
     end
@@ -942,10 +948,16 @@ function Build:drawShopCard(i, rect, o, hot)
     return
   end
   local aff = (self.host.run.gold >= o.cost)
+  local utype = Units[o.id].type
 
   -- CADRE forge patiné (fond transparent : la plaque bakée de drawBack + la créature transparaissent).
-  -- accent : or si achetable (vif au survol), sombre/sobre si hors-budget.
-  local acc = aff and (hot and self._cellAccents.gold or self._cellAccents.gold) or nil
+  -- accent du LISERÉ : teinté par le TYPE de la créature (flesh/order/bone/arcane/abyss) -> on lit le type
+  -- DÈS le coup d'œil, même sur le cadre. Au SURVOL : liseré OR vif (le cadre s'allume nettement, en plus
+  -- du fond qui s'éclaire). Hors-budget : sobre (nil).
+  local acc
+  if not aff then acc = nil
+  elseif hot then acc = self._cellAccents.gold
+  else acc = Forge.accentFrom(Theme.type(utype).color) end
   Forge.uiSocket("build.cardframe." .. i, x, y, w, h, { px = 2, seed = 70 + i, accentCol = acc })
 
   -- COLONNE interne : région créature (flex) au-dessus du bloc d'info (nom + coût/chips), avec un padding.
@@ -953,8 +965,16 @@ function Build:drawShopCard(i, rect, o, hot)
   local rows = Layout.column(inner, { { flex = 1 }, { size = 16 }, { size = 16 } }, { gap = 3, align = "stretch" })
   local nameBox, costBox = rows[2], rows[3]
 
-  -- pip de type (haut-gauche de la carte, sur la créature).
-  Draw.pip(Units[o.id].type, x + 12, y + 12, 4)
+  -- PIP DE TYPE (haut-gauche) GROS et bien TYPÉ (révision Kévin : l'ancien pip était trop discret) -> on
+  -- voit instantanément flesh/order/bone/arcane/abyss. Halo additif au survol (la rune « s'illumine »).
+  local tcol = Theme.type(utype).color
+  Draw.pip(utype, x + 14, y + 14, 6, aff and tcol or c.fainter)
+  if hot and aff and love.graphics.setBlendMode and love.graphics.circle then
+    love.graphics.setBlendMode("add")
+    love.graphics.setColor(tcol[1], tcol[2], tcol[3], 0.32)
+    love.graphics.circle("fill", x + 14, y + 14, 9)
+    love.graphics.setBlendMode("alpha"); love.graphics.setColor(1, 1, 1, 1)
+  end
 
   -- NOM (centré dans sa rangée).
   local nameCol = aff and c.name or c.dim
@@ -1128,9 +1148,12 @@ function Build:drawTooltip(id)
   if y < 4 then y = 4 end
   x, y = math.floor(x), math.floor(y)
 
-  -- ── 3) FOND forge (plaque qui respire + cadre patiné, accent de rareté, œil qui guette si héros). ──
+  -- ── 3) FOND forge (plaque qui respire + cadre patiné, accent de rareté, œil qui guette si héros). Le
+  -- FOND est LAVÉ vers la couleur de rareté (Forge.tintFrom) : la fiche « lit » sa rareté par sa matière
+  -- même, en restant du métal grimdark sombre (lavage RETENU). ──
   Forge.uiCard("build.card." .. id, x, y, W, h,
-    { px = 2, seed = 40 + (#id), accentCol = rarityAccent(rank), rich = rich, t = self.t / 60 })
+    { px = 2, seed = 40 + (#id), accentCol = rarityAccent(rank), rich = rich, t = self.t / 60,
+      tint = Forge.tintFrom(rarCol, 0.16) })
 
   -- ── 4) CONTENU posé par-dessus, en colonne Layout (rythme RÉGULIER : gap = GAPV partout). ──
   local box = { x = x, y = y, w = W, h = h }
@@ -1232,8 +1255,11 @@ end
 -- sinon en construit un éphémère. Tout en ESPACE DESIGN (sous Draw.begin de drawOverlay).
 function Build:drawCardPortrait(id, region, rank, rarCol, rich)
   local rigc = self.previewRigs[id] or self:newRig(id)
-  -- cadre intérieur sombre (logement du portrait) pour détacher la créature de la plaque.
-  Draw.rect(region.x, region.y, region.w, region.h, Theme.c.void, Theme.c.hair, 1)
+  -- PAS de logement noir (révision Kévin) : la créature vit DIRECTEMENT sur le fond de la plaque (teinté
+  -- rareté). Deux fins filets en haut/bas DÉLIMITENT la zone du portrait sans la boxer (matière continue).
+  local divW = region.w - 12
+  Draw.divider(region.x + region.w / 2, region.y + 1, divW, Theme.c.gold, 0.35)
+  Draw.divider(region.x + region.w / 2, region.y + region.h - 1, divW, Theme.c.gold, 0.35)
   local cx = region.x + region.w / 2
   -- FIT : la créature REMPLIT la région (plus de petit sprite perdu dans un grand vide noir). On scale pour
   -- contenir l'étendue OPAQUE réelle (rigBounds) dans la région, pieds calés au sol -> grande et entière.
@@ -1266,24 +1292,29 @@ function Build:drawCardPortrait(id, region, rank, rarCol, rich)
   love.graphics.setColor(1, 1, 1, 1)
 end
 
--- STATS = 3 VALUE-TAGS runiques [HP] [DMG] [CD] : chaque stat dans une PETITE PLAQUE forge bordée
--- (Forge.valueTag) -> mini-label en haut + GRANDE valeur dessous, « ceci est une valeur qui compte »
--- (proposition Kévin). Disposées en rangée Layout (égales, gouttières égales). La valeur est un OVERLAY
--- VIVANT (toujours lisible). Teintes : HP corps, DMG rouge dégâts, CD doré sobre. id = clé de cache stable.
+-- STATS = 3 valeurs FRAMELESS [HP] [DMG] [CD] (révision Kévin : plus d'encadré métal autour des nombres).
+-- Chaque stat = GRANDE valeur lisible (Forge.label, vraie police) + MINI label dessous, alignées en rangée
+-- ÉGALE (Layout.row, gouttières égales). De fins POINTS-diamants séparent les colonnes (≠ boîtes). Teintes :
+-- HP corps, DMG rouge dégâts, CD doré sobre. rarCol n'est plus utilisé pour un liseré (gardé pour signature).
 function Build:drawCardStats(id, U, region, rarCol)
   local c = Theme.c
-  local acc = Forge.accentFrom(rarCol) -- liseré teinté de la rareté (cohérent avec le cadre de la fiche)
-  local cols = Layout.row(region, { { flex = 1 }, { flex = 1 }, { flex = 1 } }, { gap = 7, align = "stretch" })
+  local cols = Layout.row(region, { { flex = 1 }, { flex = 1 }, { flex = 1 } }, { gap = 4, align = "stretch" })
   local specs = {
-    { key = "HP",  value = tostring(U.hp),                              vcol = c.body },
-    { key = "DMG", value = tostring(U.dmg),                             vcol = c.dmg },
-    { key = "CD",  value = string.format("%.1fs", (U.cd or 60) / 60),   vcol = c.muted },
+    { key = T("ui.stat_hp"),  value = tostring(U.hp),                            vcol = c.body },
+    { key = T("ui.stat_dmg"), value = tostring(U.dmg),                           vcol = c.dmg },
+    { key = T("ui.stat_cd"),  value = string.format("%.1fs", (U.cd or 60) / 60), vcol = c.muted },
   }
   for k = 1, 3 do
     local col, s = cols[k], specs[k]
-    Forge.valueTag("build.stat." .. id .. "." .. k, col.x, col.y, col.w, col.h, s.key, s.value,
-      { px = 2, accentCol = acc, seed = 20 + k * 7,
-        labelColor = c.faint, valueColor = s.vcol, labelPx = 8, valuePx = 15 })
+    local ccx = col.x + col.w / 2
+    -- GRANDE valeur (haut, centrée) puis petit label (bas, éteint) -> « ceci est un nombre qui compte »,
+    -- sans cadre. Forge.label = overlay vivant (toujours lisible), ombre portée pour détacher de la pierre.
+    Forge.label(s.value, ccx, col.y + 11, 18, { s.vcol[1], s.vcol[2], s.vcol[3] }, { bold = true, shadow = true })
+    Draw.textC(s.key, ccx, col.y + col.h - 11, c.faint, Theme.ui(8))
+    -- séparateur entre colonnes = un point-diamant forge centré dans la gouttière (pas un trait de boîte).
+    if k < 3 then
+      Forge.diamondAt(col.x + col.w + 2, col.y + col.h / 2 - 2, 2, c.fainter)
+    end
   end
 end
 
