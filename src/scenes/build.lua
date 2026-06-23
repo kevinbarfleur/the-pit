@@ -34,8 +34,14 @@ local RelicGen = require("src.gen.relicgen") -- icones de reliques (rangee type 
 local Bestiary = require("src.core.bestiary") -- marque les créatures vues en boutique (codex)
 local Theme = require("src.ui.theme")
 local Draw = require("src.ui.draw")
-local Frame = require("src.ui.frame") -- encadré runique réutilisable (cases / cartes shop / plaque HUD)
-local Forge = require("src.ui.forge") -- KIT « nightmare forge » : bouton-œil CTA + boutons éco + orbe de vie
+-- ── Kit UI PROPRE (.dc.html / design-system) : la scène n'utilise plus du tout Frame/Forge (kit legacy) ──
+local Panel = require("src.ui.panel")    -- surface propre (dégradé + liseré iron) : remplace Frame/Forge.uiPlate/uiCard
+local Button = require("src.ui.button")  -- boutons propres : primary (CTA + yeux) / eco (coût) / secondary
+local Slot = require("src.ui.slot")      -- cases du plateau (6 états) : remplace Forge.uiSocket
+local Gauge = require("src.ui.gauge")    -- jauges vies/XP : remplace l'orbe forge baké
+local Badge = require("src.ui.badge")    -- coût (pièce+nombre) / pips de niveau / diamants : remplace Forge.coinAt/diamondAt/label
+local Dividers = require("src.ui.dividers") -- séparateurs laiton/sang propres
+local Feel = require("src.ui.feel")      -- JUICE : survol (glow/lift) + press (squash/flash) + action différée
 local Layout = require("src.ui.layout") -- MOTEUR de layout flex (alignement parfait, fill-to-container)
 local Keywords = require("src.ui.keywords") -- registre afflictions (mini-chips de carte)
 local Chip = require("src.ui.chip") -- pastilles keyword (icône d'affliction)
@@ -102,9 +108,7 @@ function Build.new(palette, vw, vh, host)
   end
   -- self.button / rerollBtn / declineBtn + les rects du layout (orbe, cartes) sont calculés par
   -- computeShop() via le moteur Layout (déjà appelé ci-dessus) -> alignement parfait, fill-to-container.
-  -- ACCENTS de liseré des SOCKETS de case (construits une fois) : or(survol/grant) / vert(drop) / sang(voisin).
-  local c0 = Theme.c
-  self._cellAccents = { gold = Forge.accentFrom(c0.goldBright), drop = Forge.accentFrom(c0.drop), blood = Forge.accentFrom(c0.blood) }
+  -- (les accents de liseré des cases sont désormais portés par les 6 ÉTATS de l'atome Slot — plus de cache forge.)
   self.ambient = Ambient.new(3) -- fond calme (mode "build" : dégradé, pas de particules d'ambiance)
   if self.host.run then self:syncSlots() end
   return self
@@ -380,19 +384,23 @@ function Build:mousepressed(vx, vy, button)
   -- rect REROLL fidèle à l'état du grant (ligne pleine / scindée) AVANT le hit-test (mousepressed peut être
   -- appelé sans update, ex. tests headless).
   self:syncEcoRects(run and run.pendingSlotGrant)
-  if inRect(vx, vy, self.button) then self:startCombat(); return end
+  -- COMBAT : feedback de press IMMÉDIAT (squash + flash -> les YEUX du CTA réagissent au clic) puis bascule
+  -- de scène TOUT DE SUITE (l'e2e headless asserte la transition juste après le clic -> on ne diffère pas).
+  if inRect(vx, vy, self.button) then Feel.press("build.combat"); self:startCombat(); return end
   if run then
     -- Grant en attente : REFUSER prioritaire (son rect cohabite avec la moitié REROLL) ; sinon ACCEPTER
     -- (clic sur une case verrouillée). Puis REROLL.
     if run.pendingSlotGrant then
-      if inRect(vx, vy, self.declineBtn) then run:declineSlotGrant(); return end
+      if inRect(vx, vy, self.declineBtn) then Feel.press("build.decline"); run:declineSlotGrant(); return end
       local lc = self:lockedCellAt(vx, vy)
       if lc then if run:acceptSlotGrant() then self.board:openCell(lc) end; return end
     end
     -- BUY XP : achète de l'XP de boutique si abordable (NE re-tire PAS la boutique : les nouvelles cotes
     -- s'appliquent au prochain reroll/round -> préserve l'arbitrage XP-vs-reroll-vs-unités).
-    if inRect(vx, vy, self.raiseBtn) then if run:canBuyXp() then run:buyXp() end; return end
-    if inRect(vx, vy, self.rerollBtn) then run:reroll(); return end
+    -- BUY XP / REROLL : feedback de press IMMÉDIAT (Feel.press sans action) + action TOUT DE SUITE (l'e2e
+    -- headless asserte l'or débité juste après le clic -> on ne diffère PAS ces actions de boutique).
+    if inRect(vx, vy, self.raiseBtn) then Feel.press("build.raise"); if run:canBuyXp() then run:buyXp() end; return end
+    if inRect(vx, vy, self.rerollBtn) then Feel.press("build.reroll"); run:reroll(); return end
     local oi = self:shopAt(vx, vy)
     if oi then -- prend une offre achetable (consommée seulement au lâcher sur une case valide)
       local o = run.shop[oi]
@@ -658,10 +666,18 @@ end
 -- ── Update ──
 function Build:update(frameDt)
   self.t = self.t + frameDt
-  Forge.uiTick(frameDt / 60) -- horloge des boutons forge (en SECONDES ; frameDt ~1.0/tick au 1/60)
-  -- synchronise le rect REROLL avec l'état du grant (ligne pleine sans grant / scindée avec) -> hit-test
-  -- toujours fidèle à ce qui est dessiné (mousepressed s'exécute après update).
+  -- synchronise le rect REROLL (ligne pleine sans grant / scindée avec) AVANT le survol/hit-test.
   self:syncEcoRects(self.host.run and self.host.run.pendingSlotGrant)
+  -- JUICE (remplace Forge.uiTick) : avance easings + fire les actions différées (le COMBAT diffère de ~120 ms
+  -- pour qu'on VOIE les yeux du CTA réagir avant la bascule de scène). Survol des 4 boutons -> glow/lift animés.
+  Feel.update(frameDt)
+  local run0 = self.host.run
+  Feel.hover("build.combat", inRect(self.mx, self.my, self.button))
+  if run0 then
+    Feel.hover("build.reroll", inRect(self.mx, self.my, self.rerollBtn))
+    Feel.hover("build.raise", inRect(self.mx, self.my, self.raiseBtn))
+    Feel.hover("build.decline", (run0.pendingSlotGrant and inRect(self.mx, self.my, self.declineBtn)) or false)
+  end
   self.ambient:update(frameDt)
   if self.host.run and self.board.activeCount ~= self.host.run.slots then self:syncSlots() end
   for i, sr in pairs(self.slotRigs) do
@@ -727,28 +743,43 @@ function Build:drawBack(view)
   -- de colonne). Voile de sang d'autant plus dense que la case est avancée -> rend visible le coût de
   -- placer un carry au front, convertit la frustration RNG en skill de placement (combat-model §4-6).
   -- (l'ÉTAT reste porté par la bordure en overlay, pas par le fond.)
+  -- CASES = atomes Slot (6 états du design-system) dessinés ICI, DERRIÈRE le rig d'aperçu (fill opaque +
+  -- hachure) : le rig de drawWorld se pose par-dessus. L'état porte tout le décor (bord pierre/voisin sang/
+  -- cible verte/survol laiton/scellé) + pip de type + pips de niveau. La carte de risque (voile de sang front)
+  -- se superpose ensuite (avant le rig). Priorité d'état : drop > hover > voisin > occupé > vide.
   local minCol, maxCol = math.huge, -math.huge
   for _, cell in ipairs(b.shape.cells) do
     if cell.x < minCol then minCol = cell.x end
     if cell.x > maxCol then maxCol = cell.x end
   end
   local spanCol = math.max(1, maxCol - minCol)
+  local S = SLOT_HALF * 2
   for i = 1, 9 do
-    local p = self.pos[i]
-    Draw.rect(p.x * 4 - SLOT_HALF, p.y * 4 - SLOT_HALF, SLOT_HALF * 2, SLOT_HALF * 2,
-      b.slots[i].unlocked and c.slot or c.slotLocked)
+    local p, slot = self.pos[i], b.slots[i]
+    local x, y = p.x * 4 - SLOT_HALF, p.y * 4 - SLOT_HALF
+    local sr = self.slotRigs[i]
+    local state
+    if not slot.unlocked then state = "locked"
+    elseif i == ui.dropTarget then state = "drop"
+    elseif i == ui.hover then state = "hover"
+    elseif ui.nbset[i] then state = "neighbor"
+    elseif sr then state = "selected"
+    else state = "empty" end
+    Slot.draw(x, y, S, state, sr and { typePip = Units[sr.id].type, level = sr.level or 1 } or nil)
+    -- carte de risque : voile de sang d'autant plus dense que la case est avancée (front exposé au ciblage).
     local cell = b.shape.cells[i]
-    if b.slots[i].unlocked and cell then
-      local expo = 1 - (maxCol - cell.x) / spanCol -- 1 = front exposé, 0 = arrière protégé
+    if slot.unlocked and cell then
+      local expo = 1 - (maxCol - cell.x) / spanCol
       if expo > 0.001 then
         Draw.setColor({ c.edgeActive[1], c.edgeActive[2], c.edgeActive[3], 0.16 * expo })
-        love.graphics.rectangle("fill", p.x * 4 - SLOT_HALF, p.y * 4 - SLOT_HALF, SLOT_HALF * 2, SLOT_HALF * 2)
+        love.graphics.rectangle("fill", x, y, S, S)
       end
     end
   end
 
-  -- Panneau boutique + FONDS de carte = PLAQUES FORGE PLEINES (matière patinée, derrière les rigs d'aperçu)
-  -- -> chaque offre lit comme une dalle dense remplie (≠ cadre creux sur un grand vide). Vendu = void mat.
+  -- Bandeau boutique (bas) + FOND de chaque carte = PANNEAUX propres (dégradé sombre + liseré teinté), dessinés
+  -- DERRIÈRE le rig d'aperçu (drawWorld) ; le contenu (pip/nom/coût/chips) est posé en overlay. Le liseré LIT le
+  -- TYPE de la créature (or vif au survol, sourd hors budget) ; Panel enregistre la box -> anneau de distorsion.
   Draw.rect(0, 556, Draw.W, 164, c.panel)
   Draw.setColor(c.line); love.graphics.setLineWidth(2); love.graphics.line(0, 557, Draw.W, 557); love.graphics.setLineWidth(1)
   if run then
@@ -757,16 +788,16 @@ function Build:drawBack(view)
       if o then
         local x, y, w, h = rect.x * 4, rect.y * 4, rect.w * 4, rect.h * 4
         if o.sold then
-          Draw.rect(x, y, w, h, c.void)
+          Draw.rect(x, y, w, h, c.void, c.iron, 1)
         else
           local aff = run.gold >= o.cost
-          -- FOND de carte LAVÉ vers la rareté de l'offre (chaque dalle « lit » sa rareté). Au SURVOL le
-          -- lavage MONTE nettement (0.30) -> le fond s'éclaire visiblement, pas seulement le liseré.
-          local rk = (Units[o.id] and Units[o.id].rank) or 1
           local hot = (ui.shopHover == i)
-          local amt = hot and 0.30 or 0.15
-          Forge.uiPlate("build.card." .. i, x, y, w, h,
-            { px = 2, disabled = not aff, tint = Forge.tintFrom(Rarity.frame(rk), amt) })
+          local utype = Units[o.id] and Units[o.id].type
+          local border
+          if not aff then border = c.iron
+          elseif hot then border = c.gold
+          else border = (utype and Theme.type(utype).color) or c.iron end
+          Panel.draw(x, y, w, h, { fill1 = hot and c.stone700 or c.stone800, fill2 = c.stone900, border = border, hi = aff })
         end
       end
     end
@@ -861,38 +892,20 @@ function Build:drawOverlay(view)
     Draw.textC(T("ui.slot_grant"), Draw.W / 2, 134, c.gold, Theme.ui(12))
   end
 
-  -- Cases = SOCKETS FORGE (métal patiné, fond transparent -> le rig de drawWorld transparaît). L'ÉTAT est
-  -- porté par l'ACCENT du liseré : sobre (vide) / or (survol, cible de grant) / vert (drop) / sang (voisin
-  -- d'adjacence) / sombre (scellé). On GARDE le placement sigil-graphe (self.pos[i], pas de grille). Décor
-  -- par-dessus : pip de type, pips de niveau (diamants forge), nom de l'unité. PX=2 (densité forge).
+  -- Décor d'overlay des cases : le SOCKET (atome Slot, 6 états) + pip de type + pips de niveau sont dessinés
+  -- en drawBack (DERRIÈRE le rig d'aperçu, fill opaque). Ici on ne pose que ce qui doit passer DEVANT le rig :
+  -- le NOM de l'unité (sous la case) et le « + » de cible quand un grant de slot attend (case scellée à remplir
+  -- ; sinon la case scellée porte déjà son glyphe de cadenas via Slot « locked »).
   local granting = run and run.pendingSlotGrant
   local S = SLOT_HALF * 2
-  local A = self._cellAccents
   for i = 1, 9 do
     local p, slot = self.pos[i], b.slots[i]
-    local x, y = p.x * 4 - SLOT_HALF, p.y * 4 - SLOT_HALF
     if not slot.unlocked then
-      -- scellée : socket sombre (accent or seulement si c'est une cible de grant).
-      Forge.uiSocket("build.cell." .. i, x, y, S, S,
-        { px = 2, seed = 30 + i, accentCol = granting and A.gold or nil, weather = not granting })
-      Draw.textC("+", p.x * 4, p.y * 4 - 12, granting and c.gold or c.lock, Theme.ui(18))
+      if granting then Draw.textC("+", p.x * 4, p.y * 4 - 12, c.gold, Theme.subhead(18)) end
     else
-      local acc
-      if i == ui.dropTarget then acc = A.drop
-      elseif i == ui.hover then acc = A.gold
-      elseif ui.nbset[i] then acc = A.blood
-      else acc = nil end -- vide/repos : socket sobre
-      Forge.uiSocket("build.cell." .. i, x, y, S, S, { px = 2, seed = 30 + i, accentCol = acc })
       local sr = self.slotRigs[i]
       if sr then
-        Draw.pip(Units[sr.id].type, x + 13, y + 13, 5)
-        -- pips de niveau = DIAMANTS forge (dorés) en haut-droite, alignés.
-        local lvl = sr.level or 1
-        for k = 1, (lvl > 1 and lvl or 0) do
-          local px2 = x + S - 12 - (lvl - k) * 11
-          Forge.diamondAt(px2 + 3, y + 10, 3, c.goldBright)
-        end
-        Draw.textC(T("unit." .. sr.id .. ".name"), p.x * 4, y + S + 3, c.name, Theme.ui(9))
+        Draw.textC(T("unit." .. sr.id .. ".name"), p.x * 4, p.y * 4 - SLOT_HALF + S + 3, c.name, Theme.label(9))
       end
     end
   end
@@ -924,15 +937,16 @@ function Build:drawOverlay(view)
   -- ORBE DE VIE (extrême gauche de la barre du bas) : fluide = vies/START_LIVES, compteur au-dessus.
   if run then self:drawLifeOrb(run) end
 
-  -- Bouton COMBAT = le GROS BOUTON-ŒIL forge (nuée d'yeux qui s'ouvrent et suivent le curseur au survol).
+  -- Bouton COMBAT = le CTA propre (variant "primary") : sang + YEUX cauchemardesques qui s'ouvrent au survol
+  -- (glow) et réagissent au clic (flash), regard qui suit le curseur (opts.mouse en espace design). Le juice
+  -- (lift/squash/flash/glow) vient de Feel.state ; l'action est différée côté mousepressed. Button marque la box.
   local enabled = self:placedCount() > 0
   local r = self.button
   local over = inRect(self.mx, self.my, r)
-  Forge.uiButton("build.combat", r.x * 4, r.y * 4, r.w * 4, r.h * 4,
+  Button.draw(r.x * 4, r.y * 4, r.w * 4, r.h * 4, "primary",
     enabled and T("ui.fight") or T("ui.place_unit"),
-    { tone = "cta", hover = over, active = over and love.mouse and love.mouse.isDown and love.mouse.isDown(1),
-      disabled = not enabled, mouse = { mx = self.mx * 4, my = self.my * 4 },
-      fontSz = 9, eyeR = 7 })
+    { hover = over, disabled = not enabled, feel = Feel.state("build.combat"),
+      id = "build.combat", mouse = { mx = self.mx * 4, my = self.my * 4 }, t = self.t / 60 })
 
   -- Rangée de reliques possédées (au-dessus de la boutique) + infobulles (relique prioritaire sur unité).
   self:drawRelicRow()
@@ -967,30 +981,19 @@ function Build:drawShopCard(i, rect, o, hot)
   local box = { x = x, y = y, w = w, h = h }
 
   if o.sold then
-    Draw.rect(x, y, w, h, nil, c.line, 2)
-    Draw.textC(T("ui.sold"), x + w / 2, y + h / 2 - 6, c.ghost, Theme.ui(10))
+    Draw.textC(T("ui.sold"), x + w / 2, y + h / 2 - 6, c.ghost, Theme.label(10))
     return
   end
   local aff = (self.host.run.gold >= o.cost)
   local utype = Units[o.id].type
 
-  -- CADRE forge patiné (fond transparent : la plaque bakée de drawBack + la créature transparaissent).
-  -- accent du LISERÉ : teinté par le TYPE de la créature (flesh/order/bone/arcane/abyss) -> on lit le type
-  -- DÈS le coup d'œil, même sur le cadre. Au SURVOL : liseré OR vif (le cadre s'allume nettement, en plus
-  -- du fond qui s'éclaire). Hors-budget : sobre (nil).
-  local acc
-  if not aff then acc = nil
-  elseif hot then acc = self._cellAccents.gold
-  else acc = Forge.accentFrom(Theme.type(utype).color) end
-  Forge.uiSocket("build.cardframe." .. i, x, y, w, h, { px = 2, seed = 70 + i, accentCol = acc })
-
+  -- (le FOND + le LISERÉ de la carte sont dessinés en drawBack, DERRIÈRE le rig d'aperçu ; ici = le CONTENU.)
   -- COLONNE interne : région créature (flex) au-dessus du bloc d'info (nom + coût/chips), avec un padding.
   local inner = Layout.inset(box, { l = 8, t = 8, r = 8, b = 8 })
   local rows = Layout.column(inner, { { flex = 1 }, { size = 16 }, { size = 16 } }, { gap = 3, align = "stretch" })
   local nameBox, costBox = rows[2], rows[3]
 
-  -- PIP DE TYPE (haut-gauche) GROS et bien TYPÉ (révision Kévin : l'ancien pip était trop discret) -> on
-  -- voit instantanément flesh/order/bone/arcane/abyss. Halo additif au survol (la rune « s'illumine »).
+  -- PIP DE TYPE (haut-gauche), bien typé (flesh/order/bone/arcane/abyss) + halo additif au survol.
   local tcol = Theme.type(utype).color
   Draw.pip(utype, x + 14, y + 14, 6, aff and tcol or c.fainter)
   if hot and aff and love.graphics.setBlendMode and love.graphics.circle then
@@ -1000,32 +1003,25 @@ function Build:drawShopCard(i, rect, o, hot)
     love.graphics.setBlendMode("alpha"); love.graphics.setColor(1, 1, 1, 1)
   end
 
-  -- NOM (centré dans sa rangée).
+  -- NOM (Cinzel = police de NOM du système 4-voix, lisible et centrée dans sa rangée).
   local nameCol = aff and c.name or c.dim
-  Draw.textC(T("unit." .. o.id .. ".name"), nameBox.x + nameBox.w / 2, nameBox.y + 2, nameCol, Theme.ui(9))
+  Draw.textC(T("unit." .. o.id .. ".name"), nameBox.x + nameBox.w / 2, nameBox.y + 1, nameCol, Theme.subhead(12))
 
-  -- RANGÉE BAS : chips d'affliction (gauche) + coût (droite). Les chips = ce que l'unité APPLIQUE.
-  local font = Theme.ui(8)
-  love.graphics.setFont(font)
+  -- RANGÉE BAS : chips d'affliction (gauche, ce que l'unité APPLIQUE) + coût (droite, Badge propre).
+  local font = Theme.label(8)
   local affl = Keywords.applied(Units[o.id])
   local cx = costBox.x
   for _, k in ipairs(affl) do
-    -- mini-chip ICÔNE SEULE (pas de label : la place est rare) -> reconnaissable par sa couleur+forme.
     local cw = Chip.draw(cx, costBox.y + 1, { key = k, label = "", icon = true, font = font, h = 13 })
     cx = cx + cw + 3
-    if cx > costBox.x + costBox.w - 34 then break end -- ne déborde pas sous le coût (pièce + valeur read)
+    if cx > costBox.x + costBox.w - 32 then break end -- ne déborde pas sous le coût (Badge.cost à droite)
   end
-  -- COÛT : PIÈCE d'or + valeur en POLICE READ (lisible, grande), callé à droite -> le prix saute aux yeux.
-  -- L'or change de teinte selon le budget (or vif si achetable, éteint sinon). La valeur est sans « g » (la
-  -- pièce DIT déjà l'or) -> chiffre net et gros.
-  local cd = aff and c.goldBright or c.fainter
-  local costStr = tostring(o.cost)
-  local fontCost = Theme.read(16)
-  local cw = fontCost:getWidth(costStr)
-  local valX = costBox.x + costBox.w           -- bord droit (valeur right-aligned)
-  local midY = costBox.y + 8
-  Forge.label(costStr, valX, midY, 16, { cd[1], cd[2], cd[3] }, { read = true, right = true, shadow = true })
-  Forge.coinAt(valX - cw - 7, midY, 4, aff and c.goldBright or c.fainter, not aff)
+  -- COÛT : Badge.cost (losange laiton + nombre Space Mono), RIGHT-aligné (on mesure sa largeur pour finir au
+  -- bord droit de la rangée). Vire au sang séché si hors budget -> le prix saute aux yeux et lit le budget.
+  local valFont = Theme.value(15)
+  local cval = tostring(o.cost)
+  local badgeW = 14 + (valFont and valFont:getWidth(cval) or #cval * 8)
+  Badge.cost(costBox.x + costBox.w - badgeW, costBox.y, o.cost, aff)
 end
 
 -- Bannière de run (HUD haut) : 4 stats [symbole · LABEL · VALEUR], symbole par stat (pièce/diamant/pip/case),
@@ -1034,9 +1030,9 @@ end
 local HUD_SYMW = 12 -- largeur réservée au symbole (icône + petit gap)
 function Build:drawBanner(run)
   local c = Theme.c
-  local fontL = Theme.ui(11)   -- LABELS (capitales courtes : Silkscreen reste idéal)
-  local fontV = Theme.read(16) -- VALEURS (lisibles, prominentes)
-  -- VIES retirées du HUD : elles vivent désormais dans l'ORBE DE VIE (bas-gauche) -> pas de doublon.
+  local fontL = Theme.label(10)  -- LABELS (Space Mono, petites capitales nettes)
+  local fontV = Theme.value(15)  -- VALEURS (Space Mono, prominentes)
+  -- VIES retirées du HUD : elles vivent désormais dans le module de vie (bas-gauche) -> pas de doublon.
   local seg = {
     { sym = "coin",    label = T("ui.gold"),  value = tostring(run.gold) },
     { sym = "diamond", label = T("ui.wins"),  value = run.wins .. "/" .. Run.WIN_TARGET },
@@ -1051,32 +1047,34 @@ function Build:drawBanner(run)
   end
   total = total + segGap * (#seg - 1)
   local x = Draw.W / 2 - total / 2
-  -- Plaque runique : intègre le HUD (biseau bronze) au lieu d'un texte qui flotte sur le fond.
-  Frame.draw(x - 20, 12, total + 40, 32, { level = "bevel", fill = c.panel })
+  -- Plaque PROPRE (Panel : dégradé sombre + liseré iron + éclat) intégrant le HUD au lieu d'un texte flottant.
+  Panel.draw(x - 20, 12, total + 40, 32, { fill1 = c.stone800, fill2 = c.stone900 })
   local midY = 28 -- centre vertical de la plaque
+  local lblY, valY = midY - fontL:getHeight() / 2, midY - fontV:getHeight() / 2
   for _, s in ipairs(seg) do
-    -- symbole (centré sur midY).
+    -- symbole (centré sur midY) en primitives propres (pièce/diamant/pip/case).
     if s.sym == "coin" then
-      Forge.coinAt(x + 4, midY, 4, c.goldBright)
+      Draw.setColor(c.gold); love.graphics.circle("fill", x + 4, midY, 4)
+      Draw.setColor(c.brassS); love.graphics.circle("fill", x + 3, midY - 1, 1); Draw.reset()
     elseif s.sym == "diamond" then
-      Forge.diamondAt(x + 4, midY, 4, c.goldBright, c.gold)
+      Badge.diamond(x + 4, midY, 4, c.gold, c.brassD, c.brassS)
     elseif s.sym == "pip" then
       Draw.setColor(c.gold); love.graphics.circle("fill", x + 4, midY, 3); Draw.reset()
     else -- slot : petite case
       Draw.setColor(c.gold); love.graphics.rectangle("fill", x + 1, midY - 3, 7, 7)
-      Draw.setColor(c.panelDeep); love.graphics.rectangle("fill", x + 3, midY - 1, 3, 3); Draw.reset()
+      Draw.setColor(c.stone900); love.graphics.rectangle("fill", x + 3, midY - 1, 3, 3); Draw.reset()
     end
     x = x + HUD_SYMW
-    -- LABEL (éteint) puis VALEUR (claire, read), centrés verticalement sur midY.
-    Draw.text(s.label, x, midY - fontL:getHeight() / 2, c.fainter, fontL)
+    -- LABEL (éteint) puis VALEUR (claire), centrés verticalement sur midY.
+    Draw.text(s.label, x, lblY, c.fainter, fontL)
     x = x + fontL:getWidth(s.label) + lblGap
-    Forge.label(s.value, x, midY, 16, { c.title[1], c.title[2], c.title[3] }, { read = true, left = true, shadow = true })
+    Draw.text(s.value, x, valY, c.title, fontV)
     x = x + fontV:getWidth(s.value) + segGap
   end
   if run.winStreak >= 2 or run.lossStreak >= 2 then
     local won = run.winStreak >= 2
     Draw.textC(won and T("ui.win_streak", { n = run.winStreak }) or T("ui.loss_streak", { n = run.lossStreak }),
-      Draw.W / 2, 46, won and c.gold or c.blood, Theme.ui(11))
+      Draw.W / 2, 46, won and c.gold or c.blood, Theme.label(11))
   end
 end
 
@@ -1087,46 +1085,34 @@ end
 function Build:drawLifeOrb(run)
   local c = Theme.c
   local box = self.lay.lifeOrbBox
-  local px = 2
-  -- L'orbe est CARRÉ ; on prend min(largeur,hauteur) de la boîte pour qu'il tienne, divisé par px -> art.
-  local side = math.min(box.w, box.h)
-  local art = math.max(8, math.floor(side / px))
-  local diam = art * px
-  -- centré dans la boîte (la boîte fait toute la hauteur de la colonne ; l'orbe la remplit au max).
-  local ox = box.x + math.floor((box.w - diam) / 2)
-  local oy = box.y + math.floor((box.h - diam) / 2)
-  if not self.lifeOrbWidget or self.lifeOrbWidget.aw ~= art then
-    self.lifeOrbWidget = Forge.newWidget(art, art) -- (RE)BAKE à la taille calculée par le layout
-  end
-  local maxL = Run.START_LIVES
-  local level = maxL > 0 and (math.max(0, math.min(maxL, run.lives)) / maxL) or 0
-  local img = Forge.render(self.lifeOrbWidget,
-    function(b, W, H, t) Forge.drawOrb(b, W, H, level, Forge.LIQ.blood, 101, t) end, self.t / 60)
-  Forge.blit(img, ox, oy, px)
-  -- compteur centré dans sa boîte (self.lay.lifeLabel), au-dessus de l'orbe. Sang si vies basses.
   local lab = self.lay.lifeLabel
+  local maxL = Run.START_LIVES
+  -- Module de vie (bas-gauche), TOUT PROPRE — plus aucun orbe forge baké :
+  --   [ libellé « LIVES n/5 » | rangée de CŒURS (Gauge.lives) | « TIER n/5 » + barre d'XP de boutique ].
+  -- 1) LIBELLÉ (Space Mono) centré au-dessus. Sang si vies basses.
   local low = run.lives <= 1
-  Draw.textC(T("ui.lives_orb", { n = run.lives, max = maxL }), lab.x + lab.w / 2, lab.y + 2,
-    low and c.blood or c.gold, Theme.uiBold(12))
-  -- NIVEAU + BARRE D'XP DE BOUTIQUE (TFT-style) : sous l'orbe, « TIER n/5 » et une barre fine remplie à
-  -- shopXp/xpToNext() (au tier MAX : barre pleine, libellé MAX). Le bouton BUY XP la fait monter ; la passive
-  -- aussi (1/round). Survol de la barre -> infobulle des cotes par rang (cf. drawOddsTooltip). PUR-RENDER.
-  local capFont = Theme.ui(9)
+  Draw.textC(T("ui.lives_orb", { n = run.lives, max = maxL }), lab.x + lab.w / 2, lab.y + 1,
+    low and c.blood or c.gold, Theme.label(11))
+  -- 3) NIVEAU + BARRE D'XP (TFT-style), en bas de la colonne : « TIER n/5 » + barre remplie à shopXp/xpToNext()
+  -- (au tier MAX : pleine, libellé MAX). Survol de la barre -> infobulle des cotes par rang (drawOddsTooltip).
+  local capFont = Theme.label(9)
   local atMax = run.shopTier >= Run.MAX_TIER
   local tierStr = T("ui.tier_label") .. " " .. run.shopTier .. "/" .. Run.MAX_TIER
-  local labY = box.y + box.h - capFont:getHeight() - 6
-  Draw.textC(tierStr, ox + diam / 2, labY, atMax and c.gold or c.faint, capFont)
-  -- barre fine sous le libellé, centrée sur l'orbe ; remplissage = progression vers le tier suivant.
-  local barW = math.max(36, diam)
-  local barH = 4
-  local barX = ox + math.floor((diam - barW) / 2)
-  local barY = box.y + box.h - barH - 1
+  local labY = box.y + box.h - capFont:getHeight() - 7
+  Draw.textC(tierStr, box.x + box.w / 2, labY, atMax and c.gold or c.faint, capFont)
+  local barW = math.max(60, box.w - 16)
+  local barH, barX = 5, box.x + math.floor((box.w - math.max(60, box.w - 16)) / 2)
+  local barY = box.y + box.h - barH - 2
   local toNext = run:xpToNext()
   local pct = atMax and 1 or (toNext and toNext > 0 and math.min(1, run.shopXp / toNext) or 0)
-  Draw.bar(barX, barY, barW, barH, pct, atMax and c.gold or c.goldBright, c.panelDeep, c.hair)
-  -- hit-test de la barre (espace VIRTUEL) pour le survol -> infobulle des cotes. On élargit un peu en
-  -- hauteur (englobe le libellé TIER) pour faciliter le survol de cette petite zone.
+  Draw.bar(barX, barY, barW, barH, pct, atMax and c.gold or c.goldBright, c.stone900, c.hair)
   self.xpBarRect = { x = barX / 4, y = labY / 4, w = barW / 4, h = (barY + barH - labY) / 4 }
+  -- 2) CŒURS (Gauge.lives) centrés horizontalement, verticalement entre le libellé et le bloc TIER.
+  local hscale, hgap = 2, 3
+  local heartsW = maxL * (7 * hscale + hgap) - hgap
+  local hx = box.x + math.floor((box.w - heartsW) / 2)
+  local hy = box.y + math.max(6, math.floor(((labY - box.y) - 6 * hscale) / 2))
+  Gauge.lives(hx, hy, run.lives, maxL, hscale, hgap)
 end
 
 -- INFOBULLE DES COTES (survol de la barre d'XP) : « SHOP ODDS · TIER n/5 » + une ligne par rang NON-NUL
@@ -1141,8 +1127,8 @@ function Build:drawOddsTooltip(run)
   for rank = 1, Run.MAX_TIER do
     if (odds[rank] or 0) > 0 then rows[#rows + 1] = { rank = rank, pct = odds[rank] } end
   end
-  local headFont = Theme.uiBold(10)
-  local rowFont = Theme.ui(11)
+  local headFont = Theme.label(10)
+  local rowFont = Theme.label(11)
   local PAD = 10
   local ROW_H = rowFont:getHeight() + 3
   local headStr = T("ui.tier_odds") .. "  ·  " .. T("ui.tier_label") .. " " .. run.shopTier .. "/" .. Run.MAX_TIER
@@ -1160,7 +1146,7 @@ function Build:drawOddsTooltip(run)
   if y + H > Draw.H then y = Draw.H - H - 6 end
   if y < 4 then y = 4 end
   x, y = math.floor(x), math.floor(y)
-  local ix, iy, iw = Frame.draw(x, y, W, H, { level = "gilded", state = "idle", px = 2 })
+  local ix, iy, iw = Panel.draw(x, y, W, H, { fill1 = c.stone800, fill2 = c.stone900, border = c.brass })
   local cx = ix + PAD
   local cy = iy + (PAD - 4)
   Draw.text(headStr, cx, cy, c.gold, headFont)
@@ -1179,10 +1165,8 @@ end
 -- id = clé de cache stable ; label = texte ; cost = valeur du diamant (or) ; enabled = grise si faux.
 function Build:drawEcoButton(id, rect, label, cost, enabled)
   local hot = inRect(self.mx, self.my, rect)
-  Forge.uiButton(id, rect.x * 4, rect.y * 4, rect.w * 4, rect.h * 4, label,
-    { tone = "eco", cost = cost, hover = hot,
-      active = hot and love.mouse and love.mouse.isDown and love.mouse.isDown(1),
-      disabled = not enabled })
+  Button.draw(rect.x * 4, rect.y * 4, rect.w * 4, rect.h * 4, "eco", label,
+    { cost = cost, hover = hot, disabled = not enabled, feel = Feel.state(id), id = id })
 end
 
 -- ── Fiche monstre (carte TCG forge, au survol) ────────────────────────────────────────────────────
@@ -1215,18 +1199,14 @@ end
 -- Rangée de reliques possédées : SOCLES forge patinés (Forge.uiSocket, fond transparent) bordant
 -- l'artefact baké (RelicGen.cached). Liseré teinté de la famille de la relique ; ALLUMÉ (or vif) au survol.
 function Build:drawRelicRow()
-  local run, c = self.host.run, Theme.c
+  local run = self.host.run
   if not run or #run.relics == 0 then return end
   local hov = self:relicAt(self.mx, self.my)
   for i, rel in ipairs(run.relics) do
     local r = self:relicRowRect(i)
-    local on = (hov == i)
-    local fam = RELIC_TYPE[rel.id] or "bone"
-    -- accent : or vif au survol, sinon teinte sobre de la famille (le socle ne s'éteint jamais complètement).
-    local acc = on and Forge.accentFrom(c.goldBright) or Forge.accentFrom(Theme.type(fam).color)
-    Forge.uiSocket("build.relic." .. i, r.x, r.y, r.w, r.h,
-      { px = 2, seed = 90 + i, frameTh = 3, accentCol = acc })
-    -- artefact baké centré DANS le socle (le cadre borde sans masquer).
+    -- socle = atome Slot (carré) : allumé (« hover ») au survol, sobre (« empty ») sinon. L'artefact baké
+    -- (RelicGen) se pose au centre ; son propre liseré porte déjà la couleur de famille de la relique.
+    Slot.draw(r.x, r.y, r.w, (hov == i) and "hover" or "empty")
     local baked = RelicGen.cached(rel.id, self.palette)
     if baked and baked.image then
       love.graphics.setColor(1, 1, 1, 1)
@@ -1243,7 +1223,7 @@ function Build:drawRelicTooltip(id)
   local c = Theme.c
   local fam = RELIC_TYPE[id] or "bone"
   local emblem = Theme.type(fam)
-  local fontE, fontF = Theme.ui(12), Theme.loreRoman(13)
+  local fontE, fontF = Theme.body(13), Theme.flavor(13)
   local W, PAD = 300, 20
   local contentW = W - PAD * 2
 
@@ -1263,9 +1243,8 @@ function Build:drawRelicTooltip(id)
   if y < 4 then y = 4 end
   x, y = math.floor(x), math.floor(y)
 
-  -- FOND forge (plaque qui respire + cadre patiné, accent de la famille).
-  Forge.uiCard("build.reliccard." .. id, x, y, W, h,
-    { px = 2, seed = 60 + (#id), accentCol = Forge.accentFrom(emblem.color), rich = false, t = self.t / 60 })
+  -- FOND PROPRE (Panel : dégradé sombre + liseré iron + liseré d'accent de la famille). Panel marque la box.
+  Panel.draw(x, y, W, h, { fill1 = c.stone800, fill2 = c.stone900, border = c.iron, accent = emblem.color })
 
   -- CONTENU posé par-dessus, en colonne Layout.
   local inner = Layout.inset({ x = x, y = y, w = W, h = h }, PAD)
@@ -1276,10 +1255,10 @@ function Build:drawRelicTooltip(id)
   }, { gap = 0, align = "stretch" })
   local rHead, rEff, rFlav = rows[1], rows[2], rows[3]
 
-  -- (1) HEADER : gem de famille (diamant forge) + nom (or).
+  -- (1) HEADER : gem de famille (Badge.diamond) + nom (Cinzel, police de NOM du système 4-voix).
   local midH = rHead.y + rHead.h / 2
-  Forge.diamondAt(rHead.x + 5, midH, 4, emblem.color, emblem.dark)
-  Draw.text(T("relic." .. id .. ".name"), rHead.x + 16, rHead.y + 2, c.title, Theme.uiBold(14))
+  Badge.diamond(rHead.x + 5, midH, 4, emblem.color, emblem.dark, c.brassS)
+  Draw.text(T("relic." .. id .. ".name"), rHead.x + 16, rHead.y + 1, c.title, Theme.heading(15))
 
   -- (2) EFFET CLAIR (or vif) : le coeur du modèle lisible.
   Draw.textWrap(effStr, rEff.x, rEff.y, rEff.w, c.goldBright, fontE)
