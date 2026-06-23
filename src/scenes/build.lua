@@ -40,13 +40,12 @@ local Button = require("src.ui.button")  -- boutons propres : primary (CTA + yeu
 local Slot = require("src.ui.slot")      -- cases du plateau (6 états) : remplace Forge.uiSocket
 local Gauge = require("src.ui.gauge")    -- jauges vies/XP : remplace l'orbe forge baké
 local Badge = require("src.ui.badge")    -- coût (pièce+nombre) / pips de niveau / diamants : remplace Forge.coinAt/diamondAt/label
-local Dividers = require("src.ui.dividers") -- séparateurs laiton/sang propres
 local Feel = require("src.ui.feel")      -- JUICE : survol (glow/lift) + press (squash/flash) + action différée
+local Reliquary = require("src.ui.reliquary") -- ENROBAGE : cadre de pierre gravée autour de l'écran (spec §A.9)
 local Layout = require("src.ui.layout") -- MOTEUR de layout flex (alignement parfait, fill-to-container)
 local Keywords = require("src.ui.keywords") -- registre afflictions (mini-chips de carte)
 local Chip = require("src.ui.chip") -- pastilles keyword (icône d'affliction)
 local Ambient = require("src.fx.ambient")
-local Rarity = require("src.gen.rarity") -- rang -> couleur de cadre + glow (accent de rareté de la fiche)
 local MiniRig = require("src.render.minirig") -- mesure OPAQUE mutualisée des rigs (bounds/fit) : seule source de vérité
 local MonsterCard = require("src.render.monstercard") -- FICHE de monstre (extraite de drawTooltip) : réutilisée ici + Chronique
 local I18n = require("src.core.i18n")
@@ -73,9 +72,14 @@ local RELIC_TYPE = {
 }
 
 local SPACING = 26
-local BOARD_OY = 90 -- centre du plateau (virtuel) : ×4 = ~360 design, sous l'en-tête, au-dessus de la boutique
-local BOARD_HALF_W = 128 -- demi-étendue MAX (virtuelle) des CENTRES de cases -> board centré, jamais hors zone
-local BOARD_HALF_H = 44  -- (idem vertical) : un sigil étalé (croix/anneau/ligne) se resserre pour tenir ici
+local BOARD_HALF_W = 96 -- demi-étendue MAX (virtuelle) des centres de cases dans la RÉGION GAUCHE (board décalé à gauche)
+local BOARD_HALF_H = 40  -- (idem vertical) : un sigil étalé se resserre pour tenir dans la bande board
+-- ── Régions du mockup (§B.1), espace DESIGN, le tout DANS le cadre reliquaire ──
+local FRAME_FT = 8        -- épaisseur d'art de la bande gravée (×4 = ~32px de pierre)
+local HUD_H = 46          -- barre HUD du haut (GOLD/LIVES/DESCENT/ROUND/STREAK/TIER)
+local SIGIL_H = 34        -- en-tête de sigil (nom à gauche + contrôles de reshape à droite)
+local OFFERING_H = 152    -- bas : THE OFFERING (boutique) + cluster éco (REROLL/BUY XP/FIGHT)
+local INSPECTOR_W = 256   -- panneau d'INSPECTION persistant (colonne droite de la bande board)
 local MAX_LEVEL = 3
 local LEVEL_MULT = { 1.0, 1.8, 3.0 } -- stats par niveau : 3 copies (même id+niveau) -> 1 unité niveau+1 (façon TFT)
 
@@ -100,6 +104,7 @@ function Build.new(palette, vw, vh, host)
     mx = -100, my = -100,
     combatCount = 0,
   }, Build)
+  self:computeRegions() -- régions du mockup (§B.1) : HUD / sigil / board-gauche / inspecteur / offering + cadre
   self:computeLayout()
   self:computeShop()
   for _, id in ipairs(Units.pool) do
@@ -150,7 +155,40 @@ function Build:rigFitScale(id, boxW, boxH, margin, maxScale)
   return math.min(maxScale, sw, sh)
 end
 
--- Centre la forme courante dans la moitié haute du canvas.
+-- ── Régions du mockup (§B.1) en ESPACE DESIGN, le tout DANS le cadre reliquaire (inset). Calculées une fois
+-- (resize -> rappeler). Empile : HUD bar -> en-tête sigil -> [ board GAUCHE | inspecteur 256 DROITE ] -> THE
+-- OFFERING. Pose aussi le CENTRE du board (virtuel) pour computeLayout + les rects des boutons de reshape.
+function Build:computeRegions()
+  local ix, iy, iw, ih = Reliquary.inset(0, 0, Draw.W, Draw.H, { ft = FRAME_FT, pad = 2 })
+  self.inset = { x = ix, y = iy, w = iw, h = ih }
+  self.hudBar = { x = ix, y = iy, w = iw, h = HUD_H }
+  self.sigilBar = { x = ix, y = iy + HUD_H + 2, w = iw, h = SIGIL_H }
+  local midY = self.sigilBar.y + SIGIL_H + 6
+  local offY = iy + ih - OFFERING_H
+  local midH = offY - midY - 6
+  self.inspector = { x = ix + iw - INSPECTOR_W, y = midY, w = INSPECTOR_W, h = midH }
+  self.boardRegion = { x = ix, y = midY, w = iw - INSPECTOR_W - 16, h = midH }
+  self.offering = { x = ix, y = offY, w = iw, h = OFFERING_H }
+  -- centre du board (virtuel = design/4) -> computeLayout y centre la forme.
+  self._boardCx = (self.boardRegion.x + self.boardRegion.w / 2) / 4
+  self._boardCy = (self.boardRegion.y + self.boardRegion.h / 2) / 4
+  -- boutons de RESHAPE (5 glyphes, droite de l'en-tête sigil) — rects en VIRTUEL (÷4) pour hit-test cohérent.
+  self._sigilBtns = {}
+  local n = #Shapes.order
+  local bs, gap = 24, 6
+  local totalW = n * bs + (n - 1) * gap
+  local bx = self.sigilBar.x + self.sigilBar.w - 12 - totalW
+  local by = self.sigilBar.y + math.floor((SIGIL_H - bs) / 2)
+  for i = 1, n do
+    local dx = bx + (i - 1) * (bs + gap)
+    self._sigilBtns[i] = { x = dx / 4, y = by / 4, w = bs / 4, h = bs / 4, dx = dx, dy = by, ds = bs, shape = Shapes.order[i] }
+  end
+  -- rangée de RELIQUES possédées : petite ligne au bas-gauche de la bande board (au-dessus de l'offering).
+  self._relicX0 = ix + 6
+  self._relicY = offY - (RELIC_ICON_PX + RELIC_FRAME * 2) - 8
+end
+
+-- Centre la forme courante dans la RÉGION BOARD (gauche). SPACING adaptatif -> toute forme tient sans déborder.
 function Build:computeLayout()
   local cells = self.board.shape.cells
   local minx, maxx, miny, maxy = math.huge, -math.huge, math.huge, -math.huge
@@ -159,13 +197,11 @@ function Build:computeLayout()
     miny = math.min(miny, c.y); maxy = math.max(maxy, c.y)
   end
   local mx, my = (minx + maxx) / 2, (miny + maxy) / 2
-  -- SPACING ADAPTATIF : on resserre pour que TOUTE forme (3×3, croix/diamant 4×4, anneau, ligne 8×0) tienne
-  -- dans la zone du board, centrée -> plus de débordement. Plafonné à SPACING (les petites ne gonflent pas).
   local sp = SPACING
   local extX, extY = maxx - minx, maxy - miny
   if extX > 0 then sp = math.min(sp, 2 * BOARD_HALF_W / extX) end
   if extY > 0 then sp = math.min(sp, 2 * BOARD_HALF_H / extY) end
-  local ox, oy = self.vw / 2, BOARD_OY
+  local ox, oy = self._boardCx or (self.vw / 2), self._boardCy or 90
   self.pos = {}
   for i, c in ipairs(cells) do
     self.pos[i] = {
@@ -175,56 +211,42 @@ function Build:computeLayout()
   end
 end
 
--- ── BARRE DU BAS = une RANGÉE flex (moteur Layout) en ESPACE DESIGN ────────────────────────────────
--- [ colonne ORBE DE VIE (gauche) | rangée OFFRES (flex, remplit le milieu) | colonne BOUTONS (droite) ].
--- TOUT est aligné/snappé, sans trou : la rangée des offres ABSORBE l'espace restant (flex) et chaque carte
--- a la MÊME taille avec des gouttières ÉGALES ; l'orbe REMPLIT la hauteur de sa colonne (pas un petit orbe
--- flottant dans une grande boîte). Les widgets forge sont BAKÉS À LA TAILLE CALCULÉE (fill réel). On
--- calcule les rects DESIGN une fois ; les hit-tests souris (en VIRTUEL) sont dérivés (÷4) -> self.shopSlots.
-local STRIP = { x = 16, y = 564, w = 1280 - 32, h = 720 - 564 - 12 } -- bandeau du bas (design), marges propres
-local STRIP_GAP = 18
-
+-- ── THE OFFERING + ÉCO (bas de l'inset, §B.1.4) en ESPACE DESIGN ────────────────────────────────────
+-- [ boutique « THE OFFERING » (flex) | cluster éco (fixe) ]. Plus d'orbe de vie (les vies vivent dans la barre
+-- HUD). Boutique = header (caption + règle) + rangée de cartes ; éco = rangée [BUY XP | REROLL] + FIGHT (CTA).
+-- On calcule les rects DESIGN une fois ; les hit-tests souris (VIRTUEL) sont dérivés (÷4) -> self.shopSlots etc.
 function Build:computeShop()
-  -- 1) découpe principale : orbe (largeur fixe) | offres (flex) | boutons (largeur fixe).
-  local cols = Layout.row(STRIP, {
-    { size = 116 },  -- colonne orbe de vie
-    { flex = 1 },    -- rangée des offres (remplit le milieu)
-    { size = 360 },  -- colonne des boutons (COMBAT large + REROLL)
-  }, { gap = STRIP_GAP, align = "stretch" })
-  self.lay = { orbCol = cols[1], shopBox = cols[2], btnCol = cols[3] }
+  local cols = Layout.row(self.offering, {
+    { flex = 1 },     -- boutique (THE OFFERING)
+    { size = 300 },   -- cluster éco (REROLL/BUY XP + FIGHT)
+  }, { gap = 16, align = "stretch" })
+  local shopCol, ecoCol = cols[1], cols[2]
+  self.lay = {}
 
-  -- 2) ORBE DE VIE : colonne [ compteur (fixe) | orbe (flex -> remplit la hauteur restante) ].
-  local oc = Layout.column(cols[1], { { size = 16 }, { flex = 1 } }, { gap = 4, align = "stretch" })
-  self.lay.lifeLabel = oc[1]
-  self.lay.lifeOrbBox = oc[2]
-
-  -- 3) OFFRES : N cartes de MÊME taille avec gouttières ÉGALES qui REMPLISSENT la largeur (flex chacune).
+  -- boutique : [ header (caption + règle) | rangée de cartes (flex, gouttières égales) ].
+  local sc = Layout.column(shopCol, { { size = 18 }, { flex = 1 } }, { gap = 8, align = "stretch" })
+  self.lay.shopHeader = sc[1]
   local specs = {}
   for _ = 1, Run.SHOP_SIZE do specs[#specs + 1] = { flex = 1 } end
-  self.lay.cards = Layout.row(cols[2], specs, { gap = 8, align = "stretch" })
+  self.lay.cards = Layout.row(sc[2], specs, { gap = 8, align = "stretch" })
 
-  -- 4) BOUTONS : COMBAT (gros, en haut) au-dessus d'une LIGNE éco. COMBAT reste DOMINANT (flex 3) ; la
-  -- ligne éco (flex 2) tient les petits boutons. BUY XP (achat d'XP de boutique) occupe TOUJOURS la moitié
-  -- gauche. À droite : REROLL seul (pas de grant) OU [ REROLL | REFUSER ] (un grant attend). On calcule
-  -- les DEUX dispositions et on choisit à l'affichage selon run.pendingSlotGrant -> jamais de poche vide.
-  local bc = Layout.column(cols[3], { { flex = 3 }, { size = 8 }, { flex = 2 } }, { gap = 0, align = "stretch" })
-  self.lay.combatBox = bc[1]
-  -- la ligne éco se scinde en [ BUY XP | reste ]. BUY XP = moitié gauche, fixe quel que soit le grant.
-  local ecoRow = Layout.row(bc[3], { { flex = 1 }, { flex = 1 } }, { gap = 10, align = "stretch" })
-  self.lay.raiseBox = ecoRow[1]                           -- BUY XP = achat d'XP de boutique (toujours à gauche)
-  self.lay.ecoRowBox = ecoRow[2]                          -- moitié droite : REROLL seul (pas de grant)
-  local ecoSplit = Layout.row(ecoRow[2], { { flex = 1 }, { flex = 1 } }, { gap = 10, align = "stretch" })
-  self.lay.rerollSplitBox = ecoSplit[1]                  -- REROLL quand un grant attend (1/4 droite gauche)
+  -- éco : [ rangée [BUY XP | REROLL] (fixe) | FIGHT (flex, gros CTA sang) ]. La moitié REROLL se scinde en
+  -- [ REROLL | REFUSER ] quand un grant de slot attend (on choisit à l'affichage selon run.pendingSlotGrant).
+  local ec = Layout.column(ecoCol, { { size = 36 }, { flex = 1 } }, { gap = 8, align = "stretch" })
+  local ecoRow = Layout.row(ec[1], { { flex = 1 }, { flex = 1 } }, { gap = 8, align = "stretch" })
+  self.lay.raiseBox = ecoRow[1]                          -- BUY XP (toujours à gauche)
+  self.lay.ecoRowBox = ecoRow[2]                         -- REROLL seul (pas de grant)
+  local ecoSplit = Layout.row(ecoRow[2], { { flex = 1 }, { flex = 1 } }, { gap = 8, align = "stretch" })
+  self.lay.rerollSplitBox = ecoSplit[1]                  -- REROLL quand un grant attend
   self.lay.declineBox = ecoSplit[2]                      -- REFUSER (visible seulement pendant un grant)
+  self.lay.combatBox = ec[2]                             -- FIGHT (le SEUL bouton sang de l'écran)
 
-  -- 5) hit-tests souris en VIRTUEL (÷4) — dérivés des rects DESIGN du layout (toujours synchrones).
-  -- Les rects REROLL/REFUSER sont (re)synchronisés à chaque frame par syncEcoRects(grant) (cf. drawOverlay).
   local function toV(r) return { x = r.x / 4, y = r.y / 4, w = r.w / 4, h = r.h / 4 } end
   self._toV = toV
   self.shopSlots = {}
   for i = 1, Run.SHOP_SIZE do self.shopSlots[i] = toV(self.lay.cards[i]) end
   self.button = toV(self.lay.combatBox)
-  self.raiseBtn = toV(self.lay.raiseBox)                  -- BUY XP (achat d'XP de boutique)
+  self.raiseBtn = toV(self.lay.raiseBox)
   self.declineBtn = toV(self.lay.declineBox)
   self:syncEcoRects(false)
 end
@@ -240,7 +262,7 @@ end
 -- forge (RELIC_FRAME de débord) -> le SOCLE entier est la cible de survol (hit-test = ce qui est dessiné).
 function Build:relicRowRect(i)
   local s = RELIC_ICON_PX + RELIC_FRAME * 2
-  return { x = RELIC_X0 + (i - 1) * RELIC_CELL, y = RELIC_Y, w = s, h = s }
+  return { x = (self._relicX0 or RELIC_X0) + (i - 1) * RELIC_CELL, y = self._relicY or RELIC_Y, w = s, h = s }
 end
 
 -- Index de la relique survolée (souris en VIRTUEL -> testée ×4 contre les rects design), ou nil.
@@ -384,6 +406,14 @@ function Build:mousepressed(vx, vy, button)
   -- rect REROLL fidèle à l'état du grant (ligne pleine / scindée) AVANT le hit-test (mousepressed peut être
   -- appelé sans update, ex. tests headless).
   self:syncEcoRects(run and run.pendingSlotGrant)
+  -- Boutons de RESHAPE (en-tête sigil) : posent la forme i directement (même effet que [s], mais ciblé).
+  for i, sb in ipairs(self._sigilBtns or {}) do
+    if inRect(vx, vy, sb) then
+      Feel.press("build.sigil." .. i)
+      if self.board.shape.name ~= sb.shape then self.shapeIdx = i; self.board:setShape(sb.shape); self:computeLayout() end
+      return
+    end
+  end
   -- COMBAT : feedback de press IMMÉDIAT (squash + flash -> les YEUX du CTA réagissent au clic) puis bascule
   -- de scène TOUT DE SUITE (l'e2e headless asserte la transition juste après le clic -> on ne diffère pas).
   if inRect(vx, vy, self.button) then Feel.press("build.combat"); self:startCombat(); return end
@@ -698,6 +728,13 @@ function Build:computeUi()
   local hover = self:slotAt(self.mx, self.my)
   local ui = { hover = hover, dropTarget = self.drag and hover or nil, nbset = {}, shopHover = self:shopAt(self.mx, self.my) }
   if hover then for _, j in ipairs(self.board:neighbors(hover)) do ui.nbset[j] = true end end
+  -- Cible d'INSPECTION (panneau persistant droite) : unité survolée sur le BOARD (slot occupé) d'abord,
+  -- sinon en BOUTIQUE. {id, slot?, level?} ou nil (rien sous le curseur -> niche calme).
+  if hover and self.slotRigs[hover] then
+    ui.inspect = { id = self.slotRigs[hover].id, slot = hover, level = self.slotRigs[hover].level or 1 }
+  elseif ui.shopHover and self.host.run and self.host.run.shop[ui.shopHover] then
+    ui.inspect = { id = self.host.run.shop[ui.shopHover].id }
+  end
   self.uiState = ui -- champ distinct de la méthode (sinon self.uiState renverrait la méthode quand vide)
   return ui
 end
@@ -777,11 +814,10 @@ function Build:drawBack(view)
     end
   end
 
-  -- Bandeau boutique (bas) + FOND de chaque carte = PANNEAUX propres (dégradé sombre + liseré teinté), dessinés
-  -- DERRIÈRE le rig d'aperçu (drawWorld) ; le contenu (pip/nom/coût/chips) est posé en overlay. Le liseré LIT le
-  -- TYPE de la créature (or vif au survol, sourd hors budget) ; Panel enregistre la box -> anneau de distorsion.
-  Draw.rect(0, 556, Draw.W, 164, c.panel)
-  Draw.setColor(c.line); love.graphics.setLineWidth(2); love.graphics.line(0, 557, Draw.W, 557); love.graphics.setLineWidth(1)
+  -- THE OFFERING (bas) : fond de bande sobre + FOND de chaque carte (dégradé propre + liseré teinté), DERRIÈRE
+  -- le rig d'aperçu (drawWorld) ; le contenu (pip/nom/coût/chips) est posé en overlay. Le liseré LIT le TYPE de
+  -- la créature (or vif au survol, sourd hors budget) ; Panel enregistre la box -> anneau de distorsion onirique.
+  if self.offering then Draw.rect(self.offering.x, self.offering.y, self.offering.w, self.offering.h, c.stone900) end
   if run then
     for i, rect in ipairs(self.shopSlots) do
       local o = run.shop[i]
@@ -865,37 +901,53 @@ function Build:drawWorld()
       end
     end
   end
+  -- INSPECTEUR : rig de l'unité survolée rendu DANS la niche du panneau (même mécanique fit-to-box que les
+  -- cases/cartes). Niche = top 88px du panneau d'inspection (cohérent avec _drawInspector).
+  local insp = self.uiState and self.uiState.inspect
+  if insp and self.inspector then
+    local rg = self.previewRigs[insp.id]
+    if rg then
+      local nx, ny, nw, nh = self.inspector.x, self.inspector.y, self.inspector.w, 88
+      local nb = self:rigBounds(insp.id)
+      local s = self:rigFitScale(insp.id, nw / 4 - 4, nh / 4 - 5, 0.84, 3)
+      if self.view then Draw.scissor(self.view, nx + 1, ny + 1, nw - 2, nh - 2) end
+      love.graphics.push()
+      love.graphics.translate((nx + nw / 2) / 4, (ny + nh - 8) / 4)
+      love.graphics.scale(s, s)
+      love.graphics.translate(0, -nb.bot)
+      rg.x, rg.y, rg.facing = 0, 0, 1
+      Rig.draw(rg)
+      love.graphics.pop()
+      if self.view then Draw.noScissor() end
+    end
+  end
   if self.drag then Rig.draw(self.drag.char) end
   love.graphics.setColor(1, 1, 1, 1)
 end
 
--- ── Overlay (espace design, texte net) : chrome + bordures de case + boutique + boutons + infobulle ──
+-- ── Overlay (espace design, texte net) : cadre + HUD + sigil + board + OFFERING + inspecteur (§B.1) ──
 function Build:drawOverlay(view)
   local b, run, c = self.board, self.host.run, Theme.c
   local ui = self.uiState or self:computeUi()
   Draw.begin(view)
 
-  -- Chrome debug (haut-gauche) : court pour ne pas chevaucher la bannière centrée.
-  Draw.text(T("ui.title") .. "  -  " .. T("scene.build"):upper(), 16, 14, c.faint, Theme.ui(11))
-  Draw.text(T("ui.controls_build"), 16, 32, c.ghost, Theme.ui(9))
+  -- 1) CADRE RELIQUAIRE plein écran + onglet « BUILD » centré sur le bord haut.
+  Reliquary.draw(0, 0, Draw.W, Draw.H, { ft = FRAME_FT })
+  self:_drawNameTab(T("scene.build"):upper())
 
-  -- Bannière de run (haut-centre) ou repli sandbox.
-  if run then self:drawBanner(run)
-  else Draw.textC(T("ui.placed_count", { placed = self:placedCount(), active = b.activeCount }), Draw.W / 2, 22, c.faint, Theme.ui(12)) end
+  -- 2) BARRE HUD (GOLD / LIVES / DESCENT / ROUND / STREAK / TIER) ou repli sandbox.
+  if run then self:_drawHudBar(run)
+  else Draw.textC(T("ui.placed_count", { placed = self:placedCount(), active = b.activeCount }),
+    self.hudBar.x + self.hudBar.w / 2, self.hudBar.y + 16, c.faint, Theme.label(11)) end
 
-  -- Sigil : gothique en CASSE DE TITRE (les capitales blackletter sont illisibles) + archétype.
-  local nm = b.shape.name
-  Draw.textC(T("shape." .. nm .. ".label"), Draw.W / 2, 70, c.title, Theme.display(36))
-  Draw.textC(T("shape." .. nm .. ".archetype"):upper() .. "    " .. T("ui.reshape"), Draw.W / 2, 118, c.faint, Theme.ui(11))
-  -- Prompt de grant d'emplacement (event timé) : pose un slot sur une case libre, ou refuse pour de l'or.
+  -- 3) EN-TÊTE DE SIGIL (nom + keyword) + boutons de RESHAPE. Prompt de grant juste en dessous.
+  self:_drawSigilHeader()
   if run and run.pendingSlotGrant then
-    Draw.textC(T("ui.slot_grant"), Draw.W / 2, 134, c.gold, Theme.ui(12))
+    Draw.textC(T("ui.slot_grant"), self.boardRegion.x + self.boardRegion.w / 2, self.sigilBar.y + SIGIL_H + 6,
+      c.gold, Theme.label(10))
   end
 
-  -- Décor d'overlay des cases : le SOCKET (atome Slot, 6 états) + pip de type + pips de niveau sont dessinés
-  -- en drawBack (DERRIÈRE le rig d'aperçu, fill opaque). Ici on ne pose que ce qui doit passer DEVANT le rig :
-  -- le NOM de l'unité (sous la case) et le « + » de cible quand un grant de slot attend (case scellée à remplir
-  -- ; sinon la case scellée porte déjà son glyphe de cadenas via Slot « locked »).
+  -- 4) NOMS d'unités (sous les cases) + « + » de cible (Slot dessine le reste du décor en drawBack).
   local granting = run and run.pendingSlotGrant
   local S = SLOT_HALF * 2
   for i = 1, 9 do
@@ -904,68 +956,48 @@ function Build:drawOverlay(view)
       if granting then Draw.textC("+", p.x * 4, p.y * 4 - 12, c.gold, Theme.subhead(18)) end
     else
       local sr = self.slotRigs[i]
-      if sr then
-        Draw.textC(T("unit." .. sr.id .. ".name"), p.x * 4, p.y * 4 - SLOT_HALF + S + 3, c.name, Theme.label(9))
-      end
+      if sr then Draw.textC(T("unit." .. sr.id .. ".name"), p.x * 4, p.y * 4 - SLOT_HALF + S + 3, c.name, Theme.label(9)) end
     end
   end
 
-  -- Boutique : chaque carte = PLAQUE FORGE pleine (fond baké en drawBack) + cadre forge patiné + contenu
-  -- mis en page par Layout.column REMPLISSANT la carte (créature / nom / coût+chips d'affliction) -> aucune
-  -- poche vide. drawShopCard fait tout le contenu d'overlay.
+  -- 5) THE OFFERING : caption + règle iron + cartes shop + boutons éco + FIGHT (le SEUL CTA sang de l'écran).
+  local hb = self.lay.shopHeader
+  if hb then
+    local capF = Theme.label(9)
+    local cap = T("ui.offering"); if cap == "ui.offering" then cap = "THE OFFERING" end -- repli (clé i18n à ajouter)
+    Draw.textTrackedL(cap, hb.x, hb.y + (hb.h - capF:getHeight()) / 2, c.ink3, capF, 2)
+    local cw = Draw.textWidth(cap, capF) + #cap * 2 + 50
+    Draw.setColor(c.iron)
+    if love.graphics then love.graphics.rectangle("fill", hb.x + cw, hb.y + hb.h / 2, math.max(0, hb.w - cw), 1) end
+    Draw.reset()
+  end
   if run then
     for i, rect in ipairs(self.shopSlots) do
       local o = run.shop[i]
       if o then self:drawShopCard(i, rect, o, ui.shopHover == i) end
     end
     self:drawEcoButton("build.reroll", self.rerollBtn, T("ui.reroll_label"), Run.REROLL_COST, run:canReroll())
-    -- Bouton REFUSER : visible seulement quand un grant de slot attend (sinon les slots ne s'achètent plus).
     if run.pendingSlotGrant then
       self:drawEcoButton("build.decline", self.declineBtn, T("ui.refuse_label"), Run.SLOT_DECLINE_GOLD, true)
     end
-    -- BOUTON BUY XP (moitié gauche de la ligne éco) : achète de l'XP de boutique (coût FIXE en diamant).
-    -- Au tier MAX, plus rien à acheter -> état « MAX » désactivé (label MAX, AUCUN diamant via cost=nil).
-    -- La barre d'XP + la lecture du TIER courant (« TIER n/5 ») sont sous l'orbe de vie (cf. drawLifeOrb).
     local atMax = run.shopTier >= run.MAX_TIER
-    self:drawEcoButton("build.raise",
-      self.raiseBtn,
-      atMax and T("ui.tier_max") or T("ui.buyxp_label"),
-      atMax and nil or run.BUY_XP_COST,
-      (not atMax) and run:canBuyXp())
+    self:drawEcoButton("build.raise", self.raiseBtn, atMax and T("ui.tier_max") or T("ui.buyxp_label"),
+      atMax and nil or run.BUY_XP_COST, (not atMax) and run:canBuyXp())
   end
-
-  -- ORBE DE VIE (extrême gauche de la barre du bas) : fluide = vies/START_LIVES, compteur au-dessus.
-  if run then self:drawLifeOrb(run) end
-
-  -- Bouton COMBAT = le CTA propre (variant "primary") : sang + YEUX cauchemardesques qui s'ouvrent au survol
-  -- (glow) et réagissent au clic (flash), regard qui suit le curseur (opts.mouse en espace design). Le juice
-  -- (lift/squash/flash/glow) vient de Feel.state ; l'action est différée côté mousepressed. Button marque la box.
   local enabled = self:placedCount() > 0
   local r = self.button
   local over = inRect(self.mx, self.my, r)
-  Button.draw(r.x * 4, r.y * 4, r.w * 4, r.h * 4, "primary",
-    enabled and T("ui.fight") or T("ui.place_unit"),
+  Button.draw(r.x * 4, r.y * 4, r.w * 4, r.h * 4, "primary", enabled and T("ui.fight") or T("ui.place_unit"),
     { hover = over, disabled = not enabled, feel = Feel.state("build.combat"),
       id = "build.combat", mouse = { mx = self.mx * 4, my = self.my * 4 }, t = self.t / 60 })
 
-  -- Rangée de reliques possédées (au-dessus de la boutique) + infobulles (relique prioritaire sur unité).
+  -- 6) INSPECTEUR persistant (colonne droite) : remplace la tooltip de survol (board ET boutique).
+  self:_drawInspector(ui)
+
+  -- 7) RELIQUES possédées + infobulle de relique (prioritaire au survol de la rangée).
   self:drawRelicRow()
   local relIdx = run and self:relicAt(self.mx, self.my)
-  if relIdx then
-    self:drawRelicTooltip(run.relics[relIdx].id)
-  elseif run and self.xpBarRect and inRect(self.mx, self.my, self.xpBarRect) then
-    -- Survol de la barre d'XP -> cotes par rang du tier courant (enseigne « à quoi sert monter »).
-    self:drawOddsTooltip(run)
-  else
-    local id
-    local oi = self:shopAt(self.mx, self.my)
-    if oi then id = run.shop[oi].id
-    else
-      local si = self:slotAt(self.mx, self.my)
-      if si and self.slotRigs[si] then id = self.slotRigs[si].id end
-    end
-    if id then self:drawTooltip(id) end
-  end
+  if relIdx then self:drawRelicTooltip(run.relics[relIdx].id) end
 
   Draw.finish()
 end
@@ -1024,139 +1056,185 @@ function Build:drawShopCard(i, rect, o, hot)
   Badge.cost(costBox.x + costBox.w - badgeW, costBox.y, o.cost, aff)
 end
 
--- Bannière de run (HUD haut) : 4 stats [symbole · LABEL · VALEUR], symbole par stat (pièce/diamant/pip/case),
--- LABEL et VALEUR en Space Mono (Theme.label / Theme.value), distingués par la couleur. Aligné/espacé
--- proprement dans un Panel propre. Symboles dessinés en primitives nettes (Badge.diamond + cercles/carrés).
-local HUD_SYMW = 12 -- largeur réservée au symbole (icône + petit gap)
+-- ── Onglet de nom de l'écran : pilier de pierre centré sur le bord HAUT du cadre (Cinzel tracké, encre tarnie).
+-- (NB : libellés HUD/inspecteur littéraux ci-dessous = clés i18n à ajouter ; repli EN par défaut.)
+function Build:_drawNameTab(label)
+  local c = Theme.c
+  local f = Theme.heading(12)
+  local tracking = 4
+  local tw = Draw.textWidth(label, f) + tracking * math.max(0, #label - 1)
+  local w, h, y = tw + 44, 24, 6
+  local x = math.floor(Draw.W / 2 - w / 2)
+  Draw.rect(x, y, w, h, Theme.hex(0x0e0a14), c.iron, 1)
+  if love.graphics then Draw.setColor(c.brassS, 0.18); love.graphics.rectangle("fill", x + 1, y + 1, w - 2, 1); Draw.reset() end
+  Draw.textTrackedC(label, Draw.W / 2, y + (h - (f and f:getHeight() or 12)) / 2, Theme.hex(0xcdbca0), f, tracking)
+end
+
+-- ── BARRE HUD (§B.1.1) : 6 cellules séparées par des règles iron — GOLD / LIVES / DESCENT (flex) / ROUND /
+-- STREAK / TIER. Consolide vies + tier (plus d'orbe de vie). Captions + valeurs en Space Mono.
+function Build:_drawHudBar(run)
+  local c = Theme.c
+  local hb = self.hudBar
+  Panel.draw(hb.x, hb.y, hb.w, hb.h, { fill1 = Theme.hex(0x1d1710), fill2 = Theme.hex(0x120d08) })
+  local cap, val = Theme.label(8), Theme.value(14)
+  local cells = Layout.row(hb, {
+    { size = 124 }, { size = 150 }, { flex = 1 }, { size = 84 }, { size = 124 }, { size = 150 },
+  }, { gap = 0, align = "stretch" })
+  local vy = hb.y + hb.h - 8 - (val and val:getHeight() or 14)
+  local function sep(cell) Draw.setColor(c.iron); if love.graphics then love.graphics.rectangle("fill", math.floor(cell.x), hb.y + 6, 1, hb.h - 12) end; Draw.reset() end
+  local function capAt(cell, s) Draw.text(s, cell.x + 12, cell.y + 7, c.ink4, cap) end
+  local g = cells[1]; capAt(g, "GOLD")
+  Badge.diamond(g.x + 16, vy + val:getHeight() / 2, 4, c.gold, c.brassD, c.brassS)
+  Draw.text(tostring(run.gold), g.x + 26, vy, c.gold, val)
+  sep(cells[2]); local lv, maxL = cells[2], Run.START_LIVES
+  capAt(lv, "LIVES " .. run.lives .. "/" .. maxL)
+  Gauge.lives(lv.x + 12, vy + 1, run.lives, maxL, 2, 4)
+  sep(cells[3]); local de = cells[3]
+  Draw.text("DESCENT ", de.x + 12, de.y + 7, c.ink4, cap)
+  Draw.text(run.wins .. "/" .. Run.WIN_TARGET, de.x + 12 + cap:getWidth("DESCENT "), de.y + 7, c.gold, cap)
+  Gauge.descent(de.x + 12, vy + 2, de.w - 24, 6, run.wins, Run.WIN_TARGET, 2)
+  sep(cells[4]); local ro = cells[4]; capAt(ro, "ROUND")
+  Draw.text(tostring(run.round), ro.x + 12, vy, c.ink, val)
+  sep(cells[5]); local st = cells[5]; capAt(st, "STREAK")
+  local won = run.winStreak >= 2
+  local sStr = won and ("WIN x" .. run.winStreak) or (run.lossStreak >= 2 and ("LOSS x" .. run.lossStreak) or "—")
+  Draw.text(sStr, st.x + 12, vy + 1, won and c.gold or (run.lossStreak >= 2 and c.bloodL or c.ink4), Theme.value(12))
+  sep(cells[6]); local ti = cells[6]; capAt(ti, "TIER " .. run.shopTier .. "/" .. Run.MAX_TIER)
+  for k = 1, Run.MAX_TIER do
+    local on = k <= run.shopTier
+    Badge.diamond(ti.x + 16 + (k - 1) * 12, vy + val:getHeight() / 2, 4, on and c.gold or c.stone900, on and c.brassD or c.brass, on and c.brassS or nil)
+  end
+end
+
+-- COMPAT (tests/ui.lua) : ancien point d'entrée HUD `drawBanner` -> délègue à la nouvelle barre HUD, en tolérant
+-- un run-stub PARTIEL (le test ne passe pas lives/shopTier). hudBar peut manquer si appelé hors layout -> défaut.
 function Build:drawBanner(run)
-  local c = Theme.c
-  local fontL = Theme.label(10)  -- LABELS (Space Mono, petites capitales nettes)
-  local fontV = Theme.value(15)  -- VALEURS (Space Mono, prominentes)
-  -- VIES retirées du HUD : elles vivent désormais dans le module de vie (bas-gauche) -> pas de doublon.
-  local seg = {
-    { sym = "coin",    label = T("ui.gold"),  value = tostring(run.gold) },
-    { sym = "diamond", label = T("ui.wins"),  value = run.wins .. "/" .. Run.WIN_TARGET },
-    { sym = "pip",     label = T("ui.round"), value = tostring(run.round) },
-    { sym = "slot",    label = T("ui.slots"), value = run.slots .. "/" .. Run.MAX_SLOTS },
-  }
-  -- mesure : symbole + label + petit gap + valeur, par segment ; gouttière fixe entre segments.
-  local segGap, lblGap = 26, 5
-  local total = 0
-  for _, s in ipairs(seg) do
-    total = total + HUD_SYMW + fontL:getWidth(s.label) + lblGap + fontV:getWidth(s.value)
+  run = run or {}
+  self.hudBar = self.hudBar or { x = 0, y = 0, w = Draw.W, h = HUD_H }
+  self:_drawHudBar(setmetatable({ lives = run.lives or 0, shopTier = run.shopTier or 1 }, { __index = run }))
+end
+
+-- ── Glyphe de forme de sigil (carré/croix/anneau/diamant/ligne) centré dans un bouton de reshape.
+function Build:_drawShapeGlyph(shape, cx, cy, col)
+  if not love.graphics then return end
+  Draw.setColor(col)
+  local r = 5
+  if shape == "croix" then
+    love.graphics.setLineWidth(2); love.graphics.line(cx - r, cy, cx + r, cy); love.graphics.line(cx, cy - r, cx, cy + r); love.graphics.setLineWidth(1)
+  elseif shape == "anneau" then
+    love.graphics.setLineWidth(2); love.graphics.circle("line", cx, cy, r); love.graphics.setLineWidth(1)
+  elseif shape == "diamant" then
+    love.graphics.push(); love.graphics.translate(cx, cy); love.graphics.rotate(math.pi / 4); love.graphics.rectangle("line", -r + 1, -r + 1, 2 * (r - 1), 2 * (r - 1)); love.graphics.pop()
+  elseif shape == "ligne" then
+    love.graphics.rectangle("fill", cx - r - 1, cy - 1, 2 * (r + 1), 2)
+  else -- carré (défaut)
+    love.graphics.rectangle("line", cx - r, cy - r, 2 * r, 2 * r)
   end
-  total = total + segGap * (#seg - 1)
-  local x = Draw.W / 2 - total / 2
-  -- Plaque PROPRE (Panel : dégradé sombre + liseré iron + éclat) intégrant le HUD au lieu d'un texte flottant.
-  Panel.draw(x - 20, 12, total + 40, 32, { fill1 = c.stone800, fill2 = c.stone900 })
-  local midY = 28 -- centre vertical de la plaque
-  local lblY, valY = midY - fontL:getHeight() / 2, midY - fontV:getHeight() / 2
-  for _, s in ipairs(seg) do
-    -- symbole (centré sur midY) en primitives propres (pièce/diamant/pip/case).
-    if s.sym == "coin" then
-      Draw.setColor(c.gold); love.graphics.circle("fill", x + 4, midY, 4)
-      Draw.setColor(c.brassS); love.graphics.circle("fill", x + 3, midY - 1, 1); Draw.reset()
-    elseif s.sym == "diamond" then
-      Badge.diamond(x + 4, midY, 4, c.gold, c.brassD, c.brassS)
-    elseif s.sym == "pip" then
-      Draw.setColor(c.gold); love.graphics.circle("fill", x + 4, midY, 3); Draw.reset()
-    else -- slot : petite case
-      Draw.setColor(c.gold); love.graphics.rectangle("fill", x + 1, midY - 3, 7, 7)
-      Draw.setColor(c.stone900); love.graphics.rectangle("fill", x + 3, midY - 1, 3, 3); Draw.reset()
+  Draw.reset()
+end
+
+-- ── EN-TÊTE DE SIGIL (§B.1.2) : GAUCHE = glyphe anneau + « <NOM> » (Cinzel) + « — <keyword> » (Spectral italic)
+-- ; DROITE = label [S] RESHAPE + 5 boutons-glyphe (l'actif blood-lit). Rects des boutons posés par computeRegions.
+function Build:_drawSigilHeader()
+  local c = Theme.c
+  local sb = self.sigilBar
+  local nm = self.board.shape.name
+  if love.graphics then Draw.setColor(c.blood); love.graphics.setLineWidth(2); love.graphics.circle("line", sb.x + 14, sb.y + sb.h / 2, 6); love.graphics.setLineWidth(1); Draw.reset() end
+  local nameF, kwF = Theme.heading(15), Theme.flavor(13)
+  local label = T("shape." .. nm .. ".label")
+  local nx = sb.x + 28
+  Draw.text(label, nx, sb.y + (sb.h - nameF:getHeight()) / 2, c.ink, nameF)
+  nx = nx + Draw.textWidth(label, nameF) + 10
+  Draw.text("— " .. T("shape." .. nm .. ".archetype"), nx, sb.y + (sb.h - kwF:getHeight()) / 2, c.ink3, kwF)
+  for _, bt in ipairs(self._sigilBtns) do
+    local active = (nm == bt.shape)
+    local hot = inRect(self.mx, self.my, bt)
+    Draw.rect(bt.dx, bt.dy, bt.ds, bt.ds, active and Theme.hex(0x1a0e10) or Theme.hex(0x100b16),
+      active and c.blood or (hot and c.brass or c.iron), 1)
+    self:_drawShapeGlyph(bt.shape, bt.dx + bt.ds / 2, bt.dy + bt.ds / 2, active and c.bloodL or c.ink4)
+  end
+  local first = self._sigilBtns[1]
+  if first then
+    local rsF = Theme.label(9)
+    Draw.textR(T("ui.reshape"), first.dx - 10, sb.y + (sb.h - rsF:getHeight()) / 2, c.ink4, rsF)
+  end
+end
+
+-- ── INSPECTEUR PERSISTANT (§B.1.3) : carte unité (niche + nom + badge type + barre HP/DMG/CD + passif) +
+-- carte ADJACENCY. Montre l'unité survolée (ui.inspect : board d'abord, sinon boutique) ; rien -> niche calme.
+-- Le RIG de l'unité est rendu DANS la niche par drawWorld (top 88px). (passive_name/desc = i18n existants.)
+function Build:_drawInspector(ui)
+  local c = Theme.c
+  local ins = self.inspector
+  if not ins then return end
+  local insp = ui.inspect
+  local nicheH, cardGap, adjH = 88, 11, 120
+  local unitH = ins.h - adjH - cardGap
+  Panel.draw(ins.x, ins.y, ins.w, unitH, { fill1 = Theme.hex(0x16121f), fill2 = Theme.hex(0x0c0913) })
+  Panel.niche(ins.x + 1, ins.y + 1, ins.w - 2, nicheH - 1)
+  local ay = ins.y + unitH + cardGap
+  Panel.draw(ins.x, ay, ins.w, adjH, { fill1 = Theme.hex(0x0b0912), fill2 = Theme.hex(0x0b0912) })
+
+  if not insp then
+    Draw.textC("hover a unit", ins.x + ins.w / 2, ins.y + nicheH + 26, c.ink4, Theme.flavor(12))
+    Draw.textTrackedL("ADJACENCY", ins.x + 12, ay + 12, c.ink3, Theme.label(8), 1.5)
+    return
+  end
+
+  local id = insp.id
+  local U = Units[id]
+  local bodyX = ins.x + 13
+  Draw.textC("sprite · " .. id, ins.x + ins.w / 2, ins.y + nicheH - 13, c.ink4, Theme.label(8))
+  local cy = ins.y + nicheH + 10
+  Draw.text(T("unit." .. id .. ".name"), bodyX, cy, c.ink, Theme.heading(14))
+  local typeStr = T("type." .. U.type):upper()
+  local badgeF = Theme.label(8)
+  local bw = badgeF:getWidth(typeStr) + 20
+  local bx = ins.x + ins.w - 13 - bw
+  Draw.rect(bx, cy - 1, bw, 16, Theme.hex(0x100d16), Theme.hex(0x473a2c), 1)
+  Draw.pip(U.type, bx + 7, cy + 7, 3)
+  Draw.text(typeStr, bx + 13, cy + 2, Theme.type(U.type).color, badgeF)
+  cy = cy + 24
+  Draw.rect(bodyX, cy, ins.w - 26, 22, Theme.hex(0x0a0810), c.iron, 1)
+  local lf, vf = Theme.label(9), Theme.value(10)
+  local sx = bodyX + 10
+  local stats = { { T("ui.stat_hp"), tostring(U.hp) }, { T("ui.stat_dmg"), tostring(U.dmg) }, { T("ui.stat_cd"), string.format("%.0fs", (U.cd or 60) / 60) } }
+  for _, s in ipairs(stats) do
+    Draw.text(s[1], sx, cy + 6, c.ink3, lf); sx = sx + lf:getWidth(s[1]) + 4
+    Draw.text(s[2], sx, cy + 6, c.ink, vf); sx = sx + vf:getWidth(s[2]) + 13
+  end
+  cy = cy + 30
+  local pName = T("unit." .. id .. ".passive_name")
+  if pName ~= ("unit." .. id .. ".passive_name") then
+    Draw.text(pName, bodyX, cy, c.gold, Theme.label(9)); cy = cy + 15
+    Draw.textWrap(T("unit." .. id .. ".passive_desc"), bodyX, cy, ins.w - 26, c.ink2, Theme.body(12))
+  end
+  self:_drawAdjacency(insp, ins.x + 12, ay + 10, ins.w - 24)
+end
+
+-- ── Contenu de la carte ADJACENCY : « ADJACENCY · N LINKS » + une puce colorée (type) par voisin OCCUPÉ.
+-- (Version pragmatique : noms des voisins ; la prose par-effet du mockup — « taunt active », « venom seeps »
+-- — viendra dans une passe d'enrichissement.)
+function Build:_drawAdjacency(insp, x, y, w)
+  local c = Theme.c
+  local nbrs = {}
+  if insp.slot then
+    for _, j in ipairs(self.board:neighbors(insp.slot)) do
+      if self.slotRigs[j] then nbrs[#nbrs + 1] = self.slotRigs[j].id end
     end
-    x = x + HUD_SYMW
-    -- LABEL (éteint) puis VALEUR (claire), centrés verticalement sur midY.
-    Draw.text(s.label, x, lblY, c.fainter, fontL)
-    x = x + fontL:getWidth(s.label) + lblGap
-    Draw.text(s.value, x, valY, c.title, fontV)
-    x = x + fontV:getWidth(s.value) + segGap
   end
-  if run.winStreak >= 2 or run.lossStreak >= 2 then
-    local won = run.winStreak >= 2
-    Draw.textC(won and T("ui.win_streak", { n = run.winStreak }) or T("ui.loss_streak", { n = run.lossStreak }),
-      Draw.W / 2, 46, won and c.gold or c.blood, Theme.label(11))
+  Draw.textTrackedL("ADJACENCY · " .. #nbrs .. " LINKS", x, y, c.ink3, Theme.label(8), 1.5)
+  y = y + 18
+  if #nbrs == 0 then
+    Draw.text(insp.slot and "no neighbours" or "in the offering", x, y, c.ink4, Theme.flavor(12))
+    return
   end
-end
-
--- MODULE DE VIE (extrême gauche de la barre du bas) : [ libellé « LIVES n/5 » | rangée de CŒURS (Gauge.lives,
--- n pleins sur START_LIVES) | « TIER n/5 » + barre d'XP de boutique ]. Tout propre (plus aucun orbe forge baké) ;
--- libellés Space Mono ; remplit la colonne (self.lay.lifeOrbBox / lifeLabel) sans flotter dans le vide.
-function Build:drawLifeOrb(run)
-  local c = Theme.c
-  local box = self.lay.lifeOrbBox
-  local lab = self.lay.lifeLabel
-  local maxL = Run.START_LIVES
-  -- Module de vie (bas-gauche), TOUT PROPRE — plus aucun orbe forge baké :
-  --   [ libellé « LIVES n/5 » | rangée de CŒURS (Gauge.lives) | « TIER n/5 » + barre d'XP de boutique ].
-  -- 1) LIBELLÉ (Space Mono) centré au-dessus. Sang si vies basses.
-  local low = run.lives <= 1
-  Draw.textC(T("ui.lives_orb", { n = run.lives, max = maxL }), lab.x + lab.w / 2, lab.y + 1,
-    low and c.blood or c.gold, Theme.label(11))
-  -- 3) NIVEAU + BARRE D'XP (TFT-style), en bas de la colonne : « TIER n/5 » + barre remplie à shopXp/xpToNext()
-  -- (au tier MAX : pleine, libellé MAX). Survol de la barre -> infobulle des cotes par rang (drawOddsTooltip).
-  local capFont = Theme.label(9)
-  local atMax = run.shopTier >= Run.MAX_TIER
-  local tierStr = T("ui.tier_label") .. " " .. run.shopTier .. "/" .. Run.MAX_TIER
-  local labY = box.y + box.h - capFont:getHeight() - 7
-  Draw.textC(tierStr, box.x + box.w / 2, labY, atMax and c.gold or c.faint, capFont)
-  local barW = math.max(60, box.w - 16)
-  local barH, barX = 5, box.x + math.floor((box.w - math.max(60, box.w - 16)) / 2)
-  local barY = box.y + box.h - barH - 2
-  local toNext = run:xpToNext()
-  local pct = atMax and 1 or (toNext and toNext > 0 and math.min(1, run.shopXp / toNext) or 0)
-  Draw.bar(barX, barY, barW, barH, pct, atMax and c.gold or c.goldBright, c.stone900, c.hair)
-  self.xpBarRect = { x = barX / 4, y = labY / 4, w = barW / 4, h = (barY + barH - labY) / 4 }
-  -- 2) CŒURS (Gauge.lives) centrés horizontalement, verticalement entre le libellé et le bloc TIER.
-  local hscale, hgap = 2, 3
-  local heartsW = maxL * (7 * hscale + hgap) - hgap
-  local hx = box.x + math.floor((box.w - heartsW) / 2)
-  local hy = box.y + math.max(6, math.floor(((labY - box.y) - 6 * hscale) / 2))
-  Gauge.lives(hx, hy, run.lives, maxL, hscale, hgap)
-end
-
--- INFOBULLE DES COTES (survol de la barre d'XP) : « SHOP ODDS · TIER n/5 » + une ligne par rang NON-NUL
--- du tier courant (« R1  44% »), avec la couleur de rareté du rang. Enseigne ce que monter de tier débloque.
--- Petit panneau Frame gildé qui suit le curseur (rebond sur les bords). PUR-RENDER (golden inchangé).
-function Build:drawOddsTooltip(run)
-  local c = Theme.c
-  local odds = run.ODDS[run.shopTier]
-  if not odds then return end
-  -- lignes { rank, pct } pour les rangs > 0 % (skip les 0 %).
-  local rows = {}
-  for rank = 1, Run.MAX_TIER do
-    if (odds[rank] or 0) > 0 then rows[#rows + 1] = { rank = rank, pct = odds[rank] } end
-  end
-  local headFont = Theme.label(10)
-  local rowFont = Theme.label(11)
-  local PAD = 10
-  local ROW_H = rowFont:getHeight() + 3
-  local headStr = T("ui.tier_odds") .. "  ·  " .. T("ui.tier_label") .. " " .. run.shopTier .. "/" .. Run.MAX_TIER
-  -- largeur : max(en-tête, lignes) + marge.
-  local W = headFont:getWidth(headStr)
-  for _, r in ipairs(rows) do
-    W = math.max(W, rowFont:getWidth("R" .. r.rank) + 44)
-  end
-  W = W + PAD * 2
-  local H = PAD + headFont:getHeight() + 6 + #rows * ROW_H + PAD
-  -- position : suit le curseur, rebond sur les bords (jamais hors écran).
-  local x, y = self.mx * 4 + 16, self.my * 4 + 12
-  if x + W > Draw.W then x = self.mx * 4 - W - 16 end
-  if x < 4 then x = 4 end
-  if y + H > Draw.H then y = Draw.H - H - 6 end
-  if y < 4 then y = 4 end
-  x, y = math.floor(x), math.floor(y)
-  local ix, iy, iw = Panel.draw(x, y, W, H, { fill1 = c.stone800, fill2 = c.stone900, border = c.brass })
-  local cx = ix + PAD
-  local cy = iy + (PAD - 4)
-  Draw.text(headStr, cx, cy, c.gold, headFont)
-  cy = cy + headFont:getHeight() + 4
-  Draw.divider(ix + iw / 2, cy + 1, iw - 8, c.hair, 1)
-  cy = cy + 5
-  for _, r in ipairs(rows) do
-    local col = Rarity.frame(r.rank)
-    Draw.text("R" .. r.rank, cx, cy, col, rowFont)
-    Draw.textR(r.pct .. "%", ix + iw - PAD, cy, c.body, rowFont)
-    cy = cy + ROW_H
+  local bf = Theme.body(11)
+  for _, nid in ipairs(nbrs) do
+    local col = Theme.type(Units[nid].type).color
+    Draw.setColor(col); if love.graphics then love.graphics.rectangle("fill", x, y + 4, 8, 8) end; Draw.reset()
+    Draw.text(T("unit." .. nid .. ".name"), x + 14, y, c.ink2, bf)
+    y = y + 16
   end
 end
 
