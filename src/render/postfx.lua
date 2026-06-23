@@ -15,8 +15,9 @@
 --        · palette-lock doux vers les teintes Wraeclast (tire les ombres/lumières vers braise/abysse —
 --          le « même artiste » ; faible -> ne lave pas le texte)
 --        · aberration chromatique RADIALE (forte aux bords, ~0 au centre = lisible) bornée à ~1px
---        · dérive chromatique VIOLET/ABYSSE sur la zone distordue (les pixels déformés tirent vers le violet
---          c.rot / un bleu froid) -> la couleur « bizarre » demandée, SANS laver l'image (modulée par le masque)
+--        · dérive chromatique VIOLET/ABYSSE — un SOUPÇON, GATÉ par l'AMPLITUDE DE DÉPLACEMENT (pas par le seul
+--          masque) : le violet (c.rot) n'apparaît qu'en FRANGE FINE sur le liseré RÉELLEMENT déformé qui tangue,
+--          JAMAIS en aplat sur la bande sombre (chromaAmount = CHROMA·bmask·clamp(|offsetPx|/AMP_PX))
 --        · dither de Bayer 4×4 (gravure 1-bit subtile, cohérente pixel-art)
 --        · pulsation de braise globale très lente (l'écran « respire » comme une chair froide)
 --   Tout est AGRESSIF sur fond/bords/pics, RETENU au centre/sur le texte (bible §6).
@@ -58,14 +59,16 @@ end
 -- ║   masque). Seul l'ANNEAU autour du périmètre de chaque box ondule + dérive vers le violet/abysse.  ║
 -- ╚═══════════════════════════════════════════════════════════════════════════════════════════════╝
 local DISTORT = {
-  AMP_PX    = 3.5,   -- amplitude MAX du décalage d'UV, en PIXELS écran (dans les bordures ; ×distort). RÉDUITE.
+  AMP_PX    = 3.0,   -- amplitude MAX du décalage d'UV, en PIXELS écran (dans les bordures ; ×distort). C'est l'EFFET DOMINANT (subtil).
   SPEED     = 0.85,  -- vitesse d'écoulement des ondes (rad/s) : lent = onirique, organique
   SCALE     = 5.5,   -- échelle SPATIALE des ondes (≈ nb de lobes en travers de l'écran) : bas = larges houles
-  CHROMA    = 0.45,  -- force de la dérive chromatique violet/abysse sur la zone déformée (0 = aucune)
+  CHROMA    = 0.12,  -- force de la dérive chromatique violet/abysse (0 = aucune). FAIBLE + GATÉE par le déplacement
+                     --   (cf. GLSL : chromaAmount = CHROMA·bmask·clamp(|offsetPx|/AMP_PX)) -> SOUPÇON de violet
+                     --   sur le seul LISERÉ qui tangue, JAMAIS un aplat sur toute la bande sombre.
   -- ── MASQUE DE BANDES-BORDURES (remplace l'ancien masque RADIAL) ──────────────────────────────────
   -- La distorsion ne s'applique QUE dans une bande autour du périmètre de chaque box enregistrée.
-  RING_PX   = 11.0,  -- largeur de l'anneau (bande-bordure) en px ÉCRAN. ~8-14 : on doit SENTIR le bord onduler.
-  RING_FEATHER = 4.0,-- fondu doux (px écran) vers l'intérieur ET l'extérieur de l'anneau (pas de coupe nette)
+  RING_PX   = 6.0,   -- largeur de l'anneau (bande-bordure) en px ÉCRAN. FIN : un liseré qui ondule, pas un bloc.
+  RING_FEATHER = 5.0,-- fondu doux (px écran) vers l'intérieur ET l'extérieur de l'anneau. AUGMENTÉ -> bande mince et FONDUE.
 }
 
 -- ── Teintes de palette-lock (palette Wraeclast, depuis Theme.c -> floats 0..1) ─────────────────────
@@ -150,10 +153,13 @@ vec4 effect(vec4 color, Image tex, vec2 tc, vec2 sc) {
   // « ce pixel de sortie est-il dans l'anneau d'une box d'UI ? ». 0 = fond/monde/intérieur des box (NET) ;
   // 1 = pleine bande-bordure (ondule). Remplace l'ancien masque RADIAL (qui distordait toute la périphérie).
   number bmask = Texel(mask, tc).r * maskOn;
-  // Amplitude finale en UV : pixels -> UV (÷screen), modulée par le MASQUE de bordure, l'intensité distorsion
-  // et la tension (les bords tanguent plus quand ça tourne mal). `strength` global la borne aussi.
-  number ampUV = dAmp * bmask * dStrength * (0.85 + 0.6 * tension) * strength;
-  vec2 disp = vec2(ox / max(screen.x, 1.0), oy / max(screen.y, 1.0)) * ampUV;
+  // Amplitude finale (en PIXELS écran) : le facteur appliqué au champ d'ondes (ox,oy), modulé par le MASQUE de
+  // bordure, l'intensité distorsion et la tension (les bords tanguent plus quand ça tourne mal). `strength` global la borne.
+  number ampPx = dAmp * bmask * dStrength * (0.85 + 0.6 * tension) * strength;
+  // OFFSET en PIXELS écran (ox,oy ∈ ~[-1.5..1.5] sont le champ d'ondes normalisé). On le garde pour DEUX usages :
+  //   (a) le convertir en UV pour l'échantillonnage ; (b) mesurer sa LONGUEUR pour gater le chroma (cf. plus bas).
+  vec2 offsetPx = vec2(ox, oy) * ampPx;
+  vec2 disp = vec2(offsetPx.x / max(screen.x, 1.0), offsetPx.y / max(screen.y, 1.0));
   vec2 dtc = tc + disp;   // UV DÉCALÉE : l'échantillonnage qui suit lit les VRAIS pixels déformés (bordures only)
 
   // ── Aberration chromatique RADIALE : décale R/B le long du rayon, AMPLITUDE ∝ r² (centre intact). ──
@@ -167,11 +173,14 @@ vec4 effect(vec4 color, Image tex, vec2 tc, vec2 sc) {
   src.b = Texel(tex, dtc - dir * ab).b;       // canal bleu tiré vers l'intérieur
   vec3 col = src;
 
-  // ── DÉRIVE CHROMATIQUE violet/abysse sur la ZONE DÉFORMÉE : les pixels qui ondulent tirent vers le violet
-  // pourriture (rotTint) -> couleur « bizarre, malsaine ». Force ∝ amplitude locale du displacement -> nulle
-  // hors des bandes-bordures (disp=0 quand bmask=0). EN MIX -> teinte sans LAVER (le reste garde ses couleurs).
-  number warp = clamp(length(disp) * max(screen.x, screen.y), 0.0, 1.0); // px de déplacement local [0..1+]
-  col = mix(col, mix(col, rotTint, 0.5), warp * dChroma * bmask);
+  // ── DÉRIVE CHROMATIQUE violet/abysse — GATÉE PAR L'AMPLITUDE DE DÉPLACEMENT (pas seulement par le masque) ──
+  // BUG corrigé : avant, le facteur saturait à 1.0 sur quasi toute la bande -> aplat violet épais. Désormais le
+  // violet ∝ |offsetPx|/AMP_PX : il n'apparaît qu'en FRANGE FINE là où les pixels sont RÉELLEMENT déformés (le
+  // liseré qui tangue, où l'onde est proche de son max), et reste ~0 sur les pixels sombres mais peu déplacés de
+  // la bande. dAmp = AMP_PX (px) sert de référence de normalisation. CHROMA (faible) borne le SOUPÇON de teinte.
+  number warp = clamp(length(offsetPx) / max(dAmp, 0.0001), 0.0, 1.0); // 0 = pas déplacé .. 1 = au max de l'onde
+  number chromaAmount = dChroma * bmask * warp;                         // violet UNIQUEMENT sur le liseré qui bouge
+  col = mix(col, rotTint, chromaAmount);
 
   // ── Palette-lock DOUX : tire ombres -> abysse, lumières -> braise (le « même artiste »). ──────────
   // Mélange par luminance, faible (×strength) -> teinte sans laver les couleurs ni écraser le contraste.
@@ -249,9 +258,9 @@ function PostFX.new()
     enabled = true,     -- défaut ON, mais SUBTIL (strength modeste) — la lisibilité prime
     available = false,  -- passe à true si le shader compile (sinon NO-OP partout)
     strength = 0.85,    -- maître d'intensité (subtilité par défaut ; <1 garde l'UI lisible)
-    distort = 0.7,      -- ★ maître d'intensité de la DISTORSION onirique (displacement), CONFINÉE aux bordures.
-                        --   RÉDUIT (on doit la SENTIR sur les bords sans que ça gondole). Dose en 1 ligne
-                        --   (0 = off, 1 = AMP_PX nominal). Inclus au [F9].
+    distort = 0.65,     -- ★ maître d'intensité de la DISTORSION onirique (displacement), CONFINÉE aux bordures.
+                        --   L'effet DOMINANT mais SUBTIL : « le liseré ondule légèrement », pas « ça gondole ».
+                        --   Dose en 1 ligne (0 = off, 1 = AMP_PX nominal). Inclus au [F9].
     t = 0,              -- horloge murale accumulée (s)
     active = false,     -- vrai entre beginFrame() et endFrame() (canvas engagé cette frame)
     cw = 0, ch = 0,
