@@ -1087,4 +1087,27 @@ function CreatureGen.cached(opts)
   return def
 end
 
+-- Variante LIVE (données du rendu vivant, src/render/critter.lua) : MÊME résolution (famille/arch/palette/seed)
+-- que CreatureGen.cached -> la créature dessinée en vivant est IDENTIQUE à sa version bakée. Cache par id#rank.
+local CACHE_LIVE = {}
+function CreatureGen.cachedLive(opts)
+  local id = opts.id or "anon"
+  local rank = opts.rank or 1
+  local key = id .. "#" .. rank
+  local d = CACHE_LIVE[key]
+  if not d then
+    local Primgen = require("src.gen.primgen")
+    local fam = opts.family or deriveFamily(opts.type, opts.effects, id)
+    local nArch, nPal = Primgen.familyShape(fam)
+    local archIndex = bucket(hashId("arch." .. id), nArch)
+    local palIndex  = bucket(hashId("palette." .. id), nPal)
+    d = Primgen.live({
+      id = id, family = fam, archIndex = archIndex, paletteIndex = palIndex,
+      seed = hashId(id), rank = rank,
+    })
+    CACHE_LIVE[key] = d
+  end
+  return d
+end
+
 return CreatureGen

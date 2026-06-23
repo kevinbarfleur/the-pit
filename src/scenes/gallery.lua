@@ -11,6 +11,7 @@ local Rig = require("src.core.rig")
 local Creatures = require("src.data.creatures")
 local Units = require("src.data.units")
 local CreatureGen = require("src.gen.creaturegen")
+local Critter = require("src.render.critter") -- rendu VIVANT (cadre natif + mouvement par-pixel/famille) — vitrine
 local Rarity = require("src.gen.rarity")
 local T = require("src.core.i18n").t
 
@@ -221,7 +222,13 @@ function Gallery:drawWorld()
     end
     love.graphics.rectangle("line", cx - CELL_W / 2 + 1, cy - CELL_H + 2, CELL_W - 2, CELL_H - 2)
     love.graphics.setColor(1, 1, 1, 1)
-    Rig.draw(it.char)
+    -- RENDU VIVANT pour les vraies unités générées en idle (cadre natif 64 -> tailles relatives + mouvement
+    -- par famille). Démos/échelles/dédiées + anims attack/hurt restent sur le rig baké (Rig.draw).
+    if self.mode == "idle" and it.gen and not it.demo and Critter.has(it.id) then
+      Critter.draw(nil, it.id, cx - CELL_W / 2, cy - CELL_H, CELL_W, CELL_H, self.t / 60, 1, 1.0)
+    else
+      Rig.draw(it.char)
+    end
     -- marqueur : rang -> pips ; sinon démo body-plan (cyan) / généré (vert) / dédié (rien).
     if it.rank then
       drawPips(cx, cy + 1, it.rank, Rarity.frame(it.rank))

@@ -26,7 +26,7 @@ local function round(x) return floor(x + 0.5) end
 local function hypot(a, b) return sqrt(a * a + b * b) end
 
 -- ─────────────────────────── Grille + ecriture ───────────────────────────
-local function makeGrid(w, h) return { w = w, h = h, data = {} } end
+local function makeGrid(w, h) return { w = w, h = h, data = {}, eyes = {} } end
 -- set(.., nil) EFFACE le pixel (les traitements de pourriture creusent des trous via set(..,nil)).
 local function set(g, x, y, c)
   x = floor(x); y = floor(y)
@@ -175,6 +175,7 @@ local function eyeP(g, x, y, r, p)
   disc(g, x, y, r + 1, p.deep); disc(g, x, y, r, p.eyeDim); disc(g, x, y, max(1, r - 1), p.eye)
   set(g, x, y, p.out)
   if r >= 2 then set(g, x, y - 1, p.out); set(g, x, y + 1, p.out) end
+  if g.eyes then g.eyes[#g.eyes + 1] = { x, y, r } end -- mémorise l'œil pour l'overlay clignement/saccade du rendu vivant
 end
 
 local function maw(g, x, y, w, p)
@@ -2514,7 +2515,9 @@ function Primgen.archName(famKey, archIndex)
 end
 
 -- opts = { seed, size?=64, family?, archIndex?, paletteIndex? } -> { image, w, h, name, arch, family }
-function Primgen.generate(opts)
+-- Construit la GRILLE + anatomie + palette : CŒUR PARTAGÉ par le rendu BAKÉ (generate) et le rendu VIVANT (live).
+-- Séquence de tirages RNG STRICTEMENT identique à l'ancien generate -> déterminisme/golden de génération inchangés.
+local function buildGrid(opts)
   local size = opts.size or 64
   local rng = love.math.newRandomGenerator(opts.seed or 1)
   local function rnd() return rng:random() end
@@ -2526,20 +2529,98 @@ function Primgen.generate(opts)
   local A = arch.fn(g, rnd, p)             -- dessine + DECLARE l'anatomie
   fam.treat(g, rnd, p, A)                  -- corruption ANCREE (jamais flottante)
   outline(g, p.out)
+  return g, A, p, famKey, arch.name, rnd
+end
+
+function Primgen.generate(opts)
+  local g, _, p, famKey, archName, rnd = buildGrid(opts)
   local img, w, h = bake(g)
-  return { image = img, w = w, h = h, name = genName(rnd, famKey), arch = arch.name, family = famKey }
+  return { image = img, w = w, h = h, name = genName(rnd, famKey), arch = archName, family = famKey }
+end
+
+-- Données BRUTES pour le rendu VIVANT (src/render/critter.lua) : grille (cellules packées) + yeux + anatomie A
+-- + palette p, SANS bake (aucune Image GPU). Mêmes index/seed que Primgen.def -> rendu IDENTIQUE au baké.
+function Primgen.live(opts)
+  local g, A, p, famKey, archName, rnd = buildGrid(opts)
+  return { grid = g.data, eyes = g.eyes, w = g.w, h = g.h, A = A, p = p,
+    name = genName(rnd, famKey), arch = archName, family = famKey }
 end
 
 -- ─────────────────────────── Def RIG-COMPATIBLE (anim sprite-entier sur 1 pièce) ───────────────────────────
 -- Le sprite est MONOLITHIQUE -> on l'expose comme un rig à UNE part ("body") + des anims qui transforment cette
 -- part. Ainsi Rig.new/update/draw (et arena_draw, galerie, build, Grimoire) l'affichent SANS modification.
 -- Rig.new accepte une part `image` pré-bakée (cf. src/core/rig.lua). idle/attack/hurt = squash/stretch sprite-entier.
+-- ── Mouvement idle PAR FAMILLE (signature de vie propre au TYPE — cf. proto bestiaire `PROF`/`disp`) ──
+-- Le sprite est MONOLITHIQUE (1 part, pivot aux PIEDS = (w/2, 58)). On reproduit le `disp(x,y)` per-pixel du
+-- proto avec 3 canaux AFFINES sur cette unique part :
+--   sway  (b.rot)  = pendule planté aux pieds -> le HAUT bouge plus que la base (≈ `sway`/`writhe`/`legs` du proto)
+--   breathe (b.sy) = respiration verticale, pieds au sol (≈ `breathe`)
+--   float (rootDy) = lévitation d'ENSEMBLE — RÉSERVÉE aux créatures qui flottent VRAIMENT (≈ `bob`, yeux/ailes/spectres…)
+-- Fréquences = freq_proto / 60 (l'horloge du rig est en FRAMES @60fps). sin(0)=0 -> pose NEUTRE à t=0 :
+-- les minis figés (MiniRig, bounds) restent identiques, et la couche RENDER pure laisse le golden SIM intact.
+-- Désynchro entre voisins via idlePhase (tiré au hasard dans Rig.new). Une famille inconnue -> MOTION_DEFAULT.
+local MOTION_DEFAULT = { breathe = 0.018, breatheF = 0.030, sway = 0.006, swayF = 0.030 }
+local MOTION = {
+  -- amorphes / chair molle : respiration ample, à peine de balancement
+  cauchemar   = { breathe = 0.030, breatheF = 0.027, sway = 0.008, swayF = 0.027 },
+  gelatine    = { breathe = 0.050, breatheF = 0.037, sway = 0.006, swayF = 0.037 }, -- throb mou
+  larve       = { breathe = 0.040, breatheF = 0.047, sway = 0.014, swayF = 0.047 }, -- frétille
+  cocon       = { breathe = 0.045, breatheF = 0.024, sway = 0.004, swayF = 0.024 }, -- qqch respire dedans
+  -- marcheurs / bêtes : respiration + report de poids discret
+  bete        = { breathe = 0.020, breatheF = 0.033, sway = 0.010, swayF = 0.050 },
+  demon       = { breathe = 0.020, breatheF = 0.033, sway = 0.020, swayF = 0.030 }, -- dressé, balance
+  colosse     = { breathe = 0.025, breatheF = 0.040, sway = 0.011, swayF = 0.040 },
+  canide      = { breathe = 0.030, breatheF = 0.043, sway = 0.010, swayF = 0.053 }, -- halète
+  bandit      = { breathe = 0.022, breatheF = 0.033, sway = 0.008, swayF = 0.023 }, -- fébrile
+  culte       = { breathe = 0.020, breatheF = 0.030, sway = 0.016, swayF = 0.027 }, -- balancement rituel
+  inquisiteur = { breathe = 0.018, breatheF = 0.033, sway = 0.012, swayF = 0.027 },
+  templier    = { breathe = 0.018, breatheF = 0.033, sway = 0.007, swayF = 0.033 }, -- blindé, raide
+  wendigo     = { breathe = 0.020, breatheF = 0.025, sway = 0.013, swayF = 0.025 },
+  echassier   = { breathe = 0.015, breatheF = 0.027, sway = 0.013, swayF = 0.027 }, -- sur échasses
+  -- os / minéral / mécanique : quasi statiques, micro-vie
+  mortvivant  = { breathe = 0.012, breatheF = 0.037, sway = 0.010, swayF = 0.053 }, -- cliquetis d'os
+  crane       = { breathe = 0.015, breatheF = 0.020, sway = 0.004, swayF = 0.020 },
+  cristal     = { breathe = 0.020, breatheF = 0.023, sway = 0.005, swayF = 0.023 },
+  golem       = { breathe = 0.012, breatheF = 0.037, sway = 0.008, swayF = 0.037 },
+  automate    = { breathe = 0.010, breatheF = 0.043, sway = 0.007, swayF = 0.043 },
+  -- segmentés / nerveux : balancement rapide et menu
+  insecte     = { breathe = 0.015, breatheF = 0.050, sway = 0.009, swayF = 0.070 },
+  arachnide   = { breathe = 0.025, breatheF = 0.040, sway = 0.011, swayF = 0.060 },
+  crustace    = { breathe = 0.025, breatheF = 0.040, sway = 0.009, swayF = 0.057 },
+  rongeur     = { breathe = 0.045, breatheF = 0.060, sway = 0.007, swayF = 0.067 }, -- reniflement
+  -- reptiles / vers / hydres / plantes : ondulation marquée
+  reptile     = { breathe = 0.018, breatheF = 0.030, sway = 0.020, swayF = 0.030 },
+  annelide    = { breathe = 0.020, breatheF = 0.033, sway = 0.022, swayF = 0.033 },
+  hydre       = { breathe = 0.018, breatheF = 0.032, sway = 0.020, swayF = 0.032 },
+  chimere     = { breathe = 0.030, breatheF = 0.030, sway = 0.012, swayF = 0.040 },
+  plante      = { breathe = 0.035, breatheF = 0.027, sway = 0.017, swayF = 0.027 }, -- au vent
+  spore       = { breathe = 0.030, breatheF = 0.025, sway = 0.013, swayF = 0.025 },
+  kraken      = { breathe = 0.025, breatheF = 0.033, sway = 0.022, swayF = 0.040 }, -- bras qui dérivent
+  cephalo     = { breathe = 0.030, breatheF = 0.030, sway = 0.018, swayF = 0.040 },
+  -- FLOTTANTS : lévitation d'ensemble (float) + signature secondaire
+  oeil        = { breathe = 0.025, breatheF = 0.033, float = 1.0, floatF = 0.025 },
+  ombre       = { breathe = 0.035, breatheF = 0.027, float = 1.3, floatF = 0.023 },
+  spectre     = { breathe = 0.020, breatheF = 0.027, sway = 0.022, swayF = 0.020, float = 1.2, floatF = 0.025 },
+  aile        = { breathe = 0.020, breatheF = 0.033, sway = 0.012, swayF = 0.060, float = 1.1, floatF = 0.030 }, -- ailes
+  seraphin    = { breathe = 0.020, breatheF = 0.033, sway = 0.010, swayF = 0.050, float = 1.1, floatF = 0.025 },
+  griffon     = { breathe = 0.020, breatheF = 0.033, sway = 0.010, swayF = 0.047, float = 0.6, floatF = 0.027 },
+  meduse      = { breathe = 0.040, breatheF = 0.030, sway = 0.014, swayF = 0.033, float = 1.2, floatF = 0.027 }, -- pulse
+  essaim      = { breathe = 0.020, breatheF = 0.040, sway = 0.014, swayF = 0.053, float = 0.8, floatF = 0.027 },
+  abyssal     = { breathe = 0.020, breatheF = 0.030, sway = 0.012, swayF = 0.037, float = 1.0, floatF = 0.027 },
+  pendu       = { breathe = 0.012, breatheF = 0.022, sway = 0.020, swayF = 0.022, float = 1.0, floatF = 0.022 }, -- pend & se balance
+}
+
 local BODY_ANIM = {}
 BODY_ANIM.idle = function(char, t)
   local b = char.parts.body
   local ph = char.idlePhase or 0
-  if b then b.sy = 1 + sin(t * 0.10 + ph) * 0.03 end -- respiration
-  return { rootDy = sin(t * 0.08 + ph) * 1.5 }        -- bob
+  local m = MOTION[char.def.primFamily or ""] or MOTION_DEFAULT
+  if b then
+    if m.breathe then b.sy = 1 + sin(t * m.breatheF + ph) * m.breathe end       -- respiration (pieds plantés)
+    if m.sway then b.rot = sin(t * m.swayF + ph * 1.3) * m.sway end             -- pendule aux pieds (le haut balance)
+  end
+  if m.float then return { rootDy = sin(t * m.floatF + ph) * m.float } end       -- lévitation : flottants UNIQUEMENT
+  return {}
 end
 BODY_ANIM.attack = function(char, t, prog)
   local b = char.parts.body

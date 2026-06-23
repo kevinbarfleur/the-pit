@@ -37,7 +37,11 @@ local function defaultIdle(char, t)
   end
   if p.weapon then p.weapon.rot = pose.weapon or 0 end
   if p.tail then p.tail.rot = math.sin(t * 0.05 + ph) * 0.15 end
-  return { rootDx = 0, rootDy = math.sin(t * 0.04 + ph) * 1.5 }
+  -- Idle par DÉFAUT (fallback des rigs sans animation propre) : AUCUN bob vertical d'ensemble. Un sprite qui
+  -- saute en bloc lit comme un « sautillement » uniforme qui sort de la case (retour user). La respiration
+  -- per-part ci-dessus (torse/tête/bras/queue) donne déjà la vie sur place. Le mouvement PROPRE au type
+  -- (flottants qui flottent, ailes qui battent, ondulation…) vit dans primgen (BODY_ANIM, table MOTION).
+  return { rootDx = 0, rootDy = 0 }
 end
 
 local function defaultAttack(char, t, prog)
