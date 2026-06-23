@@ -204,9 +204,13 @@ end
 function love.draw()
   local scene = host.scene
 
-  -- 0. Vue (scale ENTIER + letterbox) calculée d'abord : l'atmosphère native en dépend.
+  -- 0. Vue (scale FRACTIONNAIRE = REMPLIT la fenêtre, plus de letterbox entier) calculée d'abord : tout
+  -- (monde pixel, UI, atmosphère, post-fx) en dépend, tout reste aligné. On garde l'ASPECT 16:9 du design ->
+  -- sur une fenêtre 16:9 (cas courant + plein écran desktop), ox/oy ≈ 0 => remplissage EXACT, ZÉRO barre noire.
+  -- Le texte d'UI reste NET (rasterisé à la résolution native, cf. Draw/Theme.fontNative) ; le monde pixel est
+  -- blité à ce scale (léger non-entier seulement hors multiples exacts de 320×180 -> mais fini les bandes noires).
   local sw, sh = love.graphics.getDimensions()
-  local scale = math.max(1, math.floor(math.min(sw / VW, sh / VH)))
+  local scale = math.max(1, math.min(sw / VW, sh / VH))
   view.scale = scale
   view.ox = math.floor((sw - VW * scale) / 2)
   view.oy = math.floor((sh - VH * scale) / 2)

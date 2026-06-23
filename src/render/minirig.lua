@@ -65,7 +65,10 @@ function MiniRig.bounds(id, palette)
   if not (love.graphics and love.graphics.newCanvas and love.graphics.getCanvas) then
     _bounds[id] = FALLBACK; return FALLBACK
   end
-  local okCv, cv = pcall(love.graphics.newCanvas, FIT_PROBE * 2, FIT_PROBE * 2)
+  -- dpiscale=1 : sur écran HiDPI/Retina, un newCanvas SANS ce réglage est créé en 2× pixels (dpiscale du
+  -- bureau) -> le rig (centré) tombe hors de la fenêtre de scan -> bounds faux -> rigs minuscules. On force le
+  -- canvas de MESURE à 1 px = 1 unité virtuelle (purement hors-écran, n'affecte pas le rendu visuel des rigs).
+  local okCv, cv = pcall(love.graphics.newCanvas, FIT_PROBE * 2, FIT_PROBE * 2, { dpiscale = 1 })
   if not okCv or not cv then _bounds[id] = FALLBACK; return FALLBACK end
   pcall(cv.setFilter, cv, "nearest", "nearest")
   local c = MiniRig.rig(id, palette)
@@ -87,9 +90,15 @@ function MiniRig.bounds(id, palette)
   local okI, idata = pcall(function() return cv:newImageData() end)
   if not okI or not idata then _bounds[id] = FALLBACK; return FALLBACK end
   local minx, miny, maxx, maxy = math.huge, math.huge, -math.huge, -math.huge
-  local W2 = FIT_PROBE * 2
-  for y = 0, W2 - 1 do
-    for x = 0, W2 - 1 do
+  -- On scanne les dimensions PIXEL RÉELLES de l'ImageData (robuste même si dpiscale=1 n'a pas été honoré :
+  -- HiDPI, arrondis). L'origine du rig est au CENTRE du canvas ; `ratio` ramène les pixels en unités VIRTUELLES
+  -- (=1 si 1px=1u, =2 si le canvas est resté 2× HiDPI) -> bounds corrects quelle que soit la densité d'écran.
+  local pw, ph = idata:getWidth(), idata:getHeight()
+  local cxp, cyp = pw / 2, ph / 2
+  local ratio = (pw / (FIT_PROBE * 2))
+  if ratio <= 0 then ratio = 1 end
+  for y = 0, ph - 1 do
+    for x = 0, pw - 1 do
       local okp, _, _, _, a = pcall(function() return idata:getPixel(x, y) end)
       if okp and a and a > 0.2 then
         if x < minx then minx = x end; if x > maxx then maxx = x end
@@ -98,8 +107,8 @@ function MiniRig.bounds(id, palette)
     end
   end
   if minx == math.huge then _bounds[id] = FALLBACK; return FALLBACK end
-  local left, right = minx - FIT_PROBE, maxx - FIT_PROBE
-  local top, bot = miny - FIT_PROBE, maxy - FIT_PROBE
+  local left, right = (minx - cxp) / ratio, (maxx - cxp) / ratio
+  local top, bot = (miny - cyp) / ratio, (maxy - cyp) / ratio
   local halfW = math.max(math.abs(left), math.abs(right))
   local res = { w = halfW * 2, h = bot - top, top = top, bot = bot }
   _bounds[id] = res
