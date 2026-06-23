@@ -20,6 +20,7 @@
 
 local Theme = require("src.ui.theme")
 local Draw = require("src.ui.draw")
+local ScreenFrame = require("src.ui.screenframe") -- ENROBAGE partagé : cadre de pierre gravée (sans onglet de nom ici — le grand titre EST l'identité)
 local Feel = require("src.ui.feel") -- JUICE (bible §4) : survol/press/respiration + ACTION DIFFÉRÉE
 local Forge = require("src.ui.forge") -- YEUX cauchemardesques du CTA (overlay seedé, hors-texte) — RENDER pur
 local Nightmare = require("src.ui.nightmare") -- surcouche ONIRIQUE (bordures qui tanguent) : avance le dt mural
@@ -47,7 +48,7 @@ local SEC_STEP = 32  -- pas vertical des secondaires
 local DIAMOND_R = 4  -- losange sang en préfixe de ENTER
 local DIAMOND_GAP = 12 -- espace losange -> texte de ENTER
 local HIT_PADX, HIT_PADY = 14, 8 -- marge de confort autour du texte pour le hit-test (clic plus généreux)
-local BAND_TOP, BAND_BOTTOM = 452, 660 -- bande des entrées : sous le diviseur (~444), au-dessus du pied (~690)
+local BAND_TOP, BAND_BOTTOM = 452, 640 -- bande des entrées : sous le diviseur (~444), au-dessus du pied (resserrée pour loger pied + cadre dans l'inset ScreenFrame ~40px)
 
 function Menu.new(palette, vw, vh, host)
   local self = setmetatable({}, Menu)
@@ -76,7 +77,7 @@ function Menu.new(palette, vw, vh, host)
   self.down = false
   Feel.reset() -- repart au repos en (re)entrant dans le menu (survol/press/respiration vierges)
   -- Toggle MODE DEV (cheat) — coin haut-gauche, présent UNIQUEMENT si Dev.ENABLED (masqué/inerte en release).
-  self.devRect = Dev.ENABLED and { x = 16, y = 14, w = 252, h = 26 } or nil
+  self.devRect = Dev.ENABLED and { x = 48, y = 48, w = 252, h = 26 } or nil
   return self
 end
 
@@ -275,9 +276,10 @@ function Menu:drawOverlay(view)
   end
 
   -- Pied : reliques inscrites (méta-progression) en gold à gauche, version en ink-5 à droite.
+  -- y rentré dans l'inset du cadre (le pied tombait sous la bande de pierre à 690 ; ~656 reste DANS l'inset ~40px).
   local inscribed = (Grimoire.count and Grimoire.count()) or 0
-  Draw.text(T("menu.relics", { n = inscribed, total = #Relics.order }), 24, 690, c.gold, Theme.label(10))
-  Draw.textR(T("menu.tag"), Draw.W - 24, 690, c.ink5, Theme.label(10))
+  Draw.text(T("menu.relics", { n = inscribed, total = #Relics.order }), 48, 656, c.gold, Theme.label(10))
+  Draw.textR(T("menu.tag"), Draw.W - 48, 656, c.ink5, Theme.label(10))
 
   -- Toggle MODE DEV (coin haut-gauche) : visible seulement si Dev.ENABLED. Libellé en dur (dev-only).
   if self.devRect then
@@ -286,6 +288,12 @@ function Menu:drawOverlay(view)
     Draw.text(on and "[DEV] FULL UNLOCK: ON" or "[DEV] FULL UNLOCK: OFF", r.x + 10, r.y + 7,
       on and c.goldBright or c.fainter, Theme.label(10))
   end
+
+  -- ENROBAGE signature (cadre de pierre gravée) : APRÈS le contenu, SANS onglet de nom (le titre « The Pit »
+  -- EST déjà l'identité de l'écran -> un onglet ferait doublon). Le cadre borde la marge, l'intérieur est
+  -- transparent ; le contenu (kicker/titre/items/pied) tient DANS l'inset (~40px). La distorsion postfx
+  -- reste en couche par-dessus (automatique).
+  ScreenFrame.draw(nil)
 
   Draw.finish()
 end

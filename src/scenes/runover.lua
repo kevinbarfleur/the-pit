@@ -23,6 +23,7 @@ local Banner = require("src.ui.banner")   -- VERDICT cérémonial (Jacquard) : l
 local Button = require("src.ui.button")   -- CTA propre PRIMARY (sang + yeux) : la relance
 local Dividers = require("src.ui.dividers") -- filet laiton propre entre verdict et CTA
 local Feel = require("src.ui.feel")       -- JUICE propre (survol/press) — RENDER pur, headless-safe
+local ScreenFrame = require("src.ui.screenframe") -- ENROBAGE partagé : cadre de pierre gravée + onglet « DESTINY »
 local Ambient = require("src.fx.ambient")
 local T = require("src.core.i18n").t
 
@@ -109,6 +110,12 @@ function Runover:drawOverlay(view)
   Button.draw(self.cta.x, self.cta.y, self.cta.w, self.cta.h, "primary", T("runover.descend"),
     { hover = self.ctaHover, feel = Feel.state("runover.again"), id = "runover.again",
       mouse = { mx = self.mx, my = self.my }, t = tt })
+
+  -- ── 4) ENROBAGE signature : cadre reliquaire partagé (bande de pierre gravée + onglet « DESTINY ») posé
+  --       EN DERNIER, par-dessus le contenu. Le centre du cadre est transparent : le verdict (bloc bannière
+  --       + filet + CTA, centré) tient DANS l'inset (~40px de marge) ; le cadre borde la marge (comme combat).
+  --       Onglet « DESTINY » (label de cérémonie de l'écran de fin de run, §C.5) — la marque du destin scellé. ──
+  ScreenFrame.draw("DESTINY", { ft = ScreenFrame.FT })
 
   Draw.finish()
 end
