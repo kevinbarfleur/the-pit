@@ -10,6 +10,8 @@
 
 local Arena = require("src.combat.arena")
 local ArenaDraw = require("src.render.arena_draw")
+local Chronicle = require("src.render.chronicle")
+local ChronicleDraw = require("src.render.chronicle_draw")
 local Ambient = require("src.fx.ambient")
 local Theme = require("src.ui.theme")
 local Draw = require("src.ui.draw")
@@ -65,6 +67,8 @@ function Combat:_track()
     self.killLog[#self.killLog + 1] =
       { victim = u, killer = h and h.source, cause = (h and h.cause) or "attack", tick = arena.t }
   end)
+  self.chron = Chronicle.new(arena)              -- modèle du JOURNAL (P1) — écoute le bus, golden-safe
+  self.chronView = ChronicleDraw.new(self.chron) -- panneau (vue + filtres + scroll)
 end
 
 -- Résumé du combat (mémoïsé) : cause DOMINANTE + PREMIÈRE perte du joueur. En victoire on lit ce que
@@ -146,6 +150,13 @@ function Combat:drawOverlay(view)
     Draw.finish()
   end
 
+  -- LA CHRONIQUE (P1) : le journal s'affiche en post-combat (panneau à droite) ; il s'est rempli en
+  -- direct pendant le combat, on peut le filtrer/scroller à la fin.
+  if self.arena.over and self.chronView then
+    local pw = math.floor(Draw.W * 0.34)
+    self.chronView:draw(view, Draw.W - pw - 12, 56, pw, Draw.H - 124)
+  end
+
   -- Indicateur de PAUSE : glyphe ❚❚ DESSINÉ (pas de texte -> aucune dépendance i18n), haut-centre, hors
   -- de la zone des grilles -> screenshot lisible. Le combat figé est déjà un retour clair en soi.
   if self.paused then
@@ -166,6 +177,8 @@ end
 
 function Combat:mousepressed(vx, vy, button)
   if button == 1 and self.arena.over then
+    -- Le journal capte d'abord les clics (puces de filtre / sélecteur d'équipe) : il ne termine PAS le combat.
+    if self.chronView and self.chronView:mousepressed(vx, vy) then return end
     -- EXHIBITION (banc d'essai) : payload.onFinish prend la main -> retour au Proving Ground, SANS
     -- toucher la méta de run. Sinon route normale via le host (résout vies/victoires, round suivant ou
     -- fin de run). Fallback goto("build") pour les contextes sans run (tests).
@@ -173,6 +186,11 @@ function Combat:mousepressed(vx, vy, button)
     elseif self.host.finishCombat then self.host.finishCombat(self.arena.win)
     else self.host.goto("build") end
   end
+end
+
+-- Molette : défile le journal (post-combat).
+function Combat:wheelmoved(dx, dy)
+  if self.arena.over and self.chronView then self.chronView:wheelmoved(dx, dy) end
 end
 
 return Combat

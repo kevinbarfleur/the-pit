@@ -92,6 +92,16 @@ return {
   ["chronicle.v.spread"] = "spreads to",
   ["chronicle.v.shield"] = "shields allies",
   ["chronicle.v.fall"] = "falls",
+  ["chronicle.title"] = "CHRONICLE",
+  ["chronicle.empty"] = "the pit holds its breath...",
+  ["chronicle.f.strike"] = "Strikes",
+  ["chronicle.f.affliction"] = "Afflict",
+  ["chronicle.f.spread"] = "Spread",
+  ["chronicle.f.shield"] = "Shield",
+  ["chronicle.f.death"] = "Deaths",
+  ["chronicle.team.all"] = "All",
+  ["chronicle.team.you"] = "You",
+  ["chronicle.team.foe"] = "Foe",
 
   -- run over
   ["runover.win"] = "ASCENSION",
