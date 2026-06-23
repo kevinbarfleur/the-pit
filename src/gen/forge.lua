@@ -101,6 +101,19 @@ local function partWH(grid)
   return w, h
 end
 
+-- ─────────────────────────── Parts SIGNATURE pinnées (« moment gants de boxe ») ───────────────────────────
+-- Câblage DÉTERMINISTE d'une part distinctive à UNE espèce, sans toucher au tirage seedé des autres.
+-- PIN[id][poolName] = nom de part de l'atlas -> la forge FORCE cette part au lieu de piocher. Zéro RNG.
+-- Une part signature reste recolorée par la famille de l'unité (rôles), comme toute autre part : seule
+-- la SÉLECTION est fixée. Ajouter une signature = 1 part dans l'atlas (section bannerisée) + 1 ligne ici.
+Forge.PIN = {
+  leech_thorn = { arachnid_body = "arachnid_thornsac" }, -- araignée : sac de venin dorsal épineux
+  gravewarden = { head = "helm_crest_warden" },          -- tank : heaume à haute crête + antennes
+  thunderhead = { host = "gazer_storm_crown" },          -- œil-tempête : couronne d'arcs électriques
+}
+-- id de l'unité en cours de build (upvalue lue par pick pour résoudre un éventuel pin). Fixée par Forge.build.
+local CURRENT_ID = nil
+
 -- ─────────────────────────── Pioche déterministe ───────────────────────────
 local function has(tags, v)
   if not tags then return false end
@@ -108,9 +121,22 @@ local function has(tags, v)
   return false
 end
 
+local function findByName(pool, name)
+  for _, p in ipairs(pool) do if p.name == name then return p end end
+  return nil
+end
+
 -- pioche dans un pool ARRAY une part compatible (famille+plan), fallbacks garantissant un résultat. ipairs partout.
-local function pick(pool, family, bodyplan, rng)
+-- poolName (optionnel) = clé du pool dans l'atlas : si l'unité courante a une part SIGNATURE pinnée pour ce
+-- pool, on la renvoie directement (déterministe, hors RNG) au lieu de tirer. Inconnu/non pinné -> tirage normal.
+local function pick(pool, family, bodyplan, rng, poolName)
   if not pool or #pool == 0 then return nil end
+  local pinSet = CURRENT_ID and Forge.PIN[CURRENT_ID]
+  local pinName = pinSet and poolName and pinSet[poolName]
+  if pinName then
+    local hit = findByName(pool, pinName)
+    if hit then return hit end -- garde-fou : nom introuvable -> retombe sur le tirage seedé
+  end
   local function gather(test)
     local c = {}
     for _, p in ipairs(pool) do if test(p) then c[#c + 1] = p end end
@@ -155,7 +181,8 @@ local TOP_PIVOT = { arm = true, legs = true, weapon = true }
 local function buildStatic(rng, family, bodyplan, A, rt)
   local got = {}
   for _, slot in ipairs(BIPED_PICKS[bodyplan] or BIPED_PICKS.humanoid) do
-    got[slot] = bakePart(pick(A[POOL[slot]], family, bodyplan, rng), rt, TOP_PIVOT[slot] and "top" or "base")
+    -- POOL[slot] passé comme poolName -> une part SIGNATURE pinnée (head/host…) est sélectionnée si l'id la réclame.
+    got[slot] = bakePart(pick(A[POOL[slot]], family, bodyplan, rng, POOL[slot]), rt, TOP_PIVOT[slot] and "top" or "base")
   end
   local parts = { head = got.head, torso = got.torso, legs = got.legs, weapon = got.weapon, host = got.host }
   if got.arm then parts.armBack = got.arm; parts.armFront = got.arm end
@@ -285,7 +312,7 @@ PLAN.serpent = function(rng, fam, A, rt)
 end
 
 PLAN.arachnid = function(rng, fam, A, rt)
-  local body = bakePart(pick(A.arachnid_body, fam, "arachnid", rng), rt, "base")
+  local body = bakePart(pick(A.arachnid_body, fam, "arachnid", rng, "arachnid_body"), rt, "base")
   local leg = bakePart(pick(A.spider_leg, fam, "arachnid", rng), rt, "top")
   local legLen = #leg.grid
   local bw, bh = partWH(body.grid)
@@ -364,6 +391,7 @@ end
 -- opts = { id, type, bodyplan?, seed?, effects?, rank?, outlineRole? }. Déterministe : (id) -> même créature.
 function Forge.build(opts)
   local id = opts.id or "anon"
+  CURRENT_ID = id -- contexte pour la résolution des parts signature pinnées (cf. pick) ; restauré avant retour
   local fac = Factions.get(opts.type)
   local seed = opts.seed or hashId(id)
   local rng = love.math.newRandomGenerator(seed)
@@ -387,6 +415,7 @@ function Forge.build(opts)
   end
 
   local rar = Rarity.get(opts.rank or 1)
+  CURRENT_ID = nil -- fin du contexte de pin (évite toute fuite vers un build ultérieur)
   return {
     name = id:upper(), parts = parts, rig = rig, idlePose = idlePose, animations = animations,
     bodyplan = bodyplan, rank = opts.rank or 1, scale = rar.scale, glow = rar.glow,

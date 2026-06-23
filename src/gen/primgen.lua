@@ -2498,7 +2498,9 @@ end
 -- (board/combat 320x180, cases ~30px) attend des créatures ~28px comme l'ancien générateur. `cached` pose
 -- donc `def.scale = WORLD_FIT * rareté` -> primgen occupe la MÊME empreinte que l'ancien partout (board,
 -- combat protégé, grimoire, gallery) sans retoucher une seule scène. Ajustable d'un cran si besoin en-jeu.
-Primgen.WORLD_FIT = 0.6
+-- 0.5 = échelle NETTE : 0.5 × vue ×4 = ×2 ENTIER (pas de pixels inégaux). À ~la taille de la galerie v7.
+-- (0.6 donnait ×2.4 fractionnaire -> pixels chunky + sprites trop gros débordant les cases.)
+Primgen.WORLD_FIT = 0.5
 Primgen.FAMILY_ORDER = FAMILY_ORDER
 -- #archetypes, #palettes d'une famille -> le mapping (creaturegen.cached) en tire des index par hash d'id.
 function Primgen.familyShape(famKey)

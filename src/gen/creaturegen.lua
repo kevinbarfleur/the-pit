@@ -1017,7 +1017,7 @@ local function bucket(h, n) return 1 + math.floor(((h * PHI) % 1) * n) end
 -- PÔLES : type mécanique -> familles visuelles candidates (les 41 réparties sur 5 pôles).
 local TYPE_TO_FAMILIES = {
   arcane = { "cauchemar", "oeil", "cristal", "golem", "spore", "plante", "cocon", "chimere" },
-  abyss  = { "demon", "cephalo", "abyssal", "kraken", "gelatine", "hydre", "meduse", "ombre" },
+  abyss  = { "demon", "cephalo", "abyssal", "kraken", "gelatine", "hydre", "meduse", "ombre", "culte", "aile" },
   bone   = { "mortvivant", "spectre", "crane", "pendu", "wendigo", "larve", "annelide" },
   flesh  = { "bete", "canide", "bandit", "rongeur", "colosse", "reptile", "echassier", "crustace", "arachnide" },
   order  = { "templier", "inquisiteur", "seraphin", "griffon", "automate", "insecte", "essaim" },
@@ -1078,7 +1078,9 @@ function CreatureGen.cached(opts)
       id = id, family = fam, archIndex = archIndex, paletteIndex = palIndex,
       -- AJUSTEMENT-MONDE : sprite primgen 64px -> ~empreinte de l'ancien générateur dans le board/combat 320x180
       -- (cf. Primgen.WORLD_FIT) -> toutes les scènes (dont arena_draw protégé) fonctionnent sans retouche.
-      seed = hashId(id), rank = rank, scale = Primgen.WORLD_FIT * rar.scale, glow = rar.glow,
+      -- taille UNIFORME = NETTE (×2 entier). La rareté ne grossit plus le sprite (ça re-cassait le net) :
+      -- elle se lit via le `glow`. (Réintroduire une taille par rang = uniquement en pas entiers : 0.25/0.5/0.75.)
+      seed = hashId(id), rank = rank, scale = Primgen.WORLD_FIT, glow = rar.glow,
     })
     CACHE[key] = def
   end

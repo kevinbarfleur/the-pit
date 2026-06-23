@@ -189,6 +189,22 @@ local ok, err = pcall(function()
   Forge.label("1", 320, 640, 16, Forge.hexF("#e8dcc0"), { right = true })
   Forge.label("PLACE A UNIT", 200, 680, 16, Forge.hexF("#a4895a"), { bold = true })
 
+  -- ── POLICE LISIBLE (read = Pixel Operator Bold) + opt read de Forge.label + Forge.coinAt (symbole de coût). ──
+  -- Theme.read : rôle présent, hinting "mono" (crisp), shortcut + fichier déclarés. Pixel Operator (trait GRAS)
+  -- remplace Jersey 15 (rejeté : trop fin -> floutait au scale non-entier 0.75). Sous le mock LÖVE, newFont est
+  -- stubé -> on vérifie surtout la DÉCLARATION (rôle/fichier/hint), pas le rendu réel.
+  assert(Theme.FONT_FILES.read and Theme.FONT_FILES.read:match("PixelOperator"), "Theme : police read = Pixel Operator")
+  assert(Theme.HINT.read == "mono", "Theme : read en hinting mono (crisp nearest)")
+  assert(type(Theme.read) == "function", "Theme.read : raccourci present")
+  Theme.read(13); Theme.read(16) -- mémoïse sans crash (stub headless)
+  -- Forge.label avec read : overlay vivant en police lisible (no crash, no readback).
+  Forge.label("40", 200, 600, 20, Forge.hexF("#c2b39a"), { read = true, shadow = true })
+  Forge.label("24", 200, 620, 15, Forge.hexF("#d9bd52"), { read = true, right = true })
+  -- Forge.coinAt : pièce d'or dessinée direct (no-op headless / pcall-gardé), version éteinte aussi.
+  assert(type(Forge.coinAt) == "function", "Forge.coinAt : symbole de coût present")
+  Forge.coinAt(40, 40, 4, { 0.85, 0.74, 0.32 })
+  Forge.coinAt(60, 40, 4, { 0.5, 0.4, 0.2 }, true) -- pièce éteinte (hors-budget)
+
   -- ── Forge.socket / uiSocket / uiPlate / diamondAt / accentFrom (cases & cartes du build). ──
   local acc = Forge.accentFrom({ 0.77, 0.63, 0.29 }) -- depuis Theme.c (floats 0..1)
   assert(acc.dark and acc.mid and acc.bright, "accentFrom : triple {dark,mid,bright}")
@@ -331,6 +347,26 @@ local ok, err = pcall(function()
     assert(Build.afflValue({}) == nil, "afflValue : sans dps/dur -> nil")
     assert(Build.afflValue(nil) == nil, "afflValue : nil -> nil")
 
+    -- helper PUR : tokenizeValues découpe une ligne en segments {text, sp, value} ; un segment "value" porte
+    -- au moins un chiffre (+7%, 16, 1.5s) -> colorisation inline des valeurs sans toucher l'i18n.
+    local toks = Build.tokenizeValues("takes +5% damage per stack (up to 5).")
+    assert(#toks > 0, "tokenizeValues : segmente la ligne")
+    local nVal, joined = 0, ""
+    for _, t in ipairs(toks) do
+      if t.value then nVal = nVal + 1 end
+      joined = joined .. t.text .. t.sp
+    end
+    assert(nVal == 2, "tokenizeValues : 2 valeurs (+5%, 5)")
+    assert(joined == "takes +5% damage per stack (up to 5).", "tokenizeValues : reconstruit la ligne a l'identique")
+    -- mots non-valeur : aucun chiffre -> jamais marqués valeur (defensif).
+    local plain = Build.tokenizeValues("forces the enemy front to strike it.")
+    for _, t in ipairs(plain) do assert(not t.value, "tokenizeValues : prose pure -> aucune valeur") end
+    -- valeur entre PARENTHÈSES « (6 dmg/s) » : « (6 » est une valeur, « dmg/s) » ne l'est pas.
+    local paren = Build.tokenizeValues("Strikes burn (6 dmg/s) but the flame decays.")
+    local pv = {}
+    for _, t in ipairs(paren) do if t.value then pv[#pv + 1] = t.text end end
+    assert(#pv == 1 and pv[1] == "(6", "tokenizeValues : valeur entre parentheses detectee, pas le mot suivant")
+
     -- Smoke : construit la scène, pose une unité à afflictions (burn) ET un héros (rank>=4), et dessine la
     -- fiche directement (hors hover) -> ne plante pas sous le mock LÖVE, golden non touché (RENDER pur).
     -- Couvre les STATS FRAMELESS (Forge.label, plus de value-tag bordée), le portrait SANS boîte noire, le
@@ -339,21 +375,33 @@ local ok, err = pcall(function()
     local b = Build.new(Palette, 320, 180, { goto = function() end })
     b.view = { ox = 0, oy = 0, scale = 4 }
     b.mx, b.my = 100, 60
-    b:drawTooltip("emberling")     -- pose burn (value-chip) + R2 (cadre sobre, fond peu teinté)
+    b:drawTooltip("emberling")     -- pose burn (value-chip + valeurs inline orange) + R2
     b:drawTooltip("plague_doctor") -- regen, R4 (cadre riche + œil + halo + fond teinté sigil)
-    b:drawTooltip("marauder")      -- vanille, pas d'affliction, pas de family/rank
+    b:drawTooltip("marauder")      -- vanille, pas d'affliction, pas de family/rank (chemin neutre desc)
     b:drawTooltip("skull_colossus") -- R5 avec family (fond teinté or malsain)
+    b:drawTooltip("stormlord")     -- CHOC : valeurs inline JAUNES + icône choc, flavor italique séparée
+    b:drawTooltip("live_wire")     -- CHOC T1
+
+    -- drawDescLine : tracé d'une ligne avec valeurs colorées + icône d'affliction (no crash sous le mock).
+    -- chemin affliction (burn) ET chemin neutre (aff=nil -> ligne unie). maxW borne l'icône (pas de débord).
+    b:drawDescLine("stacks 2 shock (+10% per stack, up to 16).", 20, 20, Theme.read(13), Theme.c.body, "shock", 290)
+    b:drawDescLine("a plain mechanic line with no values here", 20, 40, Theme.read(13), Theme.c.body, nil, 290)
+    b:drawDescLine("+5% only", 20, 60, Theme.read(13), Theme.c.body, "burn", 12) -- maxW serré -> icône omise
 
     -- drawShopCard (B4/B6 : pip de type GROS + survol). On câble une run-stub minimale (gold + shop) -> la
     -- carte se dessine au repos ET au survol sans crash (le fond teinté/hover vit dans drawBack, ici = cadre
     -- + pip + nom + coût). Couvre le pip type-coloré, le halo de survol, l'accent de liseré par type.
     b.host.run = { gold = 99, shop = { { id = "emberling", cost = 2 } } }
     local srect = b.shopSlots[1]
-    b:drawShopCard(1, srect, b.host.run.shop[1], false) -- repos
+    b:drawShopCard(1, srect, b.host.run.shop[1], false) -- repos (pièce + prix read)
     b:drawShopCard(1, srect, b.host.run.shop[1], true)  -- survol (halo + liseré or)
-    b.host.run.gold = 0                                  -- hors-budget (sobre)
+    b.host.run.gold = 0                                  -- hors-budget (pièce éteinte)
     b:drawShopCard(1, srect, b.host.run.shop[1], false)
     b.host.run = nil
+
+    -- HUD (drawBanner) : symboles par stat (pièce/diamant/pip/case) + valeurs READ -> no crash sous le mock.
+    b:drawBanner({ gold = 12, wins = 3, round = 5, slots = 6, winStreak = 3, lossStreak = 0 })
+    b:drawBanner({ gold = 0, wins = 0, round = 1, slots = 3, winStreak = 0, lossStreak = 2 })
 
     -- ── FIT-TO-BOX (anti-débordement des créatures) : rigBounds renvoie une boîte SAINE (repli headless,
     -- pas de canvas réel sous le mock) ; rigFitScale CONTIENT dans la boîte et RESPECTE maxScale (cap). ──

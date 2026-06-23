@@ -85,7 +85,7 @@ function Screen.new(palette, vw, vh, host)
     local spec = Units[id] or {}
     local handmade = Creatures[id] ~= nil
     local def = handmade and Creatures[id]
-      or CreatureGen.cached({ id = id, type = spec.type, effects = spec.effects, bodyplan = spec.bodyplan, rank = spec.rank })
+      or CreatureGen.cached({ id = id, type = spec.type, family = spec.family, effects = spec.effects, bodyplan = spec.bodyplan, rank = spec.rank })
     local char = Rig.new(def, palette); char.facing = 1
     self.beastEntries[#self.beastEntries + 1] = {
       id = id, char = char, type = spec.type or "flesh", rank = spec.rank, bodyplan = spec.bodyplan,

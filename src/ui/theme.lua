@@ -150,19 +150,28 @@ end
 -- l'italique sont réservés à de courtes touches.
 --   display   = Jacquard 24  -> UNIQUEMENT le logotype "The Pit" + grands mots de résultat (VICTORY...).
 --                               Jamais en label fonctionnel ; en casse de TITRE (capitales blackletter = illisibles).
---   ui/uiBold = Silkscreen   -> TOUT le fonctionnel (stats, boutons, labels, items de menu, descriptions,
---                               infobulles). hinting "mono" + nearest = net.
+--   ui/uiBold = Silkscreen   -> LABELS/BOUTONS courts en capitales (items de menu, libellés de boutons,
+--                               petites étiquettes). Silkscreen est CHUNKY/tout-capitales : superbe en label,
+--                               mais TROP lourd et illisible pour des VALEURS et de la PROSE mécanique.
+--   read      = Pixel Operator Bold -> POLICE LISIBLE (retour user) : VALEURS (HP/DMG/CD, dps, coût, HUD) +
+--                               TEXTE MÉCANIQUE/description. Vraie pixel-font CC0 avec MINUSCULES, x-height
+--                               ample ET trait LOURD -> bien plus lisible que Silkscreen en petit, et surtout
+--                               ROBUSTE au léger adoucissement non-entier (l'UI dessine en design 1280×720 puis
+--                               scale ×(view.scale/4) ; à view.scale=3 le facteur 0.75 floute les traits FINS).
+--                               Jersey 15 (essayé puis REJETÉ) « mushait » à 0.75 (traits trop fins) ; un trait
+--                               GRAS survit. hinting "mono" + nearest. On voit la valeur, on lit la phrase.
 --   loreRoman = IM Fell rom. -> SAVEUR courte (kickers, citations de relique) : serif d'ambiance LISIBLE.
---   lore      = IM Fell ital -> à ÉVITER (peu lisible) ; réserver à un rare accent décoratif.
+--   lore      = IM Fell ital -> FLAVOR / phrase philosophique (italique d'ambiance, en pied de carte).
 Theme.FONT_FILES = {
   display   = "assets/fonts/Jacquard24-Regular.ttf",
   ui        = "assets/fonts/Silkscreen-Regular.ttf",
   uiBold    = "assets/fonts/Silkscreen-Bold.ttf",
+  read      = "assets/fonts/PixelOperator-Bold.ttf",
   lore      = "assets/fonts/IMFellEnglish-Italic.ttf",
   loreRoman = "assets/fonts/IMFellEnglish-Regular.ttf",
 }
--- "mono" = rendu aliasé (pixel net) pour la police UI ; "normal" = lissé pour le gothique/lore décoratif.
-Theme.HINT = { ui = "mono", uiBold = "mono", display = "normal", lore = "normal", loreRoman = "normal" }
+-- "mono" = rendu aliasé (pixel net) pour les polices pixel (UI + read) ; "normal" = lissé pour le gothique/lore.
+Theme.HINT = { ui = "mono", uiBold = "mono", read = "mono", display = "normal", lore = "normal", loreRoman = "normal" }
 
 Theme._cache = {}    -- [role][px] = Font
 Theme._missing = {}  -- [role] = true si le TTF a échoué (on ne réessaie pas)
@@ -203,6 +212,7 @@ end
 function Theme.display(px)   return Theme.font("display", px) end
 function Theme.ui(px)        return Theme.font("ui", px) end
 function Theme.uiBold(px)    return Theme.font("uiBold", px) end
+function Theme.read(px)      return Theme.font("read", px) end
 function Theme.lore(px)      return Theme.font("lore", px) end
 function Theme.loreRoman(px) return Theme.font("loreRoman", px) end
 
@@ -213,6 +223,9 @@ function Theme.load()
   Theme.display(128); Theme.display(54); Theme.display(30); Theme.display(26)
   for _, px in ipairs({ 8, 9, 10, 11, 12, 13, 16 }) do Theme.ui(px) end
   Theme.uiBold(11); Theme.uiBold(13)
+  -- POLICE LISIBLE (valeurs + prose mécanique) : tailles courantes de la fiche/du HUD/des cartes. Pixel
+  -- Operator a une grille NATIVE 16px -> on privilégie 16 (et proches) pour rester crisp avant le scale jeu.
+  for _, px in ipairs({ 12, 13, 14, 15, 16, 18, 20 }) do Theme.read(px) end
   Theme.lore(14); Theme.lore(16); Theme.lore(18); Theme.lore(24)
   Theme.loaded = true
 end

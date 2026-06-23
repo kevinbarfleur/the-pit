@@ -1244,13 +1244,16 @@ Forge.hexF = hexRgb255
 -- détacher de la pierre, et un léger halo doré au survol (opts.glow 0..1). px = TAILLE de police (design).
 -- C'est le remplacement du label baké : il S'AFFICHE TOUJOURS (aucun readback de glyphe, aucun cache à
 -- empoisonner). No-op headless (police/print absents) -> pas de crash, golden inchangé (RENDER pur).
--- color = {r,g,b} FLOATS 0..1. opts = { bold?, right?, left?, glow?, shadow? (false pour couper l'ombre) }.
+-- color = {r,g,b} FLOATS 0..1. opts = { bold?, read?, right?, left?, glow?, shadow? (false pour couper l'ombre) }.
+--   read = true -> POLICE LISIBLE (Pixel Operator Bold, Theme.read) au lieu de Silkscreen : pour les VALEURS
+--   et le texte mécanique (retour user : Silkscreen trop chunky ; Jersey 15 trop fin -> floutait au scale
+--   non-entier). Trait GRAS = crisp même à 0.75. bold/read s'excluent (read prioritaire).
 function Forge.label(txt, cx, cy, px, color, opts)
   opts = opts or {}
   local g = love.graphics
   if not (g and g.print and g.setFont) then return end
   local fontPx = max(6, floor((px or 16) + 0.5))
-  local font = opts.bold and Theme.uiBold(fontPx) or Theme.ui(fontPx)
+  local font = opts.read and Theme.read(fontPx) or (opts.bold and Theme.uiBold(fontPx) or Theme.ui(fontPx))
   if not font then return end
   local okW, fw = pcall(function() return font:getWidth(txt) end)
   local okH, fh = pcall(function() return font:getHeight() end)
@@ -1300,6 +1303,31 @@ function Forge.diamondAt(cx, cy, r, color, edge)
   end
   g.setColor(1, 1, 1, 1) -- spec
   pcall(g.rectangle, "fill", cx - 1, cy - 1, 1, 1)
+  g.setColor(1, 1, 1, 1)
+end
+
+-- Forge.coinAt(cx, cy, r, color, dim?) : une PETITE PIÈCE d'or dessinée DIRECTEMENT (love.graphics) en
+-- ESPACE DESIGN — disque plein bordé d'un rim sombre, avec un point lumineux + une barre centrale (le « cœur »
+-- frappé d'une pièce). Symbole de COÛT lisible au coup d'œil. color = teinte de l'or (Theme.c.gold/goldBright,
+-- floats 0..1) ; dim = pièce éteinte (hors-budget). No-op headless / pcall-gardé.
+function Forge.coinAt(cx, cy, r, color, dim)
+  local g = love.graphics
+  if not (g and g.circle) then return end
+  cx, cy, r = floor(cx), floor(cy), max(2, floor(r))
+  local cr, cg, cb = color[1], color[2], color[3]
+  local m = dim and 0.5 or 1
+  -- rim sombre (anneau) puis disque doré.
+  g.setColor(cr * 0.35 * m, cg * 0.35 * m, cb * 0.35 * m, 1)
+  pcall(g.circle, "fill", cx, cy, r)
+  g.setColor(cr * m, cg * m, cb * m, 1)
+  pcall(g.circle, "fill", cx, cy, r - 1)
+  -- barre frappée (cœur de la pièce) + éclat haut-gauche.
+  g.setColor(cr * 0.4 * m, cg * 0.4 * m, cb * 0.4 * m, 1)
+  pcall(g.rectangle, "fill", cx - 1, cy - r + 2, 2, (r - 2) * 2)
+  if not dim then
+    g.setColor(1, 1, 1, 0.7)
+    pcall(g.rectangle, "fill", cx - r + 2, cy - r + 2, 1, 1)
+  end
   g.setColor(1, 1, 1, 1)
 end
 

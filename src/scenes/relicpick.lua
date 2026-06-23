@@ -19,6 +19,7 @@ local Layout = require("src.ui.layout")
 local Ambient = require("src.fx.ambient")
 local Forge = require("src.ui.forge")       -- KIT « nightmare forge » : plaque-carte + bouton-œil CTA
 local RelicGen = require("src.gen.relicgen") -- icones bakees des reliques (le vrai artefact)
+local RunState = require("src.run.state")    -- pour DECLINE_RELIC_GOLD (or accordé au refus)
 local T = require("src.core.i18n").t
 
 local Relicpick = {}
@@ -35,6 +36,9 @@ local RELIC_TYPE = {
 -- bande centrée) -> jamais de trou ni de carte mal alignée.
 local CARD_W, CARD_H, GAP, CARD_Y = 300, 372, 36, 206
 local BIND_W, BIND_H, BIND_Y = 320, 60, 622
+-- REFUSE (éco-bouton secondaire) posé À DROITE du BIND, même ligne : refuser l'offre -> +or. Calque visuel
+-- exact du REFUSER des grants de slot (Forge.uiButton tone='eco' + diamant de coût montrant l'or accordé).
+local DECLINE_W, DECLINE_GAP = 160, 24
 local ICON_SCALE = 6 -- artefact 16×16 -> 96×96 (scale entier net), cœur de carte
 
 function Relicpick.new(palette, vw, vh, host, payload)
@@ -64,6 +68,8 @@ function Relicpick.new(palette, vw, vh, host, payload)
   self.icons = {}
   for i = 1, n do self.icons[i] = RelicGen.cached(self.choices[i], palette) end
   self.bind = { x = math.floor((Draw.W - BIND_W) / 2), y = BIND_Y, w = BIND_W, h = BIND_H }
+  -- REFUSE : éco-bouton secondaire, posé à DROITE du BIND sur la même ligne (refuser -> +or).
+  self.decline = { x = self.bind.x + BIND_W + DECLINE_GAP, y = BIND_Y, w = DECLINE_W, h = BIND_H }
   return self
 end
 
@@ -156,6 +162,12 @@ function Relicpick:drawOverlay(view)
     { tone = "cta", hover = self.bindHover, active = self.bindDown, disabled = not ok,
       mouse = { mx = self.mx, my = self.my }, fontSz = 9, eyeR = 7, t = self.t / 60 })
 
+  -- REFUSE : éco-bouton secondaire (calque du REFUSER de slot), diamant = or accordé au refus.
+  Forge.uiButton("relicpick.decline", self.decline.x, self.decline.y, self.decline.w, self.decline.h,
+    T("relic.decline_label"),
+    { tone = "eco", cost = RunState.DECLINE_RELIC_GOLD, hover = self.declineHover, active = self.declineDown,
+      t = self.t / 60 })
+
   Draw.finish()
 end
 
@@ -165,19 +177,22 @@ function Relicpick:mousemoved(vx, vy)
   self.hover = nil
   for i, card in ipairs(self.cards) do if ptIn(dx, dy, card) then self.hover = i; break end end
   self.bindHover = self.bind ~= nil and ptIn(dx, dy, self.bind) or false
+  self.declineHover = self.decline ~= nil and ptIn(dx, dy, self.decline) or false
 end
 
 function Relicpick:mousepressed(vx, vy, button)
   if button ~= 1 then return end
   local dx, dy = vx * 4, vy * 4
   self.mx, self.my = dx, dy
+  -- REFUSE en premier (toujours actif, indépendant de la sélection) : refuser l'offre -> +or.
+  if self.decline and ptIn(dx, dy, self.decline) then self.declineDown = true; self:declineOffer(); return end
   for i, card in ipairs(self.cards) do
     if ptIn(dx, dy, card) then self.sel = i; return end
   end
   if self.sel and ptIn(dx, dy, self.bind) then self.bindDown = true; self:confirm() end
 end
 
-function Relicpick:mousereleased() self.bindDown = false end
+function Relicpick:mousereleased() self.bindDown = false; self.declineDown = false end
 
 function Relicpick:keypressed(key)
   if key == "1" or key == "2" or key == "3" then
@@ -185,12 +200,20 @@ function Relicpick:keypressed(key)
     if self.choices[i] then self.sel = i end
   elseif (key == "return" or key == "kpenter" or key == "space") and self.sel then
     self:confirm()
+  elseif key == "backspace" then -- REFUSE au clavier (Esc est happé par le quit global ; on évite ce footgun)
+    self:declineOffer()
   end
 end
 
 function Relicpick:confirm()
   local id = self.choices[self.sel]
   if id and self.host.finishRelicPick then self.host.finishRelicPick(id) end
+end
+
+-- REFUSE : on renonce à la relique contre de l'or (host.finishRelicPickDecline -> declineRelic + round suivant).
+-- Nommée declineOffer (et non decline) : `self.decline` est déjà le RECT du bouton -> pas de collision méthode/champ.
+function Relicpick:declineOffer()
+  if self.host.finishRelicPickDecline then self.host.finishRelicPickDecline() end
 end
 
 return Relicpick

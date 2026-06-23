@@ -34,6 +34,11 @@ local ok, err = pcall(function()
   for _, id in ipairs(Units.order) do
     local u = Units[id]
     assert(u and u.hp and u.dmg and u.cd and u.cost and u.effects, "unit incomplète: " .. id)
+    -- RE-TIER PAR COMPLEXITÉ (PRD progression-economy, Lot 0) : chaque unité porte un `rank` 1..5
+    -- (source de vérité des cotes de boutique) ET `cost = rank`. Test DUR sur tout le roster.
+    assert(type(u.rank) == "number" and u.rank == math.floor(u.rank) and u.rank >= 1 and u.rank <= 5,
+      "rank manquant/hors 1..5 pour unit " .. id)
+    assert(type(u.cost) == "number" and u.cost == u.rank, "cost doit valoir rank (= " .. tostring(u.rank) .. ") pour unit " .. id)
     -- visuel : soit un rig DESSINÉ main (vanille), soit un `type` -> génération procédurale (CreatureGen)
     assert(Creatures[id] or u.type, "visuel: ni rig main ni type (generation) pour unit " .. id)
   end
@@ -239,6 +244,82 @@ local ok, err = pcall(function()
     print("  routing : combat conclu -> host.finishCombat(win) OK")
   end
 
+  -- CADENCE DU MARCHAND (Lot 4) : un écran de relique tous les 3 COMBATS (victoire OU défaite), pas toutes
+  -- les 3 victoires. On rejoue le routage exact de main.lua:host.finishCombat sur un VRAI RunState (le seul
+  -- bout non testé du host ; les scènes sont stubbées) -> on observe la transition demandée à chaque combat.
+  do
+    local RunState = require("src.run.state")
+    -- Mini-host = copie fidèle du routage de main.lua : marchand tous les 3 combats (sinon round suivant) +
+    -- récompense de level-up MID-ROUND (Lot 5 §5.2) + ordre de refus (Task 0). Les scènes sont stubbées.
+    local function makeHost(seed)
+      local h = { route = nil, payload = nil, run = RunState.new(seed), midRound = nil }
+      function h.goto(name, payload) h.route = name; h.payload = payload end
+      function h.finishCombat(win)
+        h.run:resolve(win)
+        if h.run:isOver() then h.goto("runover"); return end
+        local combats = h.run.wins + h.run.losses
+        if combats % 3 == 0 then
+          local choices = h.run:rollRelicChoices(3)
+          if #choices > 0 then h.goto("relicpick", { choices = choices }); return end
+        end
+        h.run:startRound(); h.goto("build")
+      end
+      -- Lot 5 : offre de level-up MID-ROUND (pas de startRound -> board/boutique/or préservés). Pool vide -> no-op.
+      function h.offerLevelUpRelic()
+        local choices = h.run:rollRelicChoices(3)
+        if #choices > 0 then h.midRound = true; h.goto("relicpick", { choices = choices, midRound = true }) end
+      end
+      function h.finishRelicPick(id)
+        h.run:grantRelic(id)
+        local mid = h.midRound; h.midRound = nil
+        if not mid then h.run:startRound() end
+        h.goto("build")
+      end
+      -- Refus : MID-ROUND -> declineRelic sans startRound (le +or persiste) ; POST-COMBAT -> startRound D'ABORD
+      -- puis declineRelic (Task 0 : le +or se pose PAR-DESSUS le budget SAP frais, sinon écrasé par le reset).
+      function h.finishRelicPickDecline()
+        local mid = h.midRound; h.midRound = nil
+        if not mid then h.run:startRound() end
+        h.run:declineRelic(); h.goto("build")
+      end
+      return h
+    end
+
+    -- (a) DÉFAITES uniquement : le marchand passe quand même au 3e combat (combat 3 = défaite).
+    do
+      local h = makeHost(13)
+      h.finishCombat(false); assert(h.route == "build", "combat 1 (defaite) : pas de relique")
+      h.finishCombat(false); assert(h.route == "build", "combat 2 (defaite) : pas de relique")
+      h.finishCombat(false); assert(h.route == "relicpick", "combat 3 (defaite) : MARCHAND (cadence par combat, pas par victoire)")
+      assert(h.payload and #h.payload.choices == 3, "marchand : offre 1-parmi-3")
+    end
+
+    -- (b) MIX victoire/défaite : c'est bien le 3e COMBAT (W,L,W) qui déclenche, pas la 3e victoire.
+    do
+      local h = makeHost(21)
+      h.finishCombat(true);  assert(h.route == "build", "combat 1 (victoire) : pas de relique")
+      h.finishCombat(false); assert(h.route == "build", "combat 2 (defaite) : pas de relique")
+      h.finishCombat(true);  assert(h.route == "relicpick", "combat 3 (victoire) : MARCHAND au 3e combat (W/L mele)")
+    end
+
+    -- (c) REFUS POST-COMBAT (Task 0) : le routage enchaîne round suivant -> build SANS relique. Le +or du
+    -- refus doit PERSISTER : startRound re-tire le budget SAP frais PUIS declineRelic pose +DECLINE par-dessus
+    -- -> le joueur entre en build avec GOLD_PER_ROUND + streak + DECLINE_RELIC_GOLD (l'ancien ordre l'écrasait).
+    do
+      local h = makeHost(34)
+      h.finishCombat(false); h.finishCombat(false); h.finishCombat(false) -- 3 défaites -> marchand (lossStreak 3)
+      assert(h.route == "relicpick", "combat 3 : marchand present")
+      local n0, round0 = #h.run.relics, h.run.round
+      local streak = 2 -- 3 défaites consécutives -> lossStreak 3 -> bonus de série +2 (cf. streakBonus, cap 3)
+      h.finishRelicPickDecline()
+      assert(#h.run.relics == n0, "refus : aucune relique acquise")
+      assert(h.run.round == round0 + 1 and h.route == "build", "refus : round suivant -> retour build")
+      assert(h.run.gold == RunState.GOLD_PER_ROUND + streak + RunState.DECLINE_RELIC_GOLD,
+        "refus post-combat (Task 0) : budget SAP frais + streak + DECLINE_RELIC_GOLD (le +or persiste)")
+    end
+    print("  cadence relique : marchand tous les 3 combats (win/lose) + refus post-combat persiste (Task 0) OK")
+  end
+
   -- E2E (entrées SOURIS SYNTHÉTIQUES) en MODE RUN : on rejoue le vrai flux BOUTIQUE (achat = drag
   -- offre->case), slot verrouillé, reroll, niveau, vente, puis COMBAT. Teste hit-testing/drag ET éco.
   do
@@ -277,6 +358,22 @@ local ok, err = pcall(function()
     -- REROLL : débite l'or.
     eb:mousepressed(eb.rerollBtn.x + 1, eb.rerollBtn.y + 1, 1)
     assert(run.gold == g1 - RunState.REROLL_COST, "e2e reroll: or debite")
+    -- BUY XP (achat d'XP de boutique) : clic au CENTRE du bouton -> or débité de BUY_XP_COST et XP/tier
+    -- avancés de BUY_XP_AMOUNT (peut franchir un palier via cascade). On calcule l'état attendu AVANT le clic
+    -- (mêmes maths que addShopXp) -> assertion exacte que l'on traverse un niveau ou non.
+    run.gold = 99
+    local goldR = run.gold
+    assert(run.shopTier < run.MAX_TIER and run:canBuyXp(), "e2e buyxp: boutique sous le tier max + achat possible")
+    -- Simule la cascade pour l'attendu (tier/XP) sans toucher l'état réel.
+    local expT, expXp = run.shopTier, run.shopXp + RunState.BUY_XP_AMOUNT
+    while expT < run.MAX_TIER and expXp >= RunState.XP_TO_LEVEL[expT] do
+      expXp = expXp - RunState.XP_TO_LEVEL[expT]; expT = expT + 1
+    end
+    if expT >= run.MAX_TIER then expXp = 0 end
+    local rb = eb.raiseBtn
+    eb:mousepressed(rb.x + rb.w / 2, rb.y + rb.h / 2, 1)
+    assert(run.gold == goldR - RunState.BUY_XP_COST, "e2e buyxp: or debite du cout fixe (BUY_XP_COST)")
+    assert(run.shopTier == expT and run.shopXp == expXp, "e2e buyxp: XP/tier avancent de BUY_XP_AMOUNT (cascade incluse)")
     -- GRANT D'EMPLACEMENT (event timé) : round 2 -> une offre attend. ACCEPTER = clic sur une case verrouillée.
     run:startRound()
     assert(run.pendingSlotGrant, "e2e grant: une offre de slot au round 2")
@@ -302,6 +399,125 @@ local ok, err = pcall(function()
     eb:mousepressed(eb.button.x + 1, eb.button.y + 1, 1)
     assert(gotoName == "combat", "e2e: COMBAT -> transition vers la scene combat")
     print("  e2e : boutique (achat/case-verrou) + reroll + grant(accept/refuse) + vente + COMBAT OK")
+  end
+
+  -- E2E LOT 5 (§5.2) : récompense de relique au LEVEL-UP (fusion 3->niveau), bornée 1/round, MID-ROUND (pas
+  -- de startRound -> board/boutique/or préservés). On REJOUE le routage exact de main.lua (host.offerLevelUpRelic
+  -- + finishRelicPick* branchés mid-round) sur un VRAI RunState + la VRAIE scène build sous la mock.
+  do
+    local RunState = require("src.run.state")
+    local function shopIds(r) local t = {} for i, o in ipairs(r.shop) do t[i] = o.id end return table.concat(t, ",") end
+    -- Host = copie fidèle de main.lua pour le chemin level-up + le branchement mid-round.
+    local function makeBuildHost(seed)
+      local h = { route = nil, payload = nil, run = RunState.new(seed), midRound = nil }
+      function h.goto(name, payload) h.route = name; h.payload = payload end
+      function h.finishCombat() end
+      function h.offerLevelUpRelic()
+        local choices = h.run:rollRelicChoices(3)
+        if #choices > 0 then h.midRound = true; h.goto("relicpick", { choices = choices, midRound = true }) end
+      end
+      function h.finishRelicPick(id)
+        h.run:grantRelic(id)
+        local mid = h.midRound; h.midRound = nil
+        if not mid then h.run:startRound() end
+        h.goto("build")
+      end
+      function h.finishRelicPickDecline()
+        local mid = h.midRound; h.midRound = nil
+        if not mid then h.run:startRound() end
+        h.run:declineRelic(); h.goto("build")
+      end
+      return h
+    end
+
+    local host = makeBuildHost(13)
+    local run = host.run
+    local eb = Build.new(Palette, 320, 180, host)
+    -- Force une boutique 100% marauder (rank 1, cost 1) + de l'or ample : 3 achats posables -> 1 fusion.
+    for i = 1, RunState.SHOP_SIZE do run.shop[i] = { id = "marauder", cost = 1, sold = false } end
+    run.gold = 99
+    local function buyToSlot(offerIdx, slot)
+      local rc = eb.shopSlots[offerIdx]
+      eb:mousepressed(rc.x + rc.w / 2, rc.y + rc.h / 2, 1)
+      eb:mousemoved(eb.pos[slot].x, eb.pos[slot].y)
+      eb:mousereleased(eb.pos[slot].x, eb.pos[slot].y, 1)
+    end
+    local openSlots = {}
+    for i = 1, 9 do if eb.board:isOpen(i) then openSlots[#openSlots + 1] = i end end
+    assert(#openSlots == RunState.START_SLOTS, "e2e lot5: 3 cases ouvertes au depart")
+    assert(run.relicFromLevelThisRound == false and host.route == nil, "e2e lot5: aucune offre avant fusion")
+
+    -- (a) 2 achats -> pas encore de fusion ni d'offre ; le 3e achat fusionne -> ARME l'offre une fois.
+    buyToSlot(1, openSlots[1]); buyToSlot(2, openSlots[2])
+    assert(eb:placedCount() == 2 and run.relicFromLevelThisRound == false and host.route == nil,
+      "e2e lot5: 2 copies posees, pas encore de fusion ni d'offre")
+    buyToSlot(3, openSlots[3]) -- 3e marauder -> fusion en niveau 2 -> offre de level-up
+    assert(eb:placedCount() == 1, "e2e lot5: 3 copies fusionnent en 1 unite (niveau 2)")
+    local merged
+    for i = 1, 9 do if eb.slotRigs[i] then merged = eb.slotRigs[i] end end
+    assert(merged and merged.level == 2, "e2e lot5: l'unite fusionnee est de niveau 2")
+    assert(run.relicFromLevelThisRound == true, "e2e lot5: la fusion arme la recompense (drapeau pose)")
+    assert(host.route == "relicpick" and host.payload and host.payload.midRound == true
+      and #host.payload.choices == 3, "e2e lot5: la fusion ouvre l'offre 1-parmi-3 MID-ROUND")
+
+    -- (b1) 1/ROUND : une SECONDE fusion le MÊME round ne RE-arme PAS l'offre (drapeau de run garde). On
+    -- prépare 3 nouvelles copies (placeId direct), on remet la route a nil, puis checkMerges : fusion OK,
+    -- mais AUCUNE nouvelle offre (pendingLevelRelic reste nil ; le caller ne re-route pas).
+    do
+      eb.board:ensureOpen(9) -- de la place pour 3 copies de plus (capacite test ; n'affecte pas le run)
+      local free = {}
+      for i = 1, 9 do if eb.board:isOpen(i) and not eb.slotRigs[i] then free[#free + 1] = i end end
+      assert(#free >= 3, "e2e lot5: assez de cases libres pour une 2e fusion")
+      for k = 1, 3 do eb:placeId(free[k], "skeleton") end
+      host.route = nil; host.payload = nil
+      local did = eb:checkMerges()
+      assert(did == true, "e2e lot5: la 2e fusion a bien eu lieu")
+      assert(eb.pendingLevelRelic ~= true, "e2e lot5 (1/round): la 2e fusion N'arme PAS l'offre (drapeau de run)")
+      assert(host.route == nil, "e2e lot5 (1/round): aucune 2e offre de relique dans le meme round")
+    end
+
+    -- (b2) MID-ROUND finishRelicPick(Decline) : retour build SANS avancer le round (board/boutique préservés ;
+    -- pour le refus, le +or PERSISTE dans le round courant car PAS de startRound).
+    do
+      host.midRound = true -- l'offre (a) etait mid-round ; on rejoue le retour de choix
+      local round0 = run.round
+      local shop0 = shopIds(run)
+      local placed0 = eb:placedCount()
+      local g0 = run.gold
+      host.finishRelicPickDecline()
+      assert(run.round == round0, "e2e lot5: refus mid-round N'avance PAS le round")
+      assert(shopIds(run) == shop0, "e2e lot5: refus mid-round preserve la boutique")
+      assert(eb:placedCount() == placed0, "e2e lot5: refus mid-round preserve le plateau")
+      assert(run.gold == g0 + RunState.DECLINE_RELIC_GOLD,
+        "e2e lot5: refus mid-round -> +DECLINE_RELIC_GOLD persiste dans le round (pas de reset SAP)")
+      assert(host.route == "build", "e2e lot5: refus mid-round -> retour build")
+      -- BIND mid-round : meme round, octroi de la relique (drapeau reste pose : 1/round deja consomme).
+      host.midRound = true
+      local round1 = run.round
+      local ch = run:rollRelicChoices(1)
+      if #ch > 0 then
+        local n0 = #run.relics
+        host.finishRelicPick(ch[1])
+        assert(run.round == round1 and #run.relics == n0 + 1 and host.route == "build",
+          "e2e lot5: BIND mid-round octroie la relique sans avancer le round")
+      end
+    end
+
+    -- (c) RESET au round suivant : startRound rearme la recompense -> une fusion next round RE-offre.
+    do
+      run:startRound()
+      assert(run.relicFromLevelThisRound == false, "e2e lot5: startRound rearme la recompense (next round)")
+      -- de la place + 3 copies fraiches -> checkMerges arme a nouveau (drapeau libre).
+      eb.board:ensureOpen(9)
+      local free = {}
+      for i = 1, 9 do if eb.board:isOpen(i) and not eb.slotRigs[i] then free[#free + 1] = i end end
+      for k = 1, 3 do eb:placeId(free[k], "bandit") end
+      eb.pendingLevelRelic = nil
+      local did = eb:checkMerges()
+      assert(did == true and run.relicFromLevelThisRound == true and eb.pendingLevelRelic == true,
+        "e2e lot5: une fusion au round suivant RE-arme l'offre (1/round par round)")
+    end
+    print("  e2e lot5 : level-up -> relique 1/round, mid-round (pas de startRound), reset par round OK")
   end
 end)
 

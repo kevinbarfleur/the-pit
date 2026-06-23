@@ -56,12 +56,21 @@ local R = {
     params = { effect = { trigger = "combat_start", op = "grant_team", params = { bleedNoExpire = true } } } },
   plague_communion = { id = "plague_communion", op = "relic_add_effect", tier = 4, -- 2+ afflictions -> +25% de tous nos dégâts
     params = { effect = { trigger = "combat_start", op = "grant_team", params = { plagueAmp = 0.25 } } } },
+
+  -- ── F — reliques de BOUTIQUE (PRD progression-economy §3.4, Lot 6, calque Batomon « ±niveau de boutique »).
+  -- Elles agissent sur le RUN (RunState), PAS sur la compo de combat : champ `runOp` (dispatché au GRANT par
+  -- RunState:grantRelic), JAMAIS de champ `op` -> R.apply les ignore (rien à faire sur la compo de combat,
+  -- donc golden inchangé). Le runOp lit ses `params`. ──
+  carrion_ledger = { id = "carrion_ledger", runOp = "shop_xp",        params = { amount = 6 }, tier = 3 }, -- bond d'XP de boutique immédiat
+  black_summons  = { id = "black_summons",  runOp = "shop_tier_up",   params = {},             tier = 4 }, -- +1 tier de boutique (rush ; tier 4 = anti-snowball, hors early)
+  beggars_lantern = { id = "beggars_lantern", runOp = "shop_tier_down", params = {},           tier = 2 }, -- décale les cotes 1 tier PLUS BAS (concentre les bas rangs : nourrit le build « max-doubles »)
 }
 
 R.order = { "bloodstone", "carapace", "aegis", "kings_bowl", "ember_heart", "weeping_nail", "grave_cap",
   "famines_math", "hollow_choir", "feeding_frenzy",
   "whetstone", "thornguard", "sacred_shield", "second_breath",
-  "forked_tongue", "everburn", "open_wounds", "plague_communion" }
+  "forked_tongue", "everburn", "open_wounds", "plague_communion",
+  "carrion_ledger", "black_summons", "beggars_lantern" }
 
 -- Applique l'effet d'une relique à une compo (liste de specs d'unités), au BUILD. Modifie en place.
 -- Les amplis (poisonInc/…/dmgReduce) sont ADDITIFS (cumul avec une aura d'adjacence qui poserait le même champ).

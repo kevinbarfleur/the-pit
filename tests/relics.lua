@@ -102,11 +102,106 @@ local ok, err = pcall(function()
   assert(addsGrantFlag("open_wounds", "bleedNoExpire"), "open_wounds: grant_team{bleedNoExpire}")
   assert(addsGrantFlag("plague_communion", "plagueAmp"), "plague_communion: grant_team{plagueAmp}")
 
+  -- 2b) RELIQUES DE BOUTIQUE (Lot 6, §3.4) : champ `runOp` (PAS `op`) appliqué au GRANT sur le RUN, jamais
+  -- sur la compo de combat. Existence + presence dans R.order + dispatch (XP/tier+/odds-shift) + innocuite de R.apply.
+  do
+    -- Existence des 3 reliques avec leur runOp et leur tier, et PAS de champ `op` (sinon R.apply agirait).
+    local shopRelics = {
+      { id = "carrion_ledger",  runOp = "shop_xp",        tier = 3 },
+      { id = "black_summons",   runOp = "shop_tier_up",   tier = 4 },
+      { id = "beggars_lantern", runOp = "shop_tier_down", tier = 2 },
+    }
+    for _, want in ipairs(shopRelics) do
+      local rel = Relics[want.id]
+      assert(rel, "relique de boutique " .. want.id .. " existe")
+      assert(rel.runOp == want.runOp, want.id .. " : runOp = " .. want.runOp)
+      assert(rel.op == nil, want.id .. " : aucun champ op (R.apply doit l'ignorer)")
+      assert(rel.tier == want.tier, want.id .. " : tier = " .. want.tier)
+      -- presente dans R.order (sinon ni offerte ni couverte par l'i18n)
+      local inOrder = false
+      for _, oid in ipairs(Relics.order) do if oid == want.id then inOrder = true; break end end
+      assert(inOrder, want.id .. " : presente dans R.order")
+    end
+
+    -- shop_xp : pousse l'XP/le tier via la cascade addShopXp. amount=6, seuils T1=2/T2=5 -> 6 XP franchit T1
+    -- (reste 4), pas T2 (4 < 5) : on monte au tier 2 avec 4 d'XP restante. (Verifie aussi qu'il MONTE bien le tier.)
+    do
+      local rx = RunState.new(101)
+      assert(rx.shopTier == 1 and rx.shopXp == 0, "frais : tier 1, 0 XP")
+      local xp0 = rx.shopXp
+      assert(rx:grantRelic("carrion_ledger"), "octroi de carrion_ledger")
+      assert(rx.shopTier == 2, "carrion_ledger : +6 XP -> franchit T1 (seuil 2) -> tier 2")
+      assert(rx.shopXp == 4, "carrion_ledger : reste 6-2=4 d'XP (n'atteint pas le seuil T2=5)")
+      assert(rx.shopXp > xp0 or rx.shopTier > 1, "carrion_ledger : l'XP/le tier de boutique a bien progresse")
+    end
+
+    -- shop_tier_up : +1 tier immediatement, et CLAMP au tier max si deja proche.
+    do
+      local rt = RunState.new(102)
+      local t0 = rt.shopTier
+      assert(rt:grantRelic("black_summons"), "octroi de black_summons")
+      assert(rt.shopTier == t0 + 1, "black_summons : +1 tier de boutique")
+      -- clamp : depuis le tier max, +1 ne depasse pas MAX_TIER.
+      local rc = RunState.new(103)
+      rc.shopTier = RunState.MAX_TIER
+      assert(rc:grantRelic("black_summons"), "octroi au tier max")
+      assert(rc.shopTier == RunState.MAX_TIER, "black_summons : clampe a MAX_TIER")
+    end
+
+    -- shop_tier_down : pose shopOddsShift = -1 (decalage persistant des cotes), sans toucher au tier reel.
+    do
+      local rd = RunState.new(104)
+      assert(rd.shopOddsShift == 0, "shopOddsShift demarre a 0")
+      local tier0 = rd.shopTier
+      assert(rd:grantRelic("beggars_lantern"), "octroi de beggars_lantern")
+      assert(rd.shopOddsShift == -1, "beggars_lantern : shopOddsShift = -1")
+      assert(rd.shopTier == tier0, "beggars_lantern : le tier REEL est inchange (seul le decalage de cotes bouge)")
+    end
+
+    -- R.apply / applyRelics avec une relique runOp dans la compo : AUCUN crash, AUCUNE stat de combat modifiee.
+    do
+      local ra = RunState.new(105)
+      ra:grantRelic("carrion_ledger"); ra:grantRelic("beggars_lantern") -- 2 runOp possedees
+      local comp = { { id = "bandit", hp = 46, dmg = 10, cd = 36 } }
+      ra:applyRelics(comp) -- ne doit rien faire pour ces reliques (pas de op) et ne pas planter
+      assert(comp[1].hp == 46 and comp[1].dmg == 10 and comp[1].cd == 36, "runOp : R.apply n'altere AUCUNE stat de combat")
+      assert(comp[1].effects == nil, "runOp : R.apply n'ajoute AUCUN effet de combat")
+      -- R.apply directe sur une relique runOp (params present) : pas de nil-deref.
+      Relics.apply(comp, Relics["carrion_ledger"])
+      assert(comp[1].hp == 46 and comp[1].dmg == 10, "R.apply(runOp) directe : innocuite confirmee")
+    end
+  end
+
   -- 3) OFFRE 1-parmi-3 SEEDEE (meme seed -> meme offre, rejouable).
   local x = RunState.new(777):rollRelicChoices(3)
   local y = RunState.new(777):rollRelicChoices(3)
   assert(#x == 3 and #y == 3, "3 choix offerts")
   for i = 1, 3 do assert(x[i] == y[i], "offre SEEDEE deterministe (rejouable)") end
+
+  -- 3b) OFFRE TIÉRÉE par avancée de run (PRD §5.3 : universel tot -> build-definer tard). Lot 4.
+  do
+    local function tierOf(id) return Relics[id].tier or 1 end
+    -- Early (0 win) : le plafond est tier 2 -> AUCUN transformatif (tier 4) ne sort tant qu'on a des candidats.
+    local e = RunState.new(2024); e.wins = 0
+    assert(e:maxRelicTier() == 2, "early : plafond tier 2")
+    local ce = e:rollRelicChoices(3)
+    for _, id in ipairs(ce) do assert(tierOf(id) <= 2, "early : offre limitee aux reliques tier <=2 (" .. id .. ")") end
+    -- Late (5 wins) : le plafond monte a 4 -> les build-definers (plague_communion & co) deviennent offrables.
+    local l = RunState.new(2024); l.wins = 5
+    assert(l:maxRelicTier() == 4, "late : plafond tier 4")
+    local cl = l:rollRelicChoices(3)
+    for _, id in ipairs(cl) do assert(tierOf(id) <= 4, "late : offre dans le plafond tier 4 (" .. id .. ")") end
+    -- FALLBACK : si moins de 3 candidats sous le plafond (on possede presque tout le tier <=2), on elargit a TOUT.
+    -- (10 reliques tier<=2 existent : on en possede 8 -> 2 candidats sous plafond < 3 -> fallback force.)
+    local f = RunState.new(99); f.wins = 0
+    f.relics = { { id = "bloodstone" }, { id = "carapace" }, { id = "aegis" }, { id = "whetstone" },
+      { id = "kings_bowl" }, { id = "ember_heart" }, { id = "weeping_nail" }, { id = "beggars_lantern" } }
+    local cf = f:rollRelicChoices(3)
+    assert(#cf == 3, "fallback : l'offre reste a 3 choix meme a court de candidats tiérés")
+    local sawAbove = false
+    for _, id in ipairs(cf) do if tierOf(id) > 2 then sawAbove = true end end
+    assert(sawAbove, "fallback : a defaut, on elargit a toutes les non possedees (un tier >2 apparait)")
+  end
 
   -- 4) GRIMOIRE = collection (learn/isKnown ; meta cross-run, idempotent).
   assert(not Grimoire.isKnown("bloodstone"), "inconnu au depart")

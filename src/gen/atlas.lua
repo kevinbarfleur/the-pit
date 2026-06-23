@@ -164,6 +164,29 @@ Atlas.head = {
       " O3333O ",
       "  O22O  ",
     } },
+
+  -- ╔══════════════════════════════════════════════════════════════════════════════════════╗
+  -- ║  SIGNATURE — pièce DISTINCTIVE qui altère la silhouette (« moment gants de boxe »).    ║
+  -- ║  Pinnée à UNE espèce via Forge.PIN (déterministe). À voir en jeu : galerie [g].        ║
+  -- ╚══════════════════════════════════════════════════════════════════════════════════════╝
+
+  -- 9) HEAUME À HAUTE CRÊTE & ANTENNES (signature de `gravewarden`) — le « chevalier-insecte » : un
+  -- grand cimier funéraire FENDU se dresse au-dessus du casque, flanqué de deux ANTENNES recourbées qui
+  -- DÉPASSENT largement (la silhouette devient instantanément « gardien casqué cornu », jamais un soldat
+  -- lambda). Visière baissée, fente oculaire qui luit. Accent (A/a/E) = thorns -> fallback bone = C :
+  -- crête et lueur d'un BLEU SPECTRAL (le sentinelle des tombes). Focal : la fente 'E' sous l'acier.
+  { name = "helm_crest_warden",
+    tags = { "bone", "order", "humanoid" },
+    grid = {
+      "A  OO  A", -- bouts d'antennes (DÉPASSENT haut et large — recourbés vers le ciel)
+      "a O11O a", -- racine du cimier + tiges d'antennes
+      "OaO11OaO", -- fourreaux d'antennes contre le casque + base de la crête fendue
+      " O1AA1O ", -- CIMIER : arête lumineuse (A) en éventail au sommet du heaume
+      "O211112O", -- calotte du casque
+      "O2EEEE2O", -- fente oculaire (le regard luit sous la visière)
+      "O2A22A2O", -- joues rivetées (A)
+      " OO33OO ", -- mentonnière -> cou bas-centre
+    } },
 }
 
 -- ════════════════════════════════════════ TORSOS (×5) ════════════════════════════════════════
@@ -474,6 +497,30 @@ Atlas.host = {
       " O2O  O2O ", -- tiges inférieures
       "aEa OO aEa", -- satellites inférieurs + base au sol
       "Oa OOOO aO",
+    } },
+
+  -- ╔══════════════════════════════════════════════════════════════════════════════════════╗
+  -- ║  SIGNATURE — pièce DISTINCTIVE qui altère la silhouette (« moment gants de boxe »).    ║
+  -- ║  Pinnée à UNE espèce via Forge.PIN (déterministe). À voir en jeu : galerie [g].        ║
+  -- ╚══════════════════════════════════════════════════════════════════════════════════════╝
+
+  -- 6) ŒIL-TEMPÊTE COURONNÉ D'ARCS (signature de `thunderhead`) — un globe unique CEINT d'une couronne
+  -- d'ÉCLAIRS en zig-zag qui jaillissent du pourtour et DÉPASSENT de tous côtés (la silhouette n'est plus
+  -- un disque lisse mais un orage contenu dans un œil). Iris resserré et fixe. Accent = shock -> A=C (bleu
+  -- froid, le fil de l'arc) / a=B (bleu PÂLE, l'étincelle vive en pointe) / E=C (la pupille électrisée).
+  -- Focal : la pupille 'E' ; les pointes 'a' crépitent au bout de chaque arc (lecture « il va décharger »).
+  { name = "gazer_storm_crown",
+    tags = { "abyss", "arcane", "order", "eye" },
+    grid = {
+      "a  a  a  a", -- pointes d'éclairs (étincelles vives B — DÉPASSENT, la couronne crépite)
+      "A aA a Aa ", -- arcs en zig-zag qui montent du globe (fil bleu C)
+      " Aa OO aA ", -- les arcs prennent racine sur la calotte
+      " O11AA11O ", -- haut du globe
+      "AO1AEEA1Oa", -- arcs LATÉRAUX (A) + œil central (E focal) bordé d'éclat
+      "aO1AEEA1OA", -- iris resserré, électrisé
+      " O11AA11O ", -- bas du globe
+      " Aa OO aA ", -- arcs inférieurs qui repartent vers le bas
+      "a  OOOO  a", -- pointes basses + base ramassée (bas-centre)
     } },
 }
 
@@ -812,6 +859,29 @@ Atlas.arachnid_body = {
       "Oa2222aO ", -- bord de plaque chevauchant
       "O3s33s3O ", -- abdomen (sillons s)
       " OO33OO  ", -- filières -> bas-centre
+    } },
+
+  -- ╔══════════════════════════════════════════════════════════════════════════════════════╗
+  -- ║  SIGNATURE — pièce DISTINCTIVE qui altère la silhouette (« moment gants de boxe »).    ║
+  -- ║  Pinnée à UNE espèce via Forge.PIN (déterministe). À voir en jeu : galerie [g].        ║
+  -- ╚══════════════════════════════════════════════════════════════════════════════════════╝
+
+  -- 3) PORTE-VENIN À ÉPINES (signature de `leech_thorn`) — l'écho DIRECT du screenshot Batomon : un
+  -- SAC dorsal bombé et translucide, hérissé de DARDS qui DÉPASSENT haut, sourdant de venin. La grappe
+  -- d'yeux glisse sous la masse (céphalothorax bas), pour que la silhouette se lise « araignée + sac
+  -- gonflé sur le dos » d'un coup d'œil. Accent (A/a/E) = bleed -> R/r sur `leech_thorn` : dards SANGLANTS.
+  -- Focal : l'œil médian 'E' sous le sac ; les pointes 'A' attirent l'œil vers le haut (le poison perle).
+  { name = "arachnid_thornsac",
+    tags = { "bone", "abyss", "flesh", "arachnid" },
+    grid = {
+      "  A  A A  ", -- pointes de dards (DÉPASSENT le sac — la menace pointe en l'air)
+      " Oa OaO aO", -- fûts des dards plantés dans la membrane
+      " O2A222A1O", -- DÔME du sac : membrane tendue + reflets de poison (A) qui perlent
+      "O1222s221O", -- ventre du sac, gonflé (sillon s = veine sombre)
+      "O2a2ss2a2O", -- attache du sac sur le thorax (creux s) + suintement (a)
+      "O1OaEEaO1O", -- la grappe d'yeux émerge SOUS le sac (E médian = focal, a latéraux)
+      " O22222O ", -- céphalothorax
+      "  OO3OO  ", -- abdomen ramassé -> filières bas-centre
     } },
 }
 

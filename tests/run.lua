@@ -26,6 +26,12 @@ local ok, err = pcall(function()
     assert(r.pendingSlotGrant == false, "round 1 : aucune offre de slot en attente")
     assert(#r.shop == RunState.SHOP_SIZE, "boutique = 5 offres")
     assert(r:isOver() == nil, "run en cours")
+    -- Lot 5 (§5.2) : la récompense de level-up démarre disponible (drapeau faux), et REDEVIENT disponible
+    -- à chaque nouveau round (reset dans startRound) -> au plus 1 relique de level-up par round.
+    assert(r.relicFromLevelThisRound == false, "Lot 5 : drapeau de level-up faux au depart")
+    r.relicFromLevelThisRound = true -- simule la conso du round (une fusion a déjà offert)
+    r:startRound()
+    assert(r.relicFromLevelThisRound == false, "Lot 5 : startRound rearme la recompense de level-up")
   end
 
   -- ── DÉTERMINISME : même seed + mêmes actions -> état strictement identique ──
@@ -100,6 +106,166 @@ local ok, err = pcall(function()
     assert(r2:canGrant() == false, "plus d'offre au-dela du plafond")
   end
 
+  -- ── NIVEAU DE BOUTIQUE : init au tier 1, offres 100% rang-1 (PRD progression-economy §3) ──
+  do
+    local Units = require("src.data.units")
+    local r = RunState.new(777)
+    assert(r.shopTier == RunState.START_TIER and r.shopTier == 1, "boutique demarre au tier 1")
+    -- À tier 1, les cotes sont {100,0,0,0,0} : chaque offre, sur plusieurs rerolls, est de rang 1.
+    for _ = 1, 40 do
+      r:roll()
+      for _, o in ipairs(r.shop) do
+        assert(Units[o.id].rank == 1, "tier 1 : toute offre est de rang 1")
+      end
+    end
+  end
+
+  -- ── XP DE BOUTIQUE : état frais, achat d'XP (coût/déduction/montée), bornage au tier max ──
+  do
+    local r = RunState.new(55)
+    -- Run frais : tier 1, AUCUNE XP (round 1 = depart, pas de passive).
+    assert(r.shopTier == 1 and r.shopXp == 0, "run frais : tier 1, 0 XP")
+    assert(r:xpToNext() == RunState.XP_TO_LEVEL[1], "xpToNext = seuil du tier 1")
+    -- Achat d'XP : deduit BUY_XP_COST, ajoute BUY_XP_AMOUNT (XP_TO_LEVEL[1]=2 -> 4 XP cascade au tier 2, reste 2).
+    r.gold = 10
+    local g0 = r.gold
+    assert(r:canBuyXp() == true, "assez d'or : achat d'XP possible")
+    assert(r:buyXp() == true, "achat d'XP reussit")
+    assert(r.gold == g0 - RunState.BUY_XP_COST, "achat d'XP : or deduit du cout exact")
+    -- 4 XP avec seuil T1=2 -> monte au tier 2, reste 4-2=2 d'XP.
+    assert(r.shopTier == 2, "achat d'XP : franchit le tier 1 (seuil 2 <= 4 XP)")
+    assert(r.shopXp == RunState.BUY_XP_AMOUNT - RunState.XP_TO_LEVEL[1], "achat d'XP : trop-plein reporte (4-2=2)")
+    -- Or insuffisant -> pas d'achat, etat inchange.
+    r.gold = RunState.BUY_XP_COST - 1
+    local g1, t1, xp1 = r.gold, r.shopTier, r.shopXp
+    assert(r:canBuyXp() == false, "or insuffisant : achat impossible")
+    assert(r:buyXp() == false, "achat refuse sans or suffisant")
+    assert(r.gold == g1 and r.shopTier == t1 and r.shopXp == xp1, "echec d'achat : or/tier/XP inchanges")
+    -- CASCADE : un gros gain d'XP traverse PLUSIEURS tiers d'un coup.
+    do
+      local rc = RunState.new(55)
+      -- seuils T1=2, T2=5 -> 7 XP exactement = tier 1 -> 3 (2 puis 5), reste 0.
+      rc:addShopXp(RunState.XP_TO_LEVEL[1] + RunState.XP_TO_LEVEL[2])
+      assert(rc.shopTier == 3 and rc.shopXp == 0, "cascade : 7 XP traverse 2 tiers (1->3), reste 0")
+    end
+    -- Au tier max : xpToNext nil, l'XP n'accumule plus, buyXp impossible.
+    local r2 = RunState.new(55)
+    r2:addShopXp(1000) -- saute au max d'un coup
+    assert(r2.shopTier == RunState.MAX_TIER and r2.shopTier == 5, "gros gain : monte jusqu'au tier max (5)")
+    assert(r2.shopXp == 0, "tier max : XP remise a 0 (barre pleine)")
+    assert(r2:xpToNext() == nil, "tier max : xpToNext = nil")
+    assert(r2:canBuyXp() == false, "tier max : achat d'XP impossible")
+    assert(r2:buyXp() == false, "tier max : buyXp renvoie false")
+    r2:addShopXp(50)
+    assert(r2.shopTier == RunState.MAX_TIER and r2.shopXp == 0, "tier max : addShopXp n'accumule plus")
+  end
+
+  -- ── XP PASSIVE : avancer les rounds SANS dépenser fait monter le tier suivant XP_TO_LEVEL ──
+  do
+    local r = RunState.new(99)
+    -- Round 1 = depart : 0 XP, tier 1 (deja verifie ci-dessus, on confirme).
+    assert(r.round == 1 and r.shopXp == 0 and r.shopTier == 1, "round 1 : 0 XP, tier 1")
+    -- Passive = +1/round a partir du round 2. XP cumulee au round R = (R-1). Avec seuils T1=2, T2=5 :
+    --   cumul 2 -> tier 2 (round 3), cumul 7 -> tier 3 (round 8). On verifie ces deux paliers.
+    -- Atteindre le round 3 : cumul d'XP = 2 (rounds 2 et 3) -> exactement le seuil T1 -> tier 2, reste 0.
+    r:startRound() -- round 2 : +1 XP (1)
+    assert(r.round == 2 and r.shopTier == 1 and r.shopXp == 1, "round 2 : 1 XP passive, encore tier 1")
+    r:startRound() -- round 3 : +1 XP (cumul 2) -> franchit T1
+    assert(r.round == 3 and r.shopTier == 2 and r.shopXp == 0, "round 3 : cumul 2 -> tier 2, reste 0")
+    -- Avancer jusqu'au round 8 : +5 XP de plus (cumul depuis T2 = 5) = seuil T2 -> tier 3.
+    for _ = 1, 5 do r:startRound() end
+    assert(r.round == 8, "atteint le round 8")
+    assert(r.shopTier == 3, "round 8 : passive seule a atteint le tier 3 (cumul 7)")
+    assert(r.shopXp == 0, "round 8 : trop-plein consomme pile (reste 0)")
+  end
+
+  -- ── COTES : distribution au tier 5 conforme à ODDS[5] (statistique mais DÉTERMINISTE, seed fixe) ──
+  do
+    local Units = require("src.data.units")
+    local r = RunState.new(20260623)
+    r.shopTier = 5 -- force le tier max (toutes les cotes actives)
+    local counts = { 0, 0, 0, 0, 0 }
+    local total = 0
+    for _ = 1, 400 do -- 400 rolls x 5 offres = 2000 echantillons
+      r:roll()
+      for _, o in ipairs(r.shop) do
+        counts[Units[o.id].rank] = counts[Units[o.id].rank] + 1
+        total = total + 1
+      end
+    end
+    assert(total == 2000, "echantillon = 2000 offres")
+    local odds = RunState.ODDS[5]
+    for rank = 1, 5 do
+      local share = 100 * counts[rank] / total
+      assert(math.abs(share - odds[rank]) <= 6,
+        string.format("cotes T5 rang %d : %.1f%% ~ %d%% (tol +-6pt)", rank, share, odds[rank]))
+    end
+  end
+
+  -- ── Lot 6 : DÉCALAGE DE COTES (shopOddsShift) + raiseShopTier (relics de boutique) ──
+  do
+    local Units = require("src.data.units")
+    -- shopOddsShift par défaut = 0, et roll() est ALORS strictement inchangé (les tests de cotes/determinisme
+    -- ci-dessus le prouvent déjà). On reverifie l'identite : tier 1, shift 0 -> 100% rang 1 (comme avant Lot 6).
+    local r0 = RunState.new(778899)
+    assert(r0.shopOddsShift == 0, "shopOddsShift demarre a 0 (defaut)")
+    for _ = 1, 20 do
+      r0:roll()
+      for _, o in ipairs(r0.shop) do assert(Units[o.id].rank == 1, "shift 0 @ tier 1 : toujours rang 1 (inchange)") end
+    end
+
+    -- Avec shopTier=3 et shopOddsShift=-1, les offres suivent ODDS[2] (le tier décalé), PAS ODDS[3].
+    -- Distribution echantillonnee (seed fixe -> deterministe) comparee a la ligne du tier 2.
+    local rs = RunState.new(20260623)
+    rs.shopTier = 3
+    rs.shopOddsShift = -1
+    local counts = { 0, 0, 0, 0, 0 }
+    local total = 0
+    for _ = 1, 400 do
+      rs:roll()
+      for _, o in ipairs(rs.shop) do
+        counts[Units[o.id].rank] = counts[Units[o.id].rank] + 1
+        total = total + 1
+      end
+    end
+    assert(total == 2000, "echantillon decale = 2000 offres")
+    local odds2 = RunState.ODDS[2] -- tier décalé = 3 + (-1) = 2
+    for rank = 1, 5 do
+      local share = 100 * counts[rank] / total
+      assert(math.abs(share - odds2[rank]) <= 6,
+        string.format("shift -1 @ tier 3 -> cotes du tier 2, rang %d : %.1f%% ~ %d%% (tol +-6pt)", rank, share, odds2[rank]))
+    end
+    -- Concretement : aucun rang >= 3 ne sort (ODDS[2] = {70,30,0,0,0}).
+    assert(counts[3] == 0 and counts[4] == 0 and counts[5] == 0, "shift -1 @ tier 3 : aucun rang >= 3 (cotes du tier 2)")
+
+    -- raiseShopTier : +n borné à MAX_TIER ; depuis le max il reste au max.
+    local rt = RunState.new(11)
+    local t0 = rt.shopTier
+    rt:raiseShopTier(1); assert(rt.shopTier == t0 + 1, "raiseShopTier(1) : +1 tier")
+    rt:raiseShopTier(); assert(rt.shopTier == t0 + 2, "raiseShopTier() : defaut n=1")
+    rt:raiseShopTier(10); assert(rt.shopTier == RunState.MAX_TIER, "raiseShopTier : clampe a MAX_TIER")
+    rt:raiseShopTier(5); assert(rt.shopTier == RunState.MAX_TIER, "raiseShopTier : depuis le max, reste au max")
+    assert(rt.shopXp == 0, "raiseShopTier au max : XP remise a 0 (barre pleine)")
+    -- Bornage BAS du décalage : tier 1 + shift très négatif -> cotes du tier 1 (clamp a 1), jamais d'index nil.
+    local rb = RunState.new(12)
+    rb.shopTier = 1
+    rb.shopOddsShift = -4
+    rb:roll() -- ne doit pas planter (tier décalé borné a 1)
+    for _, o in ipairs(rb.shop) do assert(Units[o.id].rank == 1, "shift tres negatif borne au tier 1 : rang 1") end
+  end
+
+  -- ── DÉTERMINISME des offres : même seed -> même suite d'ids de boutique (sur plusieurs rolls) ──
+  do
+    local function offerTrace(seed)
+      local r = RunState.new(seed)
+      local parts = { shopIds(r) }
+      r:reroll(); parts[#parts + 1] = shopIds(r)
+      r:reroll(); parts[#parts + 1] = shopIds(r)
+      return table.concat(parts, "|")
+    end
+    assert(offerTrace(31337) == offerTrace(31337), "determinisme : meme seed -> memes offres de boutique")
+  end
+
   -- ── Résolution + streaks ──
   do
     local r = RunState.new(5)
@@ -145,6 +311,76 @@ local ok, err = pcall(function()
     assert(r2:isOver() == "lose", "plus de vie -> lose")
   end
 
+  -- ── RELIQUES : paliers par avancée (maxRelicTier) + offre tiérée + fallback + refus -> or (Lot 4) ──
+  do
+    local Relics = require("src.data.relics")
+    local function tierOf(id) return Relics[id].tier or 1 end
+
+    -- maxRelicTier : plafond par victoires. early (0-1)->2, mid (2-4)->3, late (5+)->4 (PRD §5.3).
+    local r = RunState.new(42)
+    r.wins = 0; assert(r:maxRelicTier() == 2, "0 win : plafond tier 2")
+    r.wins = 1; assert(r:maxRelicTier() == 2, "1 win : encore plafond tier 2")
+    r.wins = 2; assert(r:maxRelicTier() == 3, "2 wins : plafond tier 3")
+    r.wins = 4; assert(r:maxRelicTier() == 3, "4 wins : encore plafond tier 3")
+    r.wins = 5; assert(r:maxRelicTier() == 4, "5 wins : plafond tier 4 (transformatives)")
+    r.wins = 12; assert(r:maxRelicTier() == 4, "tres avance : plafond reste 4 (max)")
+
+    -- Offre TIÉRÉE : à chaque palier, toutes les reliques offertes sont de tier <= plafond (assez de candidats).
+    for _, w in ipairs({ 0, 2, 5 }) do
+      local rr = RunState.new(100 + w)
+      rr.wins = w
+      local ch = rr:rollRelicChoices(3)
+      assert(#ch == 3, "offre tiérée : 3 choix a w=" .. w)
+      local cap = rr:maxRelicTier()
+      for _, id in ipairs(ch) do
+        assert(tierOf(id) <= cap, "offre tiérée : tout choix <= plafond (w=" .. w .. ", " .. id .. " tier " .. tierOf(id) .. ")")
+      end
+    end
+
+    -- FALLBACK : si trop peu de candidats sous le plafond (on possède presque tout le tier <=2), on élargit
+    -- a TOUTES les non possédées -> une offre de 3 reste remplissable (peut alors contenir un tier > plafond).
+    do
+      local rf = RunState.new(5)
+      rf.wins = 0 -- plafond 2 ; on possède 8 des 10 reliques tier<=2 -> seulement 2 candidats sous plafond (<3)
+      rf.relics = { { id = "bloodstone" }, { id = "carapace" }, { id = "aegis" }, { id = "whetstone" },
+        { id = "kings_bowl" }, { id = "ember_heart" }, { id = "weeping_nail" }, { id = "beggars_lantern" } }
+      local ch = rf:rollRelicChoices(3)
+      assert(#ch == 3, "fallback : l'offre reste remplie a 3 malgre le plafond")
+      local sawAbove = false
+      for _, id in ipairs(ch) do if tierOf(id) > rf:maxRelicTier() then sawAbove = true end end
+      assert(sawAbove, "fallback : a defaut de candidats sous plafond, on elargit (un tier > plafond apparait)")
+    end
+
+    -- Pas de fallback inutile : avec assez de candidats sous le plafond, on N'élargit PAS (reste tiéré).
+    do
+      local rn = RunState.new(6)
+      rn.wins = 0
+      local ch = rn:rollRelicChoices(3)
+      for _, id in ipairs(ch) do assert(tierOf(id) <= 2, "pas de fallback si assez de candidats tiérés") end
+    end
+
+    -- DÉTERMINISME : même seed + mêmes wins -> mêmes ids d'offre (rejouable, snapshot/replay).
+    do
+      local function pick(seed, wins)
+        local rd = RunState.new(seed); rd.wins = wins
+        return table.concat(rd:rollRelicChoices(3), ",")
+      end
+      assert(pick(31337, 0) == pick(31337, 0), "offre relique : meme seed+wins -> memes choix")
+      assert(pick(31337, 5) == pick(31337, 5), "offre relique (late) : meme seed+wins -> memes choix")
+    end
+
+    -- REFUS -> +or (calque du refus de slot). N'inscrit rien (pas de relique possédée en plus).
+    do
+      local rd = RunState.new(7)
+      local g0, n0 = rd.gold, #rd.relics
+      local got = rd:declineRelic()
+      assert(got == RunState.DECLINE_RELIC_GOLD, "declineRelic renvoie l'or accordé (DECLINE_RELIC_GOLD)")
+      assert(rd.gold == g0 + RunState.DECLINE_RELIC_GOLD, "refus : +DECLINE_RELIC_GOLD or")
+      assert(#rd.relics == n0, "refus : aucune relique acquise")
+    end
+    print("  reliques : maxRelicTier 2/3/4 / offre tiérée + fallback / determinisme / refus->or OK")
+  end
+
   -- ── Invariants sous fuzz d'actions seedées ──
   do
     local gen = love.math.newRandomGenerator(20260620)
@@ -152,11 +388,12 @@ local ok, err = pcall(function()
     for run = 1, runs do
       local r = RunState.new(run * 101)
       for _ = 1, steps do
-        local a = gen:random(1, 5)
+        local a = gen:random(1, 6)
         if a == 1 then r:buy(gen:random(1, RunState.SHOP_SIZE))
         elseif a == 2 then r:reroll()
         elseif a == 3 then if gen:random(1, 2) == 1 then r:acceptSlotGrant() else r:declineSlotGrant() end
         elseif a == 4 then r:resolve(gen:random(1, 2) == 1)
+        elseif a == 5 then r.gold = r.gold + 5; r:buyXp() -- ajoute de l'or pour que l'XP/le tier bougent
         else r:startRound() end
         -- Invariants durs (jamais violés, quelle que soit la suite d'actions).
         assert(r.gold >= 0, "invariant: or >= 0")
@@ -164,6 +401,11 @@ local ok, err = pcall(function()
         assert(r.slots >= RunState.START_SLOTS and r.slots <= RunState.MAX_SLOTS, "invariant: slots [3,9]")
         assert(r.slotGrantsResolved <= RunState.MAX_GRANTS, "invariant: offres tranchees <= MAX_GRANTS")
         assert(#r.shop == RunState.SHOP_SIZE, "invariant: boutique = 5 offres")
+        assert(r.shopTier >= RunState.START_TIER and r.shopTier <= RunState.MAX_TIER, "invariant: tier boutique [1,5]")
+        assert(r.shopXp >= 0, "invariant: XP de boutique >= 0")
+        local toNext = r:xpToNext()
+        assert((toNext == nil) == (r.shopTier >= RunState.MAX_TIER), "invariant: xpToNext nil ssi tier max")
+        assert(toNext == nil or r.shopXp < toNext, "invariant: XP toujours sous le seuil du tier courant (cascade resolue)")
         if r:isOver() then break end
       end
     end
@@ -171,6 +413,7 @@ local ok, err = pcall(function()
   end
 
   print("  eco : etat initial / determinisme / achat / reroll / niveau / streaks / or-reset / vie-tour3 / fin OK")
+  print("  tier boutique : init T1 (rang-1) / XP achetee+passive / cascade / cap max / cotes T5 / determinisme offres OK")
 end)
 
 if ok then

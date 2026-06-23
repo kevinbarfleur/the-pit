@@ -82,8 +82,11 @@ function host.finishCombat(win)
     host.goto("runover", { result = over, run = host.run })
     return
   end
-  -- Acquisition : tous les 3 victoires, un écran de CHOIX 1-parmi-3 (« A Fragment Surfaces »).
-  if win and host.run.wins % 3 == 0 then
+  -- Acquisition : un MARCHAND passe tous les 3 COMBATS (victoire OU défaite), pas toutes les 3 victoires
+  -- (PRD progression-economy §5.1) -> ~5-6 offres/run, densité de choix build-shaping. Écran 1-parmi-3
+  -- (« A Fragment Surfaces »). Si le pool est épuisé (#choices == 0), on saute directement au round suivant.
+  local combats = host.run.wins + host.run.losses
+  if combats % 3 == 0 then
     local choices = host.run:rollRelicChoices(3)
     if #choices > 0 then host.goto("relicpick", { choices = choices }); return end
   end
@@ -91,11 +94,41 @@ function host.finishCombat(win)
   host.goto("build")
 end
 
--- Choix de relique confirmé (BIND) : octroi + inscription au Grimoire (collection cross-run), round suivant.
+-- Récompense de LEVEL-UP (Lot 5, PRD progression-economy §5.2) : une fusion en phase build (3 copies ->
+-- niveau+1) ouvre une offre 1-parmi-3, mais BORNÉE 1/round (drapeau run.relicFromLevelThisRound, posé par
+-- la scène build). On marque _relicMidRound : le retour de choix (finishRelicPick*) reste sur le MÊME round
+-- (PAS de startRound -> boutique/or/plateau préservés). Si le pool est épuisé (#choices == 0), on ne fait
+-- RIEN (on reste en build : pas d'écran vide). C'est build:checkMerges qui garde l'unicité par round.
+function host.offerLevelUpRelic()
+  local choices = host.run:rollRelicChoices(3)
+  if #choices > 0 then
+    host._relicMidRound = true
+    host.goto("relicpick", { choices = choices, midRound = true })
+  end
+end
+
+-- Choix de relique confirmé (BIND) : octroi + inscription au Grimoire (collection cross-run). Le routage
+-- post-choix DÉPEND de l'origine de l'offre (lue puis effacée) : MID-ROUND (level-up §5.2) -> retour au MÊME
+-- round (board/boutique/or préservés, AUCUN startRound) ; POST-COMBAT (marchand /3) -> round suivant.
 function host.finishRelicPick(id)
   host.run:grantRelic(id)
   Grimoire.learn(id)
-  host.run:startRound()
+  local midRound = host._relicMidRound
+  host._relicMidRound = nil
+  if not midRound then host.run:startRound() end
+  host.goto("build")
+end
+
+-- Refus de l'offre de relique (REFUSE) : +or (declineRelic) au lieu d'une relique ; AUCUNE inscription au
+-- Grimoire (rien appris). Routage selon l'origine (lue puis effacée) :
+--   · MID-ROUND (level-up §5.2) : AUCUN startRound -> le +or de declineRelic PERSISTE dans le round courant.
+--   · POST-COMBAT (marchand /3) : startRound D'ABORD (budget SAP frais), PUIS declineRelic -> le +or se
+--     pose PAR-DESSUS le budget du round suivant (sinon il serait écrasé par le reset d'or de startRound).
+function host.finishRelicPickDecline()
+  local midRound = host._relicMidRound
+  host._relicMidRound = nil
+  if not midRound then host.run:startRound() end
+  host.run:declineRelic()
   host.goto("build")
 end
 
@@ -153,16 +186,27 @@ function love.draw()
   -- 1. Pre-pass ATMOSPHÈRE native (glows lisses), DERRIÈRE le monde pixel. Optionnel par scène.
   if scene.drawBack then scene:drawBack(view) end
 
-  -- 2. Monde -> canvas virtuel. Clear TRANSPARENT : l'atmosphère transparaît dans les vides (nearest +
-  --    scale entier => alpha droit correct, pas de halo). Les scènes opaques (combat) écrasent ce vide.
-  love.graphics.setCanvas(canvas)
-  love.graphics.clear(0, 0, 0, 0)
-  scene:drawWorld()
-  love.graphics.setCanvas()
-
-  -- 3. Blit du monde en scale ENTIER, par-dessus l'atmosphère.
+  -- 2-3. Monde. Deux chemins :
+  --   • `scene.nativeWorld` -> rendu DIRECT en résolution écran. Les sprites primgen font 64px : passés par le
+  --     canvas 320×180 ils étaient réduits à ~32px puis ré-agrandis ×4 (double rééchantillonnage = bouillie de
+  --     pixels). Le MÊME transform que le blit (translate ox/oy + scale ENTIER) => positions/tailles identiques
+  --     au canvas, mais un seul rééchantillonnage => créatures NETTES (cf. combat/build/gallery).
+  --   • sinon -> canvas virtuel basse-réso (look pixel du décor), blit en scale ENTIER. Clear TRANSPARENT :
+  --     l'atmosphère transparaît dans les vides (nearest + scale entier => alpha droit correct, pas de halo).
   love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.draw(canvas, view.ox, view.oy, 0, scale, scale)
+  if scene.nativeWorld then
+    love.graphics.push()
+    love.graphics.translate(view.ox, view.oy)
+    love.graphics.scale(scale, scale)
+    scene:drawWorld()
+    love.graphics.pop()
+  else
+    love.graphics.setCanvas(canvas)
+    love.graphics.clear(0, 0, 0, 0)
+    scene:drawWorld()
+    love.graphics.setCanvas()
+    love.graphics.draw(canvas, view.ox, view.oy, 0, scale, scale)
+  end
 
   -- 4. UI native par-dessus (texte net). La chrome DA est portée par la scène ; sinon HUD générique.
   scene:drawOverlay(view)

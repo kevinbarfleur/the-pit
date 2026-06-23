@@ -24,6 +24,7 @@ function Combat.new(palette, vw, vh, host, payload)
   return setmetatable({
     vw = vw, vh = vh, t = 0, host = host, palette = palette, payload = payload,
     daChrome = true, -- chrome DA portée par la scène
+    nativeWorld = true, -- arène rendue en RÉSOLUTION NATIVE (sprites primgen 64px nets, pas via le canvas 320)
     titleKey = "scene.combat",
     hintKey = "ui.hint_combat",
     enemyKey = payload.enemyKey,

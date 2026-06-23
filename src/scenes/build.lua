@@ -246,14 +246,18 @@ function Build:computeShop()
   for _ = 1, Run.SHOP_SIZE do specs[#specs + 1] = { flex = 1 } end
   self.lay.cards = Layout.row(cols[2], specs, { gap = 8, align = "stretch" })
 
-  -- 4) BOUTONS : COMBAT (gros, en haut) au-dessus d'une LIGNE éco. Sans grant : REROLL remplit toute la
-  -- ligne (pas de trou). Avec grant : la ligne se scinde en [ REROLL | REFUSER ]. On calcule les DEUX et on
-  -- choisit à l'affichage selon run.pendingSlotGrant -> jamais de poche vide.
+  -- 4) BOUTONS : COMBAT (gros, en haut) au-dessus d'une LIGNE éco. COMBAT reste DOMINANT (flex 3) ; la
+  -- ligne éco (flex 2) tient les petits boutons. BUY XP (achat d'XP de boutique) occupe TOUJOURS la moitié
+  -- gauche. À droite : REROLL seul (pas de grant) OU [ REROLL | REFUSER ] (un grant attend). On calcule
+  -- les DEUX dispositions et on choisit à l'affichage selon run.pendingSlotGrant -> jamais de poche vide.
   local bc = Layout.column(cols[3], { { flex = 3 }, { size = 8 }, { flex = 2 } }, { gap = 0, align = "stretch" })
   self.lay.combatBox = bc[1]
-  self.lay.ecoRowBox = bc[3]                              -- REROLL seul = toute la ligne
-  local ecoSplit = Layout.row(bc[3], { { flex = 1 }, { flex = 1 } }, { gap = 10, align = "stretch" })
-  self.lay.rerollSplitBox = ecoSplit[1]                  -- REROLL quand un grant attend
+  -- la ligne éco se scinde en [ BUY XP | reste ]. BUY XP = moitié gauche, fixe quel que soit le grant.
+  local ecoRow = Layout.row(bc[3], { { flex = 1 }, { flex = 1 } }, { gap = 10, align = "stretch" })
+  self.lay.raiseBox = ecoRow[1]                           -- BUY XP = achat d'XP de boutique (toujours à gauche)
+  self.lay.ecoRowBox = ecoRow[2]                          -- moitié droite : REROLL seul (pas de grant)
+  local ecoSplit = Layout.row(ecoRow[2], { { flex = 1 }, { flex = 1 } }, { gap = 10, align = "stretch" })
+  self.lay.rerollSplitBox = ecoSplit[1]                  -- REROLL quand un grant attend (1/4 droite gauche)
   self.lay.declineBox = ecoSplit[2]                      -- REFUSER (visible seulement pendant un grant)
 
   -- 5) hit-tests souris en VIRTUEL (÷4) — dérivés des rects DESIGN du layout (toujours synchrones).
@@ -263,6 +267,7 @@ function Build:computeShop()
   self.shopSlots = {}
   for i = 1, Run.SHOP_SIZE do self.shopSlots[i] = toV(self.lay.cards[i]) end
   self.button = toV(self.lay.combatBox)
+  self.raiseBtn = toV(self.lay.raiseBox)                  -- BUY XP (achat d'XP de boutique)
   self.declineBtn = toV(self.lay.declineBox)
   self:syncEcoRects(false)
 end
@@ -358,7 +363,11 @@ end
 -- DUPLICATAS (étape gameplay #2) : 3 unités de MÊME id ET MÊME niveau fusionnent en une de niveau+1
 -- (cap MAX_LEVEL). Stats + buffs d'adjacence scalent (LEVEL_MULT, appliqué dans buildComp). Cascade :
 -- 3 niveau-2 -> 1 niveau-3. Appelé après un AJOUT de copie (achat). Scène (pas SIM) -> non critique au replay.
+-- Renvoie `true` si AU MOINS une fusion a eu lieu (Lot 5 §5.2 : un level-up arme la récompense de relique,
+-- bornée 1/round). Une CASCADE (plusieurs fusions dans un même appel) ne doit armer l'offre qu'UNE fois :
+-- le drapeau de run (relicFromLevelThisRound) garde l'armement -> idempotent ; le caller déclenche l'écran.
 function Build:checkMerges()
+  local anyMerge = false
   local merged = true
   while merged do
     merged = false
@@ -382,10 +391,20 @@ function Build:checkMerges()
         self.slotRigs[keep] = { id = id, level = lvl, char = self:newRig(id) } -- promeut la 1re
         self.board.slots[keep].unit = id
         merged = true
+        anyMerge = true
         break -- re-scan (une promotion peut déclencher une nouvelle fusion)
       end
     end
   end
+  -- Récompense de level-up (Lot 5 §5.2) : une fusion en phase build ouvre un choix 1-parmi-3, mais 1 SEULE
+  -- fois par round. Le drapeau de run (relicFromLevelThisRound) garantit que la cascade ET les fusions
+  -- ultérieures du même round n'arment l'offre qu'une fois ; le caller (mousereleased) déclenche l'écran.
+  local run = self.host.run
+  if anyMerge and run and not run.relicFromLevelThisRound then
+    run.relicFromLevelThisRound = true
+    self.pendingLevelRelic = true
+  end
+  return anyMerge
 end
 
 -- ── Entrées ──
@@ -417,6 +436,9 @@ function Build:mousepressed(vx, vy, button)
       local lc = self:lockedCellAt(vx, vy)
       if lc then if run:acceptSlotGrant() then self.board:openCell(lc) end; return end
     end
+    -- BUY XP : achète de l'XP de boutique si abordable (NE re-tire PAS la boutique : les nouvelles cotes
+    -- s'appliquent au prochain reroll/round -> préserve l'arbitrage XP-vs-reroll-vs-unités).
+    if inRect(vx, vy, self.raiseBtn) then if run:canBuyXp() then run:buyXp() end; return end
     if inRect(vx, vy, self.rerollBtn) then run:reroll(); return end
     local oi = self:shopAt(vx, vy)
     if oi then -- prend une offre achetable (consommée seulement au lâcher sur une case valide)
@@ -449,7 +471,13 @@ function Build:mousereleased(vx, vy, button)
       if id then
         self.slotRigs[si] = { id = id, level = 1, char = d.char }
         self.board.slots[si].unit = id
-        self:checkMerges() -- 3 copies (même id+niveau) -> fusion en niveau+1
+        self:checkMerges() -- 3 copies (même id+niveau) -> fusion en niveau+1 (arme pendingLevelRelic une fois/round)
+        -- Lot 5 (§5.2) : une fusion a armé la récompense de level-up -> on présente l'offre 1-parmi-3 MID-ROUND
+        -- (retour au MÊME round : boutique/or/plateau préservés, AUCUN startRound). Bornée par le drapeau de run.
+        if self.pendingLevelRelic then
+          self.pendingLevelRelic = false
+          if self.host.offerLevelUpRelic then self.host.offerLevelUpRelic() end
+        end
       end
     end
     return
@@ -898,6 +926,15 @@ function Build:drawOverlay(view)
     if run.pendingSlotGrant then
       self:drawEcoButton("build.decline", self.declineBtn, T("ui.refuse_label"), Run.SLOT_DECLINE_GOLD, true)
     end
+    -- BOUTON BUY XP (moitié gauche de la ligne éco) : achète de l'XP de boutique (coût FIXE en diamant).
+    -- Au tier MAX, plus rien à acheter -> état « MAX » désactivé (label MAX, AUCUN diamant via cost=nil).
+    -- La barre d'XP + la lecture du TIER courant (« TIER n/5 ») sont sous l'orbe de vie (cf. drawLifeOrb).
+    local atMax = run.shopTier >= run.MAX_TIER
+    self:drawEcoButton("build.raise",
+      self.raiseBtn,
+      atMax and T("ui.tier_max") or T("ui.buyxp_label"),
+      atMax and nil or run.BUY_XP_COST,
+      (not atMax) and run:canBuyXp())
   end
 
   -- ORBE DE VIE (extrême gauche de la barre du bas) : fluide = vies/START_LIVES, compteur au-dessus.
@@ -918,6 +955,9 @@ function Build:drawOverlay(view)
   local relIdx = run and self:relicAt(self.mx, self.my)
   if relIdx then
     self:drawRelicTooltip(run.relics[relIdx].id)
+  elseif run and self.xpBarRect and inRect(self.mx, self.my, self.xpBarRect) then
+    -- Survol de la barre d'XP -> cotes par rang du tier courant (enseigne « à quoi sert monter »).
+    self:drawOddsTooltip(run)
   else
     local id
     local oi = self:shopAt(self.mx, self.my)
@@ -989,42 +1029,70 @@ function Build:drawShopCard(i, rect, o, hot)
     -- mini-chip ICÔNE SEULE (pas de label : la place est rare) -> reconnaissable par sa couleur+forme.
     local cw = Chip.draw(cx, costBox.y + 1, { key = k, label = "", icon = true, font = font, h = 13 })
     cx = cx + cw + 3
-    if cx > costBox.x + costBox.w - 22 then break end -- ne déborde pas sous le coût
+    if cx > costBox.x + costBox.w - 34 then break end -- ne déborde pas sous le coût (pièce + valeur read)
   end
-  -- COÛT : diamant forge + valeur, callé à droite de la rangée.
-  local cd = aff and c.gold or c.fainter
-  local costStr = tostring(o.cost) .. "g"
-  Draw.textR(costStr, costBox.x + costBox.w, costBox.y + 3, cd, Theme.ui(11))
-  local cdx = costBox.x + costBox.w - font:getWidth(costStr) - 8
-  Forge.diamondAt(cdx, costBox.y + 8, 3, aff and c.goldBright or c.fainter)
+  -- COÛT : PIÈCE d'or + valeur en POLICE READ (lisible, grande), callé à droite -> le prix saute aux yeux.
+  -- L'or change de teinte selon le budget (or vif si achetable, éteint sinon). La valeur est sans « g » (la
+  -- pièce DIT déjà l'or) -> chiffre net et gros.
+  local cd = aff and c.goldBright or c.fainter
+  local costStr = tostring(o.cost)
+  local fontCost = Theme.read(16)
+  local cw = fontCost:getWidth(costStr)
+  local valX = costBox.x + costBox.w           -- bord droit (valeur right-aligned)
+  local midY = costBox.y + 8
+  Forge.label(costStr, valX, midY, 16, { cd[1], cd[2], cd[3] }, { read = true, right = true, shadow = true })
+  Forge.coinAt(valX - cw - 7, midY, 4, aff and c.goldBright or c.fainter, not aff)
 end
 
--- Bannière de run (deux tons : label éteint + valeur claire), centrée en haut.
+-- Bannière de run (HUD haut) : 4 stats [symbole · LABEL · VALEUR], symbole par stat (pièce/diamant/pip/case),
+-- LABEL en Silkscreen (petites capitales, ce que cette police fait de mieux), VALEUR en POLICE READ (lisible,
+-- claire). Aligné/espacé proprement dans une plaque runique. Symboles dessinés en primitives forge.
+local HUD_SYMW = 12 -- largeur réservée au symbole (icône + petit gap)
 function Build:drawBanner(run)
   local c = Theme.c
-  local font = Theme.ui(13)
+  local fontL = Theme.ui(11)   -- LABELS (capitales courtes : Silkscreen reste idéal)
+  local fontV = Theme.read(16) -- VALEURS (lisibles, prominentes)
   -- VIES retirées du HUD : elles vivent désormais dans l'ORBE DE VIE (bas-gauche) -> pas de doublon.
   local seg = {
-    { T("ui.gold") .. " ", tostring(run.gold) },
-    { T("ui.wins") .. " ", run.wins .. "/" .. Run.WIN_TARGET },
-    { T("ui.round") .. " ", tostring(run.round) },
-    { T("ui.slots") .. " ", run.slots .. "/" .. Run.MAX_SLOTS },
+    { sym = "coin",    label = T("ui.gold"),  value = tostring(run.gold) },
+    { sym = "diamond", label = T("ui.wins"),  value = run.wins .. "/" .. Run.WIN_TARGET },
+    { sym = "pip",     label = T("ui.round"), value = tostring(run.round) },
+    { sym = "slot",    label = T("ui.slots"), value = run.slots .. "/" .. Run.MAX_SLOTS },
   }
-  love.graphics.setFont(font)
-  local gap, total = 28, 0
-  for _, s in ipairs(seg) do total = total + font:getWidth(s[1]) + font:getWidth(s[2]) end
-  total = total + gap * (#seg - 1)
+  -- mesure : symbole + label + petit gap + valeur, par segment ; gouttière fixe entre segments.
+  local segGap, lblGap = 26, 5
+  local total = 0
+  for _, s in ipairs(seg) do
+    total = total + HUD_SYMW + fontL:getWidth(s.label) + lblGap + fontV:getWidth(s.value)
+  end
+  total = total + segGap * (#seg - 1)
   local x = Draw.W / 2 - total / 2
   -- Plaque runique : intègre le HUD (biseau bronze) au lieu d'un texte qui flotte sur le fond.
-  Frame.draw(x - 20, 14, total + 40, 28, { level = "bevel", fill = c.panel })
+  Frame.draw(x - 20, 12, total + 40, 32, { level = "bevel", fill = c.panel })
+  local midY = 28 -- centre vertical de la plaque
   for _, s in ipairs(seg) do
-    Draw.setColor(c.fainter); love.graphics.print(s[1], math.floor(x), 22); x = x + font:getWidth(s[1])
-    Draw.setColor(c.title); love.graphics.print(s[2], math.floor(x), 22); x = x + font:getWidth(s[2]) + gap
+    -- symbole (centré sur midY).
+    if s.sym == "coin" then
+      Forge.coinAt(x + 4, midY, 4, c.goldBright)
+    elseif s.sym == "diamond" then
+      Forge.diamondAt(x + 4, midY, 4, c.goldBright, c.gold)
+    elseif s.sym == "pip" then
+      Draw.setColor(c.gold); love.graphics.circle("fill", x + 4, midY, 3); Draw.reset()
+    else -- slot : petite case
+      Draw.setColor(c.gold); love.graphics.rectangle("fill", x + 1, midY - 3, 7, 7)
+      Draw.setColor(c.panelDeep); love.graphics.rectangle("fill", x + 3, midY - 1, 3, 3); Draw.reset()
+    end
+    x = x + HUD_SYMW
+    -- LABEL (éteint) puis VALEUR (claire, read), centrés verticalement sur midY.
+    Draw.text(s.label, x, midY - fontL:getHeight() / 2, c.fainter, fontL)
+    x = x + fontL:getWidth(s.label) + lblGap
+    Forge.label(s.value, x, midY, 16, { c.title[1], c.title[2], c.title[3] }, { read = true, left = true, shadow = true })
+    x = x + fontV:getWidth(s.value) + segGap
   end
   if run.winStreak >= 2 or run.lossStreak >= 2 then
     local won = run.winStreak >= 2
     Draw.textC(won and T("ui.win_streak", { n = run.winStreak }) or T("ui.loss_streak", { n = run.lossStreak }),
-      Draw.W / 2, 44, won and c.gold or c.blood, Theme.ui(11))
+      Draw.W / 2, 46, won and c.gold or c.blood, Theme.ui(11))
   end
 end
 
@@ -1056,6 +1124,71 @@ function Build:drawLifeOrb(run)
   local low = run.lives <= 1
   Draw.textC(T("ui.lives_orb", { n = run.lives, max = maxL }), lab.x + lab.w / 2, lab.y + 2,
     low and c.blood or c.gold, Theme.uiBold(12))
+  -- NIVEAU + BARRE D'XP DE BOUTIQUE (TFT-style) : sous l'orbe, « TIER n/5 » et une barre fine remplie à
+  -- shopXp/xpToNext() (au tier MAX : barre pleine, libellé MAX). Le bouton BUY XP la fait monter ; la passive
+  -- aussi (1/round). Survol de la barre -> infobulle des cotes par rang (cf. drawOddsTooltip). PUR-RENDER.
+  local capFont = Theme.ui(9)
+  local atMax = run.shopTier >= Run.MAX_TIER
+  local tierStr = T("ui.tier_label") .. " " .. run.shopTier .. "/" .. Run.MAX_TIER
+  local labY = box.y + box.h - capFont:getHeight() - 6
+  Draw.textC(tierStr, ox + diam / 2, labY, atMax and c.gold or c.faint, capFont)
+  -- barre fine sous le libellé, centrée sur l'orbe ; remplissage = progression vers le tier suivant.
+  local barW = math.max(36, diam)
+  local barH = 4
+  local barX = ox + math.floor((diam - barW) / 2)
+  local barY = box.y + box.h - barH - 1
+  local toNext = run:xpToNext()
+  local pct = atMax and 1 or (toNext and toNext > 0 and math.min(1, run.shopXp / toNext) or 0)
+  Draw.bar(barX, barY, barW, barH, pct, atMax and c.gold or c.goldBright, c.panelDeep, c.hair)
+  -- hit-test de la barre (espace VIRTUEL) pour le survol -> infobulle des cotes. On élargit un peu en
+  -- hauteur (englobe le libellé TIER) pour faciliter le survol de cette petite zone.
+  self.xpBarRect = { x = barX / 4, y = labY / 4, w = barW / 4, h = (barY + barH - labY) / 4 }
+end
+
+-- INFOBULLE DES COTES (survol de la barre d'XP) : « SHOP ODDS · TIER n/5 » + une ligne par rang NON-NUL
+-- du tier courant (« R1  44% »), avec la couleur de rareté du rang. Enseigne ce que monter de tier débloque.
+-- Petit panneau Frame gildé qui suit le curseur (rebond sur les bords). PUR-RENDER (golden inchangé).
+function Build:drawOddsTooltip(run)
+  local c = Theme.c
+  local odds = run.ODDS[run.shopTier]
+  if not odds then return end
+  -- lignes { rank, pct } pour les rangs > 0 % (skip les 0 %).
+  local rows = {}
+  for rank = 1, Run.MAX_TIER do
+    if (odds[rank] or 0) > 0 then rows[#rows + 1] = { rank = rank, pct = odds[rank] } end
+  end
+  local headFont = Theme.uiBold(10)
+  local rowFont = Theme.ui(11)
+  local PAD = 10
+  local ROW_H = rowFont:getHeight() + 3
+  local headStr = T("ui.tier_odds") .. "  ·  " .. T("ui.tier_label") .. " " .. run.shopTier .. "/" .. Run.MAX_TIER
+  -- largeur : max(en-tête, lignes) + marge.
+  local W = headFont:getWidth(headStr)
+  for _, r in ipairs(rows) do
+    W = math.max(W, rowFont:getWidth("R" .. r.rank) + 44)
+  end
+  W = W + PAD * 2
+  local H = PAD + headFont:getHeight() + 6 + #rows * ROW_H + PAD
+  -- position : suit le curseur, rebond sur les bords (jamais hors écran).
+  local x, y = self.mx * 4 + 16, self.my * 4 + 12
+  if x + W > Draw.W then x = self.mx * 4 - W - 16 end
+  if x < 4 then x = 4 end
+  if y + H > Draw.H then y = Draw.H - H - 6 end
+  if y < 4 then y = 4 end
+  x, y = math.floor(x), math.floor(y)
+  local ix, iy, iw = Frame.draw(x, y, W, H, { level = "gilded", state = "idle", px = 2 })
+  local cx = ix + PAD
+  local cy = iy + (PAD - 4)
+  Draw.text(headStr, cx, cy, c.gold, headFont)
+  cy = cy + headFont:getHeight() + 4
+  Draw.divider(ix + iw / 2, cy + 1, iw - 8, c.hair, 1)
+  cy = cy + 5
+  for _, r in ipairs(rows) do
+    local col = Rarity.frame(r.rank)
+    Draw.text("R" .. r.rank, cx, cy, col, rowFont)
+    Draw.textR(r.pct .. "%", ix + iw - PAD, cy, c.body, rowFont)
+    cy = cy + ROW_H
+  end
 end
 
 -- Bouton d'économie (REROLL / REFUSER) = ÉCO FORGE (métal patiné + diamant de coût). rect en virtuel.
@@ -1096,6 +1229,28 @@ local function rarityAccent(rank)
   return Forge.accentFrom(fr)
 end
 
+-- ── TOKENISATION DES VALEURS INLINE (carte monstre) ────────────────────────────────────────────────
+-- On veut COLORER les nombres d'une ligne de description dans la couleur de l'AFFLICTION de l'unité
+-- (shock=jaune, burn=orange, poison=vert, bleed=cramoisi, rot=violet) et préfixer la PREMIÈRE valeur de
+-- la ligne par l'icône de l'affliction — SANS toucher les chaînes i18n (en.lua appartient à un chantier).
+-- On fait tout AU RENDU, en découpant la chaîne en segments {text, value?}. Un segment "valeur" contient
+-- au moins un chiffre et l'enveloppe de signe/pourcent/point (+7%, 16, 1.5s, 60%...). On préserve les
+-- espaces (rattachés au segment de mot qui les précède) -> le tracé reste fidèle au wrap d'origine.
+-- PUR (testable headless) : split par MOTS (séparés par espaces) ; un mot est "valeur" s'il matche un nombre.
+local function tokenizeValues(line)
+  local out = {}
+  -- on itère mot + espaces qui suivent, en gardant les espaces pour un tracé continu.
+  for word, sp in line:gmatch("(%S+)(%s*)") do
+    -- une "valeur" : une fois la ponctuation OUVRANTE retirée (parenthèse/crochet/guillemet), le mot commence
+    -- par un nombre éventuellement signé. Couvre +7%, 16, 1.5s, 2x ET « (6 dmg/s) » -> le « (6 » se colore.
+    local core = word:gsub("^[%(%[%{<\"']+", "")
+    local isVal = core:match("^[%+%-]?%d") ~= nil
+    out[#out + 1] = { text = word, sp = sp, value = isVal }
+  end
+  return out
+end
+Build.tokenizeValues = tokenizeValues
+
 function Build:drawTooltip(id)
   local U, c = Units[id], Theme.c
   local rank = U.rank or 1
@@ -1103,13 +1258,17 @@ function Build:drawTooltip(id)
   local rarCol = Rarity.frame(rank)
 
   -- ── 1) MESURE : hauteur dérivée du contenu (capacités + lignes de prose) -> jamais cramé. ──
-  -- Description LISIBLE : Silkscreen 12 (au lieu de 11) + interligne ample -> info importante facile à lire.
-  local fontDesc = Theme.ui(12)
+  -- Description LISIBLE : POLICE READ (Pixel Operator Bold, pixel-font à minuscules ET trait gras) -> la phrase
+  -- mécanique se LIT comme une phrase, ≠ le bloc tout-capitales de Silkscreen, et reste nette au scale non-entier
+  -- (Jersey 15 floutait à 0.75). 13px + interligne ample.
+  local fontDesc = Theme.read(13)
   local DESC_LINE = fontDesc:getHeight() + 3 -- interligne ample (lisibilité)
   local W = 318
   local PAD = 14
   local contentW = W - PAD * 2
+  -- AFFLICTION primaire de l'unité (1re du registre) : couleur + icône des valeurs inline de la description.
   local affl = Keywords.applied(U)
+  local primAff = affl[1]
   local passiveName = T("unit." .. id .. ".passive_name")
   local passiveDesc = T("unit." .. id .. ".passive_desc")
   local _, descLines = fontDesc:getWrap(passiveDesc, contentW)
@@ -1134,9 +1293,12 @@ function Build:drawTooltip(id)
   if #affl > 0 then h = h + 22 end -- rangée de value-chips d'affliction
   if hasPassiveName then h = h + 18 end
   h = h + 3 + nDescLines * DESC_LINE
+  -- FLAVOR (phrase philosophique) SÉPARÉE : sa propre ligne en pied, italique IM Fell, détachée du « comment
+  -- ça marche » par un GAP + un divider -> visible mais jamais confondue avec la prose mécanique.
+  local fontFlav = Theme.lore(13)
   if hasFlavor then
-    local _, fLines = Theme.loreRoman(13):getWrap(T(flavorKey), contentW)
-    h = h + 8 + #fLines * (Theme.loreRoman(13):getHeight() + 1)
+    local _, fLines = fontFlav:getWrap(T(flavorKey), contentW)
+    h = h + 10 + #fLines * (fontFlav:getHeight() + 1) -- gap (divider) + lignes italiques
   end
   h = h + PAD                   -- bottom pad
 
@@ -1169,14 +1331,16 @@ function Build:drawTooltip(id)
   }, { gap = GAPV, align = "stretch" })
   local rHead, rPort, rIdent, rDiv1, rStats, rDiv2, rAbil = rows[1], rows[2], rows[3], rows[4], rows[5], rows[6], rows[7]
 
-  -- (a) HEADER : nom (gauche) + coût (diamant forge + valeur, droite).
+  -- (a) HEADER : nom (gauche) + coût (PIÈCE d'or + valeur READ, droite) -> prix lisible et cohérent boutique.
   local fontName = Theme.uiBold(14)
   Draw.text(T("unit." .. id .. ".name"), rHead.x, rHead.y + 3, c.title, fontName)
   if U.cost then
     local costStr = tostring(U.cost)
-    local fontCost = Theme.ui(13)
-    Draw.textR(costStr, rHead.x + rHead.w, rHead.y + 4, c.gold, fontCost)
-    Forge.diamondAt(rHead.x + rHead.w - fontCost:getWidth(costStr) - 8, rHead.y + 10, 4, c.goldBright)
+    local cw = Theme.read(16):getWidth(costStr)
+    local cmY = rHead.y + 11
+    Forge.label(costStr, rHead.x + rHead.w, cmY, 16, { c.gold[1], c.gold[2], c.gold[3] },
+      { read = true, right = true, shadow = true })
+    Forge.coinAt(rHead.x + rHead.w - cw - 7, cmY, 4, c.goldBright)
   end
 
   -- (b) PORTRAIT : rig AJUSTÉ pour REMPLIR (fit-to-box), clippé. Halo de rareté pour les héros.
@@ -1236,18 +1400,60 @@ function Build:drawTooltip(id)
     Draw.text(passiveName, rAbil.x, ay, c.goldBright, Theme.uiBold(11))
     ay = ay + 18
   end
-  -- DESCRIPTION : casse AUTHORED conservée (pas de :upper()), Silkscreen 12, dessinée LIGNE PAR LIGNE avec
-  -- un interligne AMPLE (DESC_LINE) -> info importante facile à lire (≠ prose tassée).
+  -- DESCRIPTION : casse AUTHORED conservée, POLICE READ (lisible), dessinée LIGNE PAR LIGNE. Les VALEURS
+  -- (nombres/%) sont colorées dans la couleur de l'AFFLICTION de l'unité + 1re valeur préfixée de son icône.
   ay = ay + 3
   for _, line in ipairs(descLines) do
-    Draw.text(line, rAbil.x, ay, c.body, fontDesc)
+    self:drawDescLine(line, rAbil.x, ay, fontDesc, c.body, primAff, contentW)
     ay = ay + DESC_LINE
   end
 
-  -- (h) FLAVOR (si la clé existe) : serif d'ambiance, éteint, en pied de carte.
+  -- (h) FLAVOR (phrase philosophique) : SA PROPRE ligne en pied, ITALIQUE IM Fell (Theme.lore), détachée du
+  -- bloc mécanique par un GAP + un divider doré discret -> visible, jamais confondue avec le « comment ça marche ».
   if hasFlavor then
-    Draw.textWrap(T(flavorKey), rAbil.x, ay + 4, contentW, c.dim, Theme.loreRoman(13))
+    ay = ay + 4
+    Draw.divider(rAbil.x + contentW / 2, ay, contentW - 20, c.gold, 0.3)
+    ay = ay + 5
+    Draw.textWrap(T(flavorKey), rAbil.x, ay, contentW, c.dim, fontFlav)
   end
+end
+
+-- Trace une LIGNE de description en colorant les VALEURS (nombres/%) dans la couleur de l'affliction `aff`
+-- (shock=jaune, burn=orange, poison=vert, bleed=cramoisi, rot=violet) et en préfixant la PREMIÈRE valeur de
+-- la ligne par l'icône bakée de l'affliction. Le texte non-valeur reste en `baseCol`. PUR-RENDER : on
+-- tokenise la chaîne RENDUE (jamais l'i18n). Sans affliction, tout est tracé en `baseCol` (chemin neutre).
+function Build:drawDescLine(line, x, y, font, baseCol, aff, maxW)
+  love.graphics.setFont(font)
+  local affCol = aff and Keywords.get(aff)
+  affCol = affCol and affCol.color or nil
+  local icon = aff and Keywords.icon(aff) or nil
+  if not affCol then
+    -- chemin neutre (unité sans affliction) : ligne unie, pas de tokenisation.
+    Draw.text(line, x, y, baseCol, font)
+    return
+  end
+  local cx, cy, fh = x, y, font:getHeight()
+  -- l'icône n'est posée que si la ligne A de la place pour son débord (≈10px) -> jamais de dépassement
+  -- du contenu (le wrap a été mesuré SANS l'icône). Sinon on garde la couleur, sans icône.
+  local roomForIcon = (not maxW) or (font:getWidth(line) + (icon and (icon.w + 2) or 0) <= maxW)
+  local iconUsed = false
+  for _, tok in ipairs(tokenizeValues(line)) do
+    if tok.value then
+      if icon and roomForIcon and not iconUsed then
+        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.draw(icon.image, math.floor(cx), math.floor(cy + fh / 2 - icon.h / 2), 0, 1, 1)
+        cx = cx + icon.w + 2
+        iconUsed = true
+      end
+      Draw.setColor(affCol)
+    else
+      Draw.setColor(baseCol)
+    end
+    love.graphics.print(tok.text, math.floor(cx), math.floor(cy))
+    cx = cx + font:getWidth(tok.text)
+    if tok.sp ~= "" then cx = cx + font:getWidth(tok.sp) end
+  end
+  love.graphics.setColor(1, 1, 1, 1)
 end
 
 -- Portrait de la fiche : re-rend le rig de l'unité dans une région, CLIPPÉ (Draw.scissor), halo de
@@ -1307,9 +1513,9 @@ function Build:drawCardStats(id, U, region, rarCol)
   for k = 1, 3 do
     local col, s = cols[k], specs[k]
     local ccx = col.x + col.w / 2
-    -- GRANDE valeur (haut, centrée) puis petit label (bas, éteint) -> « ceci est un nombre qui compte »,
-    -- sans cadre. Forge.label = overlay vivant (toujours lisible), ombre portée pour détacher de la pierre.
-    Forge.label(s.value, ccx, col.y + 11, 18, { s.vcol[1], s.vcol[2], s.vcol[3] }, { bold = true, shadow = true })
+    -- GRANDE valeur (haut, centrée) en POLICE READ (lisible, prominente) puis petit label Silkscreen (bas,
+    -- éteint) -> « ceci est un nombre qui compte », sans cadre. Teintes neutres (DMG garde le rouge dégâts).
+    Forge.label(s.value, ccx, col.y + 11, 18, { s.vcol[1], s.vcol[2], s.vcol[3] }, { read = true, shadow = true })
     Draw.textC(s.key, ccx, col.y + col.h - 11, c.faint, Theme.ui(8))
     -- séparateur entre colonnes = un point-diamant forge centré dans la gouttière (pas un trait de boîte).
     if k < 3 then

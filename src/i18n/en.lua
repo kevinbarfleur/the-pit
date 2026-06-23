@@ -107,6 +107,7 @@ return {
   ["relicpick.unknown"] = "EFFECT UNKNOWN  -  REVEALS IN USE",
   ["relicpick.bind"] = "BIND THE FRAGMENT",
   ["relicpick.choose"] = "CHOOSE ONE",
+  ["relic.decline_label"] = "REFUSE", -- bouton « refuser l'offre -> +or » (le nombre d'or est dessiné a part)
 
   -- unit types (clé mécanique -> libellé affiché)
   ["type.flesh"] = "Flesh",
@@ -294,6 +295,63 @@ return {
   ["unit.gravewarden.passive_name"] = "Bulwark of Bone",
   ["unit.gravewarden.passive_desc"] = "Taunt: forces the enemy front to strike it. Returns 4 damage to attackers.",
 
+  -- roster v7 : familles visuelles peuplees (cf. src/data/units.lua, vague v7)
+  ["unit.chitin_drone.name"] = "CHITIN DRONE",
+  ["unit.chitin_drone.passive_name"] = "Hive Venom",
+  ["unit.chitin_drone.passive_desc"] = "Its strikes poison the target: 2 dmg/s for ~3s.",
+  ["unit.bore_worm.name"] = "BORE WORM",
+  ["unit.bore_worm.passive_name"] = "Digesting Tunnel",
+  ["unit.bore_worm.passive_desc"] = "Its strikes rot the target: decay that ramps and eats max HP.",
+  ["unit.wailing_shade.name"] = "WAILING SHADE",
+  ["unit.wailing_shade.passive_name"] = "Cold Lacing",
+  ["unit.wailing_shade.passive_desc"] = "Its strikes bleed and slow: 2 dmg/s for ~3.3s, 15% slower.",
+  ["unit.pyre_herald.name"] = "PYRE HERALD",
+  ["unit.pyre_herald.passive_name"] = "Black Fire",
+  ["unit.pyre_herald.passive_desc"] = "Its strikes burn the target: 6 dmg/s for ~2.8s.",
+  ["unit.byakhee.name"] = "BYAKHEE",
+  ["unit.byakhee.passive_name"] = "Raking Stoop",
+  ["unit.byakhee.passive_desc"] = "Its strikes bleed and slow: 3 dmg/s for 3s, 10% slower.",
+  ["unit.zeal_inquisitor.name"] = "ZEAL INQUISITOR",
+  ["unit.zeal_inquisitor.passive_name"] = "Sacred Flame",
+  ["unit.zeal_inquisitor.passive_desc"] = "Its strikes burn the target: 5 dmg/s for 3s.",
+  ["unit.coil_viper.name"] = "COIL VIPER",
+  ["unit.coil_viper.passive_name"] = "Cobra Venom",
+  ["unit.coil_viper.passive_desc"] = "Its strikes poison the target: 3 dmg/s for ~2.7s.",
+  ["unit.web_recluse.name"] = "WEB RECLUSE",
+  ["unit.web_recluse.passive_name"] = "Recluse Bite",
+  ["unit.web_recluse.passive_desc"] = "Its strikes poison the target: 2 dmg/s for ~3.3s.",
+  ["unit.siphon_jelly.name"] = "SIPHON JELLY",
+  ["unit.siphon_jelly.passive_name"] = "Stinging Arc",
+  ["unit.siphon_jelly.passive_desc"] = "Its strikes build a static charge that discharges as shock.",
+  ["unit.skull_colossus.name"] = "SKULL COLOSSUS",
+  ["unit.skull_colossus.passive_name"] = "Ember Orbits",
+  ["unit.skull_colossus.passive_desc"] = "A titanic skull: draws fire (taunt) and burns for 4 dmg/s.",
+  ["unit.rust_sentinel.name"] = "RUST SENTINEL",
+  ["unit.rust_sentinel.passive_name"] = "Live Core",
+  ["unit.rust_sentinel.passive_desc"] = "Its strikes build a static charge that discharges as shock.",
+  ["unit.runestone_golem.name"] = "RUNESTONE GOLEM",
+  ["unit.runestone_golem.passive_name"] = "Warding Stone",
+  ["unit.runestone_golem.passive_desc"] = "Shields adjacent allies for 12 at combat start.",
+  ["unit.ink_horror.name"] = "INK HORROR",
+  ["unit.ink_horror.passive_name"] = "Toxic Ink",
+  ["unit.ink_horror.passive_desc"] = "Its strikes poison the target: 3 dmg/s for ~2.8s.",
+  ["unit.deep_kraken.name"] = "DEEP KRAKEN",
+  ["unit.deep_kraken.passive_name"] = "Venomous Grasp",
+  ["unit.deep_kraken.passive_desc"] = "A leviathan: its strikes poison for 4 dmg/s over ~3.3s.",
+  -- plancher rang-1 (PRD progression-economy) : stat-sticks lisibles, sans grand passif.
+  ["unit.husk.name"] = "HUSK",
+  ["unit.husk.passive_name"] = "Unfalling",
+  ["unit.husk.passive_desc"] = "A hollowed thing that simply will not drop. No notable passive.",
+  ["unit.gnaw_rat.name"] = "GNAW-RAT",
+  ["unit.gnaw_rat.passive_name"] = "Bloodtooth",
+  ["unit.gnaw_rat.passive_desc"] = "Its bite leaves a slow, seeping wound: bleeds 1 dmg/s and slows by 8%.",
+  ["unit.footman.name"] = "FOOTMAN",
+  ["unit.footman.passive_name"] = "Drilled",
+  ["unit.footman.passive_desc"] = "A rote soldier of the Order — no tricks, only the line.",
+  ["unit.mire_thing.name"] = "MIRE-THING",
+  ["unit.mire_thing.passive_name"] = "Sodden",
+  ["unit.mire_thing.passive_desc"] = "A lump of the pit's wet dark, heavy and dumb. No notable passive.",
+
   -- RELIQUES (chantier 2026-06, modele LISIBLE ; cf. docs/research/relics-design.md) : name + effect (clair,
   -- avec le chiffre) + flavor (ambiance pure, serif romain). Plus de leurres ni d'identification.
   ["relic.unidentified"] = "??? (unknown relic)",
@@ -356,6 +414,17 @@ return {
   ["relic.plague_communion.name"] = "PLAGUE COMMUNION",
   ["relic.plague_communion.effect"] = "Enemies under two or more afflictions take 25% more from everything.",
   ["relic.plague_communion.flavor"] = "Drink deep of every sickness, and call the mix a sacrament.",
+
+  -- F — reliques de boutique (Lot 6) : agissent sur le run/la boutique, pas sur le combat.
+  ["relic.carrion_ledger.name"] = "CARRION LEDGER",
+  ["relic.carrion_ledger.effect"] = "Gain a surge of shop experience at once.",
+  ["relic.carrion_ledger.flavor"] = "Every name is crossed out. The debts are paid in full.",
+  ["relic.black_summons.name"] = "BLACK SUMMONS",
+  ["relic.black_summons.effect"] = "Raise your shop tier by 1.",
+  ["relic.black_summons.flavor"] = "An invitation pressed in cold wax. You were never meant to refuse.",
+  ["relic.beggars_lantern.name"] = "BEGGAR'S LANTERN",
+  ["relic.beggars_lantern.effect"] = "Your shop rolls one tier lower from now on.",
+  ["relic.beggars_lantern.flavor"] = "It draws the low and the desperate, who arrive in great number.",
 
   -- ── Proving Ground (banc d'essai) : UI + archetypes + variants + scenarios + notes de compo (ASCII) ──
   ["pg.title"] = "The Proving Ground",
@@ -442,4 +511,10 @@ return {
   ["scenario.bruiser_sustain_test.note"] = "Bruisers with and without lifesteal.",
   ["scenario.cross_vs_tank.label"] = "Bleed-Rot cross vs Wall",
   ["scenario.cross_vs_tank.note"] = "Convert bleed to rot to eat the wall's max HP.",
+
+  -- boutique : niveau de boutique (XP TFT-style) + lecture du tier (cf. src/run/state.lua shopTier/shopXp)
+  ["ui.buyxp_label"] = "BUY XP",     -- bouton qui achète de l'XP de boutique (BUY_XP_AMOUNT pour BUY_XP_COST or)
+  ["ui.tier_label"]  = "TIER",       -- préfixe de lecture du tier (« TIER 3/5 ») sous l'orbe
+  ["ui.tier_max"]    = "MAX",        -- tier max atteint (bouton désactivé / barre pleine)
+  ["ui.tier_odds"]   = "SHOP ODDS",  -- en-tête de l'infobulle des cotes par rang du tier courant
 }
