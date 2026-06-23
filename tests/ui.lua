@@ -13,7 +13,6 @@ local Chip = require("src.ui.chip")
 local Keywords = require("src.ui.keywords")
 local Forge = require("src.ui.forge")
 local Layout = require("src.ui.layout")
-local Frameforge = require("src.scenes.frameforge")
 
 local ok, err = pcall(function()
   -- ── Theme.state : vocabulaire d'état complet + repli sur idle ──
@@ -252,56 +251,7 @@ local ok, err = pcall(function()
   -- diamondAt : draw direct (no-op headless, ne crashe pas).
   Forge.diamondAt(20, 20, 3, { 0.8, 0.7, 0.3 })
 
-  -- ── Frameforge : la scène-showcase construit + update + draw headless sans crash ──
-  local hostStub = { name = "menu", menu = {} }
-  local scene = Frameforge.new({}, 320, 180, hostStub)
-  assert(#scene.cells > 0, "frameforge : cellules construites")
-  local view = { ox = 0, oy = 0, scale = 4 }
-  scene:update(1.0)
-  scene:drawBack(view)
-  scene:drawWorld()
-  scene:drawOverlay(view)
-  scene:mousemoved(24, 54)          -- survol (coords virtuelles) -> entre dans des cellules live
-  scene:mousepressed(24, 54, 1)     -- clic
-  scene:update(1.0)                 -- anime l'easing
-  scene:drawOverlay(view)
-  scene:mousereleased(24, 54, 1)
-  scene:keypressed("tab")           -- cycle d'accent (no crash)
-
-  -- ── TUNER : PX + tailles ; cycle de paramètre + ajustement -> change la valeur ET re-bake (no crash). ──
-  assert(#scene.tuned > 0, "tuner : des boutons-heros tunables existent")
-  assert(scene.tune.px == 2 and scene.tune.bw == 108 and scene.tune.bh == 30 and scene.tune.fontSz == 8
-    and scene.tune.pad == 5 and scene.tune.eyeR == 8, "defauts small-first dense (PX2 108x30 font8 pad5 eye8)")
-  -- param 1 = PX (densite ecran). L'ajuster change le PX d'affichage des boutons-heros (cell.px).
-  assert(scene.tuneSel == 1, "param 1 = PX par defaut")
-  scene:adjustTune(1)               -- PX 2 -> 3
-  assert(scene.tune.px == 3, "adjustTune PX +1")
-  for _, c in ipairs(scene.tuned) do assert(c.px == 3, "re-bake propage cell.px = PX tune") end
-  scene:adjustTune(-1)              -- PX 3 -> 2
-  assert(scene.tune.px == 2, "adjustTune PX -1")
-  scene:keypressed("t")             -- selectionne BTN-W
-  assert(scene.tuneSel == 2, "[t] cycle le parametre (-> BTN-W)")
-  local before = scene.tune.bw
-  scene:keypressed("up")            -- BTN-W +step (4)
-  assert(scene.tune.bw == before + 4, "[up] ajuste BTN-W de step")
-  scene:keypressed("down")
-  assert(scene.tune.bw == before, "[down] revient")
-  -- clamp aux bornes : on pousse fort dans les deux sens (max 160 / min 48 pour BTN-W).
-  for _ = 1, 80 do scene:adjustTune(1) end
-  assert(scene.tune.bw <= 160, "tune borne au max")
-  for _ = 1, 80 do scene:adjustTune(-1) end
-  assert(scene.tune.bw >= 48, "tune borne au min")
-  scene:drawOverlay(view)           -- redessine page 1 avec le tuner apres re-bakes
-
-  scene:keypressed("space")         -- page 2
-  assert(scene.page == 2, "frameforge : [space] passe page 2")
-  scene:drawOverlay(view)           -- dessine la page 2 (cadres/cartes/atomes) sans crash
-  scene:mousemoved(40, 120); scene:mousepressed(40, 120, 1); scene:mousereleased(40, 120, 1)
-  scene:keypressed("space")         -- page 3 (Frame.draw API + iconographie)
-  assert(scene.page == 3, "frameforge : [space] passe page 3")
-  scene:drawOverlay(view)           -- dessine la page 3 (grille Frame.draw + silhouettes) sans crash
-  scene:keypressed("m")             -- retour menu (host stub)
-  assert(hostStub.name == "menu", "frameforge : [m] revient au menu")
+  -- (scène-showcase « Frameforge » retirée avec son fichier : le kit gritty legacy n'est plus exposé.)
 
   -- ── Forge.genEyes : NUÉE éparpillée (plusieurs yeux), keep-out du label, rayons variés bornés. ──
   local fW, fH, fpad, fEye = 120, 30, 5, 8
@@ -702,7 +652,7 @@ local ok, err = pcall(function()
 end)
 
 if ok then
-  print("=> UI OK : Frame + Chip + Keywords + Theme.state + Forge (nightmare-forge kit) + Frameforge showcase.")
+  print("=> UI OK : Frame + Chip + Keywords + Theme.state + Forge (nightmare-forge kit).")
 else
   print("=> UI FAIL :")
   print(err)

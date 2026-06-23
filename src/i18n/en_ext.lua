@@ -139,9 +139,6 @@ return {
   ["scenario.arc_storm.label"]      = "Forked Storm",
   ["scenario.arc_storm.note"]       = "Rare shock modifiers on show: discharges chain to nearby foes, charges leap to neighbors, and never fully drain.",
 
-  -- ── Frame Forge (écran-showcase dev de la pierre gravée) ──
-  ["menu.frameforge"] = "FRAME FORGE",
-
   -- ── Run-over (CTA forge de relance) : libellé court du bouton-œil « descendre à nouveau » ──
   ["runover.descend"] = "DESCEND AGAIN",
 

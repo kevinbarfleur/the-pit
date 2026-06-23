@@ -71,16 +71,6 @@ function Menu.new(palette, vw, vh, host)
     { id = "rites",        key = "menu.rites",        kind = "sec", enabled = false },
     { id = "abandon",      key = "menu.abandon",      kind = "off", enabled = true,  action = function() love.event.quit() end },
   }
-  -- DEV-ONLY : écran-showcase « Frame Forge » (revue du kit UI, src/ui/forge.lua). Inséré avant ABANDON.
-  if Dev.ENABLED then
-    table.insert(self.items, #self.items, {
-      id = "frameforge", key = "menu.frameforge", kind = "sec", enabled = true,
-      action = function()
-        self.host.scene = require("src.scenes.frameforge").new(self.palette, self.vw, self.vh, self.host)
-        self.host.name = "frameforge"
-      end,
-    })
-  end
   self:layout()
   self.hover = nil
   self.down = false
