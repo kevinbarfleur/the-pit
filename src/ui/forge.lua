@@ -1498,6 +1498,64 @@ function Forge.uiPlate(id, x, y, w, h, opts)
   return true
 end
 
+-- ════════════════════════════ VALUE-TAG (chip runique de valeur) ════════════════════════════
+-- Une « value-tag » = une PETITE PLAQUE forge bordée (plate + cadre fin patiné + rivets de coin) qui
+-- ENCADRE une valeur importante : un GRAND nombre (HP/DMG/CD, dps/durée...) + un MINI label dessus. Lit
+-- comme « ceci est une valeur qui compte » (proposition Kévin pour la fiche monstre). Le CADRE est BAKÉ
+-- (cache par id) ; le LABEL et la VALEUR sont des OVERLAYS VIVANTS (Forge.label) -> toujours lisibles,
+-- aucun readback de glyphe (cf. le bug des boutons sans texte). accentCol = liseré teinté (rareté/type).
+local function valuePlate(buf, W, H, opts)
+  opts = opts or {}
+  local fth = opts.frameTh or 2
+  local x0, y0, x1, y1 = 0, 0, W - 1, H - 1
+  plate(buf, x0 + fth, y0 + fth, x1 - fth, y1 - fth, 0, opts.disabled) -- matière dense (fond rempli)
+  frame(buf, x0, y0, x1, y1, { t = fth, accent = (opts.accentCol ~= nil), accentCol = opts.accentCol,
+    disabled = opts.disabled })
+  if opts.weather ~= false then frameWeather(buf, x0, y0, x1, y1, fth, opts.seed or 11, METAL, opts.disabled) end
+  rivet(buf, x0 + fth, y0 + fth, METAL); rivet(buf, x1 - fth - 1, y0 + fth, METAL)
+  rivet(buf, x0 + fth, y1 - fth - 1, METAL); rivet(buf, x1 - fth - 1, y1 - fth - 1, METAL)
+end
+Forge.valuePlate = valuePlate
+
+-- Forge.valueTag(id, x, y, w, h, label, value, opts) : dessine la value-tag (cadre baké + label/valeur en
+-- overlay vivant). opts = { px?, accentCol?, seed?, valueColor (floats 0..1), labelColor (floats 0..1),
+-- valuePx?, labelPx? }. Le label est posé en HAUT (petit, éteint), la valeur GRANDE et centrée dessous.
+-- valueColor/labelColor sont des couleurs FLOATS 0..1 (Theme.c) ; défauts laiton. Headless-safe.
+Forge._vtagCache = {}
+function Forge.valueTag(id, x, y, w, h, label, value, opts)
+  opts = opts or {}
+  local px = opts.px or PX
+  local aw, ah = max(1, floor(w / px)), max(1, floor(h / px))
+  local e = Forge._vtagCache[id]
+  if not e or e.aw ~= aw or e.ah ~= ah then
+    e = { widget = Forge.newWidget(aw, ah), aw = aw, ah = ah }
+    Forge._vtagCache[id] = e
+  end
+  local ak = opts.accentCol and (floor(opts.accentCol.mid[1]) .. "," .. floor(opts.accentCol.mid[2]) ..
+    "," .. floor(opts.accentCol.mid[3])) or "none"
+  local cfg = ak .. "|" .. tostring(opts.disabled)
+  if e.cfg ~= cfg or not e.image then
+    e.cfg = cfg
+    e.image = Forge.render(e.widget, function(b, W, H, _)
+      valuePlate(b, W, H, { accentCol = opts.accentCol, seed = opts.seed, disabled = opts.disabled })
+    end, 0)
+  end
+  Forge.blit(e.image, x, y, px)
+  -- OVERLAYS VIVANTS : label (petit, en haut) + valeur (grande, centrée sous le label) en ESPACE DESIGN.
+  local labelPx = opts.labelPx or 8
+  local valuePx = opts.valuePx or 14
+  local lcol = opts.labelColor or { 0.48, 0.41, 0.36 }
+  local vcol = opts.valueColor or { 0.85, 0.78, 0.55 }
+  local cx = x + w / 2
+  if label and label ~= "" then
+    Forge.label(label, cx, y + 6 + labelPx / 2, labelPx, lcol, { shadow = true })
+  end
+  if value ~= nil then
+    Forge.label(tostring(value), cx, y + h - 4 - valuePx / 2, valuePx, vcol, { bold = true, shadow = true })
+  end
+  return true
+end
+
 -- uiSocket(id, x, y, w, h, opts) : pont CACHÉ (par id) pour les cases. opts = { accentCol?, px?, seed?,
 -- frameTh?, weather? }. Re-bake seulement si l'accent/la taille change (les cases ne s'animent pas).
 -- Headless-safe. La scène garde son hit-test ; ce pont ne fait que dessiner le SOCLE (fond transparent).

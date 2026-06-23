@@ -204,6 +204,13 @@ local ok, err = pcall(function()
   Forge.uiPlate("t.plate", 0, 0, 140, 140, { px = 2 })
   Forge.uiPlate("t.plate", 0, 0, 140, 140, { px = 2, disabled = true })
   assert(Forge._plateCache["t.plate"], "uiPlate : cache par id")
+  -- valueTag : plaque forge bordée (cadre baké) + label/valeur en OVERLAY VIVANT (toujours lisible). Cache
+  -- par id ; re-bake si accent/taille change. Headless-safe (no crash, pas de readback requis pour le texte).
+  Forge.valueTag("t.vtag", 0, 0, 64, 34, "HP", "40", { px = 2, accentCol = acc,
+    labelColor = { 0.48, 0.41, 0.36 }, valueColor = { 0.85, 0.78, 0.55 } })
+  assert(Forge._vtagCache["t.vtag"], "valueTag : cache par id")
+  Forge.valueTag("t.vtag", 0, 0, 64, 34, "DMG", "12", { px = 2, accentCol = nil }) -- accent retiré -> re-bake
+  Forge.valueTag("t.vtag2", 0, 0, 50, 30, "CD", "1.5s", { px = 2 }) -- défauts (couleurs laiton)
   -- diamondAt : draw direct (no-op headless, ne crashe pas).
   Forge.diamondAt(20, 20, 3, { 0.8, 0.7, 0.3 })
 
@@ -289,15 +296,12 @@ local ok, err = pcall(function()
     assert(Forge._cardCache["t.card"], "uiCard : cache par id cree")
   end
 
-  -- ── Build : fiche monstre TCG (helpers PURS + smoke de rendu headless de la carte) ──────────────
+  -- ── Build : fiche monstre TCG MINIMALE (helpers PURS + smoke de rendu headless de la carte) ──────
   do
     local Build = require("src.scenes.build")
-    -- helpers PURS : rôle dérivé d'aggro/taunt + valeur d'affliction depuis les params.
-    assert(Build.roleOf({ taunt = true }) == "tank", "taunt -> tank")
-    assert(Build.roleOf({ aggro = 40 }) == "tank", "aggro>=30 -> tank")
-    assert(Build.roleOf({ aggro = 5 }) == "carry", "aggro<=7 -> carry")
-    assert(Build.roleOf({ aggro = 15 }) == "bruiser", "aggro intermediaire -> bruiser")
-    assert(Build.roleOf({}) == "carry", "sans aggro (=0) -> carry")
+    -- helper PUR : valeur d'affliction depuis les params (dps/durée). Le rôle (roleOf) a été RETIRÉ de la
+    -- carte (le joueur déduit tank/carry de la VIE + des capacités) -> plus de chip de rôle.
+    assert(Build.roleOf == nil, "roleOf retiré (carte minimale : plus de chip de rôle)")
     assert(Build.afflValue({ dps = 6, dur = 180 }) == "6 dps 3s", "afflValue : dps + duree en secondes")
     assert(Build.afflValue({ dps = 2 }) == "2 dps", "afflValue : dps seul")
     assert(Build.afflValue({}) == nil, "afflValue : sans dps/dur -> nil")
@@ -305,11 +309,12 @@ local ok, err = pcall(function()
 
     -- Smoke : construit la scène, pose une unité à afflictions (burn) ET un héros (rank>=4), et dessine la
     -- fiche directement (hors hover) -> ne plante pas sous le mock LÖVE, golden non touché (RENDER pur).
+    -- Couvre les value-tags de stats (Forge.valueTag) + les value-chips d'affliction.
     local Palette = require("src.core.palette")
     local b = Build.new(Palette, 320, 180, { goto = function() end })
     b.view = { ox = 0, oy = 0, scale = 4 }
     b.mx, b.my = 100, 60
-    b:drawTooltip("emberling")     -- pose burn (chip à valeurs) + R2 (cadre sobre)
+    b:drawTooltip("emberling")     -- pose burn (value-chip) + R2 (cadre sobre)
     b:drawTooltip("plague_doctor") -- regen, R4 (cadre riche + œil + halo)
     b:drawTooltip("marauder")      -- vanille, pas d'affliction, pas de family/rank
     b:drawTooltip("skull_colossus") -- R5 avec family

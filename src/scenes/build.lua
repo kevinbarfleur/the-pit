@@ -1049,20 +1049,13 @@ function Build:drawEcoButton(id, rect, label, cost, enabled)
 end
 
 -- ── Fiche monstre (carte TCG forge, au survol) ────────────────────────────────────────────────────
--- Remplace l'ancienne infobulle plate. Fond = plaque forge qui respire (Forge.uiCard, cadre patiné,
--- œil qui guette pour R4-R5) + contenu posé PAR-DESSUS via Layout/Chip : header (nom+coût) > portrait
--- (rig re-rendu, clippé) > identité (pip+type+famille+rareté) > tags (rôle/afflictions/chimère) > stats
--- (PV/DMG/CD) > capacités (chip à VALEURS + nom de passif or + prose) > flavor. Suit le curseur,
--- rebond sur les bords. Marche pour le survol PLATEAU et BOUTIQUE. PUR-RENDER (golden inchangé).
-
--- Rôle dérivé d'aggro/taunt (lecture TCG : taunt OU aggro>=30 -> tank ; aggro<=7 -> carry ; sinon bruiser).
-local function roleOf(u)
-  local aggro = u.aggro or 0
-  if u.taunt or aggro >= 30 then return "tank" end
-  if aggro <= 7 then return "carry" end
-  return "bruiser"
-end
-Build.roleOf = roleOf -- exposé pour le test pur (tests/ui.lua)
+-- Carte MINIMALE (révision Kévin) : on garde le strict utile, on encadre les VALEURS importantes en
+-- value-tags runiques (forge.valueTag) et on rend l'info lisible. Fond = plaque forge qui respire
+-- (Forge.uiCard) + contenu PAR-DESSUS : header (nom+coût) > portrait > identité (pip+type+famille+rareté)
+-- > div > STATS en value-tags (HP/DMG/CD) > div > CAPACITÉS (chips d'affliction à valeurs + nom de passif
+-- + description LISIBLE) > flavor. PAS de chip de RÔLE (le joueur déduit tank/carry de la VIE + des
+-- capacités) ni de doublon d'affliction (les afflictions vivent UNIQUEMENT dans la section capacités).
+-- Suit le curseur, rebond sur les bords. Survol PLATEAU et BOUTIQUE. PUR-RENDER (golden inchangé).
 
 -- Valeur lisible d'un effet d'affliction (« 6 dps · 3s ») depuis ses params dps/dur (dur en FRAMES @60fps).
 -- Renvoie nil si l'effet n'expose pas de DoT chiffrable.
@@ -1089,45 +1082,43 @@ function Build:drawTooltip(id)
   local rich = rank >= 4 -- héros R4-R5 : cadre plus riche + œil qui guette
   local rarCol = Rarity.frame(rank)
 
-  -- ── 1) MESURE : on calcule la hauteur depuis le contenu (capacités + lignes de prose) -> jamais cramé. ──
-  local fontDesc = Theme.ui(11)
-  local W = 312
+  -- ── 1) MESURE : hauteur dérivée du contenu (capacités + lignes de prose) -> jamais cramé. ──
+  -- Description LISIBLE : Silkscreen 12 (au lieu de 11) + interligne ample -> info importante facile à lire.
+  local fontDesc = Theme.ui(12)
+  local DESC_LINE = fontDesc:getHeight() + 3 -- interligne ample (lisibilité)
+  local W = 318
   local PAD = 14
   local contentW = W - PAD * 2
-  -- Capacités : pour chaque effet, un chip (si affliction) + nom de passif + description enroulée. Une unité
-  -- n'a qu'UN bloc de prose (passive_name/desc) mais peut poser PLUSIEURS afflictions (chips multiples).
   local affl = Keywords.applied(U)
   local passiveName = T("unit." .. id .. ".passive_name")
   local passiveDesc = T("unit." .. id .. ".passive_desc")
   local _, descLines = fontDesc:getWrap(passiveDesc, contentW)
   local nDescLines = math.max(1, #descLines)
   local hasPassiveName = passiveName ~= ("unit." .. id .. ".passive_name")
-  -- Flavor optionnel (clé unit.<id>.flavor si elle existe).
   local flavorKey = "unit." .. id .. ".flavor"
   local hasFlavor = I18n.has(flavorKey)
 
-  -- empilage vertical (px design), RYTHME RÉGULIER (gaps égaux) : header 22 + portrait 72 + identité 18 +
-  -- tags 18 + div 8 + stats 20 + div 8 + (capacités : chips 18 si afflictions + nom 16 si présent + prose)
-  -- + flavor. Le gap de Layout.column (GAPV) sépare chaque rangée -> rythme uniforme « posé par un designer ».
-  local GAPV = 6
+  -- empilage vertical (px design), RYTHME RÉGULIER : header 22 + portrait 72 + identité 18 + div 8 +
+  -- STATS (value-tags) 34 + div 8 + capacités (chips-tags 20 si afflictions + nom 18 + prose) + flavor.
+  local GAPV = 7
   local PORTRAIT_H = 72
-  local h = PAD                       -- top pad
-  h = h + 22                          -- header (nom + coût)
-  h = h + GAPV + PORTRAIT_H           -- portrait
-  h = h + GAPV + 18                   -- identité (pip+type+famille+rareté)
-  h = h + GAPV + 18                   -- tags (rôle + afflictions + chimère)
-  h = h + GAPV + 8                    -- divider
-  h = h + GAPV + 20                   -- stats
-  h = h + GAPV + 8                    -- divider
-  h = h + GAPV                        -- (gap avant le bloc capacités)
-  if #affl > 0 then h = h + 18 end    -- rangée de chips de capacité (à valeurs)
-  if hasPassiveName then h = h + 16 end
-  h = h + 2 + nDescLines * (fontDesc:getHeight() + 1)
+  local STATS_H = 34            -- value-tags HP/DMG/CD (mini label + grande valeur)
+  local h = PAD                 -- top pad
+  h = h + 22                    -- header
+  h = h + GAPV + PORTRAIT_H     -- portrait
+  h = h + GAPV + 18             -- identité
+  h = h + GAPV + 8              -- divider
+  h = h + GAPV + STATS_H        -- stats (value-tags)
+  h = h + GAPV + 8              -- divider
+  h = h + GAPV                  -- gap avant le bloc capacités
+  if #affl > 0 then h = h + 22 end -- rangée de value-chips d'affliction
+  if hasPassiveName then h = h + 18 end
+  h = h + 3 + nDescLines * DESC_LINE
   if hasFlavor then
     local _, fLines = Theme.loreRoman(13):getWrap(T(flavorKey), contentW)
     h = h + 8 + #fLines * (Theme.loreRoman(13):getHeight() + 1)
   end
-  h = h + PAD                         -- bottom pad
+  h = h + PAD                   -- bottom pad
 
   -- ── 2) POSITION : suit le curseur, rebond sur les bords (jamais hors écran). ──
   local x, y = self.mx * 4 + 18, self.my * 4 + 10
@@ -1145,19 +1136,17 @@ function Build:drawTooltip(id)
   local box = { x = x, y = y, w = W, h = h }
   local inner = Layout.inset(box, PAD)
   local rows = Layout.column(inner, {
-    { size = 22 },        -- 1 header
+    { size = 22 },         -- 1 header
     { size = PORTRAIT_H }, -- 2 portrait
-    { size = 18 },        -- 3 identité
-    { size = 18 },        -- 4 tags
-    { size = 8 },         -- 5 divider
-    { size = 20 },        -- 6 stats
-    { size = 8 },         -- 7 divider
-    { flex = 1 },         -- 8 capacités + flavor (le reste)
+    { size = 18 },         -- 3 identité
+    { size = 8 },          -- 4 divider
+    { size = STATS_H },    -- 5 stats (value-tags)
+    { size = 8 },          -- 6 divider
+    { flex = 1 },          -- 7 capacités + flavor (le reste)
   }, { gap = GAPV, align = "stretch" })
-  local rHead, rPort, rIdent, rTags, rDiv1, rStats, rDiv2, rAbil = rows[1], rows[2], rows[3], rows[4], rows[5], rows[6], rows[7], rows[8]
+  local rHead, rPort, rIdent, rDiv1, rStats, rDiv2, rAbil = rows[1], rows[2], rows[3], rows[4], rows[5], rows[6], rows[7]
 
-  -- (a) HEADER : nom (gauche) + coût (diamant forge + valeur, droite). Le coût est la SEULE diamant-valeur
-  -- du header -> aucune ambiguïté avec la rareté (qui vit dans la rangée d'identité, voir (c)).
+  -- (a) HEADER : nom (gauche) + coût (diamant forge + valeur, droite).
   local fontName = Theme.uiBold(14)
   Draw.text(T("unit." .. id .. ".name"), rHead.x, rHead.y + 3, c.title, fontName)
   if U.cost then
@@ -1167,13 +1156,10 @@ function Build:drawTooltip(id)
     Forge.diamondAt(rHead.x + rHead.w - fontCost:getWidth(costStr) - 8, rHead.y + 10, 4, c.goldBright)
   end
 
-  -- (b) PORTRAIT : on RE-REND le rig de l'unité dans la région (AJUSTÉ pour REMPLIR, fit-to-box), clippé.
-  -- Halo de rareté additif derrière pour les héros (cohérent avec le bestiaire). Pieds calés au sol.
+  -- (b) PORTRAIT : rig AJUSTÉ pour REMPLIR (fit-to-box), clippé. Halo de rareté pour les héros.
   self:drawCardPortrait(id, rPort, rank, rarCol, rich)
 
-  -- (c) IDENTITÉ : une seule rangée alignée [ pip · TYPE · Famille ........ ◆◆ rareté ]. La rareté = N
-  -- diamants teintés du rang, callés à DROITE de la rangée (place FIXE et unique -> plus de diamants qui
-  -- flottent en double). Lecture TCG : on voit le type, la famille et le rang d'un coup d'œil.
+  -- (c) IDENTITÉ : [ pip · TYPE · Famille ........ ◆◆ rareté ]. Rareté = N diamants teintés à droite (unique).
   local fontId = Theme.ui(10)
   local ix = rIdent.x
   local midI = math.floor(rIdent.y + rIdent.h / 2)
@@ -1187,37 +1173,29 @@ function Build:drawTooltip(id)
     local famStr = (U.family:gsub("^%l", string.upper))
     Draw.text(famStr, ix, midI - fontId:getHeight() / 2, c.muted, fontId)
   end
-  -- rareté : N diamants forge teintés du rang, callés à droite (cluster serré, place unique).
   local DSP = 8
   local rx0 = rIdent.x + rIdent.w - (rank * DSP) + 1
   for k = 1, rank do
     Forge.diamondAt(rx0 + (k - 1) * DSP, midI, 3, rarCol)
   end
 
-  -- (d) TAGS (chips) : rôle (tank/carry/bruiser) + afflictions appliquées + chimère (bodyplan composite).
-  local fontChip = Theme.ui(9)
-  local tagSpecs = { { label = T("kw.role." .. roleOf(U)), color = c.gold, icon = false } }
-  for _, k in ipairs(affl) do tagSpecs[#tagSpecs + 1] = { key = k, icon = true } end
-  if U.bodyplan and U.bodyplan:find("+") then -- bodyplan composé = chimère (ex. "blob+arachnid")
-    tagSpecs[#tagSpecs + 1] = { label = T("kw.chimera"), color = c.rot, icon = false }
-  end
-  Chip.row(rTags.x, rTags.y + 1, tagSpecs, { font = fontChip, gap = 4 })
-
-  -- (e) divider forge entre identité/tags et stats.
+  -- (d) divider forge entre identité et stats.
   Draw.divider(rDiv1.x + rDiv1.w / 2, rDiv1.y + rDiv1.h / 2, rDiv1.w - 8, c.gold, 0.7)
   Forge.diamondAt(rDiv1.x + rDiv1.w / 2, rDiv1.y + rDiv1.h / 2, 2, c.goldBright)
 
-  -- (f) STATS : PV / DMG / CD à glyphes-pip + valeurs (3 colonnes égales).
-  self:drawCardStats(U, rStats)
+  -- (e) STATS = VALUE-TAGS runiques (HP / DMG / CD) : 3 plaques forge bordées, mini-label + GRANDE valeur.
+  self:drawCardStats(id, U, rStats, rarCol)
 
-  -- (g) divider forge.
+  -- (f) divider forge.
   Draw.divider(rDiv2.x + rDiv2.w / 2, rDiv2.y + rDiv2.h / 2, rDiv2.w - 8, c.gold, 0.7)
   Forge.diamondAt(rDiv2.x + rDiv2.w / 2, rDiv2.y + rDiv2.h / 2, 2, c.goldBright)
 
-  -- (h) CAPACITÉS : chips d'affliction à VALEURS (depuis les params dps/dur) + nom de passif (or) + prose.
+  -- (g) CAPACITÉS : value-chips d'affliction (ce que l'unité APPLIQUE, avec dps/durée) + nom de passif (or)
+  -- + description LISIBLE. UNIQUE place des afflictions (plus de doublon avec une rangée de tags).
   local ay = rAbil.y
   if #affl > 0 then
-    -- valeur par affliction : on relit le 1er effet qui pose chaque affliction pour ses params chiffrables.
+    local fontChip = Theme.ui(9)
+    -- valeur par affliction : 1er effet qui pose chaque affliction -> ses params chiffrables (dps/durée).
     local valBy = {}
     for _, e in ipairs(U.effects or {}) do
       local k = Keywords.opAffliction(e.op)
@@ -1225,21 +1203,27 @@ function Build:drawTooltip(id)
     end
     local cx = rAbil.x
     for _, k in ipairs(affl) do
-      local w2 = Chip.draw(cx, ay, { key = k, value = valBy[k], font = fontChip, h = 15 })
-      cx = cx + w2 + 4
+      local w2 = Chip.draw(cx, ay, { key = k, value = valBy[k], font = fontChip, h = 18 })
+      cx = cx + w2 + 5
       if cx > rAbil.x + rAbil.w - 30 then break end
     end
-    ay = ay + 18
+    ay = ay + 22
   end
   if hasPassiveName then
     Draw.text(passiveName, rAbil.x, ay, c.goldBright, Theme.uiBold(11))
-    ay = ay + 16
+    ay = ay + 18
   end
-  ay = ay + 2 + Draw.textWrap(passiveDesc, rAbil.x, ay, contentW, c.body, fontDesc)
+  -- DESCRIPTION : casse AUTHORED conservée (pas de :upper()), Silkscreen 12, dessinée LIGNE PAR LIGNE avec
+  -- un interligne AMPLE (DESC_LINE) -> info importante facile à lire (≠ prose tassée).
+  ay = ay + 3
+  for _, line in ipairs(descLines) do
+    Draw.text(line, rAbil.x, ay, c.body, fontDesc)
+    ay = ay + DESC_LINE
+  end
 
-  -- (i) FLAVOR (si la clé existe) : serif d'ambiance, éteint, en pied de carte.
+  -- (h) FLAVOR (si la clé existe) : serif d'ambiance, éteint, en pied de carte.
   if hasFlavor then
-    Draw.textWrap(T(flavorKey), rAbil.x, ay + 6, contentW, c.dim, Theme.loreRoman(13))
+    Draw.textWrap(T(flavorKey), rAbil.x, ay + 4, contentW, c.dim, Theme.loreRoman(13))
   end
 end
 
@@ -1282,28 +1266,24 @@ function Build:drawCardPortrait(id, region, rank, rarCol, rich)
   love.graphics.setColor(1, 1, 1, 1)
 end
 
--- Stats de la fiche : 3 colonnes égales [PV] [DMG] [CD], chacune = glyphe-pip coloré + valeur. CD en
--- secondes (frames/60). Pip dessiné à la main (cœur/lame/sablier conceptuels via Draw.pip-like).
--- STATS : 3 colonnes ÉGALES [HP] [DMG] [CD]. Chaque colonne = label (petit, éteint) CENTRÉ au-dessus de sa
--- valeur (gras, teinte de la stat) CENTRÉE -> styles UNIFORMES, kerning régulier, plus de « 3 » rouge isolé
--- ni d'écart variable. Séparateurs verticaux entre colonnes pour le rythme TCG.
-function Build:drawCardStats(U, region)
+-- STATS = 3 VALUE-TAGS runiques [HP] [DMG] [CD] : chaque stat dans une PETITE PLAQUE forge bordée
+-- (Forge.valueTag) -> mini-label en haut + GRANDE valeur dessous, « ceci est une valeur qui compte »
+-- (proposition Kévin). Disposées en rangée Layout (égales, gouttières égales). La valeur est un OVERLAY
+-- VIVANT (toujours lisible). Teintes : HP corps, DMG rouge dégâts, CD doré sobre. id = clé de cache stable.
+function Build:drawCardStats(id, U, region, rarCol)
   local c = Theme.c
-  local fontV = Theme.uiBold(13)
-  local fontK = Theme.ui(8)
-  local cols = Layout.row(region, { { flex = 1 }, { flex = 1 }, { flex = 1 } }, { gap = 4, align = "stretch" })
-  local function stat(col, key, value, vcol)
-    local cx = col.x + col.w / 2
-    Draw.textC(key, cx, col.y, c.faint, fontK)               -- label en haut, centré
-    Draw.textC(value, cx, col.y + 9, vcol, fontV)            -- valeur dessous, centrée
-  end
-  stat(cols[1], "HP",  tostring(U.hp),  c.body)
-  stat(cols[2], "DMG", tostring(U.dmg), c.dmg)
-  stat(cols[3], "CD",  string.format("%.1fs", (U.cd or 60) / 60), c.muted)
-  -- séparateurs verticaux entre colonnes (1px, dégradé sobre) -> 3 colonnes lisibles, alignées.
-  for k = 1, 2 do
-    local gx = math.floor((cols[k].x + cols[k].w + cols[k + 1].x) / 2)
-    Draw.rect(gx, region.y + 2, 1, region.h - 4, c.hair)
+  local acc = Forge.accentFrom(rarCol) -- liseré teinté de la rareté (cohérent avec le cadre de la fiche)
+  local cols = Layout.row(region, { { flex = 1 }, { flex = 1 }, { flex = 1 } }, { gap = 7, align = "stretch" })
+  local specs = {
+    { key = "HP",  value = tostring(U.hp),                              vcol = c.body },
+    { key = "DMG", value = tostring(U.dmg),                             vcol = c.dmg },
+    { key = "CD",  value = string.format("%.1fs", (U.cd or 60) / 60),   vcol = c.muted },
+  }
+  for k = 1, 3 do
+    local col, s = cols[k], specs[k]
+    Forge.valueTag("build.stat." .. id .. "." .. k, col.x, col.y, col.w, col.h, s.key, s.value,
+      { px = 2, accentCol = acc, seed = 20 + k * 7,
+        labelColor = c.faint, valueColor = s.vcol, labelPx = 8, valuePx = 15 })
   end
 end
 
