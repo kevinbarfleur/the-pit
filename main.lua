@@ -169,11 +169,10 @@ local function drawHud(scene)
 end
 
 -- Pixels fenêtre -> espace virtuel (inverse exact du blit en scale entier).
--- HiDPI/Retina : les events souris arrivent en UNITÉS FENÊTRE (points) alors que love.graphics (et donc
--- `view`, calculé sur getDimensions) est en PIXELS. On convertit d'abord points -> pixels via toPixels
--- (= ×DPIScale ; identité hors Retina) avant l'inverse du blit, sinon la souris est décalée du facteur DPI.
+-- LÖVE 11 + highdpi : les events souris ET love.graphics partagent le MÊME espace PIXELS (getDimensions
+-- renvoie des pixels ; la souris aussi). Donc AUCUNE conversion DPI ici — appliquer toPixels re-scalait du
+-- facteur DPI et décalait tous les clics (×2 sur Retina). On inverse directement le blit.
 local function toVirtual(x, y)
-  if love.window and love.window.toPixels then x, y = love.window.toPixels(x), love.window.toPixels(y) end
   if view.scale <= 0 then return x, y end
   return (x - view.ox) / view.scale, (y - view.oy) / view.scale
 end
