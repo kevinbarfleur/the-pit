@@ -53,6 +53,34 @@ non vérifiée = un bug latent.
 - **i18n** : tout texte affiché passe par `i18n.t(key)`. Ajoute les clés dans `src/i18n/en_ext.lua` (fichier
   additif anti-conflit) tant que `en.lua` est édité par d'autres chantiers.
 
+## Bonnes pratiques d'implémentation UI (BIBLE : `docs/research/game-ui-implementation.md`)
+Avant d'intégrer un composant — **surtout** ceux d'un designer externe (souvent « nets/web ») — applique ces règles.
+Détail complet + chiffres + sources dans le guide (résolution · texte · layout/overflow · **feel & impact** · son · shaders) :
+- **Unités virtuelles** : tout en espace design 1280×720 ; **ancrer aux 9 points** (coins/bords/centre) + inset **%**,
+  jamais de position pixel absolue. Monde 320×180 scalé **entier** ; UI/texte en **résolution native** (net).
+- **Espacement** : une **seule échelle 8pt** (tokens `Theme.sp`, jamais de littéral) ; **plus d'espace autour d'un groupe
+  qu'à l'intérieur** ; **3–4 niveaux de hiérarchie** (1 rôle = 1 niveau ; couleur/casse avant taille) ; passe le squint test.
+- **Texte** : composer à **70%** (marge i18n 30%) ; **mesurer (`Font:getWrap`) AVANT de dessiner** ; **overflow par
+  contexte** (wrap / ellipsis+tooltip / shrink-to-fit **borné** / scroll+fade), jamais couper en plein mot ; **pixel fonts
+  = nearest + scale ENTIER + positions entières** ; lisible ≥12px pour le contenu, caps courtes seulement (cf. `feedback-legible-font-for-content`).
+- **Scroll/overflow** : **clip + offset + cull + clamp(chaque frame) + thumb** (factoriser un `ScrollView`) ; `setScissor`
+  = **px écran hors transform** → reconvertir via `view` (notre `Draw.scissor`). Panneaux **fixe+ancré**, remplissage en flex.
+- ⭐ **Feedback de press IMMÉDIAT (30–85 ms), action DIFFÉRÉE (~100–250 ms)** : squash+flash+son au pointer-DOWN, PUIS
+  exécuter l'action ~0,1–0,25 s après (l'utilisateur sent son clic avant que l'écran change). **Jamais de « dead-click »**
+  (différer l'action OK, le feedback JAMAIS) ; input-buffer les joueurs rapides ; < 400 ms clic→conséquence.
+- **Anims** : hover immédiat (scale 1.03–1.05 + lift/glow, 80–150 ms **ease-out**, son tick) ; **press = squash 95% au DOWN
+  + release overshoot `backout`** (retour linéaire = mort) ; **ease-out par défaut, ≤ 600 ms** ; **toujours respirer**
+  (micro-flottement permanent). Pixel-art : préférer lift/glow/tilt au scale fractionnaire (casse la grille).
+- **Son** : un son = une fonction ; **au press** ; **pool + pitch ±5–10%** (jamais 2× le même) ; LÖVE `static` + `Source:clone()`
+  + pool borné ; **RNG non-seedé** (firewall). Grimdark = matière organique pitchée down + reverb cave + sub-pulse.
+- **Shaders = post-fx RENDER pur** (canvas + `newShader` ; `Texel`/`extern`/fonction `effect`) : **l'agressif sur
+  fond/bords/pics, jamais sur le texte** (confiner par masque) ; pixel/monde → canvas 320×180, UI/qualité → canvas natif ;
+  **bloom sur canal emissive** (gravures qui pulsent au survol = l'impact) ; **palette-lock** = le shader « même artiste »
+  qui unifie une UI nette importée avec la DA Wraeclast. Lire `vrld/moonshine` en cookbook.
+- **Ton** : grimdark = **lourd, lent, contenu, organique, silencieux** ; « dread is destroyed by spectacle » → ne PAS
+  importer le juice « mignon » (glow blanc, élastique, confettis). **Cohérence > brillance locale.** Tout juice est
+  **RENDER pur** (jamais la SIM ; piloter le combat via le **bus**).
+
 ## Process (pour ne JAMAIS livrer un rendu « pas travaillé »)
 1. **Prototype le LOOK en isolation d'abord.** Un composant superbe dans un **écran-showcase** (à la
    `gallery`/`relicons`, ouvert par une touche) que Kévin lance avec `love .` et juge. Propose 2-3 variantes
