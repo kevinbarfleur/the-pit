@@ -21,7 +21,7 @@ local Ambient = require("src.fx.ambient")
 local Theme = require("src.ui.theme")
 local Draw = require("src.ui.draw")
 local Button = require("src.ui.button")  -- boutons propres (CHRONICLE secondary / CONTINUE primary)
-local Banner = require("src.ui.banner")  -- bandeau de verdict (VICTORY / DEFEAT) : remplace l'overlay forge
+local Modal = require("src.ui.modal")    -- modale plein écran OPAQUE (verdict + boutons de choix) : recouvre l'arène
 local Dividers = require("src.ui.dividers") -- séparateur laiton propre (chrome haut)
 local Feel = require("src.ui.feel")      -- JUICE : survol (glow/lift) + press (squash/flash)
 local T = require("src.core.i18n").t
@@ -163,47 +163,36 @@ end
 -- DEUX boutons propres : CHRONICLE (secondary) ouvre l'overlay, CONTINUE (primary, CTA + yeux) termine.
 -- Les rects _btnChron/_btnCont sont posés ICI (espace design) -> hit-test de mousepressed + asserts du test.
 function Combat:_drawEndScreen(view)
-  local c = Theme.c
   local won = self.arena.win
   if not self.summary then self.summary = self:_computeSummary() end
   local s = self.summary
 
-  -- 1) le POURQUOI (sous-titre du bandeau) : cause dominante si elle existe (la frappe/le reflet l'ont aussi),
-  --    sinon nil. La cause est déjà résolue i18n -> le bandeau l'affiche centrée (Space Mono tracké).
+  -- le POURQUOI (cause dominante) si elle existe -> sous-titre sobre de la modale (déjà résolu i18n).
   local why = nil
   if s.cause and s.n > 0 then
     why = T(won and "combat.why.dealt" or "combat.why.slain",
       { cause = T("combat.cause." .. s.cause), n = s.n })
   end
-  local firstLoss = s.firstLoss and T("combat.why.first_loss", { name = T("unit." .. s.firstLoss.id .. ".name") }) or nil
 
-  -- 2) BANNER (kind victory/defeat) — centré horizontalement, ancré au tiers supérieur de l'arène assombrie.
-  local bW = 760
-  local bH = 188
-  local bx = math.floor(Draw.W / 2 - bW / 2)
-  local by = math.floor(Draw.H / 2 - bH / 2 - 34) -- remonté : laisse la place aux boutons dessous
-  Draw.begin(view)
-  -- voile sombre derrière le verdict (lit l'arène à travers, sans la noyer) -> le bandeau ressort.
-  Draw.rect(0, by - 16, Draw.W, bH + 116, { c.void[1], c.void[2], c.void[3], 0.62 })
-  Banner.draw(bx, by, bW, won and "victory" or "defeat",
-    won and T("result.victory") or T("result.defeat"),
-    { subtitle = why, score = firstLoss, hint = T("ui.hint_combat_end"), t = self.t / 60, h = bH })
-  Draw.finish()
-
-  -- 3) BOUTONS de fin (sous le bandeau) : posés en DESIGN -> rects pour le hit-test + les asserts du test.
-  local totalW = BTN_W * 2 + BTN_GAP
-  local btnX = math.floor(Draw.W / 2 - totalW / 2)
-  local btnY = math.floor(by + bH + 18)
-  self._btnChron = { x = btnX, y = btnY, w = BTN_W, h = BTN_H }
-  self._btnCont = { x = btnX + BTN_W + BTN_GAP, y = btnY, w = BTN_W, h = BTN_H }
-
-  Draw.begin(view)
-  Button.draw(self._btnChron.x, self._btnChron.y, BTN_W, BTN_H, "secondary", T("ui.chronicle"),
-    { hover = inBtn(self.mx, self.my, self._btnChron), feel = Feel.state("combat.chron"), id = "combat.chron" })
-  Button.draw(self._btnCont.x, self._btnCont.y, BTN_W, BTN_H, "primary", T("ui.continue"),
-    { hover = inBtn(self.mx, self.my, self._btnCont), feel = Feel.state("combat.cont"), id = "combat.cont",
-      mouse = { mx = self.mx, my = self.my }, t = self.t / 60 }) -- yeux du CTA : gaze vers la souris (espace design)
-  Draw.finish()
+  -- MODALE plein écran OPAQUE (brique design-system) : recouvre l'arène (fini le voile à 0.62 « qu'on voit à
+  -- travers » + le hint clavier). Titre cérémonial + tag d'issue + cause + flavor + 2 boutons de choix.
+  local res = Modal.draw(view, {
+    title = T("modal.verdict_title"),
+    tag = won and T("result.victory") or T("result.defeat"),
+    tagKind = won and "victory" or "defeat",
+    sub = why,
+    flavor = T(won and "modal.flavor_victory" or "modal.flavor_defeat"),
+    buttons = {
+      { id = "combat.chron", label = T("ui.chronicle"), variant = "secondary" },
+      { id = "combat.cont", label = T("ui.continue"), variant = "primary" },
+    },
+    mx = self.mx, my = self.my, t = self.t / 60,
+  })
+  -- remappe les rects renvoyés -> _btnChron/_btnCont (hit-test de mousepressed + asserts du test headless).
+  for _, r in ipairs(res.buttons) do
+    if r.id == "combat.chron" then self._btnChron = r
+    elseif r.id == "combat.cont" then self._btnCont = r end
+  end
 end
 
 function Combat:drawOverlay(view)
