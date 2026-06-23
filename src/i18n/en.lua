@@ -85,6 +85,14 @@ return {
   ["combat.cause.shock"] = "shock",
   ["combat.cause.reflect"] = "reflected wounds",
 
+  -- chronicle (journal de combat) : verbes courts ; les noms d'unités sont insérés/colorés par le rendu
+  ["chronicle.v.strike"] = "strikes",
+  ["chronicle.v.discharge"] = "shocks",
+  ["chronicle.v.afflict"] = "afflicts",
+  ["chronicle.v.spread"] = "spreads to",
+  ["chronicle.v.shield"] = "shields allies",
+  ["chronicle.v.fall"] = "falls",
+
   -- run over
   ["runover.win"] = "ASCENSION",
   ["runover.lose"] = "THE PIT KEEPS YOU",

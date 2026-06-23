@@ -62,6 +62,9 @@ luajit tests/snapshot.lua
 echo "== synergies (interactions inter-effets en combat : deroule + resultat) =="
 luajit tests/synergies.lua
 
+echo "== chronicle (journal de combat : agregation lignes vivantes + entrees + filtrage) =="
+luajit tests/chronicle.lua
+
 echo "== payoff (renforcements forts mais bornes : spread + boucliers + caps) =="
 luajit tests/payoff.lua
 

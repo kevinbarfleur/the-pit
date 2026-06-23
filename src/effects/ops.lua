@@ -70,6 +70,8 @@ Effects.register("poison", function(ctx, p)
   stacks[#stacks + 1] = { dps = dps, remaining = (p.dur or 0) + ((tf and tf.poisonDurBonus) or 0),
     acc = 0, weaken = p.weaken or 0, source = ctx.source }
   if #stacks > cap then table.remove(stacks, 1) end -- POISON_STACK_CAP (levé par The Festering)
+  ctx.arena.bus:emit("affliction_applied", -- JOURNAL (RENDER, golden-safe) : pose loggée 1×, ticks agrégés
+    { target = v, source = ctx.source, family = "poison", dps = dps, dur = stacks[#stacks].remaining, stacks = #stacks })
   if p.igniteAt then -- VENOM-CENSER : arme la détonation au seuil (poison->burn), tickée par tickDots
     v.igniteAt = p.igniteAt
     v.igniteDps = (p.igniteBurst and p.igniteBurst.dps) or 8
@@ -129,6 +131,8 @@ Effects.register("burn", function(ctx, p)
   elseif p.refresh then
     cur.remaining = math.max(cur.remaining, p.dur or 0)
   end
+  ctx.arena.bus:emit("affliction_applied", -- JOURNAL (RENDER, golden-safe)
+    { target = v, source = ctx.source, family = "burn", dps = v.dots.burn.dps, dur = v.dots.burn.remaining })
 end)
 
 -- SAIGNEMENT : pose un saignement (bas DPS) + un SLOW de cadence (retiré à l'expiration par tickDots).
@@ -160,6 +164,8 @@ Effects.register("bleed", function(ctx, p)
     if p.slowScalesMissingHp then cur.slowScalesMissingHp = true end -- conserve les flags T2 si réappliqué
     if p.aggravateMult then cur.aggravateMult = p.aggravateMult end
   end
+  ctx.arena.bus:emit("affliction_applied", -- JOURNAL (RENDER, golden-safe)
+    { target = v, source = ctx.source, family = "bleed", dps = v.dots.bleed.dps, dur = v.dots.bleed.remaining })
 end)
 
 -- POURRITURE : pose/enfle une pourriture (durée croissante) ; ampute les PV max au tick (maxHpFrac).
@@ -175,6 +181,8 @@ Effects.register("rot", function(ctx, p)
     cur.dps = math.min(cur.capDps, cur.dps + (p.growth or 1)) -- enfle si entretenue
     cur.remaining = p.dur or cur.remaining
   end
+  ctx.arena.bus:emit("affliction_applied", -- JOURNAL (RENDER, golden-safe)
+    { target = v, source = ctx.source, family = "rot", dps = v.dots.rot.dps, dur = v.dots.rot.remaining })
 end)
 
 -- CHOC : charge un CONDENSATEUR sur la victime (axe stacks). AUCUN dégât ici : la DÉCHARGE (stacks × volt)
@@ -198,6 +206,8 @@ Effects.register("shock", function(ctx, p)
     if p.transfer then cur.transfer = p.transfer end
     if chain then cur.chain = chain end
   end
+  ctx.arena.bus:emit("affliction_applied", -- JOURNAL (RENDER, golden-safe) : choc = stacks (décharge plus tard)
+    { target = v, source = ctx.source, family = "shock", stacks = v.dots.shock.stacks, dur = v.dots.shock.remaining })
 end)
 
 -- REGEN (contre-DoT) : arme un soin/seconde sur le porteur (combat_start). Tické par arena:tickDots.
