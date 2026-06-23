@@ -11,7 +11,22 @@
 local Theme = require("src.ui.theme")
 local Frame = require("src.ui.frame")
 
-local Draw = { W = 1280, H = 720 }
+local Draw = { W = 1280, H = 720, uiScale = 1 }
+
+-- TEXTE NET À TOUTE RÉSOLUTION : sous la transform de scale (s = view.scale/4), tracer une police rasterisée
+-- en taille DESIGN puis l'agrandir en bitmap = flou (1080p/1440p/4K). On garde les MÉTRIQUES en px design
+-- (la police `designFont` passée par l'appelant) mais on TRACE avec une police rasterisée à la taille ÉCRAN
+-- (px × uiScale) et un scale local 1/uiScale -> rendu 1:1, net. uiScale<=1 (1280×720, headless) -> aucune
+-- substitution (comportement d'origine). Renvoie (policeÀTracer, facteurDeContreScale).
+local function nativeOf(designFont)
+  local s = Draw.uiScale or 1
+  if s <= 1.01 or not designFont then return designFont, 1 end
+  local meta = Theme._meta and Theme._meta[designFont]
+  if not meta then return designFont, 1 end
+  local nf = Theme.fontNative(meta.role, meta.px, s)
+  if not nf then return designFont, 1 end
+  return nf, 1 / s
+end
 
 -- ─────────────────────────── Transform espace-design <-> écran ───────────────────────────
 function Draw.begin(view)
@@ -19,6 +34,8 @@ function Draw.begin(view)
   love.graphics.translate(view.ox or 0, view.oy or 0)
   local s = (view.scale or 4) / 4
   love.graphics.scale(s, s)
+  Draw.uiScale = s
+  if Theme.setScale then Theme.setScale(s) end -- la police écran suit la résolution courante
 end
 function Draw.finish() love.graphics.pop() end
 
@@ -72,17 +89,19 @@ end
 -- ─────────────────────────────────── Texte ───────────────────────────────────
 -- Toutes les variantes : (str, ..., color, font). font nil = police courante. Coordonnées plancher (net).
 function Draw.text(str, x, y, color, font)
-  if font then love.graphics.setFont(font) end
+  local nf, inv = nativeOf(font or love.graphics.getFont())
+  love.graphics.setFont(nf)
   Draw.setColor(color)
-  love.graphics.print(str, math.floor(x + 0.5), math.floor(y + 0.5))
+  love.graphics.print(str, math.floor(x + 0.5), math.floor(y + 0.5), 0, inv, inv)
 end
 
 function Draw.textC(str, cx, y, color, font)
   font = font or love.graphics.getFont()
-  love.graphics.setFont(font)
+  local w = font:getWidth(str) -- métrique en px DESIGN (police d'origine)
+  local nf, inv = nativeOf(font)
+  love.graphics.setFont(nf)
   Draw.setColor(color)
-  local w = font:getWidth(str)
-  love.graphics.print(str, math.floor(cx - w / 2 + 0.5), math.floor(y + 0.5))
+  love.graphics.print(str, math.floor(cx - w / 2 + 0.5), math.floor(y + 0.5), 0, inv, inv)
 end
 
 -- Itère les CARACTÈRES UTF-8 d'une chaîne (longueur déduite de l'octet de tête) : sûr pour « · », « — » et
@@ -104,18 +123,19 @@ end
 -- Texte centré AVEC interlettrage (letter-spacing, en px design) : effet cérémonial de la DA. UTF-8-safe.
 function Draw.textTrackedC(str, cx, y, color, font, spacing)
   font = font or love.graphics.getFont()
-  love.graphics.setFont(font)
+  local nf, inv = nativeOf(font)
+  love.graphics.setFont(nf)
   Draw.setColor(color)
   spacing = spacing or 0
   local total, first = 0, true
   for ch in utf8chars(str) do
     if not first then total = total + spacing end
-    total = total + font:getWidth(ch)
+    total = total + font:getWidth(ch) -- avance en px DESIGN
     first = false
   end
   local x = cx - total / 2
   for ch in utf8chars(str) do
-    love.graphics.print(ch, math.floor(x + 0.5), math.floor(y + 0.5))
+    love.graphics.print(ch, math.floor(x + 0.5), math.floor(y + 0.5), 0, inv, inv)
     x = x + font:getWidth(ch) + spacing
   end
   return total
@@ -124,13 +144,14 @@ end
 -- Texte ALIGNÉ À GAUCHE avec interlettrage (kickers / petites capitales) : UTF-8-safe. Renvoie la largeur.
 function Draw.textTrackedL(str, x, y, color, font, spacing)
   font = font or love.graphics.getFont()
-  love.graphics.setFont(font)
+  local nf, inv = nativeOf(font)
+  love.graphics.setFont(nf)
   Draw.setColor(color)
   spacing = spacing or 0
   local cx = x
   for ch in utf8chars(str) do
-    love.graphics.print(ch, math.floor(cx + 0.5), math.floor(y + 0.5))
-    cx = cx + font:getWidth(ch) + spacing
+    love.graphics.print(ch, math.floor(cx + 0.5), math.floor(y + 0.5), 0, inv, inv)
+    cx = cx + font:getWidth(ch) + spacing -- avance en px DESIGN
   end
   return cx - x
 end
@@ -138,18 +159,35 @@ end
 -- Aligné à droite : le texte se termine à rx.
 function Draw.textR(str, rx, y, color, font)
   font = font or love.graphics.getFont()
-  love.graphics.setFont(font)
+  local w = font:getWidth(str) -- métrique en px DESIGN
+  local nf, inv = nativeOf(font)
+  love.graphics.setFont(nf)
   Draw.setColor(color)
-  local w = font:getWidth(str)
-  love.graphics.print(str, math.floor(rx - w + 0.5), math.floor(y + 0.5))
+  love.graphics.print(str, math.floor(rx - w + 0.5), math.floor(y + 0.5), 0, inv, inv)
 end
 
 -- Bloc multi-ligne avec retour à la ligne + alignement (lore). Renvoie la hauteur dessinée.
 function Draw.textWrap(str, x, y, limit, color, font, align)
-  if font then love.graphics.setFont(font) else font = love.graphics.getFont() end
+  font = font or love.graphics.getFont()
+  align = align or "left"
+  local _, lines = font:getWrap(str, limit) -- découpe aux MÉTRIQUES DESIGN (limit en px design)
+  local nf, inv = nativeOf(font)
   Draw.setColor(color)
-  love.graphics.printf(str, math.floor(x + 0.5), math.floor(y + 0.5), limit, align or "left")
-  local _, lines = font:getWrap(str, limit)
+  if inv == 1 then
+    love.graphics.setFont(nf)
+    love.graphics.printf(str, math.floor(x + 0.5), math.floor(y + 0.5), limit, align)
+  else
+    -- HiDPI : printf n'a pas de scale -> on trace ligne par ligne (police écran + contre-scale), même découpe.
+    love.graphics.setFont(nf)
+    local lh = font:getHeight()
+    for i, line in ipairs(lines) do
+      local lw = font:getWidth(line)
+      local lx = x
+      if align == "center" then lx = x + (limit - lw) / 2
+      elseif align == "right" then lx = x + (limit - lw) end
+      love.graphics.print(line, math.floor(lx + 0.5), math.floor(y + (i - 1) * lh + 0.5), 0, inv, inv)
+    end
+  end
   return #lines * font:getHeight()
 end
 

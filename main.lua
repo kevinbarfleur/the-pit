@@ -169,7 +169,11 @@ local function drawHud(scene)
 end
 
 -- Pixels fenêtre -> espace virtuel (inverse exact du blit en scale entier).
+-- HiDPI/Retina : les events souris arrivent en UNITÉS FENÊTRE (points) alors que love.graphics (et donc
+-- `view`, calculé sur getDimensions) est en PIXELS. On convertit d'abord points -> pixels via toPixels
+-- (= ×DPIScale ; identité hors Retina) avant l'inverse du blit, sinon la souris est décalée du facteur DPI.
 local function toVirtual(x, y)
+  if love.window and love.window.toPixels then x, y = love.window.toPixels(x), love.window.toPixels(y) end
   if view.scale <= 0 then return x, y end
   return (x - view.ox) / view.scale, (y - view.oy) / view.scale
 end
@@ -238,6 +242,12 @@ function love.draw()
 end
 
 function love.keypressed(key)
+  -- Plein écran (desktop) : [F11] ou Alt+Entrée. "desktop" garde la résolution du bureau (pas de changement
+  -- de mode) ; love.draw recalcule `view` sur getDimensions chaque frame -> s'adapte sans rien recréer.
+  if key == "f11" or (key == "return" and (love.keyboard.isDown("lalt") or love.keyboard.isDown("ralt"))) then
+    love.window.setFullscreen(not love.window.getFullscreen(), "desktop")
+    return
+  end
   -- LA CHRONIQUE (overlay modal) : capte le clavier en priorité tant qu'elle est ouverte.
   if host.overlay then
     if key == "escape" or key == "c" then host.overlay = nil; return end

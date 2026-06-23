@@ -202,8 +202,12 @@ Theme.HINT = {
   ui = "mono", uiBold = "mono", read = "mono", lore = "normal", loreRoman = "normal",
 }
 
-Theme._cache = {}    -- [role][px] = Font
+Theme._cache = {}    -- [role][px] = Font (rasterisée à la taille DESIGN)
 Theme._missing = {}  -- [role] = true si le TTF a échoué (on ne réessaie pas)
+Theme._native = {}   -- [role][nativePx] = Font (rasterisée à la taille ÉCRAN, pour un texte NET en HiDPI/haute réso)
+Theme._meta = setmetatable({}, { __mode = "k" }) -- Font(design) -> {role, px} (clés faibles) : retrouver le rôle/px
+Theme.uiScale = 1    -- échelle de rendu courante (1 px design -> uiScale px écran) ; posée chaque frame par Draw.begin
+function Theme.setScale(s) Theme.uiScale = (s and s > 0) and s or 1 end
 
 local function haveGraphics()
   return love and love.graphics and love.graphics.newFont
@@ -234,6 +238,37 @@ function Theme.font(role, px)
     pcall(font.setFilter, font, "nearest", "nearest")
   end
   byRole[px] = font or false
+  if font then Theme._meta[font] = { role = role, px = px } end -- back-ref pour retrouver (role,px) -> police écran
+  return font
+end
+
+-- Police rasterisée à la taille ÉCRAN (px × scale) : utilisée par Draw pour tracer un texte NET à toute
+-- résolution (rendu natif + contre-scale au tracé). Mémoïsée par (role, nativePx). Fallback = police design.
+-- scale <= 1 -> renvoie directement la police design (pas de HiDPI ; headless/1280×720 inchangés).
+function Theme.fontNative(role, px, scale)
+  scale = scale or Theme.uiScale or 1
+  if scale <= 1.01 then return Theme.font(role, px) end
+  local npx = math.floor(px * scale + 0.5)
+  if npx < 1 then npx = 1 end
+  local byRole = Theme._native[role]
+  if not byRole then byRole = {}; Theme._native[role] = byRole end
+  local f = byRole[npx]
+  if f ~= nil then return f or nil end
+  if not haveGraphics() then return Theme.font(role, px) end
+  local font
+  local path = Theme.FONT_FILES[role]
+  if path and not Theme._missing[role] then
+    local ok, res = pcall(love.graphics.newFont, path, npx, Theme.HINT[role] or "normal")
+    if ok and res then font = res end
+  end
+  if not font then
+    local ok, res = pcall(love.graphics.newFont, npx)
+    if ok and res then font = res end
+  end
+  if font and Theme.HINT[role] == "mono" and font.setFilter then
+    pcall(font.setFilter, font, "nearest", "nearest")
+  end
+  byRole[npx] = font or false
   return font
 end
 
