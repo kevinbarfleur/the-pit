@@ -59,8 +59,20 @@ s:mousemoved(70 / 4, (last.y + 1) / 4)
 assert(s.mx == 70 and s.my == last.y + 1, "souris convertie en design (×4)")
 assert(s.hoverNav ~= nil, "le survol d'une entrée de sidebar est détecté")
 
--- 7) [esc] -> retour menu (routé via host.goto).
+-- 7) Bouton LIVE : JUICE différé (bible §4). drawButtons (appelé en 3) a posé self.liveRect. Un press DESSUS
+-- arme le feedback (Feel) ; l'action différée est un no-op -> on vérifie surtout que ça ne plante pas et que
+-- l'état Feel s'anime (squash/flash > 0 juste après le press, puis retombe après une grosse frame).
+local Feel = require("src.ui.feel")
+assert(s.liveRect, "designsystem : le bouton LIVE a un rect (posé au draw)")
+local lr = s.liveRect
+s:mousepressed((lr.x + lr.w / 2) / 4, (lr.y + lr.h / 2) / 4, 1)
+local flashed = Feel.state("ds.live").flash
+assert(flashed and flashed > 0, "designsystem : press LIVE -> flash immédiat (feedback)")
+s:update(60) -- mûrit l'action différée (no-op) + retombe le flash, sans crash
+s:drawOverlay(view)
+
+-- 8) [esc] -> retour menu (routé via host.goto).
 s:keypressed("escape")
 assert(jumped == "menu", "[esc] -> retour menu")
 
-print("=> DESIGNSYSTEM-UI OK : scène + sidebar + page scrollable + tokens/atomes (headless).")
+print("=> DESIGNSYSTEM-UI OK : scène + sidebar + page scrollable + tokens/atomes + LIVE juice (headless).")

@@ -27,6 +27,7 @@ local C = Theme.c
 
 -- ── COMPOSANTS PROPRES (§IV/§V) — le seul kit autorisé désormais (zéro widget forge gritty) ──────────
 local Button = require("src.ui.button")     -- 5 variantes (primary/secondary/eco/icon/ghost) × états
+local Feel = require("src.ui.feel")         -- JUICE (bible §4) : démo du bouton LIVE (press différé + squash)
 local Panel = require("src.ui.panel")       -- surface (dégradé + liseré iron + éclat)
 local Gauge = require("src.ui.gauge")       -- health(+segments DoT)/cooldown/lives/descent
 local Slot = require("src.ui.slot")         -- case de plateau (6 états) + arête
@@ -294,6 +295,7 @@ end
 function Screen:update(frameDt)
   self.t = self.t + (frameDt or 1) / 60 -- horloge en SECONDES (lueur pulsée du bandeau ; survol du LIVE)
   self.ambient:update(frameDt)
+  Feel.update(frameDt) -- avance le JUICE du bouton LIVE + fire son action différée (démo de press)
 end
 
 function Screen:drawBack(view)
@@ -586,11 +588,15 @@ function Screen:drawButtons(x, y, w)
   local cy = y
   -- PRIMARY (l'action unique, sang) — 4 états + 1 LIVE qui suit la souris.
   cy = cy + self:_btnRow(x, cy, "primary", "FIGHT", 128, 34, {})
-  -- bouton LIVE (suit self.mx/my : hover quand survolé, pressed quand cliqué dessus).
+  -- bouton LIVE (suit self.mx/my) : démo du JUICE complet (bible §4) — survol enfle la lueur, le press
+  -- enfonce + flash de braise, et l'ACTION est DIFFÉRÉE (~160 ms) via Feel. Son rect est mémorisé pour le
+  -- hit-test du press (mousepressed). C'est le seul bouton « vivant » du storybook (les autres figent des états).
   do
-    local lx = x + 4 * (128 + 14)
-    local hov = ptIn(self.mx, self.my, lx, cy - (34 + 18), 128, 34)
-    Button.draw(lx, cy - (34 + 18), 128, 34, "primary", "LIVE", { hover = hov, pressed = hov and self._down })
+    local lx, ly = x + 4 * (128 + 14), cy - (34 + 18)
+    self.liveRect = { x = lx, y = ly, w = 128, h = 34 }
+    local hov = ptIn(self.mx, self.my, lx, ly, 128, 34)
+    Feel.hover("ds.live", hov)
+    Button.draw(lx, ly, 128, 34, "primary", "LIVE", { hover = hov, feel = Feel.state("ds.live") })
     Draw.textC("LIVE", lx + 64, cy - 18 + 5, C.gold, Theme.labelSmall(8))
   end
   cy = cy + 6
@@ -786,6 +792,13 @@ function Screen:mousepressed(vx, vy, button)
   if button ~= 1 then return end
   local dx, dy = vx * 4, vy * 4
   self._down = true
+  -- bouton LIVE : démo de press différé (squash + flash immédiats ; l'« action » est un no-op visuel armé
+  -- ~160 ms plus tard, juste pour illustrer le timing — il ne navigue pas).
+  if self.liveRect and ptIn(dx, dy, self.liveRect.x, self.liveRect.y, self.liveRect.w, self.liveRect.h) then
+    Feel.press("ds.live", function() end)
+    return
+  end
+  -- Sidebar : saut de scroll IMMÉDIAT (manipulation directe -> pas de différé, sinon ça « traîne »).
   local i = self:navAt(dx, dy)
   if i then
     self.scroll = self.nav[i].y

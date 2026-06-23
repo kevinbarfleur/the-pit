@@ -553,16 +553,21 @@ local ok, err = pcall(function()
     end
     mn:update(1.0)
     mn:drawBack(view); mn:drawWorld(); mn:drawOverlay(view)
-    -- CLIQUABILITÉ (le cœur) — survol + clic-relâché sur ENTER -> déclenche newRun. La souris arrive en
-    -- VIRTUEL (centre du rect ÷4) ; le menu la repasse en design (×4) pour le hit-test.
+    -- CLIQUABILITÉ (le cœur) — survol + clic sur ENTER -> déclenche newRun. ⭐ ACTION DIFFÉRÉE (bible §4) :
+    -- le clic ARME l'action (~160 ms) au lieu de la lancer au release. Le feedback est immédiat (mn.down) ;
+    -- l'action fire dans mn:update(dt) quand le délai est écoulé -> on POMPE une grosse frame pour la mûrir.
+    -- La souris arrive en VIRTUEL (centre du rect ÷4) ; le menu la repasse en design (×4) pour le hit-test.
     local r1 = mn.items[1].rect
     mn:mousemoved((r1.x + r1.w / 2) / 4, (r1.y + r1.h / 2) / 4)
     assert(mn.hover == 1, "menu : survol de ENTER")
     mn:mousepressed((r1.x + r1.w / 2) / 4, (r1.y + r1.h / 2) / 4, 1)
-    assert(mn.down, "menu : pointer-down arme l'entrée")
-    mn:drawOverlay(view) -- pressé (active)
+    assert(mn.down, "menu : pointer-down arme l'entrée (feedback immédiat)")
+    assert(went == nil, "menu : l'action est DIFFÉRÉE (pas firée au press)")
+    mn:drawOverlay(view)             -- pressé (squash + flash actifs)
     mn:mousereleased((r1.x + r1.w / 2) / 4, (r1.y + r1.h / 2) / 4, 1)
-    assert(went == "run", "menu : clic sur ENTER lance la run")
+    assert(went == nil, "menu : le release NE re-déclenche PAS (anti double-fire)")
+    mn:update(60)                    -- pompe ~1 s : le délai (~0,16 s) est écoulé -> l'action FIRE
+    assert(went == "run", "menu : l'action différée de ENTER lance la run après le délai")
     -- CLIQUABILITÉ d'une entrée SECONDAIRE (preuve au-delà du CTA) : GRIMOIRE -> host.goto("grimoire").
     local gi
     for i, it in ipairs(mn.items) do if it.id == "grimoire" then gi = i end end
@@ -572,8 +577,15 @@ local ok, err = pcall(function()
     assert(mn.hover == gi, "menu : survol de GRIMOIRE")
     mn:mousepressed((rg.x + rg.w / 2) / 4, (rg.y + rg.h / 2) / 4, 1)
     mn:mousereleased((rg.x + rg.w / 2) / 4, (rg.y + rg.h / 2) / 4, 1)
-    assert(went == "grimoire", "menu : clic sur GRIMOIRE ouvre le grimoire")
-    mn:keypressed("down"); mn:keypressed("up"); mn:keypressed("return") -- navigation clavier (no crash)
+    mn:update(60)                    -- mûrit l'action différée
+    assert(went == "grimoire", "menu : clic sur GRIMOIRE ouvre le grimoire (après le différé)")
+    -- clavier : navigation + validation (action différée via Feel.fire) -> mûrir puis vérifier que ça agit.
+    went = nil
+    mn:keypressed("down"); mn:keypressed("up")
+    -- repositionne le focus sur ENTER puis valide au clavier.
+    mn.hover = 1; mn:keypressed("return")
+    mn:update(60)
+    assert(went == "run", "menu : validation clavier (return) déclenche l'action différée")
     -- entrée scellée (rites) : non hoverable / non cliquable.
     local sealed
     for i, it in ipairs(mn.items) do if it.id == "rites" then sealed = i end end

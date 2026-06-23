@@ -58,22 +58,44 @@ end
 
 -- Bouton plein PRIMARY/SECONDARY/ECO. text en CAPITALES (la scène fournit déjà la casse i18n).
 -- variant ∈ "primary"|"secondary"|"eco". Pour ECO : opts.cost = valeur d'or (losange + nombre à droite).
+--
+-- ⭐ JUICE (bible §4) : opts.feel = état Feel.state(id) (RENDER pur, piloté par dt) -> le bouton lit
+--   { lift, squash, flash, glow } pour réagir « au doigt » : LIFT au survol (on bouge le bouton, pas de
+--   scale qui casse la grille), SQUASH supplémentaire au press, FLASH bref de braise au DOWN, GLOW de halo
+--   qui enfle. opts.feel ABSENT -> comportement d'origine EXACT (le design-system fige des états statiques).
 function Button.draw(x, y, w, h, variant, text, opts)
   opts = opts or {}
   x, y, w, h = math.floor(x + 0.5), math.floor(y + 0.5), math.floor(w + 0.5), math.floor(h + 0.5)
   local set = SETS[variant] or SECONDARY
   local st = stateOf(opts)
   local s = set[st]
-  local press = (st == "pressed") and 1 or 0
-  local yy = y + press                 -- translateY(1px) au press
+  local feel = opts.feel
+  -- LIFT (survol) : remonte le bouton de quelques px ; SQUASH (press) : enfoncement piloté par feel (en plus
+  -- du sink discret d'état). On planche pour rester pixel-net (positions entières) et borné (jamais > 4px).
+  local lift = feel and math.floor((feel.lift or 0) + 0.5) or 0
+  local squash = feel and math.floor((feel.squash or 0) + 0.5) or 0
+  local press = ((st == "pressed") and 1 or 0) + squash -- translateY au press (état) + squash (feel)
+  if press > 4 then press = 4 end
+  local yy = y - lift + press           -- repos relevé par le survol, enfoncé par le press
   local hh = h - press
 
-  if st ~= "pressed" then fillRect(x, y + h - 1, w, 2, SHADOW) end -- ombre portée (relief 0 2px 0)
+  if press == 0 then fillRect(x, yy + h - 1, w, 2, SHADOW) end -- ombre portée (relief 0 2px 0)
   Panel.vgrad(x, yy, w, hh, s[1], s[2])
   if st ~= "disabled" then fillRect(x + 1, yy + 1, w - 2, 1, { C.brassS[1], C.brassS[2], C.brassS[3], 0.10 }) end
   Draw.rect(x, yy, w, hh, nil, s[4] or C.iron, 1)
-  if st == "hover" and variant == "primary" then -- halo sang du CTA
-    Draw.setColor(C.blood, 0.22); if love and love.graphics then love.graphics.rectangle("line", x - 1, yy - 1, w + 2, hh + 2) end; Draw.reset()
+  -- HALO de survol/feel : sur le CTA, un liseré sang dont l'alpha enfle avec le glow (braise, pas blanc).
+  local glow = feel and (feel.glow or 0) or 0
+  if variant == "primary" and (st == "hover" or glow > 0.02) then
+    local a = 0.22 + 0.30 * glow
+    Draw.setColor(C.blood, math.min(0.6, a))
+    if love and love.graphics then love.graphics.rectangle("line", x - 1, yy - 1, w + 2, hh + 2) end
+    Draw.reset()
+  end
+  -- FLASH de press (bref) : voile additif de braise par-dessus la surface -> l'« impact » au DOWN.
+  if feel and (feel.flash or 0) > 0.01 and st ~= "disabled" and love and love.graphics then
+    Draw.setColor(C.ember, math.min(0.5, feel.flash))
+    love.graphics.rectangle("fill", x + 1, yy + 1, w - 2, hh - 2)
+    Draw.reset()
   end
 
   local px = PX[variant] or 12

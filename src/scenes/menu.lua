@@ -20,6 +20,7 @@
 
 local Theme = require("src.ui.theme")
 local Draw = require("src.ui.draw")
+local Feel = require("src.ui.feel") -- JUICE (bible §4) : survol/press/respiration + ACTION DIFFÉRÉE
 local Ambient = require("src.fx.ambient")
 local Grimoire = require("src.core.grimoire")
 local Relics = require("src.data.relics")
@@ -81,6 +82,7 @@ function Menu.new(palette, vw, vh, host)
   self:layout()
   self.hover = nil
   self.down = false
+  Feel.reset() -- repart au repos en (re)entrant dans le menu (survol/press/respiration vierges)
   -- Toggle MODE DEV (cheat) — coin haut-gauche, présent UNIQUEMENT si Dev.ENABLED (masqué/inerte en release).
   self.devRect = Dev.ENABLED and { x = 16, y = 14, w = 252, h = 26 } or nil
   return self
@@ -158,7 +160,11 @@ end
 function Menu:update(dt)
   self.t = self.t + (dt or 1)
   self.ambient:update(dt)
+  Feel.update(dt) -- avance survol/press/respiration ET fire les actions différées mûres (ENTER, GRIMOIRE…)
 end
+
+-- id de feel stable d'une entrée (cache par id dans Feel) : "menu.enter", "menu.grimoire", …
+local function feelId(it) return "menu." .. it.id end
 
 -- Pre-pass : atmosphère native derrière (le menu n'a pas de monde pixel).
 function Menu:drawBack(view)
@@ -186,9 +192,16 @@ local function diamond(cx, cy, r, color, alpha)
 end
 
 -- Dessine une entrée de menu (texte gravé + état). Tout est centré sur CX à partir du rect calculé.
+-- JUICE (bible §4, RENDER pur) : l'état Feel pilote la LUEUR (enfle au survol), un PRESS-SINK de 1–2px au
+-- clic + un FLASH bref de braise, et une RESPIRATION permanente (float vertical) réservée au CTA héros. La
+-- pierre gravée « s'illumine » au survol et « s'enfonce » au clic — métaphore d'interaction unique de l'UI.
 function Menu:drawItem(it, hovered)
   local c = Theme.c
-  local cy = it._cy
+  local fs = Feel.state(feelId(it)) -- { glow, lift, squash, flash } (neutre si inconnu)
+  local g = fs.glow or 0            -- 0..1 : intensité de survol lissée (ease-out)
+  local sink = math.floor((fs.squash or 0) + 0.5) -- enfoncement au press (px, entier = net)
+  local floatY = (it.kind == "cta") and Feel.floatY(feelId(it), 1.1) or 0 -- respiration douce du héros
+  local cy = it._cy + floatY + sink
   local f = fontFor(it.kind)
   local track = (it.kind == "cta") and CTA_TRACK or SEC_TRACK
   local label = T(it.key)
@@ -200,25 +213,36 @@ function Menu:drawItem(it, hovered)
     local blockW = it._prefixW + it._textW
     local x0 = CX - blockW / 2
     local dx = x0 + DIAMOND_R
-    -- lueur sang derrière le losange (signature héros)
-    diamond(dx, cy, DIAMOND_R + 2, c.blood, hovered and 0.5 or 0.32)
+    -- lueur sang derrière le losange (signature héros) : enfle avec g (survol) ET le flash de press.
+    local dAlpha = 0.32 + 0.26 * g + 0.30 * (fs.flash or 0)
+    diamond(dx, cy, DIAMOND_R + 2, c.blood, math.min(0.8, dAlpha))
     diamond(dx, cy, DIAMOND_R, c.blood, 1)
     local textX = x0 + it._prefixW
-    local col = hovered and c.ink or c.title
-    -- faux glow : passes sang décalées sous le texte (la lueur 0 0 16px du designer)
+    -- couleur du texte : interpole title -> ink avec g (montée continue, pas un saut binaire).
+    local col = { c.title[1] + (c.ink[1] - c.title[1]) * g,
+                  c.title[2] + (c.ink[2] - c.title[2]) * g,
+                  c.title[3] + (c.ink[3] - c.title[3]) * g }
+    -- faux glow : passes sang décalées sous le texte (la lueur 0 0 16px du designer), alpha piloté par g+flash.
+    local gAlpha = 0.20 + 0.14 * g + 0.20 * (fs.flash or 0)
     local goff = { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }
     for _, o in ipairs(goff) do
-      Draw.textTrackedL(label, textX + o[1], ty + o[2], { c.blood[1], c.blood[2], c.blood[3], hovered and 0.30 or 0.20 }, f, track)
+      Draw.textTrackedL(label, textX + o[1], ty + o[2], { c.blood[1], c.blood[2], c.blood[3], gAlpha }, f, track)
     end
     Draw.textTrackedL(label, textX, ty, col, f, track)
   else
-    -- Secondaires / désactivées : texte centré. Survol -> ink vif + soulignement sang discret.
+    -- Secondaires / désactivées : texte centré. Survol -> ink vif + soulignement sang qui « se remplit ».
     local base = (it.kind == "off") and c.ink4 or c.ink2
-    local col = (it.enabled and hovered) and c.ink or base
+    local col = base
+    if it.enabled then
+      col = { base[1] + (c.ink[1] - base[1]) * g, base[2] + (c.ink[2] - base[2]) * g, base[3] + (c.ink[3] - base[3]) * g }
+    end
     local w = Draw.textTrackedC(label, CX, ty, col, f, track)
-    if it.enabled and hovered then
-      Draw.setColor(c.blood, 0.8)
-      if love and love.graphics then love.graphics.rectangle("fill", math.floor(CX - w / 2), ty + fh + 1, math.ceil(w), 1) end
+    -- soulignement sang : largeur proportionnelle à g (se déploie du centre) + un coup de flash au press.
+    local uw = (g + 0.6 * (fs.flash or 0))
+    if it.enabled and uw > 0.02 and love and love.graphics then
+      local ul = math.ceil(w * math.min(1, uw))
+      Draw.setColor(c.blood, 0.8 * math.min(1, g + (fs.flash or 0)))
+      love.graphics.rectangle("fill", math.floor(CX - ul / 2), ty + fh + 1, ul, 1)
       Draw.reset()
     end
   end
@@ -259,32 +283,45 @@ end
 
 -- ── Souris : hover (mousemoved) + arme (mousepressed) + agit (mousereleased). La souris arrive en VIRTUEL
 -- (320×180, main.lua a divisé par view.scale) -> on la repasse en DESIGN (×4) pour le hit-test, comme l'UI.
+-- Survol : pose le hover de la scène ET la cible Feel de CHAQUE entrée (l'entrée survolée -> 1, les autres
+-- -> 0 ; les easings ramènent la lueur en douceur). Le tick de son (hook) ne part qu'au franchissement.
 function Menu:mousemoved(vx, vy)
   local dx, dy = vx * 4, vy * 4
   self.mx, self.my = dx, dy
   self.hover = self:itemAt(dx, dy)
+  for i, it in ipairs(self.items) do
+    if it.enabled then Feel.hover(feelId(it), self.hover == i) end
+  end
 end
 
+-- ⭐ Pointer-DOWN : feedback IMMÉDIAT (Feel.press = squash + flash + lueur) et l'action est DIFFÉRÉE (~160 ms)
+-- -> on SENT le clic avant que l'écran change. Le verrou de Feel empêche un double-déclenchement (re-clic
+-- ignoré tant que l'action est en file). Plus de « dead-click » : le feedback part toujours à t=0.
 function Menu:mousepressed(vx, vy, button)
   if button ~= 1 then return end
   local dx, dy = vx * 4, vy * 4
   self.mx, self.my = dx, dy
-  if self.devRect then -- MODE DEV : clic sur le toggle full-unlock
+  if self.devRect then -- MODE DEV : clic sur le toggle full-unlock (immédiat, pas une action de navigation)
     local r = self.devRect
     if dx >= r.x and dx <= r.x + r.w and dy >= r.y and dy <= r.y + r.h then Dev.toggleFullUnlock(); return end
   end
   local i = self:itemAt(dx, dy)
-  if i then self.hover = i; self.down = true end
+  if i then
+    self.hover = i; self.down = true
+    local it = self.items[i]
+    Feel.press(feelId(it), it.action) -- feedback immédiat + action différée (fire dans Feel.update)
+  end
 end
 
+-- Relâche : l'action a déjà été ARMÉE au press (différée). On lâche juste l'état « down » de la scène ;
+-- surtout NE PAS re-déclencher l'action ici (sinon double-fire avec le press différé).
 function Menu:mousereleased(vx, vy, button)
   if button ~= 1 then return end
   self.down = false
-  local i = self:itemAt((vx or 0) * 4, (vy or 0) * 4)
-  if i and self.items[i].action then self.items[i].action() end
 end
 
--- Clavier : navigation haut/bas parmi les entrées actives + entrée/espace pour valider.
+-- Clavier : navigation haut/bas parmi les entrées actives + entrée/espace pour valider (action différée via
+-- Feel.fire -> même JUICE que la souris, sans verrou de re-clic). Le bouton « ressent » la validation clavier.
 function Menu:keypressed(key)
   if key == "up" or key == "down" then
     local order = {}
@@ -295,8 +332,12 @@ function Menu:keypressed(key)
     cur = cur + (key == "down" and 1 or -1)
     if cur < 1 then cur = #order elseif cur > #order then cur = 1 end
     self.hover = order[cur]
+    for k, i in ipairs(order) do Feel.hover(feelId(self.items[i]), i == self.hover) end
   elseif key == "return" or key == "kpenter" or key == "space" then
-    if self.hover and self.items[self.hover].action then self.items[self.hover].action() end
+    if self.hover and self.items[self.hover].action then
+      local it = self.items[self.hover]
+      Feel.fire(feelId(it), it.action)
+    end
   elseif key == "u" and Dev.ENABLED then -- MODE DEV : toggle full-unlock du codex
     Dev.toggleFullUnlock()
   end
