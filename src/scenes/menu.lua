@@ -1,22 +1,26 @@
 -- src/scenes/menu.lua
--- ÉCRAN TITRE "The Pit" (premier écran de la DA). « YOU DESCEND / The Pit » sur fond d'atmosphère
--- (gueule du puits + stalactites + braises), puis les entrées de menu, et un pied de page rappelant la
--- méta-progression (reliques inscrites au Grimoire). On entre dans le Puits depuis ici.
+-- ÉCRAN TITRE "The Pit" — reconstruit au design PROPRE du designer (design-system §3.1). « YOU DESCEND /
+-- The Pit » sur fond d'atmosphère (gueule du puits + braises), filet laiton/sang, puis les ENTRÉES de menu
+-- empilées, et un pied rappelant la méta-progression (reliques inscrites au Grimoire). On entre dans le Puits ici.
 --
--- DA « nightmare forge » (kit src/ui/forge.lua) : le LOGOTYPE gothique « The Pit » (Jacquard) est préservé,
--- mais les ENTRÉES de menu sont des BOUTONS FORGE. ENTER THE PIT = le bouton-œil SIGNATURE (tone='cta',
--- nuée d'yeux qui suivent la souris) ; les autres entrées = boutons forge éco (cadre laiton patiné) ;
--- les entrées scellées = boutons désactivés (grisés, hachurés). Disposés par Layout.column (colonne
--- centrée, gouttières égales) -> aligné au pixel, jamais de trou.
+-- DA « reliquary » (kit src/ui/draw.lua + theme) : pas de boutons-cadres ni d'œil/gritty — les entrées sont du
+-- TEXTE gravé dont la HIÉRARCHIE passe par la CASSE/le POIDS Cinzel (pas par la taille seule) :
+--   • ENTER THE PIT = HÉROS : Cinzel 700 ~19px, préfixe losange SANG, lueur sang douce ; survol -> ink vif + lueur.
+--   • Secondaires (GRIMOIRE/PROVING/DESIGN SYSTEM…) = Cinzel 500 ~15px ink-2 ; survol -> ink + soulignement sang.
+--   • Désactivées (RITES, ABANDON inerte si scellé) = Cinzel 500 ink-4 (jamais hoverables).
+-- Le titre gothique « The Pit » (Jacquard) est PRÉSERVÉ. Couleurs/polices via Theme UNIQUEMENT, texte NET (Draw).
 --
--- Couche RENDER/scène (love.graphics autorisé) : atmosphère en pre-pass natif (drawBack), texte en
--- overlay natif. UI composée en ESPACE DESIGN 1280x720 (= virtuel ×4) ; coords souris ×4 pour le hit-test.
+-- CLIQUABILITÉ (le cœur) : chaque entrée porte un RECT de hit-test (espace design) calculé dans :layout()
+-- (mesure de la largeur du texte + préfixe losange pour ENTER) -> dispo dès new() (avant la 1re frame). La souris
+-- arrive en VIRTUEL (320×180, main.lua a divisé par view.scale) -> on la repasse en DESIGN (×4) pour le hit-test,
+-- comme tout le reste de l'UI. mousemoved pose un hover par entrée ; mousepressed arme ; mousereleased agit.
+--
+-- Couche RENDER/scène (love.graphics autorisé) : atmosphère en pre-pass natif (drawBack), entrées/texte en
+-- overlay natif. Composé en ESPACE DESIGN 1280x720 (= virtuel ×4). RENDER pur, headless-safe.
 
 local Theme = require("src.ui.theme")
 local Draw = require("src.ui.draw")
-local Layout = require("src.ui.layout")
 local Ambient = require("src.fx.ambient")
-local Forge = require("src.ui.forge")          -- KIT « nightmare forge » : bouton-œil CTA + boutons forge
 local Grimoire = require("src.core.grimoire")
 local Relics = require("src.data.relics")
 local Dev = require("src.core.dev") -- MODE DEV : toggle full-unlock (visible/inerte selon Dev.ENABLED)
@@ -26,14 +30,21 @@ local Menu = {}
 Menu.__index = Menu
 
 local CX = Draw.W / 2
--- Disposition des entrées (colonne centrée, espace design). Le bouton-œil ENTER est un peu plus haut
--- (héros) ; les autres entrées plus compactes. La pile est CENTRÉE dans la bande disponible sous le
--- diviseur (BAND_TOP..BAND_BOTTOM) -> tient quel que soit le nombre d'entrées (dev = +1 « Frame Forge »).
-local CTA_W, CTA_H = 308, 54      -- ENTER THE PIT (bouton-œil)
-local ITEM_W, ITEM_H = 270, 36    -- entrées secondaires (forge éco)
-local ITEMS_GAP = 13              -- gouttière entre entrées secondaires
-local CTA_GAP = 20                -- gouttière SUPPLÉMENTAIRE sous le CTA héros (le détache du groupe secondaire)
-local BAND_TOP, BAND_BOTTOM = 460, 680 -- bande des entrées : sous le diviseur (444), marge de pied (footer @690)
+
+-- ── Métriques de la pile d'entrées (espace design). La hiérarchie est portée par la CASSE/le POIDS Cinzel
+-- (pas la taille seule) : ENTER (héros) un peu plus grand + un sang en préfixe ; secondaires plus discrètes ;
+-- désactivées plus petites. La pile est CENTRÉE dans la bande sous le diviseur (BAND_TOP..BAND_BOTTOM) ->
+-- tient quel que soit le nombre d'entrées (dev = +1). On RABOTE le pas si la pile déborde la bande.
+local CTA_PX  = 19   -- ENTER THE PIT (Cinzel 700)
+local SEC_PX  = 15   -- entrées secondaires (Cinzel 500)
+local OFF_PX  = 13   -- entrées désactivées (ABANDON-like, Cinzel 500)
+local CTA_TRACK, SEC_TRACK = 1.9, 1.8 -- interlettrage (px design) ≈ 0.1em / 0.12em
+local CTA_STEP = 44  -- pas vertical du CTA (sa propre ligne, plus aérée)
+local SEC_STEP = 32  -- pas vertical des secondaires
+local DIAMOND_R = 4  -- losange sang en préfixe de ENTER
+local DIAMOND_GAP = 12 -- espace losange -> texte de ENTER
+local HIT_PADX, HIT_PADY = 14, 8 -- marge de confort autour du texte pour le hit-test (clic plus généreux)
+local BAND_TOP, BAND_BOTTOM = 452, 660 -- bande des entrées : sous le diviseur (~444), au-dessus du pied (~690)
 
 function Menu.new(palette, vw, vh, host)
   local self = setmetatable({}, Menu)
@@ -44,23 +55,23 @@ function Menu.new(palette, vw, vh, host)
   self.titleKey = "ui.title"
   self.hintKey = "ui.empty"
   self.t = 0
-  self.mx, self.my = 0, 0        -- souris en ESPACE DESIGN (pour le regard du bouton-œil)
-  self.ambient = Ambient.new(7) -- seed fixe -> atmosphère stable
+  self.mx, self.my = 0, 0        -- souris en ESPACE DESIGN
+  self.ambient = Ambient.new(7)  -- seed fixe -> atmosphère stable
 
-  -- Entrées : ENTER (CTA héros) + GRIMOIRE/PROVING (forge éco) + RITES (scellée) + ABANDON (forge éco).
+  -- Entrées : ENTER (CTA héros) + GRIMOIRE/PROVING/DESIGN SYSTEM (secondaires) + RITES (scellée) + ABANDON.
+  -- kind = "cta" | "sec" | "off" : pilote la voix (police/poids), la lueur héros et le préfixe losange.
   self.items = {
-    { id = "enter",    key = "menu.enter",    enabled = true,  tone = "cta", action = function() self.host.newRun() end },
-    { id = "grimoire", key = "menu.grimoire", enabled = true,  tone = "eco", action = function() self.host.goto("grimoire") end },
-    { id = "proving",  key = "menu.proving",  enabled = true,  tone = "eco", action = function() self.host.goto("playground") end },
-    { id = "designsystem", key = "menu.designsystem", enabled = true, tone = "eco", action = function() self.host.goto("designsystem") end },
-    { id = "rites",    key = "menu.rites",    enabled = false, tone = "eco" },
-    { id = "abandon",  key = "menu.abandon",  enabled = true,  tone = "eco", action = function() love.event.quit() end },
+    { id = "enter",        key = "menu.enter",        kind = "cta", enabled = true,  action = function() self.host.newRun() end },
+    { id = "grimoire",     key = "menu.grimoire",     kind = "sec", enabled = true,  action = function() self.host.goto("grimoire") end },
+    { id = "proving",      key = "menu.proving",      kind = "sec", enabled = true,  action = function() self.host.goto("playground") end },
+    { id = "designsystem", key = "menu.designsystem", kind = "sec", enabled = true,  action = function() self.host.goto("designsystem") end },
+    { id = "rites",        key = "menu.rites",        kind = "sec", enabled = false },
+    { id = "abandon",      key = "menu.abandon",      kind = "off", enabled = true,  action = function() love.event.quit() end },
   }
-  -- DEV-ONLY : écran-showcase « Frame Forge » (revue du kit UI « nightmare forge », src/ui/forge.lua).
-  -- Inséré avant ABANDON (pied de liste). Présent uniquement si Dev.ENABLED.
+  -- DEV-ONLY : écran-showcase « Frame Forge » (revue du kit UI, src/ui/forge.lua). Inséré avant ABANDON.
   if Dev.ENABLED then
     table.insert(self.items, #self.items, {
-      id = "frameforge", key = "menu.frameforge", enabled = true, tone = "eco",
+      id = "frameforge", key = "menu.frameforge", kind = "sec", enabled = true,
       action = function()
         self.host.scene = require("src.scenes.frameforge").new(self.palette, self.vw, self.vh, self.host)
         self.host.name = "frameforge"
@@ -69,58 +80,71 @@ function Menu.new(palette, vw, vh, host)
   end
   self:layout()
   self.hover = nil
+  self.down = false
   -- Toggle MODE DEV (cheat) — coin haut-gauche, présent UNIQUEMENT si Dev.ENABLED (masqué/inerte en release).
   self.devRect = Dev.ENABLED and { x = 16, y = 14, w = 252, h = 26 } or nil
   return self
 end
 
--- Calcule le rect (ESPACE DESIGN) de chaque entrée via Layout.column (colonne centrée, gouttières égales).
--- ENTER est plus haut/large (héros) ; chaque entrée a sa propre hauteur. La taille croisée est fixée par
--- entrée (align=center) -> chaque bouton est centré horizontalement à sa largeur propre.
+-- Police/poids d'une entrée selon son kind (la voix qui porte la hiérarchie). px raboté = override de taille.
+local function fontFor(kind, px)
+  if kind == "cta" then return Theme.heading(px or CTA_PX) end -- Cinzel 700
+  return Theme.subhead(px or (kind == "off" and OFF_PX or SEC_PX)) -- Cinzel 600/500 (secondaire/désactivée)
+end
+
+-- Calcule le RECT de hit-test (espace design) de chaque entrée : pile CENTRÉE verticalement dans la bande,
+-- chaque ligne CENTRÉE horizontalement sur CX. La largeur du rect = largeur du TEXTE (+ préfixe losange pour
+-- ENTER) + une marge de confort. Disponible dès new() -> le hit-test marche avant la 1re frame (testé).
 function Menu:layout()
   local n = #self.items
+  -- Pas vertical par entrée (CTA plus aéré). On RABOTE si la pile déborde la bande (cas DEV = +1 entrée).
+  local ctaStep, secStep = CTA_STEP, SEC_STEP
+  local function pileH()
+    local h = 0
+    for _, it in ipairs(self.items) do h = h + (it.kind == "cta" and ctaStep or secStep) end
+    return h
+  end
   local bandH = BAND_BOTTOM - BAND_TOP
-  -- Hauteur d'entrée FITTÉE : on part des tailles de référence, et si la pile déborde la bande (cas DEV
-  -- = 1 entrée de plus), on RABOTE la hauteur des entrées secondaires (et les gaps) jusqu'à ce que ça
-  -- tienne -> aligné, centré, jamais coupé, gouttières ÉGALES, quel que soit le nombre d'entrées. Le CTA
-  -- garde une gouttière SUPPLÉMENTAIRE (ctaGap) qui le détache visuellement du groupe secondaire.
-  local nSec = n - 1 -- entrées secondaires (toutes sauf le CTA)
-  local gap = ITEMS_GAP
-  local ctaGap = CTA_GAP
-  local itemH = ITEM_H
-  local ctaH = CTA_H
-  -- pile = CTA + ctaGap + nSec entrées séparées par `gap` (donc nSec-1 gaps internes).
-  local function pileH() return ctaH + ctaGap + nSec * itemH + math.max(0, nSec - 1) * gap end
-  -- RABOTE par paliers (ctaGap -> gap -> itemH -> ctaH) tant que ça déborde, avec des planchers lisibles.
   local guard = 0
   while pileH() > bandH and guard < 200 do
     guard = guard + 1
-    if ctaGap > 8 then ctaGap = ctaGap - 1
-    elseif gap > 6 then gap = gap - 1
-    elseif itemH > 22 then itemH = itemH - 1
-    elseif ctaH > 44 then ctaH = ctaH - 1
+    if secStep > 24 then secStep = secStep - 1
+    elseif ctaStep > 34 then ctaStep = ctaStep - 1
     else break end
   end
-  local totalH = pileH()
-  local y0 = math.floor(BAND_TOP + math.max(0, (bandH - totalH) / 2))
-  -- spacer (ctaGap - gap) inséré entre le CTA et la 1re entrée secondaire -> Layout.column garde un gap
-  -- uniforme mais le CTA respire davantage. align=center -> chaque bouton centré à sa propre largeur.
-  local band = { x = math.floor(CX - CTA_W / 2), y = y0, w = CTA_W, h = totalH }
-  local specs, map = {}, {}
-  for i, it in ipairs(self.items) do
-    local cta = (it.tone == "cta")
-    specs[#specs + 1] = { size = cta and ctaH or itemH, w = cta and CTA_W or ITEM_W }
-    map[#specs] = i
-    if cta and i == 1 then -- spacer juste après le CTA (largeur 0 -> invisible, mais occupe ctaGap-gap px)
-      specs[#specs + 1] = { size = math.max(0, ctaGap - gap), w = 0 }
-      map[#specs] = nil
-    end
+  local total = pileH()
+  local y = math.floor(BAND_TOP + math.max(0, (bandH - total) / 2))
+
+  for _, it in ipairs(self.items) do
+    local step = (it.kind == "cta") and ctaStep or secStep
+    local f = fontFor(it.kind)
+    local track = (it.kind == "cta") and CTA_TRACK or SEC_TRACK
+    -- Largeur du texte avec interlettrage (somme des avances + (#-1) tracking). Mesure UTF-8-safe via Draw.
+    local label = T(it.key)
+    local tw = Draw.textWidth(label, f)
+    local nch = math.max(1, #label)        -- approx du nombre de gaps (suffit pour le hit-test confortable)
+    tw = tw + (nch - 1) * track
+    local prefixW = (it.kind == "cta") and (DIAMOND_R * 2 + DIAMOND_GAP) or 0
+    local fullW = tw + prefixW
+    local fh = (f and f.getHeight and f:getHeight()) or step
+    local cy = y + step / 2                  -- centre vertical de la ligne
+    -- Hauteur du hit-test : texte + marge, MAIS bornée au pas (-1px de hairline) -> les rects PAVENT la pile
+    -- sans JAMAIS se chevaucher (gouttières >= 0), même quand le pas est raboté (cas DEV). Clic généreux.
+    local hitH = math.min(fh + HIT_PADY * 2, step - 1)
+    it.rect = {
+      x = math.floor(CX - fullW / 2 - HIT_PADX),
+      y = math.floor(cy - hitH / 2),
+      w = math.floor(fullW + HIT_PADX * 2),
+      h = math.floor(hitH),
+    }
+    it._cy = cy
+    it._textW = tw
+    it._prefixW = prefixW
+    y = y + step
   end
-  local rows = Layout.column(band, specs, { gap = gap, align = "center" })
-  for ri, it in pairs(map) do self.items[it].rect = rows[ri] end
 end
 
--- Indice de l'entrée sous (dx,dy) en coords design, ou nil (entrées scellées ignorées).
+-- Indice de l'entrée sous (dx,dy) en coords DESIGN, ou nil (entrées scellées ignorées).
 function Menu:itemAt(dx, dy)
   for i, it in ipairs(self.items) do
     local r = it.rect
@@ -134,7 +158,6 @@ end
 function Menu:update(dt)
   self.t = self.t + (dt or 1)
   self.ambient:update(dt)
-  Forge.uiTick((dt or 1) / 60) -- horloge des widgets forge (en SECONDES ; dt ~1.0/tick au 1/60)
 end
 
 -- Pre-pass : atmosphère native derrière (le menu n'a pas de monde pixel).
@@ -146,7 +169,7 @@ end
 
 function Menu:drawWorld() end -- aucun monde pixel (canvas laissé transparent)
 
--- Titre gothique avec halo sang (faux bloom : passes décalées en dim puis le titre net).
+-- Titre gothique avec halo sang (faux bloom : passes décalées en dim puis le titre net). Préservé de l'original.
 local function drawTitleGlow(str, cx, y, font)
   local c = Theme.c
   local off = { { 3, 0 }, { -3, 0 }, { 0, 3 }, { 0, -3 }, { 2, 2 }, { -2, -2 } }
@@ -154,43 +177,88 @@ local function drawTitleGlow(str, cx, y, font)
   Draw.textC(str, cx, y, c.title, font)
 end
 
+-- Losange (rotation 45°) plein, en coords design. cx,cy = centre, r = demi-diagonale.
+local function diamond(cx, cy, r, color, alpha)
+  if not (love and love.graphics) then return end
+  Draw.setColor(color, alpha)
+  love.graphics.polygon("fill", cx, cy - r, cx + r, cy, cx, cy + r, cx - r, cy)
+  Draw.reset()
+end
+
+-- Dessine une entrée de menu (texte gravé + état). Tout est centré sur CX à partir du rect calculé.
+function Menu:drawItem(it, hovered)
+  local c = Theme.c
+  local cy = it._cy
+  local f = fontFor(it.kind)
+  local track = (it.kind == "cta") and CTA_TRACK or SEC_TRACK
+  local label = T(it.key)
+  local fh = (f and f.getHeight and f:getHeight()) or 16
+  local ty = math.floor(cy - fh / 2)
+
+  if it.kind == "cta" then
+    -- ENTER THE PIT (héros) : losange sang en préfixe + texte ink (vif au survol) + lueur sang douce.
+    local blockW = it._prefixW + it._textW
+    local x0 = CX - blockW / 2
+    local dx = x0 + DIAMOND_R
+    -- lueur sang derrière le losange (signature héros)
+    diamond(dx, cy, DIAMOND_R + 2, c.blood, hovered and 0.5 or 0.32)
+    diamond(dx, cy, DIAMOND_R, c.blood, 1)
+    local textX = x0 + it._prefixW
+    local col = hovered and c.ink or c.title
+    -- faux glow : passes sang décalées sous le texte (la lueur 0 0 16px du designer)
+    local goff = { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }
+    for _, o in ipairs(goff) do
+      Draw.textTrackedL(label, textX + o[1], ty + o[2], { c.blood[1], c.blood[2], c.blood[3], hovered and 0.30 or 0.20 }, f, track)
+    end
+    Draw.textTrackedL(label, textX, ty, col, f, track)
+  else
+    -- Secondaires / désactivées : texte centré. Survol -> ink vif + soulignement sang discret.
+    local base = (it.kind == "off") and c.ink4 or c.ink2
+    local col = (it.enabled and hovered) and c.ink or base
+    local w = Draw.textTrackedC(label, CX, ty, col, f, track)
+    if it.enabled and hovered then
+      Draw.setColor(c.blood, 0.8)
+      if love and love.graphics then love.graphics.rectangle("fill", math.floor(CX - w / 2), ty + fh + 1, math.ceil(w), 1) end
+      Draw.reset()
+    end
+  end
+end
+
 function Menu:drawOverlay(view)
   local c = Theme.c
   Draw.begin(view)
 
-  -- Kicker (saveur, serif romain lisible) + logotype gothique (PRÉSERVÉ : Jacquard).
-  Draw.textTrackedC(T("menu.descend"), CX, 250, c.faint, Theme.loreRoman(20), 8)
-  drawTitleGlow(T("menu.title"), CX, 280, Theme.display(128))
-  Draw.divider(CX, 444, 300, c.blood, 1)
+  -- Kicker (saveur) — Space Mono ~10px, tracking large, ink-3, centré.
+  Draw.textTrackedC(T("menu.descend"), CX, 250, c.ink3, Theme.label(10), 4)
+  -- Logotype gothique « The Pit » (PRÉSERVÉ : Jacquard) — ~74px, ink, ombre + lueur sang.
+  drawTitleGlow(T("menu.title"), CX, 280, Theme.display(74))
+  -- Filet laiton/sang + losange central (Draw.divider profil triangulaire + diamant sang au centre).
+  Draw.divider(CX, 422, 300, c.brass, 0.9)
+  diamond(CX, 422, 4, c.blood, 1)
 
-  -- Entrées : boutons forge. ENTER = bouton-œil (cta, regard depuis la souris) ; les autres = forge éco ;
-  -- les scellées = désactivées (grisé hachuré). L'état hover/active vient du hit-test de la scène.
+  -- Entrées empilées : ENTER (héros) puis secondaires/désactivées. L'état hover vient du hit-test de la scène.
   for i, it in ipairs(self.items) do
-    local r = it.rect
-    local hov = (self.hover == i)
-    Forge.uiButton("menu." .. it.id, r.x, r.y, r.w, r.h, T(it.key),
-      { tone = it.tone, hover = it.enabled and hov, active = it.enabled and hov and self.down,
-        disabled = not it.enabled, mouse = { mx = self.mx, my = self.my },
-        fontSz = (it.tone == "cta") and 9 or 8, eyeR = 7, t = self.t / 60 })
+    self:drawItem(it, self.hover == i)
   end
 
-  -- Pied : reliques inscrites (méta-progression) à gauche, tag à droite.
+  -- Pied : reliques inscrites (méta-progression) en gold à gauche, version en ink-5 à droite.
   local inscribed = (Grimoire.count and Grimoire.count()) or 0
-  Draw.text(T("menu.relics", { n = inscribed, total = #Relics.order }), 24, 690, c.fainter, Theme.ui(12))
-  Draw.textR(T("menu.tag"), Draw.W - 24, 690, c.ghost, Theme.ui(12))
+  Draw.text(T("menu.relics", { n = inscribed, total = #Relics.order }), 24, 690, c.gold, Theme.label(10))
+  Draw.textR(T("menu.tag"), Draw.W - 24, 690, c.ink5, Theme.label(10))
 
   -- Toggle MODE DEV (coin haut-gauche) : visible seulement si Dev.ENABLED. Libellé en dur (dev-only).
   if self.devRect then
     local on, r = Dev.fullUnlock(), self.devRect
     Draw.rect(r.x, r.y, r.w, r.h, c.panelDeep, on and c.gold or c.hair, 1)
     Draw.text(on and "[DEV] FULL UNLOCK: ON" or "[DEV] FULL UNLOCK: OFF", r.x + 10, r.y + 7,
-      on and c.goldBright or c.fainter, Theme.ui(11))
+      on and c.goldBright or c.fainter, Theme.label(10))
   end
 
   Draw.finish()
 end
 
--- Souris : hover (mousemoved) + activation (mousepressed). Coords virtuelles -> design (×4).
+-- ── Souris : hover (mousemoved) + arme (mousepressed) + agit (mousereleased). La souris arrive en VIRTUEL
+-- (320×180, main.lua a divisé par view.scale) -> on la repasse en DESIGN (×4) pour le hit-test, comme l'UI.
 function Menu:mousemoved(vx, vy)
   local dx, dy = vx * 4, vy * 4
   self.mx, self.my = dx, dy
@@ -212,7 +280,7 @@ end
 function Menu:mousereleased(vx, vy, button)
   if button ~= 1 then return end
   self.down = false
-  local i = self:itemAt(vx * 4, vy * 4)
+  local i = self:itemAt((vx or 0) * 4, (vy or 0) * 4)
   if i and self.items[i].action then self.items[i].action() end
 end
 

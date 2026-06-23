@@ -1,16 +1,16 @@
 -- src/ui/tooltip.lua
--- MOLÉCULE « infobulle / tooltip » (design-system §2.14) — un mini-panneau forge qui décrit une unité au
--- survol : NOM (Cinzel) + chip de famille à droite + BARRE DE STATS encastrée (Space Mono, labels ink3 /
--- valeurs ink) + nom de PASSIF (Space Mono or) + chip d'affliction + PROSE (Spectral). Une petite FLÈCHE
--- pointe vers l'élément survolé (gauche par défaut, comme la maquette : « left:-6px top:24px »).
+-- MOLÉCULE « infobulle / tooltip » (design-system §2.14) — un mini-panneau qui décrit une unité au survol :
+-- NOM (Cinzel) + chip de famille à droite + BARRE DE STATS encastrée (Space Mono, labels ink3 / valeurs
+-- ink) + nom de PASSIF (Space Mono or) + chip d'affliction + PROSE (Spectral). Une petite FLÈCHE pointe vers
+-- l'élément survolé (gauche par défaut, comme la maquette : « left:-6px top:24px »).
 --
--- ── ARCHI ─────────────────────────────────────────────────────────────────────────────────────────
--- On BAKE le FOND (mini-panneau : plaque + veines + cadre patiné + flèche) dans un widget Forge caché par
--- id ; le contenu LISIBLE (nom, stats, passif, prose) est dessiné en OVERLAY VIVANT (vraies voix typo) via
--- les helpers Draw + Chip. La barre de stats est un encadré sobre (Frame plain) qui ENCAISSE les valeurs.
--- RENDER pur, espace DESIGN, HEADLESS-SAFE (bake pcall-gardé ; overlays no-op sans police ; Chip no-op).
+-- ── ARCHI — ENTIÈREMENT PROPRE (zéro Forge / zéro œil baké / zéro métal gritty) ─────────────────────
+-- Le fond est un Panel propre (dégradé sombre + liseré iron + éclat haut) ; la flèche est un triangle plein
+-- net (love.graphics, bordé iron) qui déborde du bord choisi ; la barre de stats est un rect encastré
+-- (stone900 + iron). Le contenu LISIBLE (nom, stats, passif, prose) est dessiné par les helpers Draw + Chip
+-- (vraies voix typo). RENDER pur, espace DESIGN, HEADLESS-SAFE.
 --
--- Tooltip.draw(x, y, opts) :
+-- Tooltip.draw(x, y, opts) :   (signature publique INCHANGÉE)
 --   x,y     coin haut-gauche du panneau en ESPACE DESIGN. La flèche déborde à GAUCHE (opts.arrow="left").
 --   opts = {
 --     name    = nom de l'unité (Cinzel)                  -- requis pour l'en-tête
@@ -21,13 +21,13 @@
 --     prose   = description (Spectral ink2, wrap)         -- optionnel
 --     w       = largeur (défaut 248, §2.14) ; h auto-mesurée si absente.
 --     arrow   = "left"|"right"|"none" (défaut "left")
---     id, t   = cache + horloge (le veilleur de l'œil + veines respirent).
+--     t, id   = acceptés pour compat ; ignorés (le tooltip propre est statique).
 --   }
 --   Retourne (x, y, w, h) = le rect réel occupé (h mesurée) pour le placement / clamp à l'écran.
 
 local Theme = require("src.ui.theme")
 local Draw = require("src.ui.draw")
-local Forge = require("src.ui.forge")
+local Panel = require("src.ui.panel")
 local Chip = require("src.ui.chip")
 local C = Theme.c
 
@@ -39,7 +39,9 @@ local DEFAULT_W = 248 -- §2.14 : « Width: 248px »
 local PAD = 14        -- §2.14 : « padding 13–14px 15px »
 local ARROW = 10      -- §2.14 : « Arrow: 10×10px »
 
--- Mesure la HAUTEUR nécessaire (pour dimensionner avant de baker). On reproduit la pile de l'overlay.
+local function g() return love and love.graphics or nil end
+
+-- Mesure la HAUTEUR nécessaire (pour dimensionner avant de dessiner). Reproduit la pile de l'overlay.
 local function measureH(opts, innerW)
   local h = PAD
   -- en-tête (nom Cinzel)
@@ -72,63 +74,41 @@ local function measureH(opts, innerW)
   return h + PAD
 end
 
--- ── BAKE : mini-panneau forge (plaque + veines + cadre patiné + flèche) ─────────────────────────────
-local function bakeTip(buf, W, H, p)
-  local Eye = require("src.ui.eye")
-  local B = 2
-  -- matière + biseau (framedPlate = moteur de Frame.draw) — plaque pleine, liseré métal sobre.
-  Forge.framedPlate(buf, W, H, { fill = true, th = B, seed = p.seed })
-  -- FLÈCHE (petit losange métal qui déborde du bord) : on la pose DANS le tampon, sur le bord choisi, à ~24px
-  -- du haut (« top:24px » de la maquette). C'est un coin tourné à 45° (port du clip-path rotate(45deg)).
-  local ay = floor(min(H - ARROW, p.arrowY or 24) + 0.5)
-  if p.arrow == "left" then
-    for k = 0, ARROW - 1 do
-      local span = (k < ARROW / 2) and k or (ARROW - 1 - k)
-      for s = 0, span do
-        buf:set(s, ay + k, s == span and { 8, 5, 3 } or { 22, 17, 29 })
-      end
-    end
-  elseif p.arrow == "right" then
-    for k = 0, ARROW - 1 do
-      local span = (k < ARROW / 2) and k or (ARROW - 1 - k)
-      for s = 0, span do
-        buf:set(W - 1 - s, ay + k, s == span and { 8, 5, 3 } or { 22, 17, 29 })
-      end
-    end
+-- FLÈCHE propre : un triangle plein (fond du panneau) bordé iron, qui déborde du bord choisi à ~24px du haut
+-- (« top:24px »). side ∈ "left"|"right". Dessiné en love.graphics direct (net, pas de bake).
+local function arrowTri(x, y, w, h, side, ay)
+  local gr = g(); if not (gr and gr.polygon) then return end
+  ay = floor(min(h - ARROW, ay or 24))
+  local fill = C.stone850
+  local mid = ay + ARROW / 2
+  if side == "left" then
+    gr.setColor(fill[1], fill[2], fill[3], 1)
+    gr.polygon("fill", x, ay, x, ay + ARROW, x - ARROW, mid)
+    gr.setColor(C.iron[1], C.iron[2], C.iron[3], 1)
+    gr.line(x, ay, x - ARROW, mid, x, ay + ARROW)
+  elseif side == "right" then
+    gr.setColor(fill[1], fill[2], fill[3], 1)
+    gr.polygon("fill", x + w, ay, x + w, ay + ARROW, x + w + ARROW, mid)
+    gr.setColor(C.iron[1], C.iron[2], C.iron[3], 1)
+    gr.line(x + w, ay, x + w + ARROW, mid, x + w, ay + ARROW)
   end
-  -- veilleur (œil qui s'ouvre/se ferme en cycle, bas-droite, hors du contenu) : rend l'UI vivante.
-  Eye.watcher(buf, W, H, p.t or 0, p.seed or 42, { fx = 0.9, fy = 0.88, r = 4, blood = 0.6 })
-  return B
+  gr.setColor(1, 1, 1, 1)
 end
-
-Tooltip._cache = {}
 
 function Tooltip.draw(x, y, opts)
   opts = opts or {}
   x, y = floor(x), floor(y)
   local w = floor(opts.w or DEFAULT_W)
-  local px = opts.px or Forge.PX
   local arrow = opts.arrow or "left"
-  local t = opts.t or 0
   local innerW = w - 2 * PAD
   local h = floor(opts.h or measureH(opts, innerW))
-  local id = opts.id or ("tip:" .. floor(x) .. "," .. floor(y) .. "x" .. floor(w))
-  local seed = opts.seed or 42
 
-  -- 1) BAKE du fond (cache par id ; re-bake si géométrie/arrow change ou pour animer le veilleur -> on
-  --    re-bake chaque frame comme MonsterCard : 1 tooltip visible à la fois, c'est bon marché). Headless-safe.
-  local aw, ah = max(1, floor(w / px)), max(1, floor(h / px))
-  local e = Tooltip._cache[id]
-  if not e or e.aw ~= aw or e.ah ~= ah then
-    e = { widget = Forge.newWidget(aw, ah), aw = aw, ah = ah }
-    Tooltip._cache[id] = e
-  end
-  e.image = Forge.render(e.widget, function(b, W, H, tt)
-    bakeTip(b, W, H, { arrow = arrow, seed = seed, t = tt, arrowY = floor(24 / px) })
-  end, t)
-  Forge.blit(e.image, x, y, px)
+  -- 1) FOND : Panel propre (dégradé stone800→stone900 + liseré iron + éclat haut).
+  Panel.draw(x, y, w, h, { fill1 = C.stone800, fill2 = C.stone900 })
+  -- 2) FLÈCHE (triangle net débordant), si demandée.
+  if arrow == "left" or arrow == "right" then arrowTri(x, y, w, h, arrow, 24) end
 
-  -- 2) OVERLAYS LISIBLES (no-op headless via Draw / Chip -> love.graphics absent sous le mock).
+  -- 3) OVERLAYS LISIBLES (no-op headless via Draw / Chip).
   if love and love.graphics and love.graphics.print then
     local cursorY = y + PAD
     local bodyX = x + PAD
@@ -147,13 +127,11 @@ function Tooltip.draw(x, y, opts)
     end
     cursorY = cursorY + (nf and nf:getHeight() or 16) + 8
 
-    -- ── barre de STATS (encadré sobre + valeurs Space Mono, labels ink3 / valeurs ink) ──
+    -- ── barre de STATS (encadré sombre + valeurs Space Mono, labels ink3 / valeurs ink) ──
     if opts.stats and #opts.stats > 0 then
       local sf = Theme.value(11) or Theme.label(11)
       local barH = (sf and sf:getHeight() or 12) + 14
-      -- fond encastré sombre (#0a0810-ish via Theme.c.stone900) bordé iron, comme la maquette.
       Draw.rect(bodyX, cursorY, innerW, barH, C.stone900, C.iron, 1)
-      -- compose les stats en flex « evenly » sur la largeur intérieure.
       if sf then
         love.graphics.setFont(sf)
         local n = #opts.stats

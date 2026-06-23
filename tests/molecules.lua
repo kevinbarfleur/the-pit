@@ -1,21 +1,15 @@
 -- tests/molecules.lua
 -- LES TROIS MOLÉCULES du design system (§V) : carte de relique (§2.13), bandeau de destin (§2.19),
 -- infobulle (§2.14). Smoke HEADLESS sous le mock LÖVE : chaque module se require, chaque fonction se dessine
--- dans TOUTES ses variantes d'état SANS crash (bake Forge no-op gracieux), avec des assertions saines sur les
--- contrats de retour. RENDER pur -> golden neutre (on ne touche aucune couche SIM). Calqué sur reliquary.lua.
+-- dans TOUTES ses variantes d'état SANS crash, avec des assertions saines sur les contrats de retour. Les
+-- molécules sont PROPRES (composées d'atomes Panel/Badge/Dividers/Chip + voix typo Draw — zéro Forge / zéro
+-- œil baké) : tout no-op gracieusement headless. RENDER pur -> golden neutre (aucune couche SIM touchée).
 
-love = require("tests.mock_love") -- SET le global love (les bakes Forge utilisent love.image / love.graphics)
+love = require("tests.mock_love") -- SET le global love (les atomes propres utilisent love.graphics)
 
 local RelicCard = require("src.ui.relic_card")
 local Banner = require("src.ui.banner")
 local Tooltip = require("src.ui.tooltip")
-local Forge = require("src.ui.forge")
-
-local function count(tbl)
-  local n = 0
-  for _ in pairs(tbl) do n = n + 1 end
-  return n
-end
 
 -- ════════════════════════════ 1) RELIC CARD (§2.13) ════════════════════════════
 -- Les TROIS états (identified / cryptic / selected) se dessinent sans crash et retournent une zone intérieure
@@ -57,14 +51,6 @@ do
     RelicCard.draw(0, 0, 200, 160, { state = "identified", name = "Bare", fam = "bone" })
   end)
   assert(ok, "RelicCard.draw (champs minimaux) ne doit pas crasher : " .. tostring(err))
-
-  -- mémoïsation : un 2e draw à même id NE crée PAS d'entrée de cache supplémentaire.
-  local before = count(RelicCard._cache)
-  RelicCard.draw(40, 40, 248, 180, { id = "rc:test", state = "identified", name = "A", fam = "flesh" })
-  local mid = count(RelicCard._cache)
-  RelicCard.draw(40, 40, 248, 180, { id = "rc:test", state = "identified", name = "A", fam = "flesh" })
-  assert(count(RelicCard._cache) == mid, "même id -> pas de nouvelle entrée de cache (mémoïsé)")
-  assert(mid > before, "un nouvel id crée bien une entrée")
 end
 
 -- ════════════════════════════ 2) BANNER (§2.19) ════════════════════════════
@@ -126,8 +112,10 @@ do
   assert(ok, "Tooltip.draw (variantes) ne doit pas crasher : " .. tostring(err))
 end
 
--- ════════════════════════════ 4) HEADLESS-SAFE (firewall de bake) ════════════════════════════
--- Sous le mock, Forge.real() est faux -> aucun bake GPU réel ; les widgets existent quand même (no-op propre).
-assert(Forge.real() == false, "sous le mock LÖVE, le bake Forge no-op (real() = false)")
+-- ════════════════════════════ 4) PROPRE & HEADLESS-SAFE ════════════════════════════
+-- Les molécules propres ne bakent rien (pas de cache Forge) : aucune n'expose de table _cache (signature
+-- de l'ancien design gritty retirée). Tout le rendu passe par les atomes propres + Draw (no-op sous le mock).
+assert(RelicCard._cache == nil and Banner._cache == nil and Tooltip._cache == nil,
+  "molécules PROPRES : aucun cache de bake Forge (plus rien de l'ancien design)")
 
-print("=> MOLECULES OK : relic_card (3 etats) + banner (3 verdicts) + tooltip (mesure + variantes), headless-safe.")
+print("=> MOLECULES OK : relic_card (3 etats) + banner (3 verdicts) + tooltip (mesure + variantes), propres + headless-safe.")

@@ -531,36 +531,50 @@ local ok, err = pcall(function()
     local host = { newRun = function() went = "run" end, goto = function(n) went = n end }
     local mn = Menu.new(Palette, 320, 180, host)
     assert(#mn.items >= 5, "menu : entrées construites")
-    for _, it in ipairs(mn.items) do assert(it.rect and it.rect.w > 0, "menu : chaque entrée a un rect Layout") end
-    assert(mn.items[1].tone == "cta", "menu : ENTER = bouton-œil cta")
-    -- LAYOUT (FIX overflow) : TOUTES les entrées tiennent à l'ÉCRAN (jamais coupées sous le pied @690) et
-    -- restent SOUS le diviseur (444). Les entrées secondaires gardent une gouttière ÉGALE (rythme régulier).
+    for _, it in ipairs(mn.items) do assert(it.rect and it.rect.w > 0, "menu : chaque entrée a un rect de hit-test") end
+    assert(mn.items[1].kind == "cta", "menu : ENTER = entrée HÉROS (kind cta)")
+    -- LAYOUT : TOUTES les entrées tiennent à l'ÉCRAN (jamais coupées sous le pied @690) et restent SOUS le
+    -- diviseur (444). Les entrées secondaires gardent une gouttière ÉGALE (rythme régulier) ET les rects de
+    -- hit-test ne se CHEVAUCHENT PAS (gouttière >= 0 -> chaque pixel cliqué appartient à une seule entrée).
     for _, it in ipairs(mn.items) do
       assert(it.rect.y >= 444, "menu : entrée sous le diviseur (pas de chevauchement du titre)")
       assert(it.rect.y + it.rect.h <= 690, "menu : entrée AU-DESSUS du pied (jamais coupée hors écran)")
     end
-    local sec = {} -- entrées secondaires (hors CTA), dans l'ordre vertical
-    for _, it in ipairs(mn.items) do if it.tone ~= "cta" then sec[#sec + 1] = it.rect end end
+    local sec = {} -- entrées non-CTA (secondaires + désactivées), dans l'ordre vertical
+    for _, it in ipairs(mn.items) do if it.kind ~= "cta" then sec[#sec + 1] = it.rect end end
     table.sort(sec, function(a, b) return a.y < b.y end)
     if #sec >= 3 then
       local g1 = sec[2].y - (sec[1].y + sec[1].h)
-      for k = 2, #sec - 1 do
+      for k = 1, #sec - 1 do
         local gk = sec[k + 1].y - (sec[k].y + sec[k].h)
-        assert(math.abs(gk - g1) <= 1, "menu : gouttières ÉGALES entre entrées secondaires")
+        assert(gk >= 0, "menu : rects de hit-test sans chevauchement (gouttière >= 0)")
+        assert(math.abs(gk - g1) <= 1, "menu : gouttières ÉGALES entre entrées non-CTA")
       end
     end
     mn:update(1.0)
     mn:drawBack(view); mn:drawWorld(); mn:drawOverlay(view)
-    -- survol + clic-relâché sur ENTER -> déclenche newRun.
+    -- CLIQUABILITÉ (le cœur) — survol + clic-relâché sur ENTER -> déclenche newRun. La souris arrive en
+    -- VIRTUEL (centre du rect ÷4) ; le menu la repasse en design (×4) pour le hit-test.
     local r1 = mn.items[1].rect
     mn:mousemoved((r1.x + r1.w / 2) / 4, (r1.y + r1.h / 2) / 4)
     assert(mn.hover == 1, "menu : survol de ENTER")
     mn:mousepressed((r1.x + r1.w / 2) / 4, (r1.y + r1.h / 2) / 4, 1)
+    assert(mn.down, "menu : pointer-down arme l'entrée")
     mn:drawOverlay(view) -- pressé (active)
     mn:mousereleased((r1.x + r1.w / 2) / 4, (r1.y + r1.h / 2) / 4, 1)
     assert(went == "run", "menu : clic sur ENTER lance la run")
+    -- CLIQUABILITÉ d'une entrée SECONDAIRE (preuve au-delà du CTA) : GRIMOIRE -> host.goto("grimoire").
+    local gi
+    for i, it in ipairs(mn.items) do if it.id == "grimoire" then gi = i end end
+    local rg = mn.items[gi].rect
+    went = nil
+    mn:mousemoved((rg.x + rg.w / 2) / 4, (rg.y + rg.h / 2) / 4)
+    assert(mn.hover == gi, "menu : survol de GRIMOIRE")
+    mn:mousepressed((rg.x + rg.w / 2) / 4, (rg.y + rg.h / 2) / 4, 1)
+    mn:mousereleased((rg.x + rg.w / 2) / 4, (rg.y + rg.h / 2) / 4, 1)
+    assert(went == "grimoire", "menu : clic sur GRIMOIRE ouvre le grimoire")
     mn:keypressed("down"); mn:keypressed("up"); mn:keypressed("return") -- navigation clavier (no crash)
-    -- entrée scellée (rites) : non hoverable.
+    -- entrée scellée (rites) : non hoverable / non cliquable.
     local sealed
     for i, it in ipairs(mn.items) do if it.id == "rites" then sealed = i end end
     local rs = mn.items[sealed].rect

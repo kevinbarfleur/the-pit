@@ -15,16 +15,26 @@
 
 local Theme = require("src.ui.theme")
 local Draw = require("src.ui.draw")
-local Frame = require("src.ui.frame")
 local Chip = require("src.ui.chip")
 local Keywords = require("src.ui.keywords")
-local Forge = require("src.ui.forge")
+local Forge = require("src.ui.forge") -- conservé UNIQUEMENT pour §III (afflShape) + losange du hero ; §IV/§V sont PROPRES
 local Ambient = require("src.fx.ambient")
 local MiniRig = require("src.render.minirig")
 local Reliquary = require("src.ui.reliquary")
 local Units = require("src.data.units")
 local T = require("src.core.i18n").t
 local C = Theme.c
+
+-- ── COMPOSANTS PROPRES (§IV/§V) — le seul kit autorisé désormais (zéro widget forge gritty) ──────────
+local Button = require("src.ui.button")     -- 5 variantes (primary/secondary/eco/icon/ghost) × états
+local Panel = require("src.ui.panel")       -- surface (dégradé + liseré iron + éclat)
+local Gauge = require("src.ui.gauge")       -- health(+segments DoT)/cooldown/lives/descent
+local Slot = require("src.ui.slot")         -- case de plateau (6 états) + arête
+local Badge = require("src.ui.badge")       -- cost / level-pips / rarity / diamond
+local Dividers = require("src.ui.dividers") -- brass / blood / text
+local RelicCard = require("src.ui.relic_card") -- §V molécule
+local Banner = require("src.ui.banner")        -- §V molécule
+local Tooltip = require("src.ui.tooltip")      -- §V molécule
 
 local Screen = {}
 Screen.__index = Screen
@@ -101,7 +111,6 @@ local COLOR_GROUPS = {
 }
 
 -- ── TYPOGRAPHIE : les quatre voix (kicker, fonte, échantillon, rôle) ──
-local STATE_NAMES = { "idle", "hover", "pressed", "disabled", "selected", "danger", "drop" }
 local AFFL_KEYS = { "poison", "bleed", "burn", "rot", "shock" }
 local ICONO_AFFL = { "burn", "bleed", "poison", "rot", "shock", "regen", "shield" }
 local TYPE_NAMES = { "flesh", "order", "bone", "arcane", "abyss" }
@@ -158,18 +167,24 @@ function Screen:buildSections()
         { id = "typepips", label = "Types d'unité (une forme par faction)", h = 96, draw = Screen.drawTypePips },
         { id = "afflicons", label = "Afflictions (une forme par famille)", h = 104, draw = Screen.drawAffl },
       } },
-    { id = "composants", numeral = "IV", kicker = "Molécules · re-skin en cours", title = "Composants",
-      intro = "Le kit métal porté depuis la référence du designer : pierre gravée, biseau de laiton, runes qui s'éveillent.",
+    { id = "composants", numeral = "IV", kicker = "Atomes · le kit propre", title = "Composants",
+      intro = "Le kit NET porté de la référence du designer : surfaces calmes, liseré de fer, accents rares. Pas de bruit — la crasse viendra au shader.",
       navLabel = "IV · COMPOSANTS", entries = {
-        { id = "buttons", label = "Boutons (Forge.uiButton)", h = 232, draw = Screen.drawButtons },
-        { id = "states", label = "États interactifs (Frame)", h = 64, draw = Screen.drawStates },
-        { id = "frames", label = "Cadres (Frame.draw)", h = 150, draw = Screen.drawFrames },
-        { id = "chips", label = "Chips (Chip.draw)", h = 64, draw = Screen.drawChips },
-        { id = "status", label = "Statut + chips (Keywords)", h = 78, draw = Screen.drawStatus },
-        { id = "marks", label = "Pips · diamants · pièces", h = 70, draw = Screen.drawMarks },
-        { id = "plates", label = "Plaques & sockets (Forge)", h = 110, draw = Screen.drawPlates },
-        { id = "values", label = "Value-tags · barres · dividers", h = 96, draw = Screen.drawValues },
+        { id = "buttons", label = "Boutons (Button — 5 variantes × états)", h = 220, draw = Screen.drawButtons },
+        { id = "panels", label = "Surfaces (Panel.draw / vgrad / niche)", h = 110, draw = Screen.drawPanels },
+        { id = "gauges", label = "Jauges (Gauge — vie+DoT / cooldown / vies / descente)", h = 150, draw = Screen.drawGauges },
+        { id = "slots", label = "Cases du plateau (Slot — 6 états + arête)", h = 96, draw = Screen.drawSlots },
+        { id = "badges", label = "Badges (Badge — coût / pips de niveau / rareté)", h = 88, draw = Screen.drawBadges },
+        { id = "dividers", label = "Séparateurs (Dividers — brass / blood / text)", h = 84, draw = Screen.drawDividers },
+        { id = "chips", label = "Chips (Chip.draw) + statut (Keywords)", h = 96, draw = Screen.drawChips },
         { id = "rigs", label = "Mini-rigs (MiniRig.draw)", h = 84, draw = Screen.drawRigs },
+      } },
+    { id = "molecules", numeral = "V", kicker = "Molécules · assemblages propres", title = "Molécules",
+      intro = "Trois assemblages d'atomes : la carte de relique (inscrite / cryptique), le bandeau de destin (les trois verdicts), l'infobulle d'unité.",
+      navLabel = "V · MOLÉCULES", entries = {
+        { id = "reliccards", label = "Cartes de relique (RelicCard — inscrite / cryptique)", h = 224, draw = Screen.drawRelicCards },
+        { id = "banners", label = "Bandeaux de destin (Banner — victory / defeat / ascension)", h = 200, draw = Screen.drawBanners },
+        { id = "tooltip", label = "Infobulle d'unité (Tooltip.draw)", h = 180, draw = Screen.drawTooltip },
       } },
   }
 end
@@ -214,9 +229,8 @@ function Screen:clampScroll()
 end
 
 function Screen:update(frameDt)
-  self.t = self.t + (frameDt or 1) / 60 -- horloge en SECONDES (respiration des widgets forge ; cf. frameforge)
+  self.t = self.t + (frameDt or 1) / 60 -- horloge en SECONDES (lueur pulsée du bandeau ; survol du LIVE)
   self.ambient:update(frameDt)
-  Forge.uiTick((frameDt or 1) / 60)
 end
 
 function Screen:drawBack(view)
@@ -329,10 +343,10 @@ function Screen:drawHero(x, y, w)
   local tf = Theme.display(104)
   Draw.textC("The Pit", cx, y + 20 + 2, C.void, tf)
   Draw.textC("The Pit", cx, y + 20, C.ink, tf)
-  -- filet à losange de sang.
+  -- filet à losange de sang (atome propre Badge.diamond).
   local dy = y + 150
   Draw.divider(cx, dy, 560, C.brass, 0.5)
-  Forge.diamondAt(cx, dy, 4, C.blood, C.bloodD)
+  Badge.diamond(cx, dy, 4, C.blood, C.bloodD, C.bloodL)
   -- accroche (Spectral italique, centrée).
   Draw.textWrap("Une refonte du langage visuel. Crasse, sang, et une géométrie qui ment — mais où chaque mot se lit. On descend Le Puits, on ne devine plus l'interface.",
     cx - 320, y + 168, 640, C.ink2, Theme.flavor(15), "center")
@@ -477,150 +491,154 @@ function Screen:drawAffl(x, y, w)
   return ch
 end
 
--- ═══════════════════════════ IV · COMPOSANTS ═══════════════════════════
+-- ═══════════════════════════ IV · COMPOSANTS (kit PROPRE) ═══════════════════════════
 
--- Une rangée de boutons d'un ton, montrant ses états figés + (cta) un bouton LIVE qui suit la souris.
-function Screen:_btnRow(x, y, tone, label, bw, bh, opts)
+-- Une rangée d'un variant de Button : ses 4 états FIGÉS (idle/hover/pressed/disabled) côte à côte.
+-- variant ∈ "primary"|"secondary"|"eco". opts.cost = coût (eco). Renvoie la hauteur (bouton + libellés).
+function Screen:_btnRow(x, y, variant, label, bw, bh, opts)
   opts = opts or {}
-  local gap = 16
-  local cx = x
-  local states = { { "idle" }, { "hover", hover = true }, { "pressed", active = true }, { "disabled", disabled = true } }
-  for _, s in ipairs(states) do
-    Forge.uiButton("ds.btn." .. tone .. "." .. s[1], cx, y, bw, bh, label,
-      { tone = tone, hover = s.hover, active = s.active, disabled = s.disabled, cost = opts.cost,
-        fontSz = opts.fontSz or 8, eyeR = 7, t = self.t })
-    Draw.textC(s[1], cx + bw / 2, y + bh + 4, C.ink4, Theme.labelSmall(8))
-    cx = cx + bw + gap
-  end
-  if tone == "cta" then
-    local hov = ptIn(self.mx, self.my, cx, y, bw, bh)
-    Forge.uiButton("ds.btn.cta.live", cx, y, bw, bh, label,
-      { tone = tone, hover = hov, active = hov and self._down, mouse = { mx = self.mx, my = self.my },
-        fontSz = opts.fontSz or 8, eyeR = 7, t = self.t })
-    Draw.textC("LIVE", cx + bw / 2, y + bh + 4, C.gold, Theme.labelSmall(8))
+  local gap = 14
+  local states = { { "idle" }, { "hover", hover = true }, { "pressed", pressed = true }, { "disabled", disabled = true } }
+  for i, s in ipairs(states) do
+    local bx = x + (i - 1) * (bw + gap)
+    Button.draw(bx, y, bw, bh, variant, label, { hover = s.hover, pressed = s.pressed, disabled = s.disabled, cost = opts.cost })
+    Draw.textC(s[1], bx + bw / 2, y + bh + 5, C.ink4, Theme.labelSmall(8))
   end
   return bh + 18
 end
 
 function Screen:drawButtons(x, y, w)
   local cy = y
-  cy = cy + self:_btnRow(x, cy, "cta", "ENTER", 132, 34, { fontSz = 9 })
-  cy = cy + 8
-  cy = cy + self:_btnRow(x, cy, "eco", "REROLL", 120, 30, { cost = 2 })
-  cy = cy + 8
-  local kinds = { "sigil", "left", "right", "gear" }
+  -- PRIMARY (l'action unique, sang) — 4 états + 1 LIVE qui suit la souris.
+  cy = cy + self:_btnRow(x, cy, "primary", "FIGHT", 128, 34, {})
+  -- bouton LIVE (suit self.mx/my : hover quand survolé, pressed quand cliqué dessus).
+  do
+    local lx = x + 4 * (128 + 14)
+    local hov = ptIn(self.mx, self.my, lx, cy - (34 + 18), 128, 34)
+    Button.draw(lx, cy - (34 + 18), 128, 34, "primary", "LIVE", { hover = hov, pressed = hov and self._down })
+    Draw.textC("LIVE", lx + 64, cy - 18 + 5, C.gold, Theme.labelSmall(8))
+  end
+  cy = cy + 6
+  -- SECONDARY (laiton terni) + ECO (compact + coût or).
+  cy = cy + self:_btnRow(x, cy, "secondary", "REFUSE", 128, 32, {})
+  cy = cy + 6
+  cy = cy + self:_btnRow(x, cy, "eco", "REROLL", 128, 30, { cost = 2 })
+  cy = cy + 6
+  -- ICON (sigil / prev / next / gear) + GHOST (texte seul, survol = soulignement sang).
+  local kinds = { "sigil", "prev", "next", "gear" }
   local ix = x
   for _, k in ipairs(kinds) do
-    Forge.uiButton("ds.btn.icon." .. k, ix, cy, 36, 36, "", { tone = "icon", cost = k, t = self.t })
-    Draw.textC(k, ix + 18, cy + 40, C.ink4, Theme.labelSmall(8))
-    ix = ix + 70
+    Button.icon(ix, cy, 34, k, {})
+    Draw.textC(k, ix + 17, cy + 38, C.ink4, Theme.labelSmall(8))
+    ix = ix + 60
   end
-  return (cy - y) + 56
+  Button.ghost(ix + 8, cy, 110, 34, "[ESC] BACK", { hover = true })
+  Draw.textC("ghost", ix + 8 + 55, cy + 38, C.ink4, Theme.labelSmall(8))
+  return (cy - y) + 52
 end
 
-function Screen:drawStates(x, y, w)
-  local bw, bh, gap = 124, 30, 10
-  local font = Theme.label(11)
-  for i, name in ipairs(STATE_NAMES) do
-    local bx = x + (i - 1) * (bw + gap)
-    Frame.button(bx, y, bw, bh, name:upper(), { state = name, font = font, level = "bevel" })
-  end
-  return bh + 8
+function Screen:drawPanels(x, y, w)
+  local bw, bh, gap = 200, 88, 20
+  -- Panel.draw (dégradé + liseré + éclat) : nu, puis avec accent doré (héros/rareté).
+  Panel.draw(x, y, bw, bh, {})
+  Draw.text("Panel.draw", x + 10, y + 8, C.ink3, Theme.label(10))
+  Draw.textWrap("surface calme : dégradé sombre + liseré de fer + éclat de laiton.", x + 10, y + 26, bw - 20, C.ink4, Theme.flavor(12), "left")
+
+  local x2 = x + bw + gap
+  Panel.draw(x2, y, bw, bh, { accent = C.gold })
+  Draw.text("Panel.draw {accent}", x2 + 10, y + 8, C.gold, Theme.label(10))
+  Draw.textWrap("liseré doré interne : la rareté / l'élément héros.", x2 + 10, y + 26, bw - 20, C.ink4, Theme.flavor(12), "left")
+
+  local x3 = x2 + bw + gap
+  Panel.niche(x3, y, 120, bh)
+  Draw.textC("Panel.niche", x3 + 60, y + bh + 4, C.ink4, Theme.labelSmall(8))
+  return bh + 16
 end
 
-function Screen:drawFrames(x, y, w)
-  local levels = { "plain", "bevel", "gilded" }
-  local cols = { "idle", "hover", "pressed", "disabled", "selected", "danger" }
-  local bw, bh, gx, gy = 132, 34, 12, 12
-  local font = Theme.label(10)
-  for ci, st in ipairs(cols) do
-    Draw.text(st, x + 70 + (ci - 1) * (bw + gx), y, C.ink4, Theme.labelSmall(8))
+function Screen:drawGauges(x, y, w)
+  -- HEALTH avec SEGMENTS d'altération (DoT) peints depuis le front + bouclier.
+  Draw.text("Gauge.health (segments DoT + bouclier)", x, y, C.ink3, Theme.label(10))
+  Gauge.health(x, y + 16, 280, 18, 46, 70, {
+    segs = { { frac = 0.16, key = "bleed" }, { frac = 0.10, key = "poison" }, { frac = 0.06, key = "burn" } },
+    shield = 8,
+  })
+  -- COOLDOWN (en charge / prêt).
+  Draw.text("Gauge.cooldown (charge / ready)", x, y + 46, C.ink3, Theme.label(10))
+  Gauge.cooldown(x, y + 62, 130, 14, 0.55, false)
+  Gauge.cooldown(x + 150, y + 62, 130, 14, 1, true)
+  -- LIVES (cœurs) + DESCENT (10 victoires).
+  Draw.text("Gauge.lives", x + 320, y, C.ink3, Theme.label(10))
+  Gauge.lives(x + 320, y + 18, 3, 5, 3, 4)
+  Draw.text("Gauge.descent (7/10)", x + 320, y + 46, C.ink3, Theme.label(10))
+  Gauge.descent(x + 320, y + 64, 280, 10, 7, 10)
+  return 150
+end
+
+function Screen:drawSlots(x, y, w)
+  -- les SIX états de case, étiquetés ; + une arête active entre deux cases.
+  local size, gap = 56, 26
+  local states = {
+    { "empty" }, { "selected", level = 2, typePip = "bone" },
+    { "neighbor", affkeys = { "poison", "bleed" } }, { "drop" }, { "locked" }, { "hover" },
+  }
+  for i, s in ipairs(states) do
+    local sx = x + (i - 1) * (size + gap)
+    Slot.draw(sx, y, size, s[1], { level = s.level, typePip = s.typePip, affkeys = s.affkeys })
+    Draw.textC(s[1], sx + size / 2, y + size + 4, C.ink4, Theme.labelSmall(8))
+    -- arête de synergie entre selected (2) et neighbor (3) : un trait sang lumineux.
+    if i == 2 then Slot.edge(sx + size, y + size / 2, sx + size + gap, y + size / 2, true) end
   end
-  for li, lv in ipairs(levels) do
-    local ry = y + 14 + (li - 1) * (bh + gy)
-    Draw.text(lv, x, ry + bh / 2 - 5, C.ink3, Theme.label(10))
-    for ci, st in ipairs(cols) do
-      local bx = x + 70 + (ci - 1) * (bw + gx)
-      Frame.button(bx, ry, bw, bh, lv:upper(), { level = lv, state = st, font = font })
-    end
-  end
-  return 14 + #levels * (bh + gy)
+  return size + 18
+end
+
+function Screen:drawBadges(x, y, w)
+  -- COST (abordable / trop cher).
+  Draw.text("Badge.cost", x, y, C.ink3, Theme.label(10))
+  Badge.cost(x, y + 18, 3, true)
+  Badge.cost(x + 70, y + 18, 9, false)
+  -- LEVEL PIPS (duplicatas : 2/3).
+  Draw.text("Badge.levelPips", x + 150, y, C.ink3, Theme.label(10))
+  Badge.levelPips(x + 150, y + 20, 2, 3)
+  -- DIAMOND (la « monnaie » géométrique, en couleurs de famille).
+  Draw.text("Badge.diamond", x + 260, y, C.ink3, Theme.label(10))
+  Badge.diamond(x + 270, y + 24, 5, C.gold, C.brass, C.brassS)
+  Badge.diamond(x + 290, y + 24, 7, C.blood, C.bloodD, C.bloodL)
+  -- RARITY (R1..R5 : rang 4 gildé + pips).
+  Draw.text("Badge.rarity (R4/5)", x + 360, y, C.ink3, Theme.label(10))
+  Badge.rarity(x + 360, y + 20, 200, 4, 5, 12)
+  return 84
+end
+
+function Screen:drawDividers(x, y, w)
+  Dividers.brass(x + w / 2, y + 12, w - 20)
+  Draw.textC("Dividers.brass", x + w / 2, y + 18, C.ink4, Theme.labelSmall(8))
+  Dividers.blood(x, y + 42, w)
+  Draw.textC("Dividers.blood", x + w / 2, y + 50, C.ink4, Theme.labelSmall(8))
+  Dividers.text(x + w / 2, y + 66, w, "KNOWN EFFECT")
+  return 84
 end
 
 function Screen:drawChips(x, y, w)
+  -- rangée de chips d'affliction (clé -> icône+couleur+nom ; value à droite ; icon=false = tag pur).
   Chip.row(x, y, {
     { key = "poison", value = "6dps", font = Theme.label(9), h = 18 },
-    { key = "bleed", value = "4dps-3s", font = Theme.label(9), h = 18 },
+    { key = "bleed", value = "4dps·3s", font = Theme.label(9), h = 18 },
     { key = "burn", font = Theme.label(9), h = 18 },
     { key = "rot", label = "AMPUTE", icon = false, color = C.rot, font = Theme.label(9), h = 18 },
     { key = "shock", value = "+15%", font = Theme.label(9), h = 18 },
   }, { gap = 8 })
-  Draw.text("clé -> icône+couleur+nom ; value à droite ; icon=false pour un tag pur", x, y + 30, C.ink4, Theme.flavor(12))
-  return 48
-end
+  Draw.text("Chip.row — clé -> icône+couleur+nom ; icon=false pour un tag pur", x, y + 26, C.ink4, Theme.flavor(12))
 
-function Screen:drawStatus(x, y, w)
+  -- statut « nom + chip » (le registre Keywords) : nom dans la teinte de la famille + chip reconnaissable.
   local step = 116
+  local sy = y + 48
   for i, key in ipairs(AFFL_KEYS) do
     local cx = x + (i - 1) * step
-    local ic = Keywords.icon(key)
-    if ic then
-      love.graphics.setColor(1, 1, 1, 1)
-      love.graphics.draw(ic.image, math.floor(cx), math.floor(y + 4), 0, 2, 2)
-    end
     local kw = Keywords.get(key)
-    Draw.text(Keywords.name(key), cx + 24, y + 6, kw and kw.color or C.ink3, Theme.label(10))
-    Chip.draw(cx, y + 30, { key = key, value = "6dps", font = Theme.label(9), h = 18 })
+    Draw.text(Keywords.name(key), cx, sy, kw and kw.color or C.ink3, Theme.label(10))
+    Chip.draw(cx, sy + 16, { key = key, value = "6dps", font = Theme.label(9), h = 18 })
   end
-  local sx = x + #AFFL_KEYS * step
-  Draw.setColor(C.shield)
-  love.graphics.rectangle("fill", sx + 6, y + 4, 12, 4)
-  love.graphics.rectangle("fill", sx + 10, y, 4, 12)
-  Draw.text("shield", sx + 24, y + 6, C.shield, Theme.label(10))
-  Draw.reset()
-  return 56
-end
-
-function Screen:drawMarks(x, y, w)
-  for i, n in ipairs(TYPE_NAMES) do Draw.pip(n, x + 12 + (i - 1) * 34, y + 14, 9) end
-  Draw.text("Draw.pip", x, y + 32, C.ink4, Theme.flavor(12))
-  local dx = x + 220
-  Forge.diamondAt(dx, y + 14, 4, C.gold); Forge.diamondAt(dx + 24, y + 14, 6, C.goldBright)
-  Forge.diamondAt(dx + 52, y + 14, 8, C.blood, C.bloodDeep)
-  Draw.text("Forge.diamondAt", dx - 4, y + 32, C.ink4, Theme.flavor(12))
-  local cx = x + 420
-  Forge.coinAt(cx, y + 14, 6, C.gold); Forge.coinAt(cx + 26, y + 14, 6, C.gold, true)
-  Draw.text("Forge.coinAt (plein / dim)", cx - 6, y + 32, C.ink4, Theme.flavor(12))
-  Forge.label("LABEL", x + 660, y + 14, 16, C.ctaText, { bold = true })
-  Draw.text("Forge.label", x + 624, y + 32, C.ink4, Theme.flavor(12))
-  return 52
-end
-
-function Screen:drawPlates(x, y, w)
-  local bw, bh = 150, 72
-  Forge.uiPlate("ds.plate", x, y, bw, bh, {})
-  Draw.textC("uiPlate", x + bw / 2, y + bh + 4, C.ink4, Theme.labelSmall(8))
-  Forge.uiSocket("ds.socket", x + bw + 24, y, bw, bh, { accentCol = Forge.accentFrom(C.gold) })
-  Draw.textC("uiSocket", x + bw + 24 + bw / 2, y + bh + 4, C.ink4, Theme.labelSmall(8))
-  Forge.uiCard("ds.card", x + 2 * (bw + 24), y, bw, bh, { seed = 40, t = self.t })
-  Draw.textC("uiCard (respire)", x + 2 * (bw + 24) + bw / 2, y + bh + 4, C.ink4, Theme.labelSmall(8))
-  return bh + 16
-end
-
-function Screen:drawValues(x, y, w)
-  local specs = { { "HP", 70, C.body }, { "DMG", 6, C.dmg }, { "CD", "6s", C.ink3 } }
-  for i, s in ipairs(specs) do
-    Forge.valueTag("ds.vt." .. s[1], x + (i - 1) * 80, y, 70, 40, s[1], s[2],
-      { valueColor = s[3], accentCol = Forge.accentFrom(C.gold) })
-  end
-  local bx = x + 280
-  Draw.bar(bx, y + 6, 160, 12, 0.8, C.heal, C.stone900, C.iron)
-  Draw.bar(bx, y + 24, 160, 12, 0.35, C.blood, C.stone900, C.iron)
-  Draw.text("Draw.bar (pct)", bx, y + 42, C.ink4, Theme.flavor(12))
-  local dx = x + 480
-  Draw.divider(dx + 120, y + 16, 240, C.gold, 1)
-  Draw.text("Draw.divider", dx + 60, y + 42, C.ink4, Theme.flavor(12))
-  return 64
+  return 88
 end
 
 function Screen:drawRigs(x, y, w)
@@ -632,6 +650,56 @@ function Screen:drawRigs(x, y, w)
     Draw.textC(id, bx + box / 2, y + box + 4, C.ink4, Theme.labelSmall(8))
   end
   return box + 16
+end
+
+-- ═══════════════════════════ V · MOLÉCULES (assemblages propres) ═══════════════════════════
+
+-- Carte de relique : INSCRITE (gemme de famille + effet lisible) vs CRYPTIQUE (gemme hachurée + « ? ? ? »).
+function Screen:drawRelicCards(x, y, w)
+  local cw, ch, gap = 234, 210, 22
+  RelicCard.draw(x, y, cw, ch, {
+    state = "identified", name = "BLOODSTONE", fam = "flesh", affKey = "bleed", status = "INKED",
+    effect = "Your units strike for +20% more.", flavor = "A heart of compressed murder, still warm to the touch.",
+  })
+  RelicCard.draw(x + cw + gap, y, cw, ch, {
+    state = "selected", name = "THE KINGS' BOWL", fam = "abyss", affKey = "poison",
+    effect = "Poison deals 20% more damage.", flavor = "A bowl of endless hunger.",
+  })
+  RelicCard.draw(x + 2 * (cw + gap), y, cw, ch, {
+    state = "cryptic", name = "Hidden Thing", fam = "arcane",
+    effect = "The ink runs here. Something was seen in the Pit and never understood. Carry it, and watch.",
+  })
+  return ch
+end
+
+-- Bandeaux de destin : les trois verdicts (voix cérémoniale Jacquard), sur arène assombrie.
+function Screen:drawBanners(x, y, w)
+  local bh, gap = 168, 16
+  local bw = math.floor((w - 2 * gap) / 3)
+  Banner.draw(x, y, bw, "victory", "Victory", {
+    subtitle = "RIGHT PREVAILS", score = "Your blades struck down 4.", hint = "[CLICK] BUILD · [R] REPLAY", t = self.t,
+  })
+  Banner.draw(x + bw + gap, y, bw, "defeat", "Defeat", {
+    subtitle = "LEFT PREVAILS", score = "Cut down by venom (3).", hint = "[CLICK] BUILD · [R] REPLAY", t = self.t,
+  })
+  Banner.draw(x + 2 * (bw + gap), y, bw, "ascension", "Ascension", {
+    subtitle = "the pit gives you up, this once", score = "7 WINS · 2 LOSSES · 11 ROUNDS", hint = "[CLICK] DESCEND AGAIN", t = self.t,
+  })
+  return bh
+end
+
+-- Infobulle d'unité : nom + chip de famille + barre de stats + passif + chip d'affliction + prose + flèche.
+function Screen:drawTooltip(x, y, w)
+  local _, _, _, th = Tooltip.draw(x + 12, y, {
+    name = "EMBERLING", fam = "flesh",
+    stats = { { label = "HP", value = 18 }, { label = "DMG", value = 4 }, { label = "CD", value = "3.0s" } },
+    passive = "KINDLING", affKey = "burn",
+    prose = "Strikes burn (6 dmg/s) but the flame decays. Burn licks shields.",
+    arrow = "left", t = self.t,
+  })
+  -- une 2e infobulle (flèche à droite, nue) pour montrer la variante.
+  Tooltip.draw(x + 320, y, { name = "HUSK", arrow = "right", prose = "A quiet thing, mostly teeth.", t = self.t })
+  return math.max(th, 120)
 end
 
 -- ── Entrées (souris / molette / clavier) ────────────────────────────────────────────────────────────
