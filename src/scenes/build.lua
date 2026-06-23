@@ -41,7 +41,7 @@ local Slot = require("src.ui.slot")      -- cases du plateau (6 états) : rempla
 local Gauge = require("src.ui.gauge")    -- jauges vies/XP : remplace l'orbe forge baké
 local Badge = require("src.ui.badge")    -- coût (pièce+nombre) / pips de niveau / diamants : remplace Forge.coinAt/diamondAt/label
 local Feel = require("src.ui.feel")      -- JUICE : survol (glow/lift) + press (squash/flash) + action différée
-local Reliquary = require("src.ui.reliquary") -- ENROBAGE : cadre de pierre gravée autour de l'écran (spec §A.9)
+local ScreenFrame = require("src.ui.screenframe") -- ENROBAGE partagé : cadre de pierre gravée + onglet de nom
 local Layout = require("src.ui.layout") -- MOTEUR de layout flex (alignement parfait, fill-to-container)
 local Keywords = require("src.ui.keywords") -- registre afflictions (mini-chips de carte)
 local Chip = require("src.ui.chip") -- pastilles keyword (icône d'affliction)
@@ -159,7 +159,7 @@ end
 -- (resize -> rappeler). Empile : HUD bar -> en-tête sigil -> [ board GAUCHE | inspecteur 256 DROITE ] -> THE
 -- OFFERING. Pose aussi le CENTRE du board (virtuel) pour computeLayout + les rects des boutons de reshape.
 function Build:computeRegions()
-  local ix, iy, iw, ih = Reliquary.inset(0, 0, Draw.W, Draw.H, { ft = FRAME_FT, pad = 2 })
+  local ix, iy, iw, ih = ScreenFrame.inset({ ft = FRAME_FT, pad = 2 })
   self.inset = { x = ix, y = iy, w = iw, h = ih }
   self.hudBar = { x = ix, y = iy, w = iw, h = HUD_H }
   self.sigilBar = { x = ix, y = iy + HUD_H + 2, w = iw, h = SIGIL_H }
@@ -931,9 +931,8 @@ function Build:drawOverlay(view)
   local ui = self.uiState or self:computeUi()
   Draw.begin(view)
 
-  -- 1) CADRE RELIQUAIRE plein écran + onglet « BUILD » centré sur le bord haut.
-  Reliquary.draw(0, 0, Draw.W, Draw.H, { ft = FRAME_FT })
-  self:_drawNameTab(T("scene.build"):upper())
+  -- 1) CADRE RELIQUAIRE partagé (ScreenFrame) : bande de pierre gravée plein écran + onglet « BUILD ».
+  ScreenFrame.draw(T("scene.build"):upper(), { ft = FRAME_FT })
 
   -- 2) BARRE HUD (GOLD / LIVES / DESCENT / ROUND / STREAK / TIER) ou repli sandbox.
   if run then self:_drawHudBar(run)
@@ -964,7 +963,7 @@ function Build:drawOverlay(view)
   local hb = self.lay.shopHeader
   if hb then
     local capF = Theme.label(9)
-    local cap = T("ui.offering"); if cap == "ui.offering" then cap = "THE OFFERING" end -- repli (clé i18n à ajouter)
+    local cap = T("ui.offering")
     Draw.textTrackedL(cap, hb.x, hb.y + (hb.h - capF:getHeight()) / 2, c.ink3, capF, 2)
     local cw = Draw.textWidth(cap, capF) + #cap * 2 + 50
     Draw.setColor(c.iron)
@@ -1056,20 +1055,6 @@ function Build:drawShopCard(i, rect, o, hot)
   Badge.cost(costBox.x + costBox.w - badgeW, costBox.y, o.cost, aff)
 end
 
--- ── Onglet de nom de l'écran : pilier de pierre centré sur le bord HAUT du cadre (Cinzel tracké, encre tarnie).
--- (NB : libellés HUD/inspecteur littéraux ci-dessous = clés i18n à ajouter ; repli EN par défaut.)
-function Build:_drawNameTab(label)
-  local c = Theme.c
-  local f = Theme.heading(12)
-  local tracking = 4
-  local tw = Draw.textWidth(label, f) + tracking * math.max(0, #label - 1)
-  local w, h, y = tw + 44, 24, 6
-  local x = math.floor(Draw.W / 2 - w / 2)
-  Draw.rect(x, y, w, h, Theme.hex(0x0e0a14), c.iron, 1)
-  if love.graphics then Draw.setColor(c.brassS, 0.18); love.graphics.rectangle("fill", x + 1, y + 1, w - 2, 1); Draw.reset() end
-  Draw.textTrackedC(label, Draw.W / 2, y + (h - (f and f:getHeight() or 12)) / 2, Theme.hex(0xcdbca0), f, tracking)
-end
-
 -- ── BARRE HUD (§B.1.1) : 6 cellules séparées par des règles iron — GOLD / LIVES / DESCENT (flex) / ROUND /
 -- STREAK / TIER. Consolide vies + tier (plus d'orbe de vie). Captions + valeurs en Space Mono.
 function Build:_drawHudBar(run)
@@ -1083,23 +1068,25 @@ function Build:_drawHudBar(run)
   local vy = hb.y + hb.h - 8 - (val and val:getHeight() or 14)
   local function sep(cell) Draw.setColor(c.iron); if love.graphics then love.graphics.rectangle("fill", math.floor(cell.x), hb.y + 6, 1, hb.h - 12) end; Draw.reset() end
   local function capAt(cell, s) Draw.text(s, cell.x + 12, cell.y + 7, c.ink4, cap) end
-  local g = cells[1]; capAt(g, "GOLD")
+  local g = cells[1]; capAt(g, T("ui.gold"))
   Badge.diamond(g.x + 16, vy + val:getHeight() / 2, 4, c.gold, c.brassD, c.brassS)
   Draw.text(tostring(run.gold), g.x + 26, vy, c.gold, val)
   sep(cells[2]); local lv, maxL = cells[2], Run.START_LIVES
-  capAt(lv, "LIVES " .. run.lives .. "/" .. maxL)
+  capAt(lv, T("ui.lives_orb", { n = run.lives, max = maxL }))
   Gauge.lives(lv.x + 12, vy + 1, run.lives, maxL, 2, 4)
   sep(cells[3]); local de = cells[3]
-  Draw.text("DESCENT ", de.x + 12, de.y + 7, c.ink4, cap)
-  Draw.text(run.wins .. "/" .. Run.WIN_TARGET, de.x + 12 + cap:getWidth("DESCENT "), de.y + 7, c.gold, cap)
+  local descCap = T("ui.descent") .. " "
+  Draw.text(descCap, de.x + 12, de.y + 7, c.ink4, cap)
+  Draw.text(run.wins .. "/" .. Run.WIN_TARGET, de.x + 12 + cap:getWidth(descCap), de.y + 7, c.gold, cap)
   Gauge.descent(de.x + 12, vy + 2, de.w - 24, 6, run.wins, Run.WIN_TARGET, 2)
-  sep(cells[4]); local ro = cells[4]; capAt(ro, "ROUND")
+  sep(cells[4]); local ro = cells[4]; capAt(ro, T("ui.round"))
   Draw.text(tostring(run.round), ro.x + 12, vy, c.ink, val)
-  sep(cells[5]); local st = cells[5]; capAt(st, "STREAK")
+  sep(cells[5]); local st = cells[5]; capAt(st, T("ui.streak"))
   local won = run.winStreak >= 2
-  local sStr = won and ("WIN x" .. run.winStreak) or (run.lossStreak >= 2 and ("LOSS x" .. run.lossStreak) or "—")
+  local sStr = won and T("ui.streak_win", { n = run.winStreak })
+    or (run.lossStreak >= 2 and T("ui.streak_loss", { n = run.lossStreak }) or "—")
   Draw.text(sStr, st.x + 12, vy + 1, won and c.gold or (run.lossStreak >= 2 and c.bloodL or c.ink4), Theme.value(12))
-  sep(cells[6]); local ti = cells[6]; capAt(ti, "TIER " .. run.shopTier .. "/" .. Run.MAX_TIER)
+  sep(cells[6]); local ti = cells[6]; capAt(ti, T("ui.tier_label") .. " " .. run.shopTier .. "/" .. Run.MAX_TIER)
   for k = 1, Run.MAX_TIER do
     local on = k <= run.shopTier
     Badge.diamond(ti.x + 16 + (k - 1) * 12, vy + val:getHeight() / 2, 4, on and c.gold or c.stone900, on and c.brassD or c.brass, on and c.brassS or nil)
@@ -1176,15 +1163,15 @@ function Build:_drawInspector(ui)
   Panel.draw(ins.x, ay, ins.w, adjH, { fill1 = Theme.hex(0x0b0912), fill2 = Theme.hex(0x0b0912) })
 
   if not insp then
-    Draw.textC("hover a unit", ins.x + ins.w / 2, ins.y + nicheH + 26, c.ink4, Theme.flavor(12))
-    Draw.textTrackedL("ADJACENCY", ins.x + 12, ay + 12, c.ink3, Theme.label(8), 1.5)
+    Draw.textC(T("ui.inspect_empty"), ins.x + ins.w / 2, ins.y + nicheH + 26, c.ink4, Theme.flavor(12))
+    Draw.textTrackedL(T("ui.adjacency"), ins.x + 12, ay + 12, c.ink3, Theme.label(8), 1.5)
     return
   end
 
   local id = insp.id
   local U = Units[id]
   local bodyX = ins.x + 13
-  Draw.textC("sprite · " .. id, ins.x + ins.w / 2, ins.y + nicheH - 13, c.ink4, Theme.label(8))
+  Draw.textC(T("ui.sprite") .. " · " .. id, ins.x + ins.w / 2, ins.y + nicheH - 13, c.ink4, Theme.label(8))
   local cy = ins.y + nicheH + 10
   Draw.text(T("unit." .. id .. ".name"), bodyX, cy, c.ink, Theme.heading(14))
   local typeStr = T("type." .. U.type):upper()
@@ -1223,10 +1210,10 @@ function Build:_drawAdjacency(insp, x, y, w)
       if self.slotRigs[j] then nbrs[#nbrs + 1] = self.slotRigs[j].id end
     end
   end
-  Draw.textTrackedL("ADJACENCY · " .. #nbrs .. " LINKS", x, y, c.ink3, Theme.label(8), 1.5)
+  Draw.textTrackedL(T("ui.adjacency") .. " · " .. #nbrs .. " " .. T("ui.links"), x, y, c.ink3, Theme.label(8), 1.5)
   y = y + 18
   if #nbrs == 0 then
-    Draw.text(insp.slot and "no neighbours" or "in the offering", x, y, c.ink4, Theme.flavor(12))
+    Draw.text(insp.slot and T("ui.no_neighbours") or T("ui.in_offering"), x, y, c.ink4, Theme.flavor(12))
     return
   end
   local bf = Theme.body(11)

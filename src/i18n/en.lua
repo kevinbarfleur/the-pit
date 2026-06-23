@@ -68,6 +68,16 @@ return {
   ["ui.wins"] = "WINS",
   ["ui.round"] = "ROUND",
   ["ui.slots"] = "SLOTS",
+  ["ui.descent"] = "DESCENT",
+  ["ui.streak"] = "STREAK",
+  ["ui.streak_win"] = "WIN x{n}",
+  ["ui.streak_loss"] = "LOSS x{n}",
+  ["ui.adjacency"] = "ADJACENCY",
+  ["ui.links"] = "LINKS",
+  ["ui.inspect_empty"] = "hover a unit",
+  ["ui.sprite"] = "sprite",
+  ["ui.no_neighbours"] = "no neighbours",
+  ["ui.in_offering"] = "in the offering",
 
   -- tooltip
   ["ui.unit_header"] = "{name}  ({type})",
