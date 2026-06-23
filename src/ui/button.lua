@@ -12,7 +12,6 @@ local Draw = require("src.ui.draw")
 local Theme = require("src.ui.theme")
 local Panel = require("src.ui.panel")
 local Forge = require("src.ui.forge")
-local Nightmare = require("src.ui.nightmare") -- surcouche ONIRIQUE : 2e liseré qui tangue (RENDER pur, dt mural)
 local C = Theme.c
 local H = Theme.hex
 
@@ -83,10 +82,9 @@ function Button.draw(x, y, w, h, variant, text, opts)
   if press == 0 then fillRect(x, yy + h - 1, w, 2, SHADOW) end -- ombre portée (relief 0 2px 0)
   Panel.vgrad(x, yy, w, hh, s[1], s[2])
   if st ~= "disabled" then fillRect(x + 1, yy + 1, w - 2, 1, { C.brassS[1], C.brassS[2], C.brassS[3], 0.10 }) end
-  -- SURCOUCHE ONIRIQUE : 2e liseré violet/abysse qui TANGUE (double-vision), SOUS le liseré net (dessiné
-  -- juste après) -> tous les boutons « voient flou » au bord sans perdre leur contour franc. Seed dérivé de
-  -- la position -> chaque bouton tangue indépendamment. Coupé sur disabled (le métal mort ne rêve pas).
-  if st ~= "disabled" then Nightmare.border(x, yy, w, hh, { amp = 0.9, seed = x + y * 7 }) end
+  -- NOTE : le « tangage onirique » des bords n'est PLUS dessiné par bouton (ancienne polyligne ondulée retirée).
+  -- Il est désormais porté globalement par le shader de distorsion d'UV de src/render/postfx.lua (les vrais
+  -- pixels ondulent en périphérie ; centre net via masque radial) -> plus de ligne superposée.
   Draw.rect(x, yy, w, hh, nil, s[4] or C.iron, 1)
   -- HALO de survol/feel : sur le CTA, un liseré sang dont l'alpha enfle avec le glow (braise, pas blanc).
   local glow = feel and (feel.glow or 0) or 0
