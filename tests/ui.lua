@@ -325,6 +325,89 @@ local ok, err = pcall(function()
   assert(#eA2 == #eA, "genEyes deterministe (meme seed -> meme nombre d'yeux)")
   local eB = Forge.genEyes(76, 24, 7, "DESCEND", 8, 2) -- ancienne signature (frameTh=number)
   assert(type(eB) == "table", "genEyes retro-compat (frameTh nombre)")
+  -- override de keep-out (labelW/labelH art-px) : la zone réservée au LABEL suit l'empreinte PASSÉE (pour un
+  -- label vivant en AUTRE police que le masque baké) -> aucun œil ne chevauche cette boîte explicite.
+  do
+    local W2, slab2 = 100, 20
+    local lw2, lh2 = 30, 9
+    local eo = Forge.genEyes(W2, slab2, 4, "X", 8, { frameTh = 2, pad = 3, eyeR = 6, labelW = lw2, labelH = lh2 })
+    local cy2 = slab2 / 2
+    local kx0 = math.floor(W2 / 2 - lw2 / 2) - 3
+    local kx1 = math.floor(W2 / 2 + lw2 / 2) + 3
+    local ky0 = math.floor(cy2 - lh2 / 2) - 1
+    local ky1 = math.floor(cy2 + lh2 / 2) + 1
+    for _, e in ipairs(eo) do
+      local overX = (e.ex + e.r > kx0 and e.ex - e.r < kx1)
+      local overY = (e.ey + e.r > ky0 and e.ey - e.r < ky1)
+      assert(not (overX and overY), "genEyes labelW/H : aucun oeil ne chevauche le keep-out explicite")
+    end
+  end
+
+  -- ── src/ui/nightmare.lua : surcouche ONIRIQUE (bordures qui tanguent). RENDER pur, headless-safe : sous le
+  -- mock LÖVE, love.graphics est stubé -> Nightmare.border/update ne crashent JAMAIS (no-op propre). On
+  -- vérifie : module présent, update avance sans erreur, border smoke sur plusieurs tailles + opts. ──
+  do
+    local Nightmare = require("src.ui.nightmare")
+    assert(type(Nightmare.border) == "function" and type(Nightmare.update) == "function",
+      "nightmare : border + update exportés")
+    Nightmare.update(1.0); Nightmare.update(0); Nightmare.update(-5) -- dt négatif clampé : pas d'erreur
+    Nightmare.border(40, 40, 200, 80)                                 -- défauts
+    Nightmare.border(0, 0, 120, 30, { amp = 1.4, alpha = 0.22, seed = 17, t = 2.3 })
+    Nightmare.border(10, 10, 2, 2)                                    -- box dégénérée -> no-op (borné, pas de crash)
+    Nightmare.border(10, 10, 64, 34, { tint = Theme.c.rot })
+  end
+
+  -- ── Forge.uiCtaEyes : nuée d'YEUX en OVERLAY (CTA cauchemardesque). REPOS (open<=0.02) -> no-op (rien) ;
+  -- SURVOL (open>0) -> bake (cache par id) ; CLIC (react>0) -> écarquillement. Headless-safe (no crash, pas
+  -- de bake sous le mock). Keep-out du label via labelW/labelH (les yeux évitent le texte vivant). ──
+  do
+    assert(type(Forge.uiCtaEyes) == "function", "forge : uiCtaEyes (nuée d'yeux en overlay)")
+    -- repos : open=0 -> retourne false (aucun widget créé) -> le bouton reste PROPRE.
+    assert(Forge.uiCtaEyes("t.eyes.rest", 0, 0, 128, 34, "FIGHT", { open = 0 }) == false,
+      "uiCtaEyes : repos (open<=0.02) -> no-op (false)")
+    assert(Forge._ctaEyeCache["t.eyes.rest"] == nil, "uiCtaEyes : repos -> aucun widget alloué")
+    -- survol : open>0 -> crée le cache par id + génère la nuée (déterministe, seedée par l'id).
+    Forge.uiTick(1 / 60)
+    Forge.uiCtaEyes("t.eyes.hov", 100, 600, 128, 34, "FIGHT",
+      { open = 0.6, react = 0, mouse = { mx = 130, my = 615 }, labelW = 20, labelH = 6, eyeR = 6 })
+    local ce = Forge._ctaEyeCache["t.eyes.hov"]
+    assert(ce and ce.eyes and #ce.eyes >= 1, "uiCtaEyes : survol -> nuée bakée (cache par id)")
+    -- clic : react>0 -> écarquillement (re-bake), même nuée (placement stable tant que la config ne change pas).
+    local nBefore = #ce.eyes
+    Forge.uiCtaEyes("t.eyes.hov", 100, 600, 128, 34, "FIGHT",
+      { open = 1, react = 0.8, mouse = { mx = 130, my = 615 }, labelW = 20, labelH = 6, eyeR = 6 })
+    assert(#Forge._ctaEyeCache["t.eyes.hov"].eyes == nBefore, "uiCtaEyes : clic garde la même nuée (stable)")
+  end
+
+  -- ── Feel.seedOf : graine/phase STABLE par id (sème la nuée du CTA + désynchronise la respiration). ──
+  do
+    local Feel = require("src.ui.feel")
+    assert(type(Feel.seedOf) == "function", "feel : seedOf exporté")
+    assert(Feel.seedOf("menu.enter") == Feel.seedOf("menu.enter"), "feel.seedOf : stable pour un id donné")
+    assert(Feel.seedOf("a") ~= Feel.seedOf("ab"), "feel.seedOf : ids différents -> graines différentes")
+    assert(Feel.seedOf(nil) == 0, "feel.seedOf : nil -> 0 (pas de crash)")
+  end
+
+  -- ── Button.draw (variant primary) AVEC feel : exerce le câblage des YEUX (glow ouvre, flash réagit) + la
+  -- bordure ONIRIQUE. Headless-safe (no crash). disabled -> ni yeux ni tangage (métal mort). ──
+  do
+    local Button = require("src.ui.button")
+    -- repos (pas de feel) : pas d'yeux, juste le bouton propre + bordure onirique.
+    Button.draw(0, 0, 128, 34, "primary", "FIGHT", {})
+    -- survol : feel.glow>0 -> yeux qui s'ouvrent ; on passe la souris pour le gaze + t pour l'anim.
+    Button.draw(0, 0, 128, 34, "primary", "FIGHT",
+      { hover = true, id = "t.btn.live", feel = { glow = 0.7, lift = 3, squash = 0, flash = 0 },
+        mouse = { mx = 60, my = 16 }, t = 1.2 })
+    -- clic : feel.flash>0 -> les yeux réagissent (écarquillement) + flash de braise.
+    Button.draw(0, 0, 128, 34, "primary", "FIGHT",
+      { id = "t.btn.live", feel = { glow = 1, lift = 0, squash = 2, flash = 0.5 }, t = 1.3 })
+    -- disabled : aucun œil, aucun tangage (chemin neutre) -> ne crashe pas.
+    Button.draw(0, 0, 128, 34, "primary", "SEALED", { disabled = true, feel = { glow = 1, flash = 1 } })
+    -- autres variantes : bordure onirique uniquement (pas d'yeux) -> smoke.
+    Button.draw(0, 0, 128, 32, "secondary", "REFUSE", { hover = true })
+    Button.draw(0, 0, 128, 30, "eco", "REROLL", { cost = 2 })
+    Button.icon(0, 0, 34, "sigil", {})
+  end
 
   -- ── src/ui/eye.lua : l'ŒIL signature EXTRAIT (réutilisé par boutons/panneaux/cartes/sceau). PUR (zéro
   -- love.*) -> on l'exerce DIRECTEMENT sur un tampon Forge (set/blend/add) : draw/ring/watcher ne crashent

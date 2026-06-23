@@ -534,6 +534,11 @@ local function genEyes(W, hslab, seed, label, size, opts)
     if okW and fw and fw > 1 then lw = fw end
     if okH and fh and fh > 1 then lhh = fh end
   end
+  -- OVERRIDE de keep-out (art-px) : quand le LABEL VIVANT est rendu dans une AUTRE police que le masque baké
+  -- (ex. Button.draw -> Space Mono, pas Silkscreen), le caller passe l'empreinte RÉELLE du label (largeur ET
+  -- hauteur en art-px) -> les yeux évitent EXACTEMENT le texte affiché, pas une approximation Silkscreen.
+  if opts.labelW and opts.labelW > 0 then lw = opts.labelW end
+  if opts.labelH and opts.labelH > 0 then lhh = opts.labelH end
   local cy = hslab / 2
   local pad = opts.pad or 0
   local lx0 = floor(W / 2 - lw / 2) - pad -- bord gauche du label (+ padding) = keep-out
@@ -1459,6 +1464,77 @@ end
 -- Avance l'horloge interne des uiButton (à appeler 1×/frame depuis une scène, en SECONDES). Optionnel si
 -- la scène passe opts.t elle-même. Idempotent / sans danger headless.
 function Forge.uiTick(dtSeconds) Forge._uiClock = Forge._uiClock + (dtSeconds or 0) end
+
+-- ════════════════════════════ NUÉE D'YEUX EN OVERLAY (CTA cauchemardesque) ════════════════════════════
+-- Forge.uiCtaEyes(id, x, y, w, h, label, opts) : bake une PETITE NUÉE d'YEUX sur un tampon TRANSPARENT (fond
+-- vide -> seuls les yeux apparaissent) et la BLITTE par-dessus un bouton DÉJÀ dessiné (Button.draw primary).
+-- C'est le « réveil du cauchemar » sur le CTA propre : au SURVOL des yeux de tailles VARIÉES s'OUVRENT à des
+-- positions ALÉATOIRES (seedées, stables par id), JAMAIS sur le texte (keep-out du label via genEyes), et au
+-- CLIC ils RÉAGISSENT (s'écarquillent + iris qui s'allume + regard). Au repos (open≈0) : rien (no-op).
+--
+-- opts = {
+--   open    : 0..1 ouverture des paupières (PILOTÉE par le survol : Feel.state(id).glow). <=0.02 -> no-op.
+--   react   : 0..1 réaction au clic (Feel.state(id).flash) -> écarquille + iris vif + regard franc.
+--   t       : horloge (s) pour le clignement/regard (défaut horloge interne uiButton).
+--   mouse   : { mx, my } curseur en ESPACE DESIGN -> gaze (les yeux suivent la souris) ; nil = regard auto.
+--   seed    : graine de la nuée (placement stable) ; défaut dérivé de l'id.
+--   px      : densité d'affichage (défaut Forge.PX=2) ; fontSz, pad, eyeR, frameTh : géométrie (mêmes que uiButton).
+-- }
+-- 100% RENDER, headless-safe : sous le mock (real()==false) le widget existe mais aucun bake/blit -> no-op.
+-- DÉTERMINISTE pour le placement (mulberry32 seedé) ; l'ANIMATION suit le dt mural (cosmétique, hors SIM).
+Forge._ctaEyeCache = {}
+function Forge.uiCtaEyes(id, x, y, w, h, label, opts)
+  opts = opts or {}
+  local open = opts.open or 0
+  if open <= 0.02 then return false end -- repos : yeux fermés/absents (bouton propre) -> rien à dessiner.
+  local px = opts.px or PX
+  local aw, ah = max(1, floor(w / px)), max(1, floor(h / px))
+  local seed = opts.seed or (strhash(id) % 9973)
+  local fontSz = opts.fontSz or 8
+  local frameTh = opts.frameTh or 2
+  local pad = opts.pad or 5
+  local eyeR = opts.eyeR or 8
+
+  -- entrée de cache (par id) : on réutilise le widget + la nuée tant que la géométrie/label ne change pas.
+  local e = Forge._ctaEyeCache[id]
+  local cfgKey = aw .. "x" .. ah .. "|" .. tostring(label) .. "|" .. fontSz .. "|" .. eyeR .. "|" .. pad
+    .. "|" .. tostring(opts.labelW) .. "|" .. tostring(opts.labelH)
+  if not e or e.aw ~= aw or e.ah ~= ah then
+    e = { widget = Forge.newWidget(aw, ah), aw = aw, ah = ah }
+    Forge._ctaEyeCache[id] = e
+  end
+  if e.cfgKey ~= cfgKey then
+    e.cfgKey = cfgKey
+    e.eyes = genEyes(aw, ah - DROP, seed, label or "", fontSz,
+      { frameTh = frameTh, pad = pad, eyeR = eyeR, labelW = opts.labelW, labelH = opts.labelH })
+  end
+  if not (e.eyes and #e.eyes > 0) then return false end
+
+  local t = opts.t or Forge._uiClock
+  local react = clamp(opts.react or 0)
+  -- gaze : curseur design -> art-local de CE bouton (les yeux suivent la souris). Au CLIC (react), on force un
+  -- gaze franc même sans souris (les yeux « se braquent ») via le slabY-centre comme point de fuite par défaut.
+  local gz = nil
+  if opts.mouse then gz = { (opts.mouse.mx - x) / px, (opts.mouse.my - y) / px } end
+
+  -- ÉCARQUILLEMENT au clic : on pousse l'ouverture vers le rond/grand (react) et on allume l'iris (glow).
+  local openEff = clamp(open + react * 0.4)
+  local glow = clamp(0.35 + react * 0.65) -- iris qui s'illumine fort au clic, doux au survol seul
+
+  e.image = Forge.render(e.widget, function(b, W, H, tt)
+    -- fond laissé TRANSPARENT (Buf:clear a tout mis à alpha 0) : on ne pose QUE les yeux -> overlay propre.
+    local slabY = 0 -- le bouton dessous porte déjà son press ; on aligne les yeux sur la dalle (haut du widget)
+    for i = 1, #e.eyes do
+      local ey = e.eyes[i]
+      -- au clic, le squash remonte (œil plus ROND = « écarquillé ») ; au repos hover il garde son squash semé.
+      local sq = ey.squash + (0.92 - ey.squash) * react
+      drawEye(b, floor(ey.ex + 0.5), floor(slabY + ey.ey + 0.5), ey.r, openEff, glow, tt, seed + ey.phase,
+        { squash = sq, pupil = ey.pupil, blood = ey.blood, gaze = gz })
+    end
+  end, t)
+  Forge.blit(e.image, x, y, px)
+  return true
+end
 
 -- ════════════════════════════ SOCKET (case forge, fond transparent) ════════════════════════════
 -- Une « socket » = un CADRE de métal PATINÉ à fond TRANSPARENT (le rig dessiné dessous transparaît). Sert

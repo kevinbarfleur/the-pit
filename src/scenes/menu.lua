@@ -21,6 +21,8 @@
 local Theme = require("src.ui.theme")
 local Draw = require("src.ui.draw")
 local Feel = require("src.ui.feel") -- JUICE (bible §4) : survol/press/respiration + ACTION DIFFÉRÉE
+local Forge = require("src.ui.forge") -- YEUX cauchemardesques du CTA (overlay seedé, hors-texte) — RENDER pur
+local Nightmare = require("src.ui.nightmare") -- surcouche ONIRIQUE (bordures qui tanguent) : avance le dt mural
 local Ambient = require("src.fx.ambient")
 local Grimoire = require("src.core.grimoire")
 local Relics = require("src.data.relics")
@@ -161,6 +163,7 @@ function Menu:update(dt)
   self.t = self.t + (dt or 1)
   self.ambient:update(dt)
   Feel.update(dt) -- avance survol/press/respiration ET fire les actions différées mûres (ENTER, GRIMOIRE…)
+  Nightmare.update(dt) -- avance le tangage onirique (utilisé si une box est dessinée ; horloge partagée)
 end
 
 -- id de feel stable d'une entrée (cache par id dans Feel) : "menu.enter", "menu.grimoire", …
@@ -218,6 +221,22 @@ function Menu:drawItem(it, hovered)
     diamond(dx, cy, DIAMOND_R + 2, c.blood, math.min(0.8, dAlpha))
     diamond(dx, cy, DIAMOND_R, c.blood, 1)
     local textX = x0 + it._prefixW
+    -- ⭐ YEUX cauchemardesques sur ENTER THE PIT (le héros) : au SURVOL des yeux s'ouvrent autour du texte
+    -- (jamais DESSUS : keep-out de l'empreinte réelle du label), pilotés par g (glow lissé) ; au CLIC ils
+    -- RÉAGISSENT (s'écarquillent + iris vif + regard vers la souris) via le flash. Dessinés AVANT le texte ->
+    -- le libellé reste toujours au-dessus. Repos (g≈0) -> no-op (l'entrée reste un texte gravé propre).
+    if it.enabled and (g > 0.02 or (fs.flash or 0) > 0.01) then
+      local epx = Forge.PX or 2
+      local margin = 26                       -- gouttières latérales pour loger la nuée (hors texte)
+      local regW = it._textW + margin * 2      -- région des yeux (design px) : texte + marges
+      local regH = math.max(fh + 16, 30)       -- un peu plus haut que la ligne -> de l'air vertical
+      local rx = textX - margin
+      local ry = math.floor(cy - regH / 2)
+      Forge.uiCtaEyes("menu.cta.eyes", rx, ry, regW, regH, label, {
+        open = g, react = fs.flash or 0, mouse = { mx = self.mx, my = self.my }, t = self.t,
+        labelW = it._textW / epx, labelH = fh / epx, eyeR = 7, pad = 4, frameTh = 0,
+      })
+    end
     -- couleur du texte : interpole title -> ink avec g (montée continue, pas un saut binaire).
     local col = { c.title[1] + (c.ink[1] - c.title[1]) * g,
                   c.title[2] + (c.ink[2] - c.title[2]) * g,

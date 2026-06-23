@@ -12,6 +12,7 @@ local Draw = require("src.ui.draw")
 local Theme = require("src.ui.theme")
 local Panel = require("src.ui.panel")
 local Forge = require("src.ui.forge")
+local Nightmare = require("src.ui.nightmare") -- surcouche ONIRIQUE : 2e liseré qui tangue (RENDER pur, dt mural)
 local C = Theme.c
 local H = Theme.hex
 
@@ -82,6 +83,10 @@ function Button.draw(x, y, w, h, variant, text, opts)
   if press == 0 then fillRect(x, yy + h - 1, w, 2, SHADOW) end -- ombre portée (relief 0 2px 0)
   Panel.vgrad(x, yy, w, hh, s[1], s[2])
   if st ~= "disabled" then fillRect(x + 1, yy + 1, w - 2, 1, { C.brassS[1], C.brassS[2], C.brassS[3], 0.10 }) end
+  -- SURCOUCHE ONIRIQUE : 2e liseré violet/abysse qui TANGUE (double-vision), SOUS le liseré net (dessiné
+  -- juste après) -> tous les boutons « voient flou » au bord sans perdre leur contour franc. Seed dérivé de
+  -- la position -> chaque bouton tangue indépendamment. Coupé sur disabled (le métal mort ne rêve pas).
+  if st ~= "disabled" then Nightmare.border(x, yy, w, hh, { amp = 0.9, seed = x + y * 7 }) end
   Draw.rect(x, yy, w, hh, nil, s[4] or C.iron, 1)
   -- HALO de survol/feel : sur le CTA, un liseré sang dont l'alpha enfle avec le glow (braise, pas blanc).
   local glow = feel and (feel.glow or 0) or 0
@@ -92,10 +97,30 @@ function Button.draw(x, y, w, h, variant, text, opts)
     Draw.reset()
   end
   -- FLASH de press (bref) : voile additif de braise par-dessus la surface -> l'« impact » au DOWN.
-  if feel and (feel.flash or 0) > 0.01 and st ~= "disabled" and love and love.graphics then
-    Draw.setColor(C.ember, math.min(0.5, feel.flash))
+  local flash = feel and (feel.flash or 0) or 0
+  if flash > 0.01 and st ~= "disabled" and love and love.graphics then
+    Draw.setColor(C.ember, math.min(0.5, flash))
     love.graphics.rectangle("fill", x + 1, yy + 1, w - 2, hh - 2)
     Draw.reset()
+  end
+
+  -- ⭐ YEUX CAUCHEMARDESQUES (CTA primary uniquement) : au SURVOL des yeux s'ouvrent à des positions seedées
+  -- (jamais sur le texte : keep-out du label), pilotés par le glow ; au CLIC ils RÉAGISSENT (s'écarquillent +
+  -- iris vif + regard) via le flash. Repos -> open≈0 -> no-op (bouton propre). Le label étant dessiné APRÈS,
+  -- il reste TOUJOURS au-dessus des yeux. On passe l'EMPREINTE RÉELLE du label (Space Mono, en art-px) pour
+  -- que le keep-out colle au texte AFFICHÉ. opts.id = clé de cache stable (sinon dérivée du texte+position).
+  if variant == "primary" and st ~= "disabled" and (glow > 0.02 or flash > 0.01) then
+    local epx = Forge.PX or 2 -- densité du blit des yeux (art-px -> px design)
+    local lf = Theme.label(PX[variant] or 13)
+    local lw = lf and Draw.textWidth(text, lf) or 0
+    local ntrack = math.max(0, #tostring(text) - 1) * (TRACK[variant] or 1.5)
+    local labelW = (lw + ntrack) / epx                       -- largeur du label vivant en ART-px
+    local labelH = ((lf and lf.getHeight and lf:getHeight()) or 13) / epx -- hauteur en ART-px
+    local eid = "btn.eyes." .. (opts.id or tostring(text) .. ":" .. x .. "," .. y)
+    Forge.uiCtaEyes(eid, x, yy, w, hh, text, {
+      open = glow, react = flash, mouse = opts.mouse, t = opts.t,
+      labelW = labelW, labelH = labelH, eyeR = math.max(4, math.floor(hh / epx / 4)), pad = 3, frameTh = 2,
+    })
   end
 
   local px = PX[variant] or 12

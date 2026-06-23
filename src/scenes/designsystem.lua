@@ -28,6 +28,7 @@ local C = Theme.c
 -- ── COMPOSANTS PROPRES (§IV/§V) — le seul kit autorisé désormais (zéro widget forge gritty) ──────────
 local Button = require("src.ui.button")     -- 5 variantes (primary/secondary/eco/icon/ghost) × états
 local Feel = require("src.ui.feel")         -- JUICE (bible §4) : démo du bouton LIVE (press différé + squash)
+local Nightmare = require("src.ui.nightmare") -- surcouche ONIRIQUE (bordures qui tanguent) : avance le dt mural
 local Panel = require("src.ui.panel")       -- surface (dégradé + liseré iron + éclat)
 local Gauge = require("src.ui.gauge")       -- health(+segments DoT)/cooldown/lives/descent
 local Slot = require("src.ui.slot")         -- case de plateau (6 états) + arête
@@ -296,6 +297,7 @@ function Screen:update(frameDt)
   self.t = self.t + (frameDt or 1) / 60 -- horloge en SECONDES (lueur pulsée du bandeau ; survol du LIVE)
   self.ambient:update(frameDt)
   Feel.update(frameDt) -- avance le JUICE du bouton LIVE + fire son action différée (démo de press)
+  Nightmare.update(frameDt) -- avance le tangage onirique des bordures (RENDER pur, dt mural)
 end
 
 function Screen:drawBack(view)
@@ -596,7 +598,10 @@ function Screen:drawButtons(x, y, w)
     self.liveRect = { x = lx, y = ly, w = 128, h = 34 }
     local hov = ptIn(self.mx, self.my, lx, ly, 128, 34)
     Feel.hover("ds.live", hov)
-    Button.draw(lx, ly, 128, 34, "primary", "LIVE", { hover = hov, feel = Feel.state("ds.live") })
+    -- opts.mouse (design) -> les YEUX du CTA suivent le curseur ; opts.t (s) anime clignement/regard ; opts.id
+    -- = clé de cache stable de la nuée. Au survol les yeux s'ouvrent (glow) ; au clic ils réagissent (flash).
+    Button.draw(lx, ly, 128, 34, "primary", "LIVE",
+      { hover = hov, feel = Feel.state("ds.live"), id = "ds.live", mouse = { mx = self.mx, my = self.my }, t = self.t })
     Draw.textC("LIVE", lx + 64, cy - 18 + 5, C.gold, Theme.labelSmall(8))
   end
   cy = cy + 6

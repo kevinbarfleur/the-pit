@@ -9,6 +9,7 @@
 
 local Draw = require("src.ui.draw")
 local Theme = require("src.ui.theme")
+local Nightmare = require("src.ui.nightmare") -- surcouche ONIRIQUE : 2e liseré qui tangue (RENDER pur, dt mural)
 local C = Theme.c
 
 local Panel = {}
@@ -49,6 +50,10 @@ function Panel.draw(x, y, w, h, opts)
     Draw.reset()
   end
   if opts.accent then Draw.rect(x + 1, y + 1, w - 2, h - 2, nil, opts.accent, 1) end
+  -- SURCOUCHE ONIRIQUE : un 2e liseré violet/abysse qui TANGUE doucement (double-vision), SOUS le liseré net
+  -- d'origine (qu'on dessine juste après) -> la box reste NETTE mais « voit flou » au bord. opts.nightmare ==
+  -- false coupe l'effet (panneaux où le calme total prime). Léger (bas alpha) -> on le SENT sans gêner la lecture.
+  if opts.nightmare ~= false then Nightmare.border(x, y, w, h, { amp = 1.0 }) end
   Draw.rect(x, y, w, h, nil, opts.border or C.iron, 1)
   return x + 1, y + 1, w - 2, h - 2
 end

@@ -168,14 +168,21 @@ function Feel.pending(id)
   return (s and s.pendingDepth and s.pendingDepth > 0) and true or false
 end
 
+-- SEED/PHASE stable par id : somme des octets de l'id -> une graine déterministe et constante pour ce bouton
+-- (désynchronise la respiration ET sème la nuée d'YEUX du CTA : même bouton -> même placement d'yeux entre
+-- frames). Exposé pour que Button.draw (variant primary) demande une nuée seedée stable au survol. id nil -> 0.
+function Feel.seedOf(id)
+  local ph = 0
+  if id then for i = 1, #id do ph = ph + string.byte(id, i) end end
+  return ph
+end
+
 -- Offset vertical de RESPIRATION permanente (héros). amp en px design (sub-pixel toléré : c'est de l'overlay
 -- natif, pas du sprite sur grille). Deux sinus incommensurables -> mouvement organique non périodique évident,
 -- LENT (≈0,4 Hz dominant) : « chair qui palpite ». phase légèrement décalée par id pour désynchroniser.
 function Feel.floatY(id, amp)
   if not amp or amp == 0 then return 0 end
-  local ph = 0
-  if id then for i = 1, #id do ph = ph + string.byte(id, i) end end -- phase stable par id (désynchro douce)
-  local p = ph * 0.013
+  local p = Feel.seedOf(id) * 0.013 -- phase stable par id (désynchro douce)
   return (math.sin(t * 2.5 + p) * 0.62 + math.sin(t * 1.13 + p * 1.7) * 0.38) * amp
 end
 
