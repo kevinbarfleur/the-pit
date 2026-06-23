@@ -970,7 +970,7 @@ function Build:drawOverlay(view)
   Draw.finish()
 end
 
--- Carte de boutique = PLAQUE FORGE remplie + cadre patiné + contenu en COLONNE qui REMPLIT la carte :
+-- Carte de boutique = Panel propre (fond + liseré teinté dessinés en drawBack) + contenu en COLONNE qui REMPLIT la carte :
 -- [ région créature (flex, l'aperçu de drawWorld y vit) | nom | rangée coût+chips d'affliction ]. Le bas
 -- ne flotte jamais : le moteur Layout colle nom/coût/chips au pied de la carte, et la région créature
 -- absorbe le reste. États : achetable (or, lit au survol) / hors-budget (sombre) / vendu (SOLD).
@@ -1025,8 +1025,8 @@ function Build:drawShopCard(i, rect, o, hot)
 end
 
 -- Bannière de run (HUD haut) : 4 stats [symbole · LABEL · VALEUR], symbole par stat (pièce/diamant/pip/case),
--- LABEL en Silkscreen (petites capitales, ce que cette police fait de mieux), VALEUR en POLICE READ (lisible,
--- claire). Aligné/espacé proprement dans une plaque runique. Symboles dessinés en primitives forge.
+-- LABEL et VALEUR en Space Mono (Theme.label / Theme.value), distingués par la couleur. Aligné/espacé
+-- proprement dans un Panel propre. Symboles dessinés en primitives nettes (Badge.diamond + cercles/carrés).
 local HUD_SYMW = 12 -- largeur réservée au symbole (icône + petit gap)
 function Build:drawBanner(run)
   local c = Theme.c
@@ -1078,10 +1078,9 @@ function Build:drawBanner(run)
   end
 end
 
--- ORBE DE VIE (extrême gauche de la barre du bas) : un orbe forge rempli de SANG dont le niveau de fluide
--- suit les vies (lives / START_LIVES). Compteur Silkscreen AU-DESSUS. L'orbe REMPLIT la hauteur de sa
--- colonne (boîte de layout self.lay.lifeOrbBox) -> baké à la TAILLE CALCULÉE (pas un petit orbe flottant
--- dans une grande boîte). Animé (vagues + nageuse) -> re-rendu chaque frame (1 seul widget).
+-- MODULE DE VIE (extrême gauche de la barre du bas) : [ libellé « LIVES n/5 » | rangée de CŒURS (Gauge.lives,
+-- n pleins sur START_LIVES) | « TIER n/5 » + barre d'XP de boutique ]. Tout propre (plus aucun orbe forge baké) ;
+-- libellés Space Mono ; remplit la colonne (self.lay.lifeOrbBox / lifeLabel) sans flotter dans le vide.
 function Build:drawLifeOrb(run)
   local c = Theme.c
   local box = self.lay.lifeOrbBox
@@ -1161,18 +1160,18 @@ function Build:drawOddsTooltip(run)
   end
 end
 
--- Bouton d'économie (REROLL / REFUSER) = ÉCO FORGE (métal patiné + diamant de coût). rect en virtuel.
--- id = clé de cache stable ; label = texte ; cost = valeur du diamant (or) ; enabled = grise si faux.
+-- Bouton d'économie (REROLL / REFUSER / BUY XP) = Button « eco » propre (+ coût en losange or via opts.cost).
+-- rect en virtuel. id = clé Feel (survol/press) stable ; label = texte ; cost = or ; enabled = grise si faux.
 function Build:drawEcoButton(id, rect, label, cost, enabled)
   local hot = inRect(self.mx, self.my, rect)
   Button.draw(rect.x * 4, rect.y * 4, rect.w * 4, rect.h * 4, "eco", label,
     { cost = cost, hover = hot, disabled = not enabled, feel = Feel.state(id), id = id })
 end
 
--- ── Fiche monstre (carte TCG forge, au survol) ────────────────────────────────────────────────────
--- Carte MINIMALE (révision Kévin) : on garde le strict utile, on encadre les VALEURS importantes en
--- value-tags runiques (forge.valueTag) et on rend l'info lisible. Fond = plaque forge qui respire
--- (Forge.uiCard) + contenu PAR-DESSUS : header (nom+coût) > portrait > identité (pip+type+famille+rareté)
+-- ── Fiche monstre (carte propre, au survol) ────────────────────────────────────────────────────────
+-- Carte MINIMALE (révision Kévin) : on garde le strict utile, on rend l'info lisible. Fond = Panel propre
+-- (dégradé + liseré iron, src/render/monstercard.lua) + contenu PAR-DESSUS : header (nom Cinzel + coût Badge)
+-- > portrait > identité (pip+type+famille+rareté)
 -- > div > STATS en value-tags (HP/DMG/CD) > div > CAPACITÉS (chips d'affliction à valeurs + nom de passif
 -- + description LISIBLE) > flavor. PAS de chip de RÔLE (le joueur déduit tank/carry de la VIE + des
 -- capacités) ni de doublon d'affliction (les afflictions vivent UNIQUEMENT dans la section capacités).
@@ -1196,8 +1195,8 @@ function Build:drawTooltip(id)
     { rig = self.previewRigs[id] })
 end
 
--- Rangée de reliques possédées : SOCLES forge patinés (Forge.uiSocket, fond transparent) bordant
--- l'artefact baké (RelicGen.cached). Liseré teinté de la famille de la relique ; ALLUMÉ (or vif) au survol.
+-- Rangée de reliques possédées : SOCLES = atome Slot (« hover » au survol, « empty » au repos) bordant
+-- l'artefact baké (RelicGen.cached, qui porte sa propre couleur de famille).
 function Build:drawRelicRow()
   local run = self.host.run
   if not run or #run.relics == 0 then return end
@@ -1216,8 +1215,8 @@ function Build:drawRelicRow()
   Draw.reset()
 end
 
--- Infobulle de relique (survol de la rangée) = CARTE forge (même langage que src/scenes/relicpick.lua) :
--- plaque qui respire (Forge.uiCard) + artefact baké en cœur + gem de famille + nom (or) + effet clair + flavor.
+-- Infobulle de relique (survol de la rangée) = Panel propre (même langage que src/scenes/relicpick.lua) :
+-- dégradé + liseré d'accent de famille + gem (Badge.diamond) + nom (Cinzel) + effet clair (or) + flavor (Spectral).
 -- Suit le curseur, rebond sur les bords. PUR-RENDER (golden inchangé).
 function Build:drawRelicTooltip(id)
   local c = Theme.c

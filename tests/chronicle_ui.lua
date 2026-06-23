@@ -40,7 +40,7 @@ local run = { chronicles = {
 } }
 local ov = Overlay.new(run, model)
 assert(#ov.sources == 3, "courant + 2 archives = 3 sources, vu " .. #ov.sources)
-ov:draw(view) -- settle les rects du carrousel + des boutons forge
+ov:draw(view) -- settle les rects du carrousel + des boutons propres (Button.icon)
 ov:keypressed("right"); assert(ov.sel == 2, "[>] round suivant")
 ov:keypressed("right"); assert(ov.sel == 3, "[>] encore")
 ov:keypressed("left"); assert(ov.sel == 2, "[<] round précédent")
@@ -48,8 +48,8 @@ ov:wheelmoved(0, -2)
 -- Les INPUTS arrivent en espace VIRTUEL (main.lua:toVirtual) ; l'overlay convertit ×4 vers DESIGN en interne
 -- (ses rects sont en design). Le test reflète donc le vrai flux : on passe rect_design / 4.
 local function toV(px, py) return px / 4, py / 4 end
--- boutons-icône forge : clic sur la flèche précédente (centre) -> round précédent.
-ov:mousemoved(toV(ov._prev.x + ov._prev.w / 2, ov._prev.y + ov._prev.h / 2)) -- survol (hover des boutons forge)
+-- boutons-icône propres (Button.icon) : clic sur la flèche précédente (centre) -> round précédent.
+ov:mousemoved(toV(ov._prev.x + ov._prev.w / 2, ov._prev.y + ov._prev.h / 2)) -- survol (hover des boutons propres)
 ov:mousepressed(toV(ov._prev.x + ov._prev.w / 2, ov._prev.y + ov._prev.h / 2)); assert(ov.sel == 1, "clic [<] -> 1er")
 -- bouton X (close) : renvoie "close" (main.lua referme l'overlay).
 assert(ov._close, "l'overlay pose le rect du bouton de fermeture")
@@ -100,4 +100,4 @@ if prn then
   assert(ov2.panel:hoveredName() ~= nil, "overlay : survol d'un nom détecté par le panel")
 end
 
-print("=> CHRONICLE-UI OK : panneau + overlay (boutons forge + X) + frimousses + fiche au survol (headless).")
+print("=> CHRONICLE-UI OK : panneau + overlay (Button.icon + X) + frimousses + fiche au survol (headless).")
