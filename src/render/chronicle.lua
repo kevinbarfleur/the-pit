@@ -120,8 +120,12 @@ function Chronicle:segments(e)
   local s = {}
   local function push(text, team, role) s[#s + 1] = { text = text, team = team, role = role } end
   if e.kind == "strike" then
+    local verb = (e.cause == "shock" and "chronicle.v.discharge")
+      or (e.cause == "thorns" and "chronicle.v.thorns")
+      or (e.cause == "reflect" and "chronicle.v.reflect")
+      or "chronicle.v.strike"
     push(nm(e.actorId), e.actorTeam, "actor")
-    push(" " .. T(e.cause == "shock" and "chronicle.v.discharge" or "chronicle.v.strike") .. " ", nil, "op")
+    push(" " .. T(verb) .. " ", nil, "op")
     push(nm(e.targetId), e.targetTeam, "target")
   elseif e.kind == "affliction" then
     push(nm(e.actorId), e.actorTeam, "actor")

@@ -88,6 +88,8 @@ return {
   -- chronicle (journal de combat) : verbes courts ; les noms d'unités sont insérés/colorés par le rendu
   ["chronicle.v.strike"] = "strikes",
   ["chronicle.v.discharge"] = "shocks",
+  ["chronicle.v.thorns"] = "spikes back at",
+  ["chronicle.v.reflect"] = "reflects onto",
   ["chronicle.v.afflict"] = "afflicts",
   ["chronicle.v.spread"] = "spreads to",
   ["chronicle.v.shield"] = "shields allies",
