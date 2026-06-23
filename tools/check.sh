@@ -74,6 +74,12 @@ luajit tests/designsystem.lua
 echo "== reliquary (bande gravee : bake + memoisation + headless-safe + inset) =="
 luajit tests/reliquary.lua
 
+echo "== gauges (atomes de jeu propres : jauges/slots/badges/dividers) =="
+luajit tests/gauges.lua
+
+echo "== molecules (cartes relique / bandeaux / tooltip propres) =="
+luajit tests/molecules.lua
+
 echo "== payoff (renforcements forts mais bornes : spread + boucliers + caps) =="
 luajit tests/payoff.lua
 
