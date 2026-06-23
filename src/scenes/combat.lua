@@ -23,7 +23,7 @@ local Draw = require("src.ui.draw")
 local Button = require("src.ui.button")  -- boutons propres (CHRONICLE secondary / CONTINUE primary)
 local Banner = require("src.ui.banner")  -- bandeau de verdict (VICTORY / DEFEAT) : remplace l'overlay forge
 local Feel = require("src.ui.feel")      -- JUICE : survol (glow/lift) + press (squash/flash)
-local Reliquary = require("src.ui.reliquary") -- ENROBAGE : cadre de pierre gravée autour de l'écran (spec §A.9)
+local ScreenFrame = require("src.ui.screenframe") -- ENROBAGE partagé : cadre de pierre gravée + onglet de nom
 local T = require("src.core.i18n").t
 
 local Combat = {}
@@ -141,7 +141,7 @@ function Combat:drawBack(view)
   Draw.begin(view)
   -- L'arène (gradient qui ROUGIT + stalactites + lueur du puits) est CLIPPÉE à l'intérieur du cadre reliquaire
   -- -> la pierre gravée borde une arène nette (pas un fond plein écran). Le cadre est posé en overlay par-dessus.
-  local ix, iy, iw, ih = Reliquary.inset(0, 0, Draw.W, Draw.H, { ft = FRAME_FT, pad = 2 })
+  local ix, iy, iw, ih = ScreenFrame.inset({ ft = FRAME_FT, pad = 2 })
   Draw.scissor(view, ix, iy, iw, ih)
   self.ambient:draw("combat")
   Draw.noScissor()
@@ -155,28 +155,11 @@ end
 -- Chrome haute (espace design) : titre gravé + hint inscrit à gauche, « vs NOM » centré. PROPRE : Cinzel pour
 -- le titre/nom (gravé), Space Mono pour le hint (inscrit), pas de Silkscreen ni de cadre gritty. Un filet laiton
 -- discret sous la bande -> séparation nette sans masquer l'arène. (Le HUD générique est désactivé : daChrome.)
--- Onglet de nom de l'écran : pilier de pierre centré sur le bord HAUT du cadre, portant le nom (Cinzel tracké
--- en encre tarnie). Réutilisable -> à extraire en helper partagé quand on propage le cadre aux autres écrans.
-function Combat:_drawNameTab(label)
-  local c = Theme.c
-  local f = Theme.heading(12)
-  local tracking = 4
-  local tw = Draw.textWidth(label, f) + tracking * math.max(0, #label - 1)
-  local w, h, y = tw + 44, 24, 6
-  local x = math.floor(Draw.W / 2 - w / 2)
-  Draw.rect(x, y, w, h, Theme.hex(0x0e0a14), c.iron, 1)        -- pilier métal sombre + liseré iron
-  if love and love.graphics then                              -- éclat laiton haut (biseau)
-    Draw.setColor(c.brassS, 0.18); love.graphics.rectangle("fill", x + 1, y + 1, w - 2, 1); Draw.reset()
-  end
-  Draw.textTrackedC(label, Draw.W / 2, y + (h - (f and f:getHeight() or 12)) / 2, Theme.hex(0xcdbca0), f, tracking)
-end
-
--- Chrome de combat = CADRE RELIQUAIRE (bande de pierre gravée plein écran) + onglet « COMBAT » + « vs NOM »
+-- Chrome de combat = CADRE RELIQUAIRE partagé (ScreenFrame : bande de pierre + onglet « COMBAT ») + « vs NOM »
 -- en haut DANS l'arène. Plus de chrome haut-gauche ni de hint ici (déplacés -> bandeau bas).
 function Combat:_drawChrome()
   local c = Theme.c
-  Reliquary.draw(0, 0, Draw.W, Draw.H, { ft = FRAME_FT })
-  self:_drawNameTab(T("scene.combat"):upper())
+  ScreenFrame.draw(T("scene.combat"):upper(), { ft = FRAME_FT })
   -- « vs NOM » : « vs » laiton sourd (Space Mono) + NOM ennemi en Cinzel sang (gravé), sous l'onglet.
   local lf = Theme.label(13)
   local nf = Theme.subhead(16)
@@ -193,7 +176,7 @@ end
 function Combat:_drawControlStrip()
   local c = Theme.c
   local gr = love and love.graphics
-  local ix, iy, iw, ih = Reliquary.inset(0, 0, Draw.W, Draw.H, { ft = FRAME_FT, pad = 2 })
+  local ix, iy, iw, ih = ScreenFrame.inset({ ft = FRAME_FT, pad = 2 })
   local sy = iy + ih - STRIP_H
   Draw.setColor(c.brass, 0.10); if gr then gr.rectangle("fill", ix, sy, iw, 1) end
   Draw.setColor({ 0.031, 0.016, 0.039, 0.5 }); if gr then gr.rectangle("fill", ix, sy + 1, iw, STRIP_H - 1) end
