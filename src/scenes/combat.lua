@@ -22,8 +22,8 @@ local Theme = require("src.ui.theme")
 local Draw = require("src.ui.draw")
 local Button = require("src.ui.button")  -- boutons propres (CHRONICLE secondary / CONTINUE primary)
 local Banner = require("src.ui.banner")  -- bandeau de verdict (VICTORY / DEFEAT) : remplace l'overlay forge
-local Dividers = require("src.ui.dividers") -- séparateur laiton propre (chrome haut)
 local Feel = require("src.ui.feel")      -- JUICE : survol (glow/lift) + press (squash/flash)
+local Reliquary = require("src.ui.reliquary") -- ENROBAGE : cadre de pierre gravée autour de l'écran (spec §A.9)
 local T = require("src.core.i18n").t
 
 local Combat = {}
@@ -35,6 +35,11 @@ local CAUSE_ORDER = { "poison", "rot", "bleed", "burn", "shock", "reflect", "att
 
 -- Boutons de fin (espace DESIGN) : CHRONICLE (secondary) + CONTINUE (primary, CTA). Largeurs/hauteurs propres.
 local BTN_W, BTN_H, BTN_GAP = 176, 44, 18
+
+-- ENROBAGE (spec §A.9 / §C.1) : cadre de pierre gravée plein écran (épaisseur d'art FRAME_FT) + onglet de nom
+-- centré sur le bord haut. Le contenu (arène + « vs » + bandeau bas) vit À L'INTÉRIEUR de l'inset.
+local FRAME_FT = 8          -- épaisseur d'art de la bande (×4 = ~32px design) ; pad = marge contenu/pierre
+local STRIP_H = 30          -- hauteur du bandeau de contrôle bas (auto-battle + vitesse + hints), en design
 
 -- Hit-test d'un rect (espace design). Tolère un curseur hors-écran (mx<0) et un rect absent.
 local function inBtn(mx, my, r)
@@ -55,6 +60,7 @@ function Combat.new(palette, vw, vh, host, payload)
     arena = arena,
     renderer = ArenaDraw.new(arena, palette),
     paused = false, -- PAUSE spectateur (Espace) : gèle entièrement le combat (analyse / screenshots)
+    speed = 1,      -- VITESSE spectateur (toggle bandeau bas) : 1× / 2× pas de temps FIXES par frame
     mx = -1, my = -1, -- curseur (espace design) : survol des boutons de fin + gaze des yeux du CTA
   }, Combat)
   self:_track() -- écoute le bus SIM (lecture seule) pour le post-mortem "pourquoi" (1.3)
@@ -105,12 +111,19 @@ function Combat:_computeSummary()
 end
 
 function Combat:update(frameDt)
-  Feel.update(frameDt) -- JUICE (remplace Forge.uiTick) : avance survol/press des boutons de fin (RENDER pur)
+  Feel.update(frameDt) -- JUICE (remplace Forge.uiTick) : avance survol/press des boutons (RENDER pur)
   if self.paused then return end -- combat GELÉ (sim + anims) -> reprise identique via Espace
-  self.t = self.t + frameDt
   self.ambient:update(frameDt)
-  self.arena:update(frameDt, self.t) -- SIM (émet des événements)
-  self.renderer:update(frameDt, self.t) -- RENDER (consomme + anime)
+  -- VITESSE : on avance la SIM `speed` PAS DE TEMPS FIXES par frame (PAS un gros dt -> déterminisme PRÉSERVÉ,
+  -- juste un wall-clock accéléré ; chaque pas émet/anime normalement). Une fois fini, 1 pas (fondus de mort/VFX
+  -- continuent via le renderer, la SIM est inerte). speed=1 par défaut -> headless/golden strictement intacts.
+  local steps = self.arena.over and 1 or (self.speed or 1)
+  for _ = 1, steps do
+    self.t = self.t + frameDt
+    self.arena:update(frameDt, self.t)   -- SIM (émet des événements)
+    self.renderer:update(frameDt, self.t) -- RENDER (consomme + anime)
+    if self.arena.over then break end
+  end
   if self.arena.over then
     self.hintKey = "ui.hint_combat_end"
     -- survol des deux boutons de fin (glow/lift lissés) — n'a d'effet visible qu'une fois l'écran affiché.
@@ -126,7 +139,12 @@ function Combat:mousemoved(vx, vy) self.mx, self.my = vx * 4, vy * 4 end
 -- Atmosphère "combat" native (gueule du puits + braises), derrière les combattants pixel.
 function Combat:drawBack(view)
   Draw.begin(view)
+  -- L'arène (gradient qui ROUGIT + stalactites + lueur du puits) est CLIPPÉE à l'intérieur du cadre reliquaire
+  -- -> la pierre gravée borde une arène nette (pas un fond plein écran). Le cadre est posé en overlay par-dessus.
+  local ix, iy, iw, ih = Reliquary.inset(0, 0, Draw.W, Draw.H, { ft = FRAME_FT, pad = 2 })
+  Draw.scissor(view, ix, iy, iw, ih)
   self.ambient:draw("combat")
+  Draw.noScissor()
   Draw.finish()
 end
 
@@ -137,24 +155,69 @@ end
 -- Chrome haute (espace design) : titre gravé + hint inscrit à gauche, « vs NOM » centré. PROPRE : Cinzel pour
 -- le titre/nom (gravé), Space Mono pour le hint (inscrit), pas de Silkscreen ni de cadre gritty. Un filet laiton
 -- discret sous la bande -> séparation nette sans masquer l'arène. (Le HUD générique est désactivé : daChrome.)
+-- Onglet de nom de l'écran : pilier de pierre centré sur le bord HAUT du cadre, portant le nom (Cinzel tracké
+-- en encre tarnie). Réutilisable -> à extraire en helper partagé quand on propage le cadre aux autres écrans.
+function Combat:_drawNameTab(label)
+  local c = Theme.c
+  local f = Theme.heading(12)
+  local tracking = 4
+  local tw = Draw.textWidth(label, f) + tracking * math.max(0, #label - 1)
+  local w, h, y = tw + 44, 24, 6
+  local x = math.floor(Draw.W / 2 - w / 2)
+  Draw.rect(x, y, w, h, Theme.hex(0x0e0a14), c.iron, 1)        -- pilier métal sombre + liseré iron
+  if love and love.graphics then                              -- éclat laiton haut (biseau)
+    Draw.setColor(c.brassS, 0.18); love.graphics.rectangle("fill", x + 1, y + 1, w - 2, 1); Draw.reset()
+  end
+  Draw.textTrackedC(label, Draw.W / 2, y + (h - (f and f:getHeight() or 12)) / 2, Theme.hex(0xcdbca0), f, tracking)
+end
+
+-- Chrome de combat = CADRE RELIQUAIRE (bande de pierre gravée plein écran) + onglet « COMBAT » + « vs NOM »
+-- en haut DANS l'arène. Plus de chrome haut-gauche ni de hint ici (déplacés -> bandeau bas).
 function Combat:_drawChrome()
   local c = Theme.c
-  -- titre d'écran : Cinzel gravé, capitales, interlettrage large (rôle heading).
-  Draw.textTrackedL(T("ui.title") .. "  ·  " .. T("scene.combat"):upper(), 16, 14, c.ink2, Theme.heading(13), 1.4)
-  -- hint : Space Mono (toutes les légendes/valeurs), ink sourd.
-  Draw.text(T(self.hintKey), 16, 34, c.ink4, Theme.label(10))
-
-  -- « vs NOM » centré : « vs » en laiton sourd (Space Mono), NOM de l'adversaire en Cinzel sang (gravé).
+  Reliquary.draw(0, 0, Draw.W, Draw.H, { ft = FRAME_FT })
+  self:_drawNameTab(T("scene.combat"):upper())
+  -- « vs NOM » : « vs » laiton sourd (Space Mono) + NOM ennemi en Cinzel sang (gravé), sous l'onglet.
   local lf = Theme.label(13)
   local nf = Theme.subhead(16)
   local name = T("encounter." .. (self.enemyKey or "unknown") .. ".name")
   local vsW = Draw.textWidth("vs ", lf)
   local nmW = Draw.textWidth(name, nf)
   local x = math.floor(Draw.W / 2 - (vsW + nmW) / 2)
-  Draw.text("vs ", x, 18, c.ink4, lf)
-  Draw.text(name, x + vsW, 15, c.bloodL, nf)
-  -- filet laiton sous la bande (séparation propre, profil triangulaire centré).
-  Dividers.brass(Draw.W / 2, 40, 360)
+  Draw.text("vs ", x, 58, c.ink4, lf)
+  Draw.text(name, x + vsW, 55, c.bloodL, nf)
+end
+
+-- Bandeau de contrôle bas (spec §C.4) : DANS l'inset, collé au bord bas de l'arène. Gauche = statut auto-battle
+-- (Space Mono), droite = toggle vitesse segmenté 1× / 2× (actif = sang) + hint [c]/[r]. Pose self._speedRect.
+function Combat:_drawControlStrip()
+  local c = Theme.c
+  local gr = love and love.graphics
+  local ix, iy, iw, ih = Reliquary.inset(0, 0, Draw.W, Draw.H, { ft = FRAME_FT, pad = 2 })
+  local sy = iy + ih - STRIP_H
+  Draw.setColor(c.brass, 0.10); if gr then gr.rectangle("fill", ix, sy, iw, 1) end
+  Draw.setColor({ 0.031, 0.016, 0.039, 0.5 }); if gr then gr.rectangle("fill", ix, sy + 1, iw, STRIP_H - 1) end
+  Draw.reset()
+  local midY = sy + STRIP_H / 2
+  local lf = Theme.label(10)
+  local lh = lf and lf:getHeight() or 10
+  -- GAUCHE : statut auto-battle (clé existante « auto-battle in progress... »).
+  Draw.text(T("ui.hint_combat"), ix + 14, midY - lh / 2, c.ink4, lf)
+  -- DROITE : toggle vitesse 1× / 2× calé à droite, puis hint [c]/[r] à sa gauche.
+  local segW, segH = 32, 18
+  local toggX = ix + iw - 14 - segW * 2
+  local toggY = math.floor(midY - segH / 2)
+  self._speedRect = { x = toggX, y = toggY, w = segW * 2, h = segH }
+  local sf = Theme.label(9)
+  local sfh = sf and sf:getHeight() or 9
+  local labels = { "1×", "2×" }
+  for i = 1, 2 do
+    local sx = toggX + (i - 1) * segW
+    local active = (self.speed == i)
+    Draw.rect(sx, toggY, segW, segH, active and c.blood or Theme.hex(0x100d16), c.iron, 1)
+    Draw.textTrackedC(labels[i], sx + segW / 2, toggY + (segH - sfh) / 2, active and Theme.hex(0xf3dcc6) or c.ink3, sf, 0.5)
+  end
+  Draw.textR(T("ui.hint_combat_end"), toggX - 12, midY - lh / 2, c.ink4, lf)
 end
 
 -- ── Écran de fin (verdict + post-mortem + 2 boutons) ─────────────────────────────────────────────────
@@ -211,7 +274,12 @@ function Combat:drawOverlay(view)
   self:_drawChrome()
   Draw.finish()
 
-  self.renderer:drawOverlay(view) -- noms d'unités + nombres flottants (gère sa propre transform)
+  self.renderer:drawOverlay(view) -- barres de vie + nombres flottants + pips (gère sa propre transform)
+
+  -- Bandeau de contrôle bas (vitesse + hints), au-dessus de l'arène, sous le cadre.
+  Draw.begin(view)
+  self:_drawControlStrip()
+  Draw.finish()
 
   -- Verdict + post-mortem + boutons (1.3 / 2A) : l'attribution causale est la précondition du ranked/rétention.
   -- On attend overAge >= 20 (laisse l'anim de mort se poser) avant d'afficher l'écran de fin.
@@ -241,9 +309,16 @@ function Combat:keypressed(key)
 end
 
 function Combat:mousepressed(vx, vy, button)
-  if button ~= 1 or not self.arena.over then return end -- entrées ignorées tant que le combat n'est pas fini
-  self.mx, self.my = vx * 4, vy * 4 -- virtuel -> DESIGN (les rects de fin sont en espace design)
-  -- 2A — plus de clic-n'importe-où : on hit-teste UNIQUEMENT les deux boutons de l'écran de fin.
+  if button ~= 1 then return end
+  self.mx, self.my = vx * 4, vy * 4 -- virtuel -> DESIGN (rects de fin + toggle vitesse en espace design)
+  -- Toggle de VITESSE (bandeau bas) : cliquable PENDANT le combat (bascule 1× / 2×). Feedback de press seul.
+  if not self.arena.over then
+    if self._speedRect and inBtn(self.mx, self.my, self._speedRect) then
+      Feel.press("combat.speed"); self.speed = (self.speed == 2) and 1 or 2
+    end
+    return -- rien d'autre à cliquer tant que le combat tourne (spectateur)
+  end
+  -- 2A — écran de fin : on hit-teste UNIQUEMENT les deux boutons.
   -- Feedback de press IMMÉDIAT (Feel.press sans action -> squash/flash) PUIS action TOUT DE SUITE : le test
   -- headless asserte openChronicle/finishCombat juste après le clic -> on n'utilise PAS l'action différée.
   if inBtn(self.mx, self.my, self._btnChron) then

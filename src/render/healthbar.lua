@@ -175,102 +175,89 @@ local function drawIconsRow(u, scale, x, top, leftAlign)
   end
 end
 
--- ── Géométrie de l'ENCADRÉ (en ART px ; rendu en ESPACE DESIGN à `scale` px/art -> grille fine, nette) ──
--- Cadre 2px (liseré sombre + métal biseauté) autour d'une aire de remplissage FW×FH. La barre vit dans
--- l'overlay (comme les nombres/icônes) -> bien plus fine que la grille ×4 du monde (fini le « alpha »).
-local FW, FH = 34, 4        -- aire de remplissage (art px)
-local PAD = 2               -- épaisseur du cadre (art px) : liseré 1 + métal 1
-local AW, AH = FW + PAD * 2, FH + PAD * 2 -- 38 × 8 (art px)
-local IX0, IY0 = PAD, PAD   -- origine art de l'aire de remplissage (2,2)
--- Pile verticale au-dessus du monstre : NOM (au-dessus) / encadré / ICÔNES (en dessous), le tout au-dessus
--- de la tête. BAR_DY positionne le HAUT de l'encadré pour laisser la place aux icônes entre la barre et la
--- tête (cf. ROW_GAP de place.lua qui garantit le creux entre monstres empilés).
-local BAR_DY = -31          -- top de l'encadré relatif à u.y (pieds, virtuel) : COLLÉ juste sur la tête du
-                            -- monstre (≈ dans sa case) -> plus de pile flottante haute, grille resserrable
-HealthBar.BAR_DY = BAR_DY   -- exposé : arena_draw place le NOM de l'unité juste au-dessus de l'encadré
+-- ── Géométrie de la barre (ESPACE DESIGN, spec §C.2) : barre PROPRE 54×8, fond sombre + liseré 1px iron,
+-- remplissage SANG gauche-ancré + segments d'altération + overlay bouclier HACHURÉ bleu. Plus de cadre bronze
+-- biseauté ni de studs dorés (kit gritty retiré) -> lecture nette, cohérente avec le design-system.
+local BAR_W, BAR_H = 54, 8
+local BAR_DY = -31          -- top de la barre relatif à u.y (pieds, virtuel) : juste au-dessus de la tête.
+HealthBar.BAR_DY = BAR_DY   -- exposé : arena_draw place le NOM de l'unité juste au-dessus de la barre.
 
--- Encadré « runique » : bronze biseauté + accents dorés (réutilise le thème + 3 bronzes via Theme.hex).
-local FRAME = {
-  out  = Theme.hex(0x0a0608), -- liseré extérieur (presque noir, chaud)
-  lit  = Theme.hex(0x82602a), -- métal éclairé (haut/gauche)
-  dark = Theme.hex(0x3a2a14), -- métal ombré (bas/droite)
-  gold = C.gold, goldBr = C.goldBright,
-}
 local FILL = {
-  empty = Theme.hex(0x16090b), -- canal vide (vie perdue) : recessed très sombre
-  sheen = C.bloodBright, body = C.blood, shadow = C.bloodDeep,
-  edge  = C.dmg,               -- bord de jauge (cut lumineux)
+  track = Theme.hex(0x0a0810), -- piste vide (recessed très sombre)
+  body  = Theme.hex(0xc0392f), -- crête rouge (haut éclairé)
+  bodyD = Theme.hex(0x5a1714), -- base rouge sombre
 }
 
 -- Dessine la barre de vie COMPLÈTE (encadré + vie multi-tons + segments + bord de jauge + bouclier + icônes)
 -- en ESPACE DESIGN (à appeler SOUS Draw.begin), centrée au-dessus de `u`. SIM en lecture seule.
-function HealthBar.draw(u, scale)
-  scale = scale or 2
+function HealthBar.draw(u, scale) -- `scale` conservé pour compat de signature (la barre est en design px).
   local maxHp = u.maxHp or 0
   if maxHp <= 0 then return end
+  local gr = love and love.graphics
+  if not gr then return end -- pur-headless sans love : barre purement cosmétique -> no-op (golden neutre)
   local frac = (u.hp or 0) / maxHp
   if frac < 0 then frac = 0 elseif frac > 1 then frac = 1 end
 
-  local ox = math.floor(u.x * 4 - AW * scale / 2)
-  local oy = math.floor((u.y + BAR_DY) * 4)
+  local x = math.floor(u.x * 4 - BAR_W / 2)
+  local y = math.floor((u.y + BAR_DY) * 4)
 
-  -- Pose un rectangle en ART px (ax,ay,aw,ah) -> design via scale. alpha optionnel.
-  local function ar(ax, ay, aw, ah, col, alpha)
-    if aw <= 0 or ah <= 0 then return end
-    love.graphics.setColor(col[1], col[2], col[3], alpha or col[4] or 1)
-    love.graphics.rectangle("fill", ox + ax * scale, oy + ay * scale, aw * scale, ah * scale)
-  end
+  -- PISTE : fond sombre + liseré 1px iron.
+  gr.setColor(FILL.track[1], FILL.track[2], FILL.track[3], 1)
+  gr.rectangle("fill", x, y, BAR_W, BAR_H)
+  gr.setColor(C.iron[1], C.iron[2], C.iron[3], 1)
+  gr.rectangle("line", x + 0.5, y + 0.5, BAR_W - 1, BAR_H - 1)
+  local ix, iy, iw, ih = x + 1, y + 1, BAR_W - 2, BAR_H - 2
 
-  -- INTÉRIEUR : canal vide (recessed), puis vie courante en 3 tons (brillance / corps / ombre).
-  ar(IX0, IY0, FW, FH, FILL.empty)
-  local hpW = math.floor(frac * FW + 0.5)
+  -- REMPLISSAGE SANG gauche-ancré (base sombre + crête éclairée), largeur = fraction de vie.
+  local hpW = math.floor(frac * iw + 0.5)
   if hpW > 0 then
-    ar(IX0, IY0, hpW, 1, FILL.sheen)
-    ar(IX0, IY0 + 1, hpW, FH - 2, FILL.body)
-    ar(IX0, IY0 + FH - 1, hpW, 1, FILL.shadow)
-  end
+    gr.setColor(FILL.bodyD[1], FILL.bodyD[2], FILL.bodyD[3], 1)
+    gr.rectangle("fill", ix, iy, hpW, ih)
+    gr.setColor(FILL.body[1], FILL.body[2], FILL.body[3], 1)
+    gr.rectangle("fill", ix, iy, hpW, math.max(1, math.floor(ih * 0.45)))
 
-  -- SEGMENTS d'altération : depuis la pointe de la vie vers la gauche, bornés à la vie (ordre AFFLICTIONS).
-  local budget, cursor = hpW, IX0 + hpW
-  for _, a in ipairs(AFFLICTIONS) do
-    if a.segment and budget > 0 then
-      local pend = a.pending(u)
-      if pend > 0 then
-        local segW = math.floor(pend / maxHp * FW + 0.5)
-        if segW > budget then segW = budget end
-        if segW > 0 then
-          cursor = cursor - segW; budget = budget - segW
-          ar(cursor, IY0, segW, 1, shade(a.color, 1.3)) -- brillance du segment
-          ar(cursor, IY0 + 1, segW, FH - 1, a.color)    -- corps du segment
+    -- SEGMENTS d'altération : depuis la pointe de la vie vers la gauche, bornés à la vie (ordre AFFLICTIONS).
+    local cursor, budget = ix + hpW, hpW
+    for _, a in ipairs(AFFLICTIONS) do
+      if a.segment and budget > 0 then
+        local pend = a.pending(u)
+        if pend > 0 then
+          local segW = math.floor(pend / maxHp * iw + 0.5)
+          if segW > budget then segW = budget end
+          if segW > 0 then
+            cursor = cursor - segW; budget = budget - segW
+            gr.setColor(a.color[1], a.color[2], a.color[3], 0.8) -- voile de famille sur la tranche condamnée
+            gr.rectangle("fill", cursor, iy, segW, ih)
+            local hi = a.hi or shade(a.color, 1.3)
+            gr.setColor(hi[1], hi[2], hi[3], 1)
+            gr.rectangle("fill", cursor, iy, segW, 1) -- crête éclairée du segment
+          end
         end
       end
     end
+
+    -- front net (liseré vif) à la pointe de la vie.
+    gr.setColor(C.bloodBright[1], C.bloodBright[2], C.bloodBright[3], 0.9)
+    gr.rectangle("fill", ix + hpW - 1, iy, 1, ih)
   end
 
-  -- Bord de jauge : cut lumineux au bord droit de la vie (si entamée) -> lecture nette de la descente.
-  if hpW > 0 and hpW < FW then ar(IX0 + hpW - 1, IY0, 1, FH, FILL.edge, 0.7) end
-
-  -- Bouclier : voile cyan sur le haut de l'intérieur (largeur = fraction de bouclier).
+  -- BOUCLIER : overlay HACHURÉ bleu (1px sur 4 sur la diagonale x+y) sur la portion de bouclier depuis la
+  -- gauche + liseré droit (spec §C.2 : « le bouclier se lit par-dessus la vie »).
   if u.shield and u.shield > 0 then
-    local sw = math.floor(math.min(1, u.shield / maxHp) * FW + 0.5)
-    ar(IX0, IY0, sw, 1, C.shield, 0.85)
+    local shW = math.floor(math.min(1, u.shield / maxHp) * iw + 0.5)
+    gr.setColor(C.shield[1], C.shield[2], C.shield[3], 0.55)
+    for sx = 0, shW - 1 do
+      for sy = 0, ih - 1 do
+        if ((sx + sy) % 4) == 0 then gr.rectangle("fill", ix + sx, iy + sy, 1, 1) end
+      end
+    end
+    gr.setColor(C.shield[1], C.shield[2], C.shield[3], 0.7)
+    gr.rectangle("fill", ix + shW - 1, iy, 1, ih)
   end
+  gr.setColor(1, 1, 1, 1)
 
-  -- ENCADRÉ : liseré extérieur sombre + bande métal biseautée (haut/gauche clairs, bas/droite sombres).
-  ar(0, 0, AW, 1, FRAME.out); ar(0, AH - 1, AW, 1, FRAME.out)
-  ar(0, 0, 1, AH, FRAME.out); ar(AW - 1, 0, 1, AH, FRAME.out)
-  ar(1, 1, AW - 2, 1, FRAME.lit); ar(1, 1, 1, AH - 2, FRAME.lit)
-  ar(1, AH - 2, AW - 2, 1, FRAME.dark); ar(AW - 2, 1, 1, AH - 2, FRAME.dark)
-  -- Accents dorés : studs aux 4 coins (haut plus brillants) + nubs runiques aux extrémités (milieu vertical).
-  ar(1, 1, 1, 1, FRAME.goldBr); ar(AW - 2, 1, 1, 1, FRAME.goldBr)
-  ar(1, AH - 2, 1, 1, FRAME.gold); ar(AW - 2, AH - 2, 1, 1, FRAME.gold)
-  local midY = math.floor(AH / 2) - 1
-  ar(0, midY, 1, 2, FRAME.gold); ar(AW - 1, midY, 1, 2, FRAME.gold)
-
-  -- ICÔNES de statut : petites (×1), EN DESSOUS de l'encadré, alignées à GAUCHE (départ au bord gauche).
-  drawIconsRow(u, 1, ox, oy + AH * scale + 1, true)
-
-  love.graphics.setColor(1, 1, 1, 1)
+  -- ICÔNES de statut : petites (×1), EN DESSOUS de la barre, alignées à GAUCHE (= pips de statut, §C.2).
+  drawIconsRow(u, 1, x, y + BAR_H + 2, true)
 end
 
 return HealthBar
