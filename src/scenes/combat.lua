@@ -119,7 +119,9 @@ function Combat:update(frameDt)
   end
 end
 
-function Combat:mousemoved(vx, vy) self.mx, self.my = vx, vy end
+-- La souris arrive en espace VIRTUEL (main.lua:toVirtual) ; les rects de fin + le gaze des yeux sont en
+-- espace DESIGN -> on convertit ×4 ICI (comme relicpick/runover). self.mx/self.my sont donc en DESIGN.
+function Combat:mousemoved(vx, vy) self.mx, self.my = vx * 4, vy * 4 end
 
 -- Atmosphère "combat" native (gueule du puits + braises), derrière les combattants pixel.
 function Combat:drawBack(view)
@@ -240,17 +242,17 @@ end
 
 function Combat:mousepressed(vx, vy, button)
   if button ~= 1 or not self.arena.over then return end -- entrées ignorées tant que le combat n'est pas fini
-  self.mx, self.my = vx, vy
+  self.mx, self.my = vx * 4, vy * 4 -- virtuel -> DESIGN (les rects de fin sont en espace design)
   -- 2A — plus de clic-n'importe-où : on hit-teste UNIQUEMENT les deux boutons de l'écran de fin.
   -- Feedback de press IMMÉDIAT (Feel.press sans action -> squash/flash) PUIS action TOUT DE SUITE : le test
   -- headless asserte openChronicle/finishCombat juste après le clic -> on n'utilise PAS l'action différée.
-  if inBtn(vx, vy, self._btnChron) then
+  if inBtn(self.mx, self.my, self._btnChron) then
     Feel.press("combat.chron")
     -- CHRONICLE : ouvre l'overlay modal (chronique du combat en cours). No-op hors run (exhibition).
     if self.host.openChronicle then self.host.openChronicle() end
     return
   end
-  if inBtn(vx, vy, self._btnCont) then
+  if inBtn(self.mx, self.my, self._btnCont) then
     Feel.press("combat.cont")
     -- CONTINUE : route normale (comme l'ancien clic). EXHIBITION (banc d'essai) : payload.onFinish prend
     -- la main (retour Proving Ground, SANS toucher la méta de run). Sinon host (résout vies/victoires).

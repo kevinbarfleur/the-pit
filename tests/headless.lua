@@ -249,9 +249,11 @@ local ok, err = pcall(function()
     rc:mousepressed(2, 2, 1)
     assert(not called, "un clic hors bouton ne termine plus le combat")
     -- clic au centre de CHRONICLE -> host.openChronicle ; clic au centre de CONTINUE -> finishCombat.
-    rc:mousepressed(rc._btnChron.x + rc._btnChron.w / 2, rc._btnChron.y + rc._btnChron.h / 2, 1)
+    -- Les rects sont en DESIGN ; la souris arrive en VIRTUEL (÷4) comme dans le vrai jeu (main.lua:toVirtual)
+    -- -> on clique les coords VIRTUELLES du centre de chaque bouton (sinon on testerait le mauvais espace).
+    rc:mousepressed((rc._btnChron.x + rc._btnChron.w / 2) / 4, (rc._btnChron.y + rc._btnChron.h / 2) / 4, 1)
     assert(opened, "clic CHRONICLE -> host.openChronicle")
-    rc:mousepressed(rc._btnCont.x + rc._btnCont.w / 2, rc._btnCont.y + rc._btnCont.h / 2, 1)
+    rc:mousepressed((rc._btnCont.x + rc._btnCont.w / 2) / 4, (rc._btnCont.y + rc._btnCont.h / 2) / 4, 1)
     assert(called and finished ~= nil, "clic CONTINUE -> host.finishCombat appele avec l'issue")
     print("  routing : ecran de fin (CHRONICLE/CONTINUE) -> openChronicle / finishCombat OK")
   end
