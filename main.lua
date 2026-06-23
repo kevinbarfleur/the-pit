@@ -21,6 +21,7 @@ local ForgeIter = require("src.scenes.forge_iter") -- vue d'iteration dev : isol
 local DesignSystem = require("src.scenes.designsystem") -- STORYBOOK in-engine : source de vérité visuelle de l'UI
 local RunState = require("src.run.state")
 local ChronicleOverlay = require("src.render.chronicle_overlay") -- LA CHRONIQUE : overlay modal (journal de combat)
+local PostFX = require("src.render.postfx") -- SURCOUCHE CAUCHEMARDESQUE : post-fx RENDER-pur par-dessus l'UI nette ([F9])
 local Grimoire = require("src.core.grimoire")
 local Dev = require("src.core.dev") -- MODE DEV (cheat) : toggle full-unlock du codex (menu) ; master switch Dev.ENABLED
 local Bestiary = require("src.core.bestiary") -- codex des créatures rencontrées (persistant, full-unlock-aware)
@@ -30,6 +31,7 @@ local T = require("src.core.i18n").t
 local VW, VH = 320, 180           -- résolution virtuelle (×4 = 1280×720 pile)
 local FRAME = 60                  -- conversion dt(s) -> "frames" pour l'horloge des anims
 local canvas
+local postfx                      -- SURCOUCHE CAUCHEMARDESQUE (post-fx RENDER-pur ; nil/inerte en headless)
 local view = { scale = 1, ox = 0, oy = 0 }
 
 -- Mini state-machine : build <-> combat, enrobée par la méta de RUN (host.run). Une scène demande
@@ -185,6 +187,8 @@ function love.load()
   canvas = love.graphics.newCanvas(VW, VH)
   canvas:setFilter("nearest", "nearest")
 
+  postfx = PostFX.new() -- SURCOUCHE CAUCHEMARDESQUE : shader+canvas natifs créés une fois (no-op si GPU/shader absent)
+
   Theme.load() -- charge polices + DA une fois (pré-chauffe les tailles courantes ; fallback si TTF absent)
   Grimoire.load() -- charge le codex persistant (reliques identifiées, méta-progression cross-run)
   Dev.load()      -- MODE DEV : restaure l'état du toggle full-unlock (inerte si Dev.ENABLED = false)
@@ -207,6 +211,19 @@ function love.draw()
   view.ox = math.floor((sw - VW * scale) / 2)
   view.oy = math.floor((sh - VH * scale) / 2)
 
+  -- 0bis. SURCOUCHE CAUCHEMARDESQUE : on rend TOUTE la frame dans un canvas à la RÉSOLUTION NATIVE (sw,sh),
+  -- puis on le blit 1:1 à travers le shader (endFrame) -> ZÉRO rééchantillonnage, le texte reste net. Si la
+  -- surcouche est inactive (toggle off / headless), fxOn = false et le pipeline rend directement à l'écran
+  -- (inchangé). dt mural via getDelta (RENDER : pas de déterminisme requis) ; absent en headless -> 0.
+  local fxOn = false
+  if postfx then
+    local dt = (love.timer and love.timer.getDelta and love.timer.getDelta()) or 0
+    fxOn = postfx:beginFrame(dt, sw, sh)
+  end
+  -- Cible à restaurer après les passes monde (un setCanvas() nu retournerait à l'écran, court-circuitant la
+  -- capture). fxCanvas = le canvas natif si la surcouche est engagée, sinon nil (== écran : comportement par défaut).
+  local fxCanvas = postfx and postfx:currentCanvas() or nil
+
   -- 1. Pre-pass ATMOSPHÈRE native (glows lisses), DERRIÈRE le monde pixel. Optionnel par scène.
   if scene.drawBack then scene:drawBack(view) end
 
@@ -228,7 +245,7 @@ function love.draw()
     love.graphics.setCanvas(canvas)
     love.graphics.clear(0, 0, 0, 0)
     scene:drawWorld()
-    love.graphics.setCanvas()
+    love.graphics.setCanvas(fxCanvas) -- restaure la cible (canvas natif fx, ou écran si surcouche inactive)
     love.graphics.draw(canvas, view.ox, view.oy, 0, scale, scale)
   end
 
@@ -238,6 +255,17 @@ function love.draw()
 
   -- 5. Overlay MODAL (La Chronique) par-dessus tout, si ouvert.
   if host.overlay then host.overlay:draw(view) end
+
+  -- 6. SURCOUCHE CAUCHEMARDESQUE : décroche le canvas et le blit 1:1 à travers le shader. La `tension` (0..1)
+  -- ferme la vignette quand le run tourne mal (vies perdues) -> l'écran « se ferme ». 100% RENDER (firewall SIM).
+  if fxOn then
+    local tension = 0
+    local run = host.run
+    if run and run.lives and RunState.START_LIVES then
+      tension = math.max(0, math.min(1, 1 - run.lives / RunState.START_LIVES))
+    end
+    postfx:endFrame(tension)
+  end
 end
 
 function love.keypressed(key)
@@ -245,6 +273,12 @@ function love.keypressed(key)
   -- de mode) ; love.draw recalcule `view` sur getDimensions chaque frame -> s'adapte sans rien recréer.
   if key == "f11" or (key == "return" and (love.keyboard.isDown("lalt") or love.keyboard.isDown("ralt"))) then
     love.window.setFullscreen(not love.window.getFullscreen(), "desktop")
+    return
+  end
+  -- [F9] : bascule la SURCOUCHE CAUCHEMARDESQUE (post-fx) ON/OFF, n'importe où, pour comparer le rendu net
+  -- vs grimdark. Capté en priorité (comme le plein écran) ; inerte si la surcouche n'est pas disponible.
+  if key == "f9" then
+    if postfx then postfx:toggle() end
     return
   end
   -- LA CHRONIQUE (overlay modal) : capte le clavier en priorité tant qu'elle est ouverte.
