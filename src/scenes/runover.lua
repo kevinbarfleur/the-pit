@@ -1,30 +1,41 @@
 -- src/scenes/runover.lua
--- Écran de FIN DE RUN (DA) : affiché quand le run se conclut (10 victoires = ASCENSION, ou 0 vie =
--- THE PIT KEEPS YOU). Récapitule la run sur fond d'atmosphère, puis attend un clic / [r] pour relancer.
+-- Écran de FIN DE RUN (DA PROPRE, kit .dc.html) : affiché quand le run se conclut (10 victoires = ASCENSION,
+-- ou 0 vie = THE PIT KEEPS YOU). Le VERDICT cérémonial + le récap de la run vivent dans une BANNIÈRE
+-- (src/ui/banner.lua, kind ascension/defeat = la SEULE voix Jacquard), puis un BOUTON PRIMARY relance le Puits.
 --
--- DA « nightmare forge » (kit src/ui/forge.lua) : le récap vit dans un PANNEAU forge (Forge.drawPanel :
--- matière + cadre laiton patiné + veines + œil qui guette) ; le VERDICT est une BANNIÈRE forge
--- (Forge.drawBanner, kind win/defeat) ; la relance est un BOUTON-ŒIL forge (Forge.uiButton tone='cta').
--- Le panneau + la bannière sont des rendus « buffer » (raw) -> bakés dans des widgets cachés sur la scène
--- (alloués UNE FOIS par taille, re-bakés chaque frame car ils RESPIRENT), à la manière de l'orbe de vie.
+-- DA « reliquary » (kit Panel/Banner/Button/Dividers/Feel + Theme/Draw) — plus de Forge/Frame gritty :
+--   • La BANNIÈRE est le centre cérémonial : mot du destin (Jacquard) + kicker (subtitle) + score (wins/losses)
+--     + progression (hint). Halo doré/braise pour l'ascension, halo sang pour la chute. Filets gravés (Dividers).
+--   • Sous la bannière, un filet laiton (Dividers.brass) puis le CTA PRIMARY « DESCEND AGAIN » (sang + yeux),
+--     avec le JUICE propre (Feel : lift/glow au survol, squash/flash au press). Structure = menu (verdict + CTA).
+-- Couleurs/polices via Theme UNIQUEMENT ; tout le texte est NET (Draw + rôles de police), composé en ESPACE
+-- DESIGN 1280×720 (= virtuel ×4) ; mesure/wrap maîtrisés (la bannière borne sa largeur au contenu).
 --
--- Couche scène (love.graphics) : atmosphère native en drawBack, panneau+bannière+texte en overlay design.
--- daChrome=true. Interface scène : update / drawBack / drawWorld / drawOverlay(view) / keypressed / mouse*.
+-- CLIQUABILITÉ + CONTRAT : on PRÉSERVE l'interface scène (update/drawBack/drawWorld/drawOverlay/keypressed/
+-- mouse*) et le routing de relance (host.newRun). La souris arrive en VIRTUEL (320×180) -> repassée en DESIGN
+-- (×4) pour le hit-test. Le test (tests/ui.lua) lit self.panel + self.cta et asserte que le clic relance
+-- IMMÉDIATEMENT -> on joue le feedback de press (Feel.press SANS action) PUIS on appelle host.newRun() tout de
+-- suite (aucune action différée), comme le bouton COMBAT du build. daChrome=true.
 
 local Theme = require("src.ui.theme")
 local Draw = require("src.ui.draw")
-local Layout = require("src.ui.layout")
+local Banner = require("src.ui.banner")   -- VERDICT cérémonial (Jacquard) : le centre de l'écran
+local Button = require("src.ui.button")   -- CTA propre PRIMARY (sang + yeux) : la relance
+local Dividers = require("src.ui.dividers") -- filet laiton propre entre verdict et CTA
+local Feel = require("src.ui.feel")       -- JUICE propre (survol/press) — RENDER pur, headless-safe
 local Ambient = require("src.fx.ambient")
-local Forge = require("src.ui.forge") -- KIT « nightmare forge » : panneau + bannière + bouton-œil CTA
 local T = require("src.core.i18n").t
 
 local Runover = {}
 Runover.__index = Runover
 
--- Géométrie (espace design 1280×720). Panneau centré, bannière en tête de panneau, bouton-œil en pied.
-local PANEL_W, PANEL_H = 560, 320
-local BANNER_W, BANNER_H = 440, 56
-local CTA_W, CTA_H = 300, 60
+-- Géométrie (espace design 1280×720). Bloc « verdict + CTA » centré : la BANNIÈRE (large, bornée au contenu)
+-- au-dessus, un filet laiton, puis le CTA. self.panel = l'enveloppe (compat test + ancrage) ; self.cta = le rect.
+local BANNER_W, BANNER_H = 760, 196 -- large : le mot long « THE PIT KEEPS YOU » (Jacquard) respire sans déborder
+local DIV_GAP = 30                  -- air entre la bannière et le filet/CTA (respiration des séparateurs)
+local CTA_W, CTA_H = 320, 60
+
+local function ptIn(px, py, r) return px >= r.x and px <= r.x + r.w and py >= r.y and py <= r.y + r.h end
 
 function Runover.new(palette, vw, vh, host, payload)
   payload = payload or {}
@@ -35,35 +46,35 @@ function Runover.new(palette, vw, vh, host, payload)
     hintKey = "ui.hint_runover",
     result = payload.result or "lose", -- "win" | "lose"
     run = payload.run,
-    mx = 0, my = 0,
+    mx = -100, my = -100,
     ambient = Ambient.new(21),
   }, Runover)
 
-  -- Panneau centré ; sous-zones par Layout (bannière > récap > bouton) -> aucune poche vide.
-  local px = math.floor((Draw.W - PANEL_W) / 2)
-  local py = math.floor((Draw.H - PANEL_H) / 2)
-  self.panel = { x = px, y = py, w = PANEL_W, h = PANEL_H }
-  local inner = Layout.inset(self.panel, { l = 28, t = 26, r = 28, b = 28 })
-  local rows = Layout.column(inner, {
-    { size = BANNER_H }, -- 1 bannière (verdict)
-    { flex = 1 },        -- 2 récap (score/progression)
-    { size = CTA_H },    -- 3 bouton-œil de relance
-  }, { gap = 16, align = "stretch" })
-  self.rBanner, self.rRecap, self.rCta = rows[1], rows[2], rows[3]
-  -- Bouton-œil centré dans sa rangée.
+  -- Bloc vertical centré : bannière (haut) + filet + CTA (bas). On calcule la hauteur totale puis on centre.
+  local cx = math.floor(Draw.W / 2)
+  local bannerH = BANNER_H
+  local totalH = bannerH + DIV_GAP + CTA_H
+  local top = math.floor((Draw.H - totalH) / 2)
+  self.bx = math.floor(cx - BANNER_W / 2)
+  self.by = top
+  self.divY = top + bannerH + math.floor(DIV_GAP / 2)
   self.cta = {
-    x = math.floor(self.rCta.x + self.rCta.w / 2 - CTA_W / 2),
-    y = self.rCta.y, w = CTA_W, h = CTA_H,
+    x = math.floor(cx - CTA_W / 2),
+    y = top + bannerH + DIV_GAP,
+    w = CTA_W, h = CTA_H,
   }
+  -- Enveloppe (compat : le test lit self.panel) : l'aire englobant le bloc verdict+CTA. Pas un cadre dessiné
+  -- (le verdict est porté par la BANNIÈRE), juste un repère d'ancrage/hit-test.
+  self.panel = { x = self.bx, y = self.by, w = BANNER_W, h = totalH }
+  Feel.reset() -- repart au repos en entrant (survol/press vierges)
   return self
 end
-
-local function ptIn(px, py, r) return px >= r.x and px <= r.x + r.w and py >= r.y and py <= r.y + r.h end
 
 function Runover:update(frameDt)
   self.t = self.t + frameDt
   self.ambient:update(frameDt)
-  Forge.uiTick(frameDt / 60) -- horloge des widgets forge (en SECONDES)
+  Feel.update(frameDt) -- avance le JUICE du CTA (survol/press) ; aucune action différée en file ici
+  Feel.hover("runover.again", ptIn(self.mx, self.my, self.cta))
 end
 
 function Runover:drawBack(view)
@@ -75,54 +86,29 @@ end
 function Runover:drawWorld() end
 
 function Runover:drawOverlay(view)
-  local c = Theme.c
   local r = self.run
   local won = self.result == "win"
-  local tt = self.t / 60
+  local tt = self.t / 60 -- horloge en SECONDES (pulse de la bannière + yeux du CTA)
 
   Draw.begin(view)
 
-  -- ── 1) PANNEAU forge (matière qui respire + cadre patiné + œil) : baké dans un widget caché, PX=2. ──
-  do
-    local px, P = 2, self.panel
-    local aw, ah = math.floor(P.w / px), math.floor(P.h / px)
-    if not self.panelWidget or self.panelAw ~= aw or self.panelAh ~= ah then
-      self.panelWidget = Forge.newWidget(aw, ah)
-      self.panelAw, self.panelAh = aw, ah
-    end
-    local img = Forge.render(self.panelWidget, function(b, W, H, t) Forge.drawPanel(b, W, H, t) end, tt)
-    Forge.blit(img, P.x, P.y, px)
-  end
+  -- ── 1) VERDICT cérémonial : BANNIÈRE (kind ascension/defeat). Le récap de run est porté par la bannière
+  --       elle-même (subtitle = kicker, score = wins/losses, hint = progression) -> un seul centre lisible. ──
+  local kind = won and "ascension" or "defeat"
+  local word = T(won and "runover.win" or "runover.lose")
+  local subtitle = T(won and "runover.kicker_win" or "runover.kicker_lose")
+  local score = r and T("runover.score", { wins = r.wins, losses = r.losses }) or nil
+  local hint = r and T("runover.progress", { rounds = r.round, level = r.level }) or nil
+  Banner.draw(self.bx, self.by, BANNER_W, kind, word,
+    { subtitle = subtitle, score = score, hint = hint, t = tt, h = BANNER_H })
 
-  -- ── 2) BANNIÈRE forge (verdict) : Forge.drawBanner (kind win/defeat), bakée dans un widget caché. ──
-  do
-    local px = 2
-    local bx = math.floor(self.rBanner.x + self.rBanner.w / 2 - BANNER_W / 2)
-    local by = self.rBanner.y
-    local aw, ah = math.floor(BANNER_W / px), math.floor(BANNER_H / px)
-    if not self.bannerWidget then
-      self.bannerWidget = Forge.newWidget(aw, ah)
-      self.bannerAw, self.bannerAh = aw, ah
-    end
-    local word = T(won and "runover.win" or "runover.lose")
-    local kind = won and "win" or "defeat"
-    local img = Forge.render(self.bannerWidget, function(b, W, H, t) Forge.drawBanner(b, W, H, word, kind, t) end, tt)
-    Forge.blit(img, bx, by, px)
-  end
+  -- ── 2) Filet laiton propre (Dividers.brass) entre le verdict et l'appel à redescendre. ──
+  Dividers.brass(math.floor(Draw.W / 2), self.divY, 280)
 
-  -- ── 3) KICKER (sous la bannière) + RÉCAP de la run (lisible : Silkscreen), centrés dans la rangée. ──
-  local rc = self.rRecap
-  local cx = rc.x + rc.w / 2
-  Draw.textC(T(won and "runover.kicker_win" or "runover.kicker_lose"), cx, rc.y + 6, c.faint, Theme.loreRoman(16))
-  if r then
-    Draw.textC(T("runover.score", { wins = r.wins, losses = r.losses }), cx, rc.y + 36, c.title, Theme.uiBold(14))
-    Draw.textC(T("runover.progress", { rounds = r.round, level = r.level }), cx, rc.y + 60, c.faint, Theme.ui(12))
-  end
-
-  -- ── 4) BOUTON-ŒIL de relance (tone='cta', regard depuis la souris). ──
-  Forge.uiButton("runover.again", self.cta.x, self.cta.y, self.cta.w, self.cta.h, T("runover.descend"),
-    { tone = "cta", hover = self.ctaHover, active = self.ctaDown,
-      mouse = { mx = self.mx, my = self.my }, fontSz = 9, eyeR = 7, t = tt })
+  -- ── 3) CTA PRIMARY « DESCEND AGAIN » (sang + yeux) avec le JUICE propre (survol/press). ──
+  Button.draw(self.cta.x, self.cta.y, self.cta.w, self.cta.h, "primary", T("runover.descend"),
+    { hover = self.ctaHover, feel = Feel.state("runover.again"), id = "runover.again",
+      mouse = { mx = self.mx, my = self.my }, t = tt })
 
   Draw.finish()
 end
@@ -131,19 +117,26 @@ function Runover:mousemoved(vx, vy)
   local dx, dy = vx * 4, vy * 4
   self.mx, self.my = dx, dy
   self.ctaHover = ptIn(dx, dy, self.cta)
+  Feel.hover("runover.again", self.ctaHover)
 end
 
+-- ⭐ Pointer-DOWN sur le CTA : feedback de press IMMÉDIAT (Feel.press SANS action -> squash + flash + braise)
+-- PUIS relance TOUT DE SUITE (host.newRun). On ne diffère PAS l'action : le test asserte la relance juste
+-- après le clic (comme le bouton COMBAT du build). Le verrou de Feel ne s'arme pas (aucune action en file).
 function Runover:mousepressed(vx, vy, button)
   if button ~= 1 then return end
-  self.mx, self.my = vx * 4, vy * 4
-  self.ctaDown = true
-  self.host.newRun()
+  local dx, dy = vx * 4, vy * 4
+  self.mx, self.my = dx, dy
+  if ptIn(dx, dy, self.cta) then
+    Feel.press("runover.again") -- feedback immédiat (pas d'action différée)
+    self.host.newRun()
+  end
 end
 
-function Runover:mousereleased() self.ctaDown = false end
+function Runover:mousereleased() end
 
 function Runover:keypressed(key)
-  if key == "r" then self.host.newRun() end
+  if key == "r" then Feel.press("runover.again"); self.host.newRun() end
 end
 
 return Runover
