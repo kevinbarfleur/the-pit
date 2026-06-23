@@ -18,6 +18,7 @@ local Relicpick = require("src.scenes.relicpick")
 local GrimoireScene = require("src.scenes.grimoire")
 local Playground = require("src.scenes.playground")
 local ForgeIter = require("src.scenes.forge_iter") -- vue d'iteration dev : isole les creatures en cours de refonte
+local DesignSystem = require("src.scenes.designsystem") -- STORYBOOK in-engine : source de vérité visuelle de l'UI
 local RunState = require("src.run.state")
 local ChronicleOverlay = require("src.render.chronicle_overlay") -- LA CHRONIQUE : overlay modal (journal de combat)
 local Grimoire = require("src.core.grimoire")
@@ -77,6 +78,10 @@ function host.goto(name, payload)
     -- Vue d'ITÉRATION (dev) : revue isolée des créatures en cours de refonte. Mémoïsée (rigs bakés une fois).
     host.forgeIter = host.forgeIter or ForgeIter.new(Palette, VW, VH, host)
     host.scene = host.forgeIter
+  elseif name == "designsystem" then
+    -- Storybook in-engine (source de vérité VISUELLE de l'UI) : mémoïsé (indépendant du run).
+    host.designsystem = host.designsystem or DesignSystem.new(Palette, VW, VH, host)
+    host.scene = host.designsystem
   else
     host.scene = host.build
   end
@@ -244,7 +249,7 @@ function love.keypressed(key)
   end
   if key == "escape" then
     -- Depuis le Grimoire ou le Proving Ground (ouverts via le menu) : retour menu ; sinon quitte.
-    if host.name == "grimoire" or host.name == "playground" then host.goto("menu"); return end
+    if host.name == "grimoire" or host.name == "playground" or host.name == "designsystem" then host.goto("menu"); return end
     if host.name == "forge_iter" then host.goto("build"); return end -- vue d'itération : retour build
     love.event.quit(); return
   end

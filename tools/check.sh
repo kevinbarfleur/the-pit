@@ -68,6 +68,9 @@ luajit tests/chronicle.lua
 echo "== chronicle-ui (panneau + overlay carrousel : draw + navigation headless) =="
 luajit tests/chronicle_ui.lua
 
+echo "== designsystem-ui (storybook in-engine : scene + sidebar + page scrollable + tokens/atomes) =="
+luajit tests/designsystem.lua
+
 echo "== payoff (renforcements forts mais bornes : spread + boucliers + caps) =="
 luajit tests/payoff.lua
 

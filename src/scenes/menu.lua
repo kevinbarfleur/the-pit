@@ -52,6 +52,7 @@ function Menu.new(palette, vw, vh, host)
     { id = "enter",    key = "menu.enter",    enabled = true,  tone = "cta", action = function() self.host.newRun() end },
     { id = "grimoire", key = "menu.grimoire", enabled = true,  tone = "eco", action = function() self.host.goto("grimoire") end },
     { id = "proving",  key = "menu.proving",  enabled = true,  tone = "eco", action = function() self.host.goto("playground") end },
+    { id = "designsystem", key = "menu.designsystem", enabled = true, tone = "eco", action = function() self.host.goto("designsystem") end },
     { id = "rites",    key = "menu.rites",    enabled = false, tone = "eco" },
     { id = "abandon",  key = "menu.abandon",  enabled = true,  tone = "eco", action = function() love.event.quit() end },
   }
@@ -94,10 +95,10 @@ function Menu:layout()
   local guard = 0
   while pileH() > bandH and guard < 200 do
     guard = guard + 1
-    if ctaGap > 12 then ctaGap = ctaGap - 1
-    elseif gap > 8 then gap = gap - 1
-    elseif itemH > 26 then itemH = itemH - 1
-    elseif ctaH > 46 then ctaH = ctaH - 1
+    if ctaGap > 8 then ctaGap = ctaGap - 1
+    elseif gap > 6 then gap = gap - 1
+    elseif itemH > 22 then itemH = itemH - 1
+    elseif ctaH > 44 then ctaH = ctaH - 1
     else break end
   end
   local totalH = pileH()

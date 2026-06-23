@@ -36,11 +36,16 @@ return {
   ["menu.enter"] = "ENTER THE PIT",
   ["menu.grimoire"] = "THE GRIMOIRE",
   ["menu.proving"] = "THE PROVING GROUND",
+  ["menu.designsystem"] = "DESIGN SYSTEM",
   ["menu.rites"] = "RITES & OFFERINGS",
   ["menu.abandon"] = "ABANDON",
   ["menu.sealed"] = "SEALED",
   ["menu.relics"] = "{n} / {total} RELICS INSCRIBED",
   ["menu.tag"] = "the pit  -  prototype",
+
+  -- design system (storybook in-engine : source de vérité visuelle de l'UI)
+  ["designsystem.title"] = "Design System",
+  ["designsystem.back"] = "[esc] back",
 
   -- build / shop
   ["ui.fight"] = "FIGHT",
