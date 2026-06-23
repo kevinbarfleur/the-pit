@@ -20,7 +20,7 @@ local Keywords = require("src.ui.keywords")
 local Forge = require("src.ui.forge") -- conservé UNIQUEMENT pour §III (afflShape) + losange du hero ; §IV/§V sont PROPRES
 local Ambient = require("src.fx.ambient")
 local MiniRig = require("src.render.minirig")
-local Reliquary = require("src.ui.reliquary")
+local ScreenFrame = require("src.ui.screenframe") -- ENROBAGE partagé : cadre de pierre gravée + onglet (DRY : remplace Reliquary direct)
 local Units = require("src.data.units")
 local T = require("src.core.i18n").t
 local C = Theme.c
@@ -42,10 +42,12 @@ local Screen = {}
 Screen.__index = Screen
 
 -- ── Mise en page (ESPACE DESIGN 1280×720, CEINTE par la bande gravée du reliquaire) ─────────────────
--- Tout le contenu vit À L'INTÉRIEUR du cadre de pierre (Reliquary). IX/IY = coin intérieur (band ~32px
--- + un peu d'air) ; les ancres en dérivent. Hit-test headless préservé : SB_X+10=58, w=168 -> 58..226 ⊃ 70.
-local FRAME_FT = 8                       -- épaisseur de la bande (px d'art) -> 32px design + air
-local IX, IY = 40, 40                    -- coin intérieur du reliquaire
+-- Tout le contenu vit À L'INTÉRIEUR du cadre de pierre (ScreenFrame/Reliquary). IX/IY = coin intérieur
+-- (band ~32px + un peu d'air) ; les ancres en dérivent. Ces constantes MIRORENT EXACTEMENT
+-- ScreenFrame.inset({ft=8,pad=2}) -> d=(8+2)×4=40 : ix=40, iy=40, iw=1200, ih=640 (un seul cadre, partagé).
+-- Hit-test headless préservé : SB_X+10=58, w=168 -> 58..226 ⊃ 70.
+local FRAME_FT = ScreenFrame.FT          -- = 8 : épaisseur de la bande (px d'art) -> 32px design + air
+local IX, IY = 40, 40                    -- coin intérieur du reliquaire (= ScreenFrame.inset ft=8 pad=2)
 local IW, IH = 1280 - 2 * IX, 720 - 2 * IY -- = 1200 × 640
 local TITLE_Y = IY + 10                   -- = 50
 local TOP, BOTTOM = IY + 44, IY + IH - 8  -- = 84 .. 672
@@ -312,9 +314,6 @@ function Screen:drawOverlay(view)
   self._view = view -- les render fns (mini-rig) en ont besoin pour clipper
   Draw.begin(view)
 
-  -- La BANDE GRAVÉE du reliquaire ceint tout l'écran (le contenu vit dans l'inset IX/IY).
-  Reliquary.draw(0, 0, Draw.W, Draw.H, { ft = FRAME_FT })
-
   -- En-tête d'écran (à l'intérieur du cadre).
   Draw.text(T("designsystem.title"), SB_X, TITLE_Y, C.ink, Theme.title(30))
   Draw.textR(T("designsystem.back"), IX + IW - 8, TITLE_Y + 12, C.ink4, Theme.labelSmall(11))
@@ -322,6 +321,11 @@ function Screen:drawOverlay(view)
 
   self:drawSidebar()
   self:drawPage(view)
+
+  -- ENROBAGE partagé (DRY) : la BANDE GRAVÉE du reliquaire ceint l'écran, posée EN DERNIER par-dessus le
+  -- contenu (intérieur transparent : le contenu vit dans l'inset IX/IY, le cadre borde la marge). Sans onglet
+  -- (nil) : le hero/titre interne « Design System » porte déjà l'identité de l'écran -> rendu identique.
+  ScreenFrame.draw(nil, { ft = FRAME_FT })
 
   Draw.finish()
 end

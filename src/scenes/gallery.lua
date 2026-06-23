@@ -12,6 +12,8 @@ local Creatures = require("src.data.creatures")
 local Units = require("src.data.units")
 local CreatureGen = require("src.gen.creaturegen")
 local Rarity = require("src.gen.rarity")
+local Draw = require("src.ui.draw")               -- pour Draw.begin/finish (transform espace-design du cadre)
+local ScreenFrame = require("src.ui.screenframe") -- ENROBAGE partagé : cadre de pierre gravée + onglet « GALLERY »
 local T = require("src.core.i18n").t
 
 local Gallery = {}
@@ -23,7 +25,10 @@ local TYPE_COL = {
   arcane = { 0.55, 0.40, 0.66 }, abyss = { 0.62, 0.24, 0.16 },
 }
 
--- Mise en page (pixels virtuels). 10 colonnes × 5 rangées = 50 cases / page.
+-- Mise en page (pixels virtuels). 10 colonnes × 5 rangées = 50 cases / page. La grille tient EXACTEMENT dans
+-- l'inset du cadre de pierre gravée (ScreenFrame, marge ~10px virtuels = (8+2)×4 design /4) : GX0=10 = bord
+-- intérieur gauche, largeur 10*30=300 = largeur de l'inset [10,310] ; GY0=26 (26+5*28=166 ≤ 170). La grille
+-- ne passe pas sous la pierre. Les hit-tests (cellAt) lisent les mêmes GX0/GY0 -> ils suivent.
 local COLS, MAX_ROWS = 10, 5
 local CELL_W, CELL_H = 30, 28
 local GX0, GY0 = 10, 26
@@ -98,6 +103,7 @@ function Gallery.new(palette, vw, vh, host)
   local self = setmetatable({
     vw = vw, vh = vh, t = 0, host = host, palette = palette,
     nativeWorld = true, -- créatures rendues en RÉSOLUTION NATIVE (nettes ; le bg ×4 reste identique)
+    daChrome = true, -- la scène porte sa propre chrome (status banner + cadre ScreenFrame) -> pas de HUD générique sous la pierre
     titleKey = "scene.gallery",
     hintKey = "ui.hint_gallery",
     bg = Background.new(palette, vw, vh),
@@ -239,20 +245,25 @@ end
 
 function Gallery:drawOverlay(view)
   local sw, sh = love.graphics.getDimensions()
+  -- INSET du texte natif DANS le cadre de pierre : marge = la même que la grille virtuelle (10px virtuels),
+  -- convertie en pixels écran via `view` (scale + letterbox). Le HUD ne passe jamais sous la bande gravée.
+  local m = 10 * (view.scale or 4)
+  local ix0, iy0 = (view.ox or 0) + m, (view.oy or 0) + m
+  local ix1, iy1 = sw - (view.ox or 0) - m, sh - (view.oy or 0) - m
 
-  -- Bandeau d'état (haut-droite, résolution native).
+  -- Bandeau d'état (haut-droite, résolution native, DANS l'inset).
   love.graphics.setColor(0.62, 0.58, 0.50, 0.9)
   local status = T("gallery.status", {
     n = #self.items, gen = self.nGen, hand = self.nHand, mode = self.mode,
     page = self.page, pages = self.pages,
   })
-  love.graphics.printf(status, 0, 12, sw - 16, "right")
+  love.graphics.printf(status, ix0, iy0 + 2, ix1 - ix0, "right")
 
-  -- Panneau d'inspection de l'entité survolée (bas-gauche).
+  -- Panneau d'inspection de l'entité survolée (bas-gauche, DANS l'inset).
   if self.hover and self.items[self.hover] then
     local it = self.items[self.hover]
     local col = TYPE_COL[it.type] or { 0.8, 0.8, 0.8 }
-    local x, y = 16, sh - 56
+    local x, y = ix0, iy1 - 56
     love.graphics.setColor(col[1], col[2], col[3], 1)
     if it.demo then
       -- démo body-plan : pas d'unité de jeu derrière (ni stats ni i18n) -> on affiche forme + famille.
@@ -279,6 +290,12 @@ function Gallery:drawOverlay(view)
     end
     love.graphics.setColor(1, 1, 1, 1)
   end
+
+  -- ENROBAGE partagé : cadre de pierre gravée + onglet « GALLERY », posé EN DERNIER (espace design via
+  -- Draw.begin) par-dessus le monde + le HUD. Intérieur transparent : la grille/HUD vivent dans l'inset.
+  Draw.begin(view)
+  ScreenFrame.draw("GALLERY", { ft = ScreenFrame.FT })
+  Draw.finish()
 end
 
 function Gallery:keypressed(key)

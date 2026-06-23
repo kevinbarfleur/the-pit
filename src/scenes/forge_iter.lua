@@ -10,9 +10,15 @@
 -- Strings en DUR (outil dev, hors i18n). Acces : [i] depuis build/galerie (bascule, cf. main.lua). [r] reroll · [esc] build.
 
 local Primgen = require("src.gen.primgen")
+local Draw = require("src.ui.draw")               -- pour Draw.begin/finish (transform espace-design du cadre)
+local ScreenFrame = require("src.ui.screenframe") -- ENROBAGE partagé : cadre de pierre gravée + onglet « ITERATION »
 
 local ForgeIter = {}
 ForgeIter.__index = ForgeIter
+
+-- Inset (pixels VIRTUELS) du cadre de pierre gravée (ScreenFrame) : marge ~10px = (8+2)×4 design /4.
+-- La grille de sujets vit dans [IN_X, IN_X+IN_W]×[IN_Y, IN_Y+IN_H] -> ne passe jamais sous la pierre.
+local IN_X, IN_Y, IN_W, IN_H = 10, 10, 300, 160
 
 -- ── SUJETS : vitrine des 5 FAMILLES v3 (corps EXCLUSIFS) sur (family, archetype, palette) de primgen.
 -- familles : cauchemar(4 archs) · mortvivant(3) · bete(3) · demon(3) · insecte(3). arch/pal = index DANS la famille.
@@ -68,10 +74,13 @@ function ForgeIter:update(dt)
   end
 end
 
+-- Grille calée sur l'INSET (cellW/cellH dérivés de IN_W/IN_H, pas de vw/vh plein écran) -> la grille tient
+-- dans le cadre de pierre. Les origines de cellule sont décalées par IN_X/IN_Y dans drawWorld.
 function ForgeIter:layout()
   local n = #self.items
   local cols = math.min(3, n)
-  return cols, math.ceil(n / cols), self.vw / cols, self.vh / math.ceil(n / cols)
+  local rows = math.ceil(n / cols)
+  return cols, rows, IN_W / cols, IN_H / rows
 end
 
 -- transform d'anim sprite-entier pour un item -> dx,dy,sx,sy,flash.
@@ -96,8 +105,8 @@ function ForgeIter:drawWorld()
   local cols, rows, cellW, cellH = self:layout()
   for i, it in ipairs(self.items) do
     local ci, ri = (i - 1) % cols, math.floor((i - 1) / cols)
-    local cx = math.floor((ci + 0.5) * cellW + 0.5)
-    local feetY = math.floor((ri + 1) * cellH - 16 + 0.5)
+    local cx = math.floor(IN_X + (ci + 0.5) * cellW + 0.5)            -- décalé dans l'inset
+    local feetY = math.floor(IN_Y + (ri + 1) * cellH - 16 + 0.5)      -- décalé dans l'inset
     local scale = (cellH * 0.62) / it.h
     if it.w * scale > cellW * 0.86 then scale = (cellW * 0.86) / it.w end
     it._cx, it._feetY = cx, feetY
@@ -111,10 +120,14 @@ function ForgeIter:drawWorld()
 end
 
 function ForgeIter:drawOverlay(view)
+  -- Bandeaux (haut-gauche, résolution native) rentrés DANS l'inset du cadre de pierre : origine décalée de
+  -- 10px virtuels (= marge ScreenFrame) convertis en px écran via `view`. Ne passent jamais sous la pierre.
+  local m = 10 * (view.scale or 4)
+  local tx, ty = (view.ox or 0) + m, (view.oy or 0) + m
   love.graphics.setColor(0.80, 0.74, 0.62, 0.95)
-  love.graphics.print("FORGE  -  ITERATION  ::  primitives v3 (5 familles, corps exclusifs + ancrage)  ::  anim sprite-entier", 16, 12)
+  love.graphics.print("FORGE  -  ITERATION  ::  primitives v3 (5 familles, corps exclusifs + ancrage)  ::  anim sprite-entier", tx, ty + 2)
   love.graphics.setColor(0.50, 0.45, 0.40, 1)
-  love.graphics.print("[a] attaque   [h] hurt   [r] reroll   [i]/[esc] build    -    salt #" .. self.salt, 16, 30)
+  love.graphics.print("[a] attaque   [h] hurt   [r] reroll   [i]/[esc] build    -    salt #" .. self.salt, tx, ty + 20)
 
   for _, it in ipairs(self.items) do
     if it._cx then
@@ -128,6 +141,12 @@ function ForgeIter:drawOverlay(view)
     end
   end
   love.graphics.setColor(1, 1, 1, 1)
+
+  -- ENROBAGE partagé : cadre de pierre gravée + onglet « ITERATION », posé EN DERNIER (espace design via
+  -- Draw.begin) par-dessus le monde + les bandeaux. Intérieur transparent : la grille vit dans l'inset.
+  Draw.begin(view)
+  ScreenFrame.draw("ITERATION", { ft = ScreenFrame.FT })
+  Draw.finish()
 end
 
 function ForgeIter:keypressed(key)

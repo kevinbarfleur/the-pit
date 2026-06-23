@@ -10,6 +10,8 @@
 
 local Background = require("src.fx.background")
 local RelicGen = require("src.gen.relicgen")
+local Draw = require("src.ui.draw")               -- pour Draw.begin/finish (transform espace-design du cadre)
+local ScreenFrame = require("src.ui.screenframe") -- ENROBAGE partagé : cadre de pierre gravée + onglet « RELIC ICONS »
 
 local Relicons = {}
 Relicons.__index = Relicons
@@ -56,15 +58,18 @@ local ACCENT = {
 }
 
 -- Mise en page (pixels virtuels). 6 colonnes × 3 rangées = 18 cases (toutes les vagues d'un coup).
--- CELL_W resserré pour tenir dans le canvas 320 : GX0 + COLS*CELL_W = 18 + 6*48 = 306 ≤ 320.
+-- La grille tient DANS l'inset du cadre de pierre gravée (ScreenFrame) : marge ~10px virtuels (= (8+2)×4
+-- design /4) -> aire utile [10,310]×[10,170]. GX0=18 (18+6*48=306 ≤ 310) ; GY0=14 (14+3*50=164 ≤ 170) :
+-- la grille ne passe jamais sous la pierre. Les hit-tests (cellAt) lisent les mêmes GX0/GY0 -> ils suivent.
 local COLS, ROWS = 6, 3
 local CELL_W, CELL_H = 48, 50
-local GX0, GY0 = 18, 30
+local GX0, GY0 = 18, 14
 local ICON_SCALE = 2 -- 16×16 -> 32×32 dans la grille (lecture d'ensemble)
 
 function Relicons.new(palette, vw, vh, host)
   local self = setmetatable({
     palette = palette, vw = vw, vh = vh, host = host, t = 0,
+    daChrome = true, -- la scène porte sa propre chrome (banner + cadre ScreenFrame) -> pas de HUD générique sous la pierre
     titleKey = "scene.relicons", hintKey = "ui.hint_relicons",
     bg = Background.new(palette, vw, vh),
     icons = {},  -- { {id, baked}, ... } dans l'ordre de RelicGen.order
@@ -140,21 +145,26 @@ end
 
 function Relicons:drawOverlay(view)
   local sw, sh = love.graphics.getDimensions()
+  -- INSET du texte natif DANS le cadre de pierre : marge = la même que la grille virtuelle (10px virtuels),
+  -- convertie en pixels écran via `view` (scale + letterbox). Le HUD ne passe jamais sous la bande gravée.
+  local m = 10 * (view.scale or 4)
+  local ix0, iy0 = (view.ox or 0) + m, (view.oy or 0) + m
+  local ix1, iy1 = sw - (view.ox or 0) - m, sh - (view.oy or 0) - m
 
-  -- Bandeau (haut-droite, résolution native).
+  -- Bandeau (haut-droite, résolution native, DANS l'inset).
   love.graphics.setColor(0.62, 0.58, 0.50, 0.9)
-  love.graphics.printf("RELIC CABINET  -  " .. #self.icons .. " cursed artifacts  -  [g] gallery  [r] back", 0, 12, sw - 16, "right")
+  love.graphics.printf("RELIC CABINET  -  " .. #self.icons .. " cursed artifacts  -  [g] gallery  [r] back", ix0, iy0 + 2, ix1 - ix0, "right")
 
   -- Inspection de la relique survolée : ZOOM ×6 (juger le pixel art) + nom/flavor/sens mécanique.
   if self.hover and self.icons[self.hover] then
     local it = self.icons[self.hover]
-    local m = META[it.id] or { name = it.id, mech = "", flavor = "" }
+    local m2 = META[it.id] or { name = it.id, mech = "", flavor = "" }
     local col = ACCENT[it.id] or { 0.8, 0.8, 0.8 }
 
-    -- Zoom du sprite (bas-droite), scale ×6 natif. On blit l'Image bakée directement à l'écran (nearest).
+    -- Zoom du sprite (bas-droite, DANS l'inset), scale ×6 natif. Blit de l'Image bakée à l'écran (nearest).
     local zScale = 6
-    local zx = sw - 16 - it.baked.w * zScale
-    local zy = sh - 16 - it.baked.h * zScale
+    local zx = ix1 - it.baked.w * zScale
+    local zy = iy1 - it.baked.h * zScale
     -- cadre + halo derrière le zoom.
     love.graphics.setColor(0.10, 0.08, 0.12, 0.85)
     love.graphics.rectangle("fill", zx - 6, zy - 6, it.baked.w * zScale + 12, it.baked.h * zScale + 12)
@@ -163,18 +173,24 @@ function Relicons:drawOverlay(view)
     love.graphics.setColor(1, 1, 1, 1)
     love.graphics.draw(it.baked.image, zx, zy, 0, zScale, zScale)
 
-    -- Texte (bas-gauche).
-    local x, y = 16, sh - 64
+    -- Texte (bas-gauche, DANS l'inset).
+    local x, y = ix0, iy1 - 64
     love.graphics.setColor(col[1], col[2], col[3], 1)
-    love.graphics.print(m.name, x, y)
+    love.graphics.print(m2.name, x, y)
     love.graphics.setColor(0.72, 0.68, 0.60, 0.95)
-    love.graphics.print(m.mech, x, y + 18)
+    love.graphics.print(m2.mech, x, y + 18)
     love.graphics.setColor(0.50, 0.46, 0.42, 0.9)
-    love.graphics.print('"' .. m.flavor .. '"', x, y + 34)
+    love.graphics.print('"' .. m2.flavor .. '"', x, y + 34)
     love.graphics.setColor(0.36, 0.33, 0.30, 0.85)
     love.graphics.print("id: " .. it.id, x, y + 50)
     love.graphics.setColor(1, 1, 1, 1)
   end
+
+  -- ENROBAGE partagé : cadre de pierre gravée + onglet « RELIC ICONS », posé EN DERNIER (espace design via
+  -- Draw.begin) par-dessus le monde + le HUD. Intérieur transparent : la grille/HUD vivent dans l'inset.
+  Draw.begin(view)
+  ScreenFrame.draw("RELIC ICONS", { ft = ScreenFrame.FT })
+  Draw.finish()
 end
 
 function Relicons:cellAt(vx, vy)

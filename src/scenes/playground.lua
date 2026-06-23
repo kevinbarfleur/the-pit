@@ -22,6 +22,7 @@ local Panel = require("src.ui.panel")       -- surface propre (dégradé + liser
 local Button = require("src.ui.button")     -- boutons propres : primary (WATCH) / eco (SIM)
 local Dividers = require("src.ui.dividers")  -- séparateurs laiton/sang (en-têtes de blocs)
 local Feel = require("src.ui.feel")          -- JUICE : survol (glow/lift) + press (squash/flash)
+local ScreenFrame = require("src.ui.screenframe") -- ENROBAGE partagé : cadre de pierre gravée + onglet « PROVING GROUND »
 local Ambient = require("src.fx.ambient")
 local Units = require("src.data.units")
 local Shapes = require("src.board.shapes")
@@ -42,14 +43,17 @@ local function inRect(x, y, r) return x >= r.x and x <= r.x + r.w and y >= r.y a
 local SIM_N = 200          -- nb de matchs par batch SIM
 local SIM_PER_FRAME = 10   -- matchs joués par frame (étalé -> pas de gel)
 
--- Mise en page (espace design 1280x720).
-local LIST_X, LIST_W, ROW_H, ROW_GAP = 28, 300, 46, 6
+-- Mise en page (espace design 1280x720). TOUT le contenu vit DANS l'inset du cadre de pierre gravée
+-- (ScreenFrame) -> bornes [40,1240]×[40,680] (d=(8+2)×4=40 de marge). Les constantes ci-dessous ont été
+-- rentrées dans cet inset (origine décalée + bas remonté) ; les hit-tests en dérivent (rowRect/watchRect/
+-- inList lisent les mêmes constantes) donc clic/survol suivent le nouveau cadre.
+local LIST_X, LIST_W, ROW_H, ROW_GAP = 40, 300, 46, 6
 local LIST_STEP = ROW_H + ROW_GAP               -- 52 px par ligne
-local LIST_BOTTOM = 518                          -- bas du conteneur scrollable (aligne sur le bas des panneaux : PANEL_Y+PANEL_H)
-local FILTER_Y, CHIP_H, CHIP_PAD, CHIP_GAP = 92, 20, 9, 5 -- filtre : chips cliquables (archetypes + tags), wrap multi-rangs
-local AX, BX, PANEL_Y, PANEL_W, PANEL_H = 356, 818, 122, 408, 396
+local LIST_BOTTOM = 526                          -- bas du conteneur scrollable (aligne sur le bas des panneaux : PANEL_Y+PANEL_H)
+local FILTER_Y, CHIP_H, CHIP_PAD, CHIP_GAP = 110, 20, 9, 5 -- filtre : chips cliquables (archetypes + tags), wrap multi-rangs
+local AX, BX, PANEL_Y, PANEL_W, PANEL_H = 356, 818, 130, 408, 396
 local BTN_W, BTN_GAP = 200, 16
-local BTN_Y, BTN_H = 540, 54
+local BTN_Y, BTN_H = 548, 54
 -- listY / listViewH / listVisible sont CALCULES (layoutChips) : la liste commence sous la derniere rangee de
 -- chips et garde son bas aligne sur LIST_BOTTOM -> le filtre peut occuper 1, 2 ou 3 rangs sans chevauchement.
 
@@ -272,9 +276,9 @@ end
 function Playground:drawOverlay(view)
   Draw.begin(view)
 
-  -- En-tête (titre gothique cérémonial, comme le Grimoire) + sous-titre Spectral lisible.
-  Draw.text(T("pg.title"), LIST_X, 24, C.ink, Theme.display(40))
-  Draw.text(T("pg.subtitle"), LIST_X + 2, 78, C.ink3, Theme.body(13))
+  -- En-tête (titre gothique cérémonial, comme le Grimoire) + sous-titre Spectral lisible. DANS l'inset (y>=40).
+  Draw.text(T("pg.title"), LIST_X, 42, C.ink, Theme.display(40))
+  Draw.text(T("pg.subtitle"), LIST_X + 2, 86, C.ink3, Theme.body(13))
 
   -- Filtre : rang(s) de chips cliquables (surfaces propres). Famille active = liseré d'or ; thème (tag)
   -- actif = liseré de sang (lecture « familles | thèmes »). Inactif = pierre + liseré iron net.
@@ -330,8 +334,13 @@ function Playground:drawOverlay(view)
   self:drawButtons()
   self:drawResult()
 
-  -- Pied.
-  Draw.text(T("ui.hint_playground"), LIST_X, 694, C.ink5, Theme.label(9))
+  -- Pied (DANS l'inset : remonté au-dessus du bord bas du cadre ~680).
+  Draw.text(T("ui.hint_playground"), LIST_X, 666, C.ink5, Theme.label(9))
+
+  -- ENROBAGE partagé : cadre de pierre gravée ceignant l'écran + onglet « PROVING GROUND », posé EN DERNIER
+  -- par-dessus le contenu (intérieur transparent : tout le banc d'essai tient dans l'inset, le cadre borde la
+  -- marge). Cohérent avec build/grimoire/runover.
+  ScreenFrame.draw("PROVING GROUND", { ft = ScreenFrame.FT })
   Draw.finish()
 end
 
