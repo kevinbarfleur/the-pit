@@ -297,6 +297,9 @@ local ok, err = pcall(function()
   assert(scene.page == 2, "frameforge : [space] passe page 2")
   scene:drawOverlay(view)           -- dessine la page 2 (cadres/cartes/atomes) sans crash
   scene:mousemoved(40, 120); scene:mousepressed(40, 120, 1); scene:mousereleased(40, 120, 1)
+  scene:keypressed("space")         -- page 3 (Frame.draw API + iconographie)
+  assert(scene.page == 3, "frameforge : [space] passe page 3")
+  scene:drawOverlay(view)           -- dessine la page 3 (grille Frame.draw + silhouettes) sans crash
   scene:keypressed("m")             -- retour menu (host stub)
   assert(hostStub.name == "menu", "frameforge : [m] revient au menu")
 
@@ -322,6 +325,74 @@ local ok, err = pcall(function()
   assert(#eA2 == #eA, "genEyes deterministe (meme seed -> meme nombre d'yeux)")
   local eB = Forge.genEyes(76, 24, 7, "DESCEND", 8, 2) -- ancienne signature (frameTh=number)
   assert(type(eB) == "table", "genEyes retro-compat (frameTh nombre)")
+
+  -- ── src/ui/eye.lua : l'ŒIL signature EXTRAIT (réutilisé par boutons/panneaux/cartes/sceau). PUR (zéro
+  -- love.*) -> on l'exerce DIRECTEMENT sur un tampon Forge (set/blend/add) : draw/ring/watcher ne crashent
+  -- pas, et le clignement/regard sont déterministes (seed + t). Forge le re-exporte (compat). ──
+  do
+    local Eye = require("src.ui.eye")
+    assert(type(Eye.draw) == "function" and type(Eye.ring) == "function" and type(Eye.watcher) == "function",
+      "eye : draw/ring/watcher exportés")
+    assert(Forge.drawEye == Eye.draw, "forge : drawEye délègue au module eye")
+    assert(Forge.drawEyeRing == Eye.ring, "forge : drawEyeRing délègue à Eye.ring")
+    local wv = Forge.newWidget(40, 40)
+    Forge.render(wv, function(b, W, H, t)
+      Eye.draw(b, W / 2, H / 2, 8, 1, 0.6, t, 3, { blood = 0.5, pupil = "slit", gaze = { 4, 4 } })
+      Eye.draw(b, 8, 8, 4, 0.5, 0.2, t, 7, { pupil = "round" })
+      Eye.ring(b, 18, 18, 0.9, 0.7, t, 5)
+      Eye.watcher(b, W, H, t, 9, { r = 5 })
+    end, 1.3)
+    -- œil fermé (open=0) : ne crashe pas (chemin « couture de paupière »). Eye.draw(nil,...) = no-op garde.
+    Forge.render(Forge.newWidget(20, 20), function(b, W, H, t) Eye.draw(b, W / 2, H / 2, 6, 0, 0, t, 1) end, 0.0)
+    Eye.draw(nil, 0, 0, 4, 1, 0, 0, 0) -- buf nil -> no-op (pas de crash)
+
+  -- ── Forge.afflShape / shapeAt : iconographie §III du design system. 7 silhouettes d'affliction (forme
+  -- propre par famille) + 5 formes de TYPE pilotées par Theme.types[].pip. Smoke headless + clé inconnue. ──
+    assert(type(Forge.afflShape) == "function" and Forge.AFFL_SHAPE, "forge : afflShape + registre de silhouettes")
+    for _, k in ipairs({ "burn", "bleed", "poison", "rot", "shock", "regen", "shield" }) do
+      assert(Forge.AFFL_SHAPE[k], "afflShape : silhouette présente pour " .. k)
+      Forge.render(Forge.newWidget(14, 14), function(b, W, H, t) Forge.afflShape(b, W, H, k, t) end, 0.7)
+    end
+    Forge.render(Forge.newWidget(14, 14), function(b, W, H, t) Forge.afflShape(b, W, H, "pas_une_affl", t) end, 0.7) -- inconnue -> no-op
+    -- shapeAt : chaque forme de Theme.types[].pip (bar/cross/diamond/star/disc) se dessine.
+    assert(type(Forge.shapeAt) == "function", "forge : shapeAt (silhouette de type)")
+    for _, name in ipairs({ "flesh", "order", "bone", "arcane", "abyss" }) do
+      local pip = Theme.types[name].pip
+      Forge.render(Forge.newWidget(14, 14), function(b, W, H, _) Forge.shapeAt(b, W / 2, H / 2, 5, pip, { 200, 120, 60 }, { 80, 40, 20 }) end, 0)
+    end
+  end
+
+  -- ── Forge.uiFrame + Frame.draw INTÉGRÉ au kit métal : Frame.draw bake l'encadré forge (biseau dur +
+  -- patine + rivets + plaque convexe + héros gildé) via Forge.uiFrame (cache par id, re-bake sur SIGNATURE).
+  -- On vérifie : (1) uiFrame existe + cache par id ; (2) la signature change avec l'état (re-bake) mais PAS
+  -- avec le hover-glow (overlay vivant) ; (3) Frame.draw retourne une zone intérieure saine pour tous les
+  -- niveaux/états + les nouvelles options (id/seed/tint/fill=false/danger). Headless-safe. ──
+  do
+    assert(type(Forge.uiFrame) == "function", "forge : uiFrame (moteur de Frame.draw)")
+    Forge.uiFrame("t.frame", 0, 0, 160, 60, { px = 2, gild = true, accentCol = Forge.accentFrom({ 0.8, 0.6, 0.3 }) })
+    assert(Forge._frameCache["t.frame"], "uiFrame : cache par id")
+    local sigGild = Forge._frameCache["t.frame"].sig
+    Forge.uiFrame("t.frame", 0, 0, 160, 60, { px = 2, gild = false }) -- état change -> nouvelle signature
+    assert(Forge._frameCache["t.frame"].sig ~= sigGild, "uiFrame : la signature change avec l'état (re-bake)")
+    -- fill=false (cadre sur contenu) + tint (lavage de rareté) : signatures distinctes.
+    Forge.uiFrame("t.frame.fo", 0, 0, 120, 56, { px = 2, fill = false, gild = true })
+    Forge.uiFrame("t.frame.ti", 0, 0, 120, 56, { px = 2, tint = Forge.tintFrom({ 0.7, 0.2, 0.2 }, 0.2) })
+
+    -- Frame.draw : toutes les combinaisons niveau×état retournent une zone intérieure positive et bornée.
+    for _, lv in ipairs({ "plain", "bevel", "gilded" }) do
+      for _, s in ipairs({ "idle", "hover", "pressed", "disabled", "selected", "danger", "drop" }) do
+        local ix, iy, iw, ih = Frame.draw(40, 40, 200, 80, { level = lv, state = s, id = "tf." .. lv .. "." .. s })
+        assert(iw > 0 and ih > 0 and ix >= 40 and iy >= 40, "Frame.draw zone interieure saine : " .. lv .. "/" .. s)
+      end
+    end
+    -- nouvelles options : id explicite, seed de patine, accent de rareté, fill=false, tint.
+    Frame.draw(10, 10, 64, 64, { level = "gilded", accent = Theme.hex(0xccaa44), fill = false, id = "tf.acc", seed = 9 })
+    Frame.draw(0, 0, 8, 8, { id = "tf.tiny" }) -- cadre dégénéré (petit) : borné, ne crashe pas
+    -- Frame.button : label vivant (overlay) sur tous les états (no crash, no readback).
+    for _, s in ipairs({ "idle", "hover", "pressed", "disabled", "selected", "danger" }) do
+      Frame.button(0, 0, 120, 30, "FORGE", { state = s, level = "bevel", font = font, id = "tfb." .. s })
+    end
+  end
 
   -- ── Forge.cardPanel / uiCard : fond de fiche monstre (plaque qui respire + cadre patiné). Headless-safe.
   do

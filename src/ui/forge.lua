@@ -26,6 +26,7 @@
 -- (RENDER pur). DÉTERMINISME : RNG mulberry32 SEEDÉ porté du JS (zéro math.random global).
 
 local Theme = require("src.ui.theme")
+local Eye = require("src.ui.eye") -- l'ŒIL signature (drawEye/ring/watcher) — partage la palette de ce module
 
 local Forge = {}
 
@@ -85,7 +86,9 @@ local function elerp(a, b, k) return a + (b - a) * k end
 Forge.clamp, Forge.elerp, Forge.pulse = clamp, elerp, pulse
 
 -- ─────────────────────── palettes (franches, dark fantasy — port direct) ───────────────────────
-local PLATE = { top = hexRgb("#191222"), bot = hexRgb("#0a0612"), vig = hexRgb("#040108") }
+-- top/bot = dégradé de la face ; vig = ombre de bord/feuillure ; hi = CRÊTE du dôme convexe (point chaud
+-- froid-violet : la face bombe vers le joueur sans virer au « plastique »).
+local PLATE = { top = hexRgb("#191222"), bot = hexRgb("#0a0612"), vig = hexRgb("#040108"), hi = hexRgb("#241a34") }
 local METAL = { outline = hexRgb("#080503"), deep = hexRgb("#34250f"), mid = hexRgb("#6a5022"),
                 base = hexRgb("#9c7a36"), hi = hexRgb("#d8b65e"), spec = hexRgb("#f6e6a4") }
 local SCLERA = { pale = hexRgb("#d8cfb6"), shade = hexRgb("#9c917a"), vein = hexRgb("#9c2222") }
@@ -99,7 +102,15 @@ local ACCENTS = {
   violet = { dark = hexRgb("#3a1e54"), mid = hexRgb("#7a44b4"), bright = hexRgb("#cf9cff") },
 }
 local ACC = ACCENTS.gold
-function Forge.setAccent(n) if ACCENTS[n] then ACC = ACCENTS[n] end end
+-- INJECTION dans le module Œil : il partage NOS tables de palette (mêmes objets -> une seule source de
+-- vérité) + NOTRE RNG seedé (mulberry32) pour des veines déterministes. Re-appelé à chaque setAccent pour
+-- que l'iris vire à l'accent courant. (Eye n'a aucun love.* : c'est de l'arithmétique sur le tampon.)
+local function syncEye()
+  Eye.setPalette({ metal = METAL, sclera = SCLERA, pupil = PUPIL, blood = BLOOD, acc = ACC })
+end
+Eye.setRng(function(seed) return mulberry32(seed) end)
+syncEye()
+function Forge.setAccent(n) if ACCENTS[n] then ACC = ACCENTS[n]; syncEye() end end
 Forge.ACCENTS = ACCENTS
 
 local LIQ = {
@@ -284,30 +295,49 @@ local function blit(buf, bmp, x, y, color)
 end
 
 -- ════════════════════════════ PRIMITIVES NETTES ════════════════════════════
--- plate(buf, x0,y0,x1,y1, press, disabled, tint?) : matière de plaque (dégradé top->bot + vignette + trame).
+-- plate(buf, x0,y0,x1,y1, press, disabled, tint?) : la FACE INTERNE d'un bouton/panneau — une matière de
+-- métal/pierre ENCASTRÉE, qui doit lire comme un creux convexe (≠ aplat plat). Couches (toutes BAKÉES,
+-- déterministes -> golden-safe) :
+--   • DÉGRADÉ vertical top->bot (la lumière vient d'en haut).
+--   • DÔME convexe : éclaircissement RADIAL doux au CENTRE (la face bombe vers le joueur), assombri aux bords.
+--   • BROSSAGE horizontal discret : 1 ligne sur 2 micro-modulée -> « métal brossé » (texture, pas bruit).
+--   • GORGE sombre au BORD : les 2 px de pourtour plongent vers la vignette (la plaque est ENCASTRÉE dans le
+--     cadre — une ombre de feuillure tout autour).
+--   • PRESS : assombrit toute la face (la pierre s'enfonce dans l'ombre).
 -- tint = { col = {r,g,b 0..255}, amt = 0..1 } : LAVE subtilement la pierre vers une couleur d'accent (teinte
--- de RARETÉ/TYPE), bakée dans l'image -> chaque dalle « lit » sa rareté par le FOND, sans cesser d'être du
--- métal grimdark sombre (amt RETENU, ~0.10-0.22). Le lavage est dérivé du dégradé (plus fort en bas = ombre
--- colorée), jamais un aplat plat. nil = pierre pourpre par défaut (golden-safe : aucune teinte appelée ailleurs).
+-- de RARETÉ/TYPE), bakée -> chaque dalle « lit » sa rareté par le FOND, sans cesser d'être du métal sombre
+-- (amt RETENU, ~0.10-0.22). nil = pierre pourpre par défaut.
 local function plate(buf, x0, y0, x1, y1, press, disabled, tint)
   press = press or 0
   local top, bot = PLATE.top, PLATE.bot
   local tcol, tamt
   if tint and tint.col and (tint.amt or 0) > 0 then tcol, tamt = tint.col, tint.amt end
+  local W = max(1, x1 - x0)
+  local Hh = max(1, y1 - y0)
+  local cxp, cyp = (x0 + x1) * 0.5, (y0 + y1) * 0.5
+  -- demi-diagonale (rayon de normalisation du dôme) : indépendante du ratio -> dôme rond, pas ovale écrasé.
+  local invHalf = 1 / max(1, sqrt((W * 0.5) * (W * 0.5) + (Hh * 0.5) * (Hh * 0.5)))
   for y = y0, y1 do
+    local vy = (y - y0) / Hh
     for x = x0, x1 do
-      local vy = (y - y0) / max(1, y1 - y0)
       local col = mix(top, bot, vy)
-      -- LAVAGE de rareté : mélange vers l'accent, plus marqué dans l'ombre du bas (vy) -> teinte minérale,
-      -- pas un calque uni. Posé AVANT vignette/trame/press pour rester dominé par le grain (métal d'abord).
+      -- LAVAGE de rareté : mélange vers l'accent, plus marqué dans l'ombre du bas (vy) -> teinte minérale.
       if tcol then col = mix(col, tcol, tamt * (0.45 + 0.55 * vy)) end
+      -- DÔME CONVEXE : distance normalisée au centre (0 = bombé/clair, 1 = bord/sombre). Léger biais vers le
+      -- haut-gauche (la source de lumière) -> le point chaud n'est pas pile au centre (lecture « volume »).
+      local dxr = (x - cxp + W * 0.10) * invHalf
+      local dyr = (y - cyp + Hh * 0.12) * invHalf
+      local dome = dxr * dxr + dyr * dyr -- ~0 centre .. ~1 coin
+      if dome < 1 then col = mix(col, PLATE.hi or { 28, 22, 38 }, (1 - dome) * 0.10) end -- crête centrale claire
+      col = mix(col, PLATE.vig, dome * 0.14)                                              -- bords qui plongent
+      -- GORGE encastrée : les 2 px de pourtour plongent franchement (feuillure d'ombre sous le cadre).
       local ed = min(x - x0, x1 - x, y - y0, y1 - y)
-      if ed < 2 then col = mix(col, PLATE.vig, 0.5 * (2 - ed) / 2) end
+      if ed < 2 then col = mix(col, PLATE.vig, 0.55 * (2 - ed) / 2) end
+      -- BROSSAGE horizontal : 1 ligne sur 2 légèrement plus sombre (grain de métal brossé, pas un aplat).
       if (y % 2) == 0 then col = mix(col, { 0, 0, 0 }, 0.10) end
-      -- TRAME diagonale légère (densité « créature » sur la face, pas un aplat) : une case sur deux le long
-      -- d'une diagonale s'assombrit d'un cran -> micro-grain structuré (≠ bruit), comme l'ombrage des sprites.
-      if ((x + y) % 4) == 0 then col = mix(col, PLATE.vig, 0.16) end
-      if press > 0 then col = mix(col, PLATE.vig, press * 0.22) end
+      -- TRAME diagonale légère (densité « créature » sur la face) : 1 case sur 4 d'un cran plus sombre.
+      if ((x + y) % 4) == 0 then col = mix(col, PLATE.vig, 0.14) end
+      if press > 0 then col = mix(col, PLATE.vig, press * 0.24) end -- la face s'enfonce
       if disabled then col = mix(col, { 28, 26, 32 }, 0.42) end
       buf:set(x, y, col)
     end
@@ -466,111 +496,11 @@ end
 Forge.diamond = diamond
 
 -- ════════════════════════════ ŒIL CAUCHEMARDESQUE ════════════════════════════
-local function drawEye(buf, cx, cy, r, open, glow, t, seed, opts)
-  opts = opts or {}
-  local squash = opts.squash or 0.62
-  local gaze = opts.gaze
-  local pupil = opts.pupil or "slit"
-  local blood = opts.blood or 0
-  local bt = (t * 0.6 + seed * 2.3) % 6.0
-  local blink = bt > 5.6 and (1 - abs(bt - 5.8) / 0.2) or 0
-  local op = clamp(open * (1 - clamp(blink)))
-  -- PLUS OUVERT = PLUS ROND : quand l'œil s'ouvre (op->1), le squash remonte vers ~0.92 (paupières
-  -- grandes ouvertes, œil rond et LISIBLE). Fermé/en cours de fermeture, il garde son squash de repos.
-  local sqOpen = squash + (0.92 - squash) * op
-  local ry = r * sqOpen * op
-  if ry < 0.6 then
-    -- ŒIL FERMÉ (repos) : une COUTURE de paupière nette — fente sombre + ourlet clair en dessous (la
-    -- lèvre qui prend la lumière) -> lecture « œil clos dans la plaque », PAS un trou vide.
-    for x = -r, r do
-      local fx, fy = floor(cx + x + 0.5), floor(cy + 0.5)
-      buf:set(fx, fy, mix(METAL.deep, { 0, 0, 0 }, 0.55))           -- fente sombre
-      if abs(x) < r - 0.5 then buf:set(fx, fy + 1, mix(METAL.mid, METAL.deep, 0.5)) end -- ourlet inférieur (lèvre)
-    end
-    -- petits coins de la couture (légère courbure : les commissures retombent).
-    buf:set(floor(cx - r + 0.5), floor(cy - 0.5 + 0.5), mix(METAL.deep, { 0, 0, 0 }, 0.4))
-    buf:set(floor(cx + r + 0.5), floor(cy - 0.5 + 0.5), mix(METAL.deep, { 0, 0, 0 }, 0.4))
-    return
-  end
-  local ex, ey
-  -- sclère : PLUS BLANCHE et plus lumineuse (lecture « œil » nette). Le cœur tend vers le blanc pur, le
-  -- bord garde une ombre douce (volume). Falloff RÉDUIT -> davantage de sclère claire visible.
-  local SCLERA_WHITE = { 244, 240, 230 }
-  for y = -math.ceil(ry), math.ceil(ry) do
-    for xx = -math.ceil(r), math.ceil(r) do
-      ex = xx / r; ey = y / ry
-      if ex * ex + ey * ey <= 1 then
-        local fall = clamp(abs(ex) * 0.38 + abs(ey) * 0.42)        -- falloff plus doux qu'avant
-        local base = mix(SCLERA_WHITE, SCLERA.shade, fall)
-        if fall < 0.3 then base = mix(base, { 255, 255, 255 }, (0.3 - fall) * 0.8) end -- cœur quasi blanc
-        if blood > 0 then base = mix(base, BLOOD.d3, blood * 0.14) end
-        buf:set(floor(cx + xx + 0.5), floor(cy + y + 0.5), base)
-      end
-    end
-  end
-  -- veines
-  local nv = 2 + floor(blood * 3 + 0.5)
-  local rnd = mulberry32(floor(seed * 101))
-  for _ = 1, nv do
-    local a = rnd() * 6.28
-    local vx, vy = cx + cos(a) * r * 0.96, cy + sin(a) * ry * 0.96
-    for _ = 1, math.ceil(r * 0.6) do
-      ex = (vx - cx) / r; ey = (vy - cy) / ry
-      if ex * ex + ey * ey <= 1 then buf:blend(floor(vx + 0.5), floor(vy + 0.5), SCLERA.vein, 0.42 + blood * 0.3) end
-      vx = vx + (cx - vx) * 0.18 + (rnd() - 0.5) * 0.4
-      vy = vy + (cy - vy) * 0.18
-    end
-  end
-  -- iris + pupille
-  local gx, gy = 0, 0
-  if gaze then
-    local dx, dy = gaze[1] - cx, gaze[2] - cy
-    local dl = hypot(dx, dy); if dl == 0 then dl = 1 end
-    local mo = r * 0.32
-    gx = dx / dl * mo; gy = dy / dl * mo * sqOpen
-  else
-    gx = sin(t * 0.5 + seed) * r * 0.22; gy = cos(t * 0.4 + seed * 1.3) * ry * 0.4
-  end
-  -- iris un peu plus PETIT (0.48 au lieu de 0.52) -> plus de BLANC visible autour (lecture « œil » accrue).
-  local ir = max(2, floor(r * 0.48 + 0.5))
-  for y = -ir, ir do
-    for xx = -ir, ir do
-      local d = hypot(xx, y)
-      if d <= ir then
-        local ax, ay = gx + xx, gy + y
-        if (ax / r) * (ax / r) + (ay / ry) * (ay / ry) <= 1 then
-          local dd = d / ir
-          local col = mix(mix(ACC.mid, ACC.bright, glow), ACC.dark, dd)
-          local isP
-          if pupil == "slit" then
-            isP = abs(xx) < ir * 0.30 * (1 - 0.32 * abs(y) / ir)
-          else
-            isP = dd < 0.46
-          end
-          if isP then col = PUPIL elseif dd > 0.84 then col = mix(col, { 0, 0, 0 }, 0.5) end
-          buf:set(floor(cx + ax + 0.5), floor(cy + ay + 0.5), col)
-        end
-      end
-    end
-  end
-  buf:set(floor(cx + gx - ir * 0.3 + 0.5), floor(cy + gy - ir * 0.3 + 0.5), { 255, 255, 255 })
-  -- PAUPIÈRES : arcs haut/bas qui BORNENT l'œil (lecture « œil », pas une bille). Pour les GROS yeux
-  -- (r>=5) la paupière a 2 px d'épaisseur -> ourlet net (haut = ombre légère, bas = ombre marquée).
-  local thick = (r >= 5)
-  for xx = -r, r do
-    ex = xx / r
-    if abs(ex) <= 1 then
-      local lh = sqrt(max(0, 1 - ex * ex)) * ry
-      buf:set(floor(cx + xx + 0.5), floor(cy - lh + 0.5), mix(METAL.deep, { 0, 0, 0 }, 0.45))
-      buf:set(floor(cx + xx + 0.5), floor(cy + lh + 0.5), mix(METAL.deep, { 0, 0, 0 }, 0.6))
-      if thick then
-        buf:set(floor(cx + xx + 0.5), floor(cy - lh + 1.5), mix(METAL.deep, METAL.mid, 0.3)) -- ourlet sup (lèvre éclairée)
-        buf:set(floor(cx + xx + 0.5), floor(cy + lh - 0.5), mix(METAL.deep, { 0, 0, 0 }, 0.35))
-      end
-    end
-  end
-end
-Forge.drawEye = drawEye
+-- Le rendu de l'œil vit désormais dans src/ui/eye.lua (réutilisé par boutons/panneaux/cartes/sceau). Ici on
+-- garde un ALIAS LOCAL `drawEye` (consommé par drawButton/drawPanel/drawRelicCard/cardPanel) + l'export public
+-- Forge.drawEye, tous deux délégant au module (qui partage NOTRE palette + RNG via syncEye()/setRng).
+local drawEye = Eye.draw
+Forge.drawEye = Eye.draw
 
 -- ════════════════════════════ BOUTON + nuée d'yeux ════════════════════════════
 local DROP, TH = 2, 3
@@ -1071,33 +1001,95 @@ end
 Forge.drawRelicCard = drawRelicCard
 
 -- ════════════════════════════ ATOMES ════════════════════════════
-local function drawTypePip(buf, W, H, fam, t)
-  local f = FAM[fam]
-  local r = floor(min(W, H) / 2) - 1
-  local cx, cy = floor(W / 2 + 0.5), floor(H / 2 + 0.5)
-  local c, e = f.c, mix(f.c, { 0, 0, 0 }, 0.45)
-  if f.shape == "bar" then
+-- shapeAt(buf, cx, cy, r, shape, c, e) : dessine UNE des 5 SILHOUETTES de TYPE D'UNITÉ (le vocabulaire
+-- partagé Theme.types[].pip : bar/cross/diamond/star/disc) centrée en (cx,cy), rayon r, couleur c (cœur) +
+-- e (arête). « Forme + couleur, toujours doublées » -> on reconnaît un type sans lire. Factorisé pour que
+-- drawTypePip ET d'éventuels usages d'overlay parlent la même langue. Petit éclat haut-gauche (volume).
+local function shapeAt(buf, cx, cy, r, shape, c, e)
+  cx, cy = floor(cx + 0.5), floor(cy + 0.5)
+  if shape == "bar" then
     for y = -1, 1 do for x = -r, r do buf:set(cx + x, cy + y, abs(x) > r - 1 and e or c) end end
-  elseif f.shape == "cross" then
+  elseif shape == "cross" then
     for k = -r, r do
       buf:set(cx + k, cy, abs(k) > r - 1 and e or c)
       buf:set(cx, cy + k, abs(k) > r - 1 and e or c)
       buf:set(cx + k, cy - 1, c); buf:set(cx + 1, cy + k, c)
     end
-  elseif f.shape == "diamond" then
+  elseif shape == "diamond" then
     diamond(buf, cx, cy, r, c, e, { 255, 255, 255 })
-  elseif f.shape == "star" then
+  elseif shape == "star" then
     for s = 0, 4 do
       local a = s / 5 * 6.28 - 1.57
       for rr = 0, r do buf:set(floor(cx + cos(a) * rr + 0.5), floor(cy + sin(a) * rr + 0.5), rr > r - 1 and e or c) end
     end
     buf:set(cx, cy, c)
-  else
+  else -- disc
     for yy = -r, r do for xx = -r, r do local d = hypot(xx, yy); if d <= r then buf:set(cx + xx, cy + yy, d > r - 1 and e or c) end end end
   end
   buf:add(cx - 1, cy - 1, { 255, 255, 255 }, 0.3)
 end
+Forge.shapeAt = shapeAt
+
+-- drawTypePip(buf, W, H, fam, t) : pip de TYPE d'unité. La forme vient de Theme.types[fam].pip (source de
+-- vérité du design system) ; à défaut (familles de DÉMO du kit : flesh/order/bone/arcane/abyss déjà alignées,
+-- ou un nom hors-roster), on retombe sur FAM. La COULEUR suit FAM (octets, palette du kit), pour que les
+-- pips de la galerie d'atomes gardent leur teinte connue.
+local function drawTypePip(buf, W, H, fam, t)
+  local f = FAM[fam] or FAM.bone
+  local ty = Theme.types and Theme.types[fam]
+  local shape = (ty and ty.pip) or f.shape
+  local r = floor(min(W, H) / 2) - 1
+  shapeAt(buf, W / 2, H / 2, r, shape, f.c, mix(f.c, { 0, 0, 0 }, 0.45))
+end
 Forge.drawTypePip = drawTypePip
+
+-- ── SILHOUETTES D'AFFLICTION (Section III du design system, clip-path §256-280) — une forme propre par
+-- famille (burn=flamme, bleed=goutte, poison=hexagone, rot=bloc rongé, shock=éclair, regen=croix, shield=écu).
+-- Bitmaps 11×11 (centrés), pixels « 1 » = corps. Tirés des polygones clip-path, rastérisés à la main pour des
+-- silhouettes LISIBLES en petit. Couleur = la teinte d'affliction (Theme.c.<key>) ; arête assombrie pour le
+-- volume. Distinct des AFFL.bmp 6×5 (segments de jauge) : ici une icône d'atome plus grande et reconnaissable.
+local AFFL_SHAPE = {
+  burn = { "...010...", "...010...", "..0110...", ".001110..", ".011110..", "0111111.0", "01111110.", "011101110", "001101100", "000111000", "000010000" },
+  bleed = { "....0....", "....0....", "...010...", "..01110..", "..01110..", ".0111110.", ".0111110.", "01111111.", "011111110", "001111100", "000111000" },
+  poison = { "...000...", "..01110..", ".0111110.", "011111110", "0111111110", "011111110", "0111111110", "011111110", ".0111110.", "..01110..", "...000..." },
+  rot = { "0001111100", "0011011100", "0110011100", "0100011110", "0111111110", "0111100110", "0111101100", "0011001100", "0001101100", "0001111000", "0000110000" },
+  shock = { "....0110.", "...01100.", "..011000.", ".0110000.", "01111110.", "0001100.", "000110...", "00110....", "01100....", "0110.....", "010......" },
+  regen = { "....0....", "...010...", "..01110..", ".0111110.", "011101110", "111101111", "011101110", "...010...", "..01110..", "..01110..", "..01110.." },
+  shield = { "..01110..", ".0111110.", "011111110", "0111111110", "0111111110", "0111111110", "011111110", ".0111110.", ".0111110.", "..01110..", "...010..." },
+}
+Forge.AFFL_SHAPE = AFFL_SHAPE
+
+-- afflShape(buf, W, H, key, t) : dessine la SILHOUETTE d'affliction `key` centrée, teintée Theme.c[key], avec
+-- une arête sombre + un léger éclat. Anime un soupçon de lueur (pulse) au cœur. headless-safe (buf:set garde).
+local function afflShape(buf, W, H, key, t)
+  local bmp = AFFL_SHAPE[key]
+  if not bmp then return end
+  -- couleur = Theme.c[key] (floats 0..1) -> octets ; à défaut, blanc cassé.
+  local tc = Theme.c and Theme.c[key]
+  local col = tc and { tc[1] * 255, tc[2] * 255, tc[3] * 255 } or { 200, 200, 200 }
+  local edge = mix(col, { 0, 0, 0 }, 0.5)
+  local bw, bh = #bmp[1], #bmp
+  local ox = floor((W - bw) / 2 + 0.5)
+  local oy = floor((H - bh) / 2 + 0.5)
+  -- 1re passe : corps. On marque le contour (un « 1 » adjacent à un « 0 »/bord) en arête sombre.
+  local function on(r, cc)
+    if r < 1 or r > bh or cc < 1 or cc > bw then return false end
+    return bmp[r]:sub(cc, cc) == "1"
+  end
+  for r = 1, bh do
+    local row = bmp[r]
+    for cc = 1, bw do
+      if row:sub(cc, cc) == "1" then
+        local border = not (on(r - 1, cc) and on(r + 1, cc) and on(r, cc - 1) and on(r, cc + 1))
+        buf:set(ox + cc - 1, oy + r - 1, border and edge or col)
+      end
+    end
+  end
+  -- cœur qui palpite (lueur additive douce, comme une braise/un venin qui pulse).
+  local g = 0.3 + 0.25 * pulse(t or 0, key:byte(1))
+  buf:add(ox + floor(bw / 2), oy + floor(bh / 2), col, g)
+end
+Forge.afflShape = afflShape
 
 local function drawLevelPips(buf, W, H, n, t)
   for i = 0, n - 1 do
@@ -1160,23 +1152,8 @@ local function drawDivider(buf, W, H, t)
 end
 Forge.drawDivider = drawDivider
 
-local function drawEyeRing(buf, W, H, open, glow, t, seed)
-  local cx, cy = W / 2 - 0.5, H / 2 - 0.5
-  local Rc = min(W, H) / 2 - 0.5
-  for y = floor(cy - Rc), math.ceil(cy + Rc) do
-    for x = floor(cx - Rc), math.ceil(cx + Rc) do
-      local dx, dy = x - cx, y - cy
-      local d = hypot(dx, dy)
-      if d >= Rc - 2 and d <= Rc + 0.4 then
-        local lit = (-dx / d * 0.4 - dy / d * 0.5)
-        buf:set(x, y, (d > Rc - 0.5 or d < Rc - 1.5) and METAL.outline
-          or (lit > 0 and mix(METAL.mid, METAL.hi, lit) or METAL.deep))
-      end
-    end
-  end
-  drawEye(buf, cx, cy, Rc - 3, open, glow, t, seed, { blood = 0.6, squash = 0.8 })
-end
-Forge.drawEyeRing = drawEyeRing
+-- SCEAU = œil serti dans un anneau de métal. Délègue à Eye.ring (anneau + œil), même rendu qu'avant.
+Forge.drawEyeRing = Eye.ring
 
 -- ════════════════════════════ WIDGET (cache Image+ImageData par taille) ════════════════════════════
 -- Forge.newWidget(aw, ah) -> { buf, image, imageData, aw, ah }. Alloué UNE FOIS. Headless -> pas de bake
@@ -1532,6 +1509,100 @@ local function tintKey(tint)
     .. floor((tint.amt or 0) * 100)
 end
 Forge.tintKey = tintKey
+
+-- ════════════════════════════ FRAMED PLATE (le moteur de Frame.draw) ════════════════════════════
+-- framedPlate(buf, W, H, opts) : l'ENCADRÉ canonique de l'UI (ce que Frame.draw bake). Une PLAQUE encastrée
+-- (plate convexe) bordée du BISEAU MÉTAL DUR (frame) + patine seedée + rivets de coin + (héros) liseré
+-- d'accent interne + GLINT de coin haut-gauche + chanfreins. Tout BAKÉ -> chaque site d'appel (boutons de
+-- scène, cases, cartes, panneaux) hérite du look sans réécriture. opts :
+--   fill        : true (plaque pleine) | false (cadre sur contenu : centre transparent, ex. portrait/rig).
+--   th          : épaisseur du biseau (art-px) ; gild -> +1 (cadre héros plus charpenté).
+--   accentCol   : triple {dark,mid,bright} (rareté/état) du liseré ; nil = métal sobre.
+--   gild        : héros (sélection/CTA/R4-R5) -> liseré d'accent INTERNE + glint + chanfreins marqués.
+--   inset       : état pressed -> la plaque s'enfonce (plate press) + biseau « lu » enfoncé.
+--   disabled    : grise (métal + face).
+--   tint        : { col, amt } lavage de rareté de la face.
+--   seed        : graine de patine (stable par cadre).
+local function framedPlate(buf, W, H, opts)
+  opts = opts or {}
+  local fill = opts.fill ~= false
+  local gild = opts.gild and true or false
+  local disabled = opts.disabled and true or false
+  local th = (opts.th or 3) + (gild and 1 or 0)
+  local x0, y0, x1, y1 = 0, 0, W - 1, H - 1
+  local acc = opts.accentCol
+  -- FACE INTERNE (plaque convexe encastrée) — sautée si fill=false (le contenu transparaît).
+  if fill then
+    plate(buf, x0 + th, y0 + th, x1 - th, y1 - th, opts.inset and 0.55 or 0, disabled, opts.tint)
+  end
+  -- BISEAU MÉTAL DUR : haut/gauche éclairés (spec->base), bas/droite ombrés (deep->mid), liseré accent au
+  -- bord interne (th-1) si accent. (frame() gère déjà le damier de surface = densité « créature ».)
+  frame(buf, x0, y0, x1, y1, { t = th, accent = (acc ~= nil) or gild, accentCol = acc, disabled = disabled })
+  -- PATINE (grit ciselé seedé) : sauf si weather==false.
+  if opts.weather ~= false then frameWeather(buf, x0, y0, x1, y1, th, opts.seed or 23, METAL, disabled) end
+  -- HÉROS : liseré d'accent INTERNE (un cadre de laiton brossé juste sous le biseau) + CHANFREINS de coin.
+  if gild and not disabled then
+    local bA = acc or ACCENTS.gold
+    local inn = th -- bord interne du biseau
+    -- liseré interne sur les 4 bords (1 px), brossé (alterne mid/bright).
+    for x = x0 + inn, x1 - inn do
+      local c = ((x % 2) == 0) and bA.bright or bA.mid
+      buf:set(x, y0 + inn, c); buf:set(x, y1 - inn, mix(bA.mid, bA.dark, 0.4))
+    end
+    for y = y0 + inn, y1 - inn do
+      local c = ((y % 2) == 0) and bA.bright or bA.mid
+      buf:set(x0 + inn, y, c); buf:set(x1 - inn, y, mix(bA.mid, bA.dark, 0.4))
+    end
+    -- CHANFREINS : on mange 2 px en escalier à chaque coin du liseré extérieur (coin biseauté, pas carré).
+    for k = 0, 1 do
+      buf:set(x0 + k, y0 + (1 - k), METAL.deep); buf:set(x1 - k, y0 + (1 - k), METAL.deep)
+      buf:set(x0 + k, y1 - (1 - k), METAL.deep); buf:set(x1 - k, y1 - (1 - k), METAL.deep)
+    end
+  end
+  -- RIVETS aux 4 coins (signature commune boutons/cases).
+  local ri = max(2, th)
+  rivet(buf, x0 + ri, y0 + ri, METAL); rivet(buf, x1 - ri - 1, y0 + ri, METAL)
+  rivet(buf, x0 + ri, y1 - ri - 1, METAL); rivet(buf, x1 - ri - 1, y1 - ri - 1, METAL)
+  -- GLINT de coin (haut-gauche) : un éclat spéculaire vif là où la lumière frappe (déjà 1 px par frame() ;
+  -- on l'étend en petit « L » pour le rendre lisible). Pas sur disabled (métal mort).
+  if not disabled then
+    buf:set(x0 + 1, y0 + 1, METAL.spec)
+    buf:add(x0 + 2, y0 + 1, METAL.spec, 0.6); buf:add(x0 + 1, y0 + 2, METAL.spec, 0.6)
+  end
+end
+Forge.framedPlate = framedPlate
+
+-- frameKey(opts) : clé de cache STABLE d'un encadré (tout ce qui change le BAKE). Le hover-glow n'en fait PAS
+-- partie (overlay vivant côté Frame.draw) -> pas de thrash de cache au survol.
+local function frameSig(opts)
+  local a = opts.accentCol
+  local ak = a and (floor(a.mid[1]) .. "," .. floor(a.mid[2]) .. "," .. floor(a.mid[3])) or "n"
+  return (opts.fill == false and "0" or "1") .. "|" .. (opts.gild and "g" or "-") .. "|"
+    .. (opts.inset and "p" or "-") .. "|" .. (opts.disabled and "d" or "-") .. "|"
+    .. (opts.th or 3) .. "|" .. ak .. "|" .. tintKey(opts.tint) .. "|" .. (opts.weather == false and "w0" or "w1")
+end
+
+-- uiFrame(id, x, y, w, h, opts) : pont CACHÉ (par id) de l'encadré canonique — c'est ce qu'appelle
+-- Frame.draw. Re-bake seulement si la SIGNATURE change (taille/état/accent/teinte), sinon blitte l'Image
+-- cachée. opts = framedPlate + { px?, t? }. Retourne true. Headless-safe (render/blit pcall-gardés).
+Forge._frameCache = {}
+function Forge.uiFrame(id, x, y, w, h, opts)
+  opts = opts or {}
+  local px = opts.px or PX
+  local aw, ah = max(1, floor(w / px)), max(1, floor(h / px))
+  local e = Forge._frameCache[id]
+  if not e or e.aw ~= aw or e.ah ~= ah then
+    e = { widget = Forge.newWidget(aw, ah), aw = aw, ah = ah }
+    Forge._frameCache[id] = e
+  end
+  local sig = frameSig(opts)
+  if e.sig ~= sig or not e.image then
+    e.sig = sig
+    e.image = Forge.render(e.widget, function(b, W, H, _) framedPlate(b, W, H, opts) end, 0)
+  end
+  Forge.blit(e.image, x, y, px)
+  return true
+end
 
 -- uiPlate(id, x, y, w, h, opts) : FOND de plaque forge PLEINE (matière + trame, SANS cadre) — caché par id.
 -- opts = { px?, press?, disabled?, tint? }. Sert de FOND de carte de boutique (derrière la créature), pour

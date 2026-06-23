@@ -18,6 +18,7 @@
 local Theme = require("src.ui.theme")
 local Draw = require("src.ui.draw")
 local Forge = require("src.ui.forge")
+local Frame = require("src.ui.frame")
 local Ambient = require("src.fx.ambient")
 local T = require("src.core.i18n").t
 
@@ -85,7 +86,7 @@ function Frameforge.new(palette, vw, vh, host)
     tune = { px = 2, bw = 108, bh = 30, fontSz = 8, pad = 5, eyeR = 8 },
     tuneSel = 1, -- index du paramètre sélectionné (TUNE_PARAMS)
     accentIdx = 1,
-    page = 1, pages = 2,
+    page = 1, pages = 3,
     backRect = { x = 1280 - 150, y = 24, w = 122, h = 34 },
     backHover = false,
     mx = 640, my = 360,
@@ -248,6 +249,23 @@ function Frameforge:build()
     add(2, newCell(500 + (n - 1) * 90, y + 120, 3 + n * 5, 8, "level " .. n)).drawFn =
       function(buf, aw, ah, t) Forge.drawLevelPips(buf, aw, ah, n, t) end
   end
+
+  -- ════════════════ PAGE 3 — 05 Frame.draw (API intégrée) + 06 ICONOGRAPHIE ════════════════
+  -- Le rendu des cadres/boutons d'API (Frame.draw / Frame.button) est dessiné DIRECTEMENT en drawOverlay
+  -- (love.graphics immédiat, pas un cell-tampon) -> cf. drawFrameAPI. Ici on ne pose QUE les cells-tampon :
+  -- les 7 SILHOUETTES d'affliction (forme propre par famille) et les 5 PIPS DE TYPE (Theme.types[].pip).
+  y = 450
+  local affl = { "burn", "bleed", "poison", "rot", "shock", "regen", "shield" }
+  for i, k in ipairs(affl) do
+    add(3, newCell(96 + (i - 1) * 60, y, 14, 14, k)).drawFn =
+      function(buf, aw, ah, t) Forge.afflShape(buf, aw, ah, k, t) end
+  end
+  -- pips de type, pilotés par Theme.types[].pip (la source de vérité du design system).
+  local fams3 = { "flesh", "order", "bone", "arcane", "abyss" }
+  for i, f in ipairs(fams3) do
+    add(3, newCell(96 + (i - 1) * 60, y + 120, 14, 14, f)).drawFn =
+      function(buf, aw, ah, t) Forge.drawTypePip(buf, aw, ah, f, t) end
+  end
 end
 
 -- Re-bake TOUS les boutons-héros tunables à la taille courante (self.tune). Appelé à chaque changement
@@ -307,6 +325,49 @@ function Frameforge:drawTuner()
   Draw.text("[t] param   up/down (+/-) adjust", x, ty + #TUNE_PARAMS * 16 + 4, C.muted, Theme.ui(9))
 end
 
+-- PAGE 3 — démo de l'API INTÉGRÉE Frame.draw / Frame.button. C'est le rendu que TOUS les sites d'appel
+-- (boutons de scène, cases, cartes, panneaux) héritent depuis la refonte. On montre :
+--   • la GRILLE niveaux × états (plain/bevel/gilded × idle/hover/pressed/disabled/selected/danger) ;
+--   • une rangée de Frame.button (labels vivants, ombre + halo héros) ;
+--   • un Frame.draw{ fill=false } posé sur un aplat coloré (cadre sur contenu : le centre transparaît) ;
+--   • une rangée d'USURE : même cadre gilded à 4 SEEDS de patine différents (le grain change, pas la forme).
+function Frameforge:drawFrameAPI()
+  local font = Theme.uiBold(11)
+  local labelFont = Theme.uiBold(13)
+  local levels = { "plain", "bevel", "gilded" }
+  local states = { "idle", "hover", "pressed", "disabled", "selected", "danger" }
+  local cw, ch, gx, gy = 132, 40, 14, 12
+  local x0, y0 = 96, 168
+  -- en-têtes de colonnes (états).
+  for j, s in ipairs(states) do
+    Draw.text(s:upper(), x0 + (j - 1) * (cw + gx), y0 - 14, C.dim, Theme.ui(9))
+  end
+  for i, lv in ipairs(levels) do
+    local ry = y0 + (i - 1) * (ch + gy)
+    Draw.textR(lv:upper(), x0 - 10, ry + (ch - 10) / 2, C.muted, font)
+    for j, s in ipairs(states) do
+      local rx = x0 + (j - 1) * (cw + gx)
+      -- id STABLE par cellule (sinon collision de cache par position partagée entre frames OK, mais on est
+      -- propre) ; chaque cellule a son propre seed de patine pour varier le grain de la grille.
+      Frame.button(rx, ry, cw, ch, lv == "gilded" and "DESCEND" or "FORGE",
+        { level = lv, state = s, font = labelFont, id = "fapi." .. lv .. "." .. s, seed = i * 7 + j })
+    end
+  end
+
+  -- Frame.draw{ fill=false } sur un aplat (cadre sur contenu) : le centre laisse passer le fond.
+  local fx, fy = x0, y0 + 3 * (ch + gy) + 8
+  Draw.rect(fx, fy, 120, 56, Theme.c.bloodDeep)
+  Frame.draw(fx, fy, 120, 56, { level = "gilded", state = "selected", fill = false, id = "fapi.frameonly" })
+  Draw.textC("fill=false", fx + 60, fy + 58, C.ghost, Theme.ui(8))
+
+  -- Rangée d'USURE : même cadre gilded, 4 seeds de patine -> grit différent, forme identique.
+  local wx, wy = fx + 170, fy
+  Draw.text("WEAR (seed-varied patina, same form)", wx, wy - 14, C.dim, Theme.ui(9))
+  for k = 0, 3 do
+    Frame.draw(wx + k * 88, wy, 78, 56, { level = "gilded", state = "idle", id = "fapi.wear" .. k, seed = 100 + k * 31 })
+  end
+end
+
 function Frameforge:drawOverlay(view)
   Draw.begin(view)
 
@@ -322,9 +383,13 @@ function Frameforge:drawOverlay(view)
   if self.page == 1 then
     Draw.text("01  EYE-BUTTONS", 96, 142, C.muted, Theme.uiBold(11))
     Draw.text("02  RESOURCES", 96, 444, C.muted, Theme.uiBold(11))
-  else
+  elseif self.page == 2 then
     Draw.text("03  FRAMES & CARDS", 96, 142, C.muted, Theme.uiBold(11))
     Draw.text("04  ATOMS", 96, 444, C.muted, Theme.uiBold(11))
+  else
+    Draw.text("05  Frame.draw / Frame.button  (integrated API -- all sites inherit this)", 96, 142, C.muted, Theme.uiBold(11))
+    Draw.text("06  ICONOGRAPHY  (affliction silhouettes + type pips via Theme.types[].pip)", 96, 426, C.muted, Theme.uiBold(11))
+    self:drawFrameAPI()
   end
 
   for _, c in ipairs(self.cells) do

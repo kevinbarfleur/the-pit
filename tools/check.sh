@@ -71,6 +71,9 @@ luajit tests/chronicle_ui.lua
 echo "== designsystem-ui (storybook in-engine : scene + sidebar + page scrollable + tokens/atomes) =="
 luajit tests/designsystem.lua
 
+echo "== reliquary (bande gravee : bake + memoisation + headless-safe + inset) =="
+luajit tests/reliquary.lua
+
 echo "== payoff (renforcements forts mais bornes : spread + boucliers + caps) =="
 luajit tests/payoff.lua
 

@@ -1,13 +1,21 @@
 -- src/ui/theme.lua
--- SOURCE UNIQUE de la direction artistique (DA) "The Pit", portée du prototype DesignComposer
--- (docs design "The Pit.dc.html"). Centralise : la PALETTE grimdark (hex -> floats 0..1), les
--- COULEURS de type d'unité, et le chargement des 3 POLICES (Jacquard 24 gothique / Silkscreen pixel
--- / IM Fell English lore). Aucune scène ne doit coder une couleur ou charger une police en dur.
+-- SOURCE UNIQUE de la direction artistique (DA) "The Pit". Porte le DESIGN SYSTEM du designer
+-- (docs/pixel-art/design-system-source.html, "Reliquary · Système Visuel · v1"). Centralise : la
+-- PALETTE grimdark tokenisée (hex -> floats 0..1), les COULEURS de type d'unité, et le chargement des
+-- POLICES. Aucune scène ne doit coder une couleur ou charger une police en dur.
 --
--- PUR au require (les tables de couleurs n'ont besoin d'aucun `love`). Les polices sont chargées en
--- LAZY via Theme.font(role, px) (mémoïsé) -> headless/SIM jamais impactés (rien de tout ça n'est
--- requis par la couche SIM ni par les tests). Fallback gracieux vers la police par défaut si un TTF
--- manque (le jeu ne crashe jamais pour un asset absent).
+-- REFONTE TYPO (parti pris du designer, « la lisibilité d'abord ») : quatre voix, un rôle chacune.
+--   • Jacquard 24 — CÉRÉMONIALE, rarissime : le titre du jeu + les grands mots du destin (Victory…).
+--   • Cinzel      — GRAVÉE : titres, noms, grands mots ; capitales, interlettrage large.
+--   • Spectral    — MANUSCRITE : la prose lisible (descriptions) + la saveur (italique de lore).
+--   • Space Mono  — INSCRITE : TOUTES les valeurs + labels (chiffres tabulaires, sans ambiguïté).
+-- Silkscreen (l'ancien « tout-en-pixel ») est l'AVANT qu'on corrige : conservé pour compat, plus utilisé
+-- pour le contenu. Les polices vectorielles (Cinzel/Spectral/Space Mono) sont ROBUSTES au scale non-entier
+-- (anti-alias gracieux), contrairement aux pixel-fonts -> meilleures à toutes les tailles de fenêtre.
+--
+-- PUR au require (les tables de couleurs n'ont besoin d'aucun `love`). Les polices sont chargées en LAZY
+-- via Theme.font(role, px) (mémoïsé) -> headless/SIM jamais impactés. Fallback gracieux vers la police par
+-- défaut si un TTF manque (le jeu ne crashe jamais pour un asset absent).
 
 local Theme = {}
 
@@ -20,92 +28,93 @@ function Theme.hex(h, a)
 end
 local H = Theme.hex
 
--- ─────────────────────────────── Palette (repris du .dc.html) ───────────────────────────────
+-- ───────────────────────── Palette (tokens canoniques du design system) ─────────────────────────
+-- Noms repris à l'identique du .dc.html (--void, --stone-900…, --ink…, --brass…, afflictions). Les
+-- valeurs sont la source de vérité ; les rôles historiques (panel/title/body/…) sont définis plus bas
+-- comme ALIAS sur ces tokens (toute scène existante continue de fonctionner, sur la palette raffinée).
 Theme.c = {
-  -- Fonds (du plus profond au panneau)
-  void       = H(0x050307), -- noir du puits (letterbox / base la plus sombre)
-  bgDeep     = H(0x08050b),
-  bgPit      = H(0x0a0610),
-  bgWarm     = H(0x150a0e), -- fond réchauffé (mi-hauteur des scènes d'ambiance)
-  bgEmber    = H(0x2c0e10), -- bas des scènes (proche de la braise)
-  panel      = H(0x0e080f), -- panneaux UI (boutique, etc.)
-  panelDeep  = H(0x0b060a),
-  slot       = H(0x100a13), -- intérieur d'une case jouable
-  slotLocked = H(0x0a070d), -- case verrouillée
+  -- ▚ Fonds — la pierre du puits (du plus profond au panneau)
+  void     = H(0x050308), -- noir du puits (letterbox / base la plus sombre)
+  stone900 = H(0x0b0910),
+  stone850 = H(0x100d16),
+  stone800 = H(0x16121d),
+  stone700 = H(0x1d1826),
+  stone600 = H(0x272031),
 
-  -- Encres (parchemin/os : du plus clair au plus éteint)
-  inkBright  = H(0xf0e2c4), -- sélection / éclat
-  ctaText    = H(0xf0d9a8), -- texte sur bouton sang
-  title      = H(0xc7b899), -- titres parchemin (rôle principal)
-  body       = H(0xc2b39a), -- corps de texte lisible
-  name       = H(0xcdbca0), -- noms d'unités
-  muted      = H(0x9a8a72), -- secondaire
-  dim        = H(0x8a7766), -- lore / tertiaire
-  faint      = H(0x7a685c), -- légendes
-  fainter    = H(0x5b4d44), -- micro-légendes
-  ghost      = H(0x3f352f), -- quasi invisible (tags, build no.)
-  lock       = H(0x2a232c), -- glyphe de case verrouillée
+  -- ▚ Encres — os & parchemin (contraste relevé pour la lecture)
+  ink      = H(0xece3ce), -- primaire (titres gravés, éclat)
+  ink2     = H(0xc3b89e), -- corps
+  ink3     = H(0x8d8270), -- sourdine
+  ink4     = H(0x5d544a), -- légende
+  ink5     = H(0x3a342f), -- désactivé
 
-  -- Sang (accent primaire) & or (accent secondaire)
-  blood      = H(0xa12924),
-  bloodBright= H(0xb33833),
-  bloodDeep  = H(0x5a1714), -- fond du CTA
-  bloodEdge  = H(0x241416), -- bord du CTA désactivé
-  dmg        = H(0xe0584c), -- nombres de dégâts
-  gold       = H(0xc4a04a),
-  goldBright = H(0xd9bd52), -- survol / passifs
+  -- ▚ Laiton — le cadre, terni (jamais doré-brillant)
+  iron     = H(0x070506), -- contour noir net
+  brassD   = H(0x2a2012),
+  brass    = H(0x5f4a22),
+  brassL   = H(0x90712f), -- éclairé
+  brassS   = H(0xd8b65e), -- reflet rare (spéculaire)
 
-  -- Statuts & feedback
-  heal       = H(0x8fd06a), -- soin / regen
-  shield     = H(0x73b3f2), -- bouclier
-  drop       = H(0x6bc766), -- cible de drop valide
-  ember      = H(0xc4663a), -- braises
+  -- ▚ Accents — le sang, la braise, l'or sacré
+  blood    = H(0xb5302a), -- action
+  bloodL   = H(0xd8463b), -- survol / PV
+  bloodD   = H(0x48120e), -- fond CTA
+  ember    = H(0xc4663a), -- lueur / braise
+  gold     = H(0xcda14c), -- valeur / sacré
 
-  -- Afflictions (DoT) — couleurs DISTINCTES (teinte bien séparée) pour la lecture de la barre de vie
-  -- segmentée ET les icônes de statut. Chaque DoT « réserve » une portion de la vie courante, colorée
-  -- par sa famille (réf hack&slash/ARPG). Le choc amplifie (pas de segment) -> icône seule.
-  poison     = H(0x8fbf2e), -- poison : vert toxique/acide (≠ heal, plus saturé)
-  bleed      = H(0xd0405a), -- saignement : cramoisi rosé (≠ sang HP, plus vif)
-  bleedDeep  = H(0x6a1414), -- sang séché (flaque/fin de goutte du feedback corporel d'affliction)
-  burn       = H(0xe0792e), -- brûlure : braise vive (≠ ember, plus lumineux)
-  rot        = H(0xa86fc4), -- pourriture : violet nécrotique
-  shock      = H(0xf2d24a), -- choc : jaune électrique
+  -- ▚ Afflictions — familles d'altération (teintes bien séparées + forme propre = lisible daltonien)
+  burn     = H(0xe0792e), -- brûlure
+  bleed    = H(0xd8475e), -- saignement
+  poison   = H(0x93c12f), -- poison
+  rot      = H(0xa86fc4), -- pourriture
+  shock    = H(0xf2d24a), -- choc
+  regen    = H(0x7fbf6a), -- soin
+  shield   = H(0x6fa8e6), -- bouclier
 
-  -- Plateau (cases & arêtes)
-  slotEdge   = H(0x524759), -- bord de case par défaut
-  slotEdgeLck= H(0x221c28), -- bord de case verrouillée
-  edgeIdle   = H(0x322a38), -- arête de synergie au repos
-  edgeActive = H(0xa12924), -- arête active (survol/voisin)
-
-  -- Lignes & séparateurs
-  hair       = H(0x2a2018), -- bordure de panneau détaillé
-  line       = H(0x1c1620), -- séparateur sombre
-
-  -- Boutons d'économie (boutique) & survol de carte
-  ecoBg      = H(0x1c130b), -- fond bouton REROLL/LEVEL
-  ecoBgHot   = H(0x2a1c0e), -- survol
-  ecoBorder  = H(0x6a4a22), -- bord (actif)
-  cardHover  = H(0x1a1118), -- survol d'une offre achetable
+  -- ▚ Ambiances chaudes conservées (la « bouche » du puits : braise au fond des scènes d'ambiance)
+  bgWarm    = H(0x150a0e), -- fond réchauffé (mi-hauteur)
+  bgEmber   = H(0x2c0e10), -- bas des scènes (proche de la braise)
+  bloodEdge = H(0x241416), -- bord du CTA désactivé
+  bleedDeep = H(0x6a1414), -- sang séché (flaque/fin de goutte d'affliction)
+  ctaText   = H(0xf0d9a8), -- texte chaud sur bouton sang
+  drop      = H(0x6bc766), -- cible de drop valide
+  slotEdge  = H(0x524759), -- bord de case par défaut
+  ecoBg     = H(0x1c130b), -- fond bouton REROLL/LEVEL
+  ecoBgHot  = H(0x2a1c0e), -- survol éco
 }
 
--- ─────────────────── Couleurs de type d'unité (TYPES du .dc.html) ───────────────────
+-- ── Alias de rôles (COMPAT) : les noms historiques pointent sur les tokens canoniques ci-dessus.
+-- Toute scène encore non re-skinnée garde ses appels (Theme.c.panel, .title, .body…) et hérite de la
+-- palette raffinée. La migration des call-sites vers les tokens canoniques se fera scène par scène.
+local c = Theme.c
+c.bgDeep = c.stone900; c.bgPit = c.stone850
+c.panel = c.stone800; c.panelDeep = c.stone900; c.slot = c.stone800; c.slotLocked = c.stone900
+c.inkBright = c.ink; c.title = c.ink; c.body = c.ink2; c.name = c.ink2
+c.muted = c.ink3; c.dim = c.ink3; c.faint = c.ink4; c.fainter = c.ink4; c.ghost = c.ink5; c.lock = c.stone600
+c.bloodBright = c.bloodL; c.bloodDeep = c.bloodD; c.dmg = c.bloodL
+c.goldBright = c.brassS; c.heal = c.regen
+c.slotEdgeLck = c.stone700; c.edgeIdle = c.stone600; c.edgeActive = c.blood
+c.hair = c.brassD; c.line = c.stone700
+c.ecoBorder = c.brass; c.cardHover = c.stone700
+
+-- ─────────────────── Couleurs de type d'unité (TYPES du design system) ───────────────────
 -- glyph = forme conceptuelle (dessinée en PIP procédural par ui/draw.lua, pas en glyphe Unicode :
 -- les polices ne garantissent pas ▬✚◇✷●). label = clé i18n de type (type.flesh, ...).
+-- « Forme + couleur, toujours doublées » : on reconnaît un type sans lire, et même sans distinguer la teinte.
 Theme.types = {
-  flesh  = { color = H(0xb3493a), dark = H(0x3a120e), pip = "bar" },
-  order  = { color = H(0xc4a04a), dark = H(0x4a3814), pip = "cross" },
-  bone   = { color = H(0xb3a07e), dark = H(0x473a2c), pip = "diamond" },
-  arcane = { color = H(0xa05a8c), dark = H(0x33182c), pip = "star" },
-  abyss  = { color = H(0x8a4a64), dark = H(0x2a1220), pip = "disc" },
+  flesh  = { color = H(0xb3493a), dark = H(0x3a120e), pip = "bar" },     -- chair
+  order  = { color = H(0xc4a04a), dark = H(0x4a3814), pip = "cross" },   -- ordre
+  bone   = { color = H(0xb3a07e), dark = H(0x473a2c), pip = "diamond" }, -- os
+  arcane = { color = H(0xa05a8c), dark = H(0x33182c), pip = "star" },    -- arcane
+  abyss  = { color = H(0x8a4a64), dark = H(0x2a1220), pip = "disc" },    -- abysse
 }
 function Theme.type(name) return Theme.types[name] or Theme.types.bone end
 
 -- ─────────────── États interactifs (vocabulaire UNIFIÉ hover/clic/désactivé) ───────────────
--- Un SEUL jeu de descripteurs d'état pour toute l'UI (fin des hover gold/eco/blood divergents par scène).
--- Consommé par src/ui/frame.lua : fill = fond intérieur ; text = couleur de label ; accent = studs dorés.
--- glow -> lueur interne au survol ; inset -> biseau inversé + label enfoncé (pressed) ; flat -> sans biseau
--- (disabled) ; gild -> studs dorés forcés même en niveau "bevel" (selected/danger = héros).
-local c = Theme.c
+-- Un SEUL jeu de descripteurs d'état pour toute l'UI. Consommé par src/ui/frame.lua : fill = fond
+-- intérieur ; text = couleur de label ; accent = liseré de laiton. glow -> lueur interne au survol ;
+-- inset -> biseau inversé + label enfoncé (pressed) ; flat -> sans biseau (disabled) ; gild -> liseré
+-- d'accent forcé (selected/danger = héros).
 Theme.state = {
   idle     = { fill = c.panelDeep, text = c.body,      accent = c.gold },
   hover    = { fill = c.panel,     text = c.inkBright,  accent = c.goldBright, glow = 0.5 },
@@ -119,7 +128,7 @@ function Theme.stateOf(name) return Theme.state[name] or Theme.state.idle end
 
 -- TONS de bouton (variante sémantique) × interaction. Un bouton = un TON (default/eco/cta/drop) + des
 -- drapeaux (enabled/hover/pressed). Theme.btnState combine les deux en un descripteur d'état pour Frame :
--- les héros (cta/drop) sont GILDÉS (studs dorés), default/eco restent en biseau bronze (« dorures héros »).
+-- les héros (cta/drop) sont gildés (liseré doré), default/eco restent en biseau bronze (« dorures héros »).
 Theme.tones = {
   default = { fill = c.panelDeep, fillHot = c.panel,    text = c.body,    textHot = c.inkBright, accent = c.gold,      gild = false },
   eco     = { fill = c.ecoBg,     fillHot = c.ecoBgHot,  text = c.title,   textHot = c.inkBright, accent = c.ecoBorder, gild = false },
@@ -145,33 +154,53 @@ function Theme.btnState(o)
   }
 end
 
--- ───────────────────────────────── Polices ─────────────────────────────────
--- 3 familles. RÈGLE DE LISIBILITÉ (retour user) : le FONCTIONNEL passe en Silkscreen ; le gothique et
--- l'italique sont réservés à de courtes touches.
---   display   = Jacquard 24  -> UNIQUEMENT le logotype "The Pit" + grands mots de résultat (VICTORY...).
---                               Jamais en label fonctionnel ; en casse de TITRE (capitales blackletter = illisibles).
---   ui/uiBold = Silkscreen   -> LABELS/BOUTONS courts en capitales (items de menu, libellés de boutons,
---                               petites étiquettes). Silkscreen est CHUNKY/tout-capitales : superbe en label,
---                               mais TROP lourd et illisible pour des VALEURS et de la PROSE mécanique.
---   read      = Pixel Operator Bold -> POLICE LISIBLE (retour user) : VALEURS (HP/DMG/CD, dps, coût, HUD) +
---                               TEXTE MÉCANIQUE/description. Vraie pixel-font CC0 avec MINUSCULES, x-height
---                               ample ET trait LOURD -> bien plus lisible que Silkscreen en petit, et surtout
---                               ROBUSTE au léger adoucissement non-entier (l'UI dessine en design 1280×720 puis
---                               scale ×(view.scale/4) ; à view.scale=3 le facteur 0.75 floute les traits FINS).
---                               Jersey 15 (essayé puis REJETÉ) « mushait » à 0.75 (traits trop fins) ; un trait
---                               GRAS survit. hinting "mono" + nearest. On voit la valeur, on lit la phrase.
---   loreRoman = IM Fell rom. -> SAVEUR courte (kickers, citations de relique) : serif d'ambiance LISIBLE.
---   lore      = IM Fell ital -> FLAVOR / phrase philosophique (italique d'ambiance, en pied de carte).
+-- ───────────────────────────────── Polices (les quatre voix) ─────────────────────────────────
+-- Échelle & rôles (Section II du design system). Tailles indicatives en design 1280×720.
+--   display    Jacquard 24      cérémonial rarissime : logotype "The Pit" + grands mots (Victory/Defeat)
+--   displayBig Cinzel 900       bandeaux/display gravés (48–88) quand on ne veut pas le blackletter
+--   title      Cinzel 800       titres d'écran (22–30) — CAPITALES, interlettrage large
+--   heading    Cinzel 700       grands mots / en-têtes de section (18–22)
+--   subhead    Cinzel 600       noms d'unité, titres de carte (15–18)
+--   body       Spectral 400     corps de texte / descriptions (13–15) — prose LISIBLE
+--   bodyMed    Spectral 500     emphase dans la prose
+--   bodyLight  Spectral 300
+--   flavor     Spectral 300 it. saveur / lore (italique, pied de carte, 12–14)
+--   bodyItalic Spectral 400 it. citation courante
+--   label      Space Mono 700   boutons, chips, kickers, ET toutes les VALEURS (HP/DMG/CD, or, %) — 10–16
+--   labelSmall Space Mono 400   micro-légendes, hex de swatch
+--   ui/uiBold/read/lore/loreRoman = LEGACY (compat scènes pas encore re-skinnées ; plus pour le contenu).
 Theme.FONT_FILES = {
-  display   = "assets/fonts/Jacquard24-Regular.ttf",
-  ui        = "assets/fonts/Silkscreen-Regular.ttf",
-  uiBold    = "assets/fonts/Silkscreen-Bold.ttf",
-  read      = "assets/fonts/PixelOperator-Bold.ttf",
-  lore      = "assets/fonts/IMFellEnglish-Italic.ttf",
-  loreRoman = "assets/fonts/IMFellEnglish-Regular.ttf",
+  -- voix cérémoniale
+  display    = "assets/fonts/Jacquard24-Regular.ttf",
+  -- voix gravée (Cinzel)
+  displayBig = "assets/fonts/Cinzel-900.ttf",
+  title      = "assets/fonts/Cinzel-800.ttf",
+  heading    = "assets/fonts/Cinzel-700.ttf",
+  subhead    = "assets/fonts/Cinzel-600.ttf",
+  -- voix manuscrite (Spectral)
+  body       = "assets/fonts/Spectral-400.ttf",
+  bodyMed    = "assets/fonts/Spectral-500.ttf",
+  bodyLight  = "assets/fonts/Spectral-300.ttf",
+  flavor     = "assets/fonts/Spectral-300italic.ttf",
+  bodyItalic = "assets/fonts/Spectral-400italic.ttf",
+  -- voix inscrite (Space Mono)
+  label      = "assets/fonts/SpaceMono-700.ttf",
+  labelSmall = "assets/fonts/SpaceMono-400.ttf",
+  -- legacy (compat)
+  ui         = "assets/fonts/Silkscreen-Regular.ttf",
+  uiBold     = "assets/fonts/Silkscreen-Bold.ttf",
+  read       = "assets/fonts/PixelOperator-Bold.ttf",
+  lore       = "assets/fonts/IMFellEnglish-Italic.ttf",
+  loreRoman  = "assets/fonts/IMFellEnglish-Regular.ttf",
 }
--- "mono" = rendu aliasé (pixel net) pour les polices pixel (UI + read) ; "normal" = lissé pour le gothique/lore.
-Theme.HINT = { ui = "mono", uiBold = "mono", read = "mono", display = "normal", lore = "normal", loreRoman = "normal" }
+-- "mono" = rendu aliasé (pixel net) pour les pixel-fonts LEGACY ; "normal" = lissé pour les vectorielles
+-- (Cinzel/Spectral/Space Mono) ET le gothique/lore. Les vectorielles ne doivent JAMAIS être en nearest.
+Theme.HINT = {
+  display = "normal", displayBig = "normal", title = "normal", heading = "normal", subhead = "normal",
+  body = "normal", bodyMed = "normal", bodyLight = "normal", flavor = "normal", bodyItalic = "normal",
+  label = "normal", labelSmall = "normal",
+  ui = "mono", uiBold = "mono", read = "mono", lore = "normal", loreRoman = "normal",
+}
 
 Theme._cache = {}    -- [role][px] = Font
 Theme._missing = {}  -- [role] = true si le TTF a échoué (on ne réessaie pas)
@@ -183,7 +212,7 @@ end
 -- Police mémoïsée par (role, px). newFont est LENT -> jamais en boucle de frame (toujours via ce cache).
 -- Fallback : TTF absent -> police par défaut de même taille ; pas de love -> nil (le rendu se garde).
 function Theme.font(role, px)
-  role = role or "ui"
+  role = role or "label"
   px = math.floor((px or 12) + 0.5)
   local byRole = Theme._cache[role]
   if not byRole then byRole = {}; Theme._cache[role] = byRole end
@@ -209,7 +238,20 @@ function Theme.font(role, px)
 end
 
 -- Raccourcis lisibles par rôle.
-function Theme.display(px)   return Theme.font("display", px) end
+function Theme.display(px)    return Theme.font("display", px) end
+function Theme.displayBig(px) return Theme.font("displayBig", px) end
+function Theme.title(px)      return Theme.font("title", px) end
+function Theme.heading(px)    return Theme.font("heading", px) end
+function Theme.subhead(px)    return Theme.font("subhead", px) end
+function Theme.body(px)       return Theme.font("body", px) end
+function Theme.bodyMed(px)    return Theme.font("bodyMed", px) end
+function Theme.bodyLight(px)  return Theme.font("bodyLight", px) end
+function Theme.flavor(px)     return Theme.font("flavor", px) end
+function Theme.bodyItalic(px) return Theme.font("bodyItalic", px) end
+function Theme.label(px)      return Theme.font("label", px) end
+function Theme.labelSmall(px) return Theme.font("labelSmall", px) end
+function Theme.value(px)      return Theme.font("label", px) end -- alias sémantique (valeurs = Space Mono 700)
+-- legacy
 function Theme.ui(px)        return Theme.font("ui", px) end
 function Theme.uiBold(px)    return Theme.font("uiBold", px) end
 function Theme.read(px)      return Theme.font("read", px) end
@@ -220,13 +262,22 @@ function Theme.loreRoman(px) return Theme.font("loreRoman", px) end
 -- Idempotent et sans danger headless (no-op si love absent).
 function Theme.load()
   if not haveGraphics() then return end
-  Theme.display(128); Theme.display(54); Theme.display(30); Theme.display(26)
+  -- cérémonial (Jacquard)
+  Theme.display(104); Theme.display(66); Theme.display(30)
+  -- gravée (Cinzel)
+  Theme.displayBig(48); Theme.title(30); Theme.title(22); Theme.heading(18); Theme.heading(16)
+  Theme.subhead(16); Theme.subhead(14)
+  -- manuscrite (Spectral)
+  for _, px in ipairs({ 13, 14, 15, 16, 17 }) do Theme.body(px) end
+  Theme.bodyMed(14); Theme.flavor(12); Theme.flavor(13); Theme.flavor(14); Theme.flavor(16)
+  -- inscrite (Space Mono)
+  for _, px in ipairs({ 10, 11, 12, 13, 15, 16, 18 }) do Theme.label(px) end
+  Theme.labelSmall(10); Theme.labelSmall(11)
+  -- legacy (compat scènes non encore re-skinnées)
   for _, px in ipairs({ 8, 9, 10, 11, 12, 13, 16 }) do Theme.ui(px) end
   Theme.uiBold(11); Theme.uiBold(13)
-  -- POLICE LISIBLE (valeurs + prose mécanique) : tailles courantes de la fiche/du HUD/des cartes. Pixel
-  -- Operator a une grille NATIVE 16px -> on privilégie 16 (et proches) pour rester crisp avant le scale jeu.
   for _, px in ipairs({ 12, 13, 14, 15, 16, 18, 20 }) do Theme.read(px) end
-  Theme.lore(14); Theme.lore(16); Theme.lore(18); Theme.lore(24)
+  Theme.lore(14); Theme.lore(16); Theme.lore(18)
   Theme.loaded = true
 end
 

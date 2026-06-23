@@ -1,17 +1,17 @@
 -- src/scenes/designsystem.lua
--- L'ÉCRAN « DESIGN SYSTEM » — un Storybook IN-ENGINE. Source de vérité VISUELLE de l'UI : chaque composant
--- (token -> atome -> molécule -> organisme, méthodo Brad Frost) y est rendu DANS TOUS SES ÉTATS, en isolation,
--- pour qu'on JUGE la cohérence d'ensemble et qu'on ITÈRE ici (et seulement ici) avant de re-câbler le jeu.
+-- L'ÉCRAN « DESIGN SYSTEM » — le RELIQUAIRE, Storybook IN-ENGINE. Source de vérité VISUELLE de l'UI :
+-- chaque composant (token -> atome -> molécule -> organisme, méthodo Brad Frost) y est rendu DANS TOUS SES
+-- ÉTATS, en isolation, pour qu'on JUGE la cohérence d'ensemble et qu'on ITÈRE ici (et seulement ici) avant
+-- de re-câbler le jeu. Reproduit fidèlement le design system du designer (docs/pixel-art/design-system-source.html,
+-- « Reliquary · Système Visuel · v1 ») : Hero + manifeste + Sections numérotées (I Couleur, II Typographie,
+-- III Iconographie, IV Composants…). Les quatre voix (Jacquard cérémonial / Cinzel gravée / Spectral
+-- manuscrite / Space Mono inscrite) et la palette tokenisée viennent de src/ui/theme.lua.
 --
--- MISE EN PAGE (décision user) : SIDEBAR atomic ancrée à gauche (clic = saut vers la section) + PAGE
--- SCROLLABLE à droite, groupée par niveau, plusieurs composants visibles à la fois. Interactivité : les
--- états sont MONTRÉS côte à côte (idle/hover/pressed/disabled/danger…) ET le hover réel marche à la souris.
---
--- ARCHI : catalogue = DATA. `self.sections = { {level, entries={ {id, label, h, draw=fn(self,x,y,w)} } } }`.
--- `:layout()` aplatit en `self.items` (header de niveau / entrée) avec une ancre Y cumulée -> la page empile,
--- la sidebar saute. Couche RENDER pure (love.graphics) — hors firewall SIM, golden neutre. Calque les idiomes
--- éprouvés de grimoire.lua (liste scrollable Draw.scissor + molette + thumb) et frameforge.lua (widgets Forge).
--- daChrome=true ; [esc] -> host.goto("menu"). Headless-safe (Forge/MiniRig no-op proprement sous le mock).
+-- MISE EN PAGE : SIDEBAR ancrée à gauche (clic = saut vers la section) + PAGE SCROLLABLE à droite, empilée.
+-- ARCHI : catalogue = DATA. `self.sections = { {numeral, kicker, title, intro, entries={ {id,label,h,draw} }} }`.
+-- `:layout()` aplatit en `self.items` (header de section / entrée) avec une ancre Y cumulée. Couche RENDER
+-- pure (love.graphics) — hors firewall SIM, golden neutre. Idiomes : liste scrollable (Draw.scissor + molette
+-- + thumb, calque grimoire) et widgets bakés (Forge). daChrome=true ; [esc] -> host.goto("menu"). Headless-safe.
 
 local Theme = require("src.ui.theme")
 local Draw = require("src.ui.draw")
@@ -21,6 +21,7 @@ local Keywords = require("src.ui.keywords")
 local Forge = require("src.ui.forge")
 local Ambient = require("src.fx.ambient")
 local MiniRig = require("src.render.minirig")
+local Reliquary = require("src.ui.reliquary")
 local Units = require("src.data.units")
 local T = require("src.core.i18n").t
 local C = Theme.c
@@ -28,23 +29,28 @@ local C = Theme.c
 local Screen = {}
 Screen.__index = Screen
 
--- ── Mise en page (ESPACE DESIGN 1280×720) ──────────────────────────────────────────────────────────
-local TITLE_Y = 26
-local TOP, BOTTOM = 82, 692
-local SB_X, SB_W = 30, 188             -- sidebar (gauche)
-local PAGE_X = 234                      -- page (droite)
-local PAGE_W = 1280 - PAGE_X - 30       -- = 1016
+-- ── Mise en page (ESPACE DESIGN 1280×720, CEINTE par la bande gravée du reliquaire) ─────────────────
+-- Tout le contenu vit À L'INTÉRIEUR du cadre de pierre (Reliquary). IX/IY = coin intérieur (band ~32px
+-- + un peu d'air) ; les ancres en dérivent. Hit-test headless préservé : SB_X+10=58, w=168 -> 58..226 ⊃ 70.
+local FRAME_FT = 8                       -- épaisseur de la bande (px d'art) -> 32px design + air
+local IX, IY = 40, 40                    -- coin intérieur du reliquaire
+local IW, IH = 1280 - 2 * IX, 720 - 2 * IY -- = 1200 × 640
+local TITLE_Y = IY + 10                   -- = 50
+local TOP, BOTTOM = IY + 44, IY + IH - 8  -- = 84 .. 672
+local SB_X, SB_W = IX + 8, 188            -- = 48
+local PAGE_X = SB_X + SB_W + 16           -- = 252
+local PAGE_W = (IX + IW) - PAGE_X - 8     -- = 980
 local PAGE_PAD = 18
-local CONTENT_X = PAGE_X + PAGE_PAD
-local CONTENT_W = PAGE_W - 2 * PAGE_PAD -- = 980
-local HEADER_H = 48                     -- bloc « titre de niveau »
-local LABEL_H = 22                      -- libellé d'une entrée
-local ENTRY_GAP = 22                    -- marge sous une entrée
+local CONTENT_X = PAGE_X + PAGE_PAD       -- = 270
+local CONTENT_W = PAGE_W - 2 * PAGE_PAD   -- = 944
+local HEADER_H = 80                       -- bloc « en-tête de section » (numéro + kicker + titre + intro)
+local LABEL_H = 26                        -- libellé d'une entrée
+local ENTRY_GAP = 30                      -- marge sous une entrée (espacement 8pt : plus d'air entre groupes)
 local function pageViewH() return BOTTOM - TOP end
 
--- swatch de couleur (token) : pavé + nom + hex. Grille à `perRow` colonnes dans CONTENT_W.
-local SWATCH_W, SWATCH_H, SW_GAP = 152, 30, 8
-local GROUP_LABEL_H, GROUP_GAP = 20, 12
+-- swatch de couleur (token) : carte bande-couleur + nom + hex. Grille à `perRow` colonnes dans CONTENT_W.
+local SWATCH_W, SWATCH_BAND, SWATCH_CARD_H, SW_GAP = 152, 28, 54, 10
+local GROUP_LABEL_H, GROUP_GAP = 24, 16
 local function swatchPerRow() return math.max(1, math.floor((CONTENT_W + SW_GAP) / (SWATCH_W + SW_GAP))) end
 
 local function ptIn(px, py, x, y, w, h) return px >= x and px <= x + w and py >= y and py <= y + h end
@@ -57,30 +63,67 @@ local function hexOf(col)
   return string.format("#%02x%02x%02x", r, g, b)
 end
 
--- Groupes de couleurs (ordonnés, par RÔLE) — les clés réelles de Theme.c (theme.lua l.24-89).
+-- Texte tracké ALIGNÉ À GAUCHE (kickers/petites capitales en Space Mono) : Draw n'expose que la version
+-- centrée, on étale caractère par caractère ici (ASCII des kickers). Renvoie la largeur consommée.
+local function trackL(str, x, y, color, font, sp)
+  sp = sp or 2
+  local cx = x
+  for i = 1, #str do
+    local ch = str:sub(i, i)
+    Draw.text(ch, cx, y, color, font)
+    cx = cx + Draw.textWidth(ch, font) + sp
+  end
+  return cx - x
+end
+
+-- Petit « tick » de laiton + libellé de groupe tracké (le « ▚ Fonds » du design, sans dépendre d'un glyphe).
+local function groupLabel(str, x, y)
+  Draw.rect(x, y + 1, 10, 9, C.brass)
+  Draw.rect(x + 1, y + 2, 8, 1, C.brassS)
+  trackL(str:upper(), x + 18, y, C.ink2, Theme.label(11), 2)
+end
+
+-- Carte de fond (pierre + liseré fer + éclat de laiton sur le bord supérieur si `lit`).
+local function card(x, y, w, h, lit)
+  Draw.rect(x, y, w, h, C.stone850, C.iron, 1)
+  if lit then
+    Draw.setColor(C.brassS, 0.07)
+    love.graphics.rectangle("fill", math.floor(x + 1), math.floor(y + 1), math.floor(w - 2), 1)
+    Draw.reset()
+  end
+end
+
+-- ── COULEUR : groupes de tokens (clés réelles de Theme.c, palette du designer) ──
 local COLOR_GROUPS = {
-  { name = "Fonds",       keys = { "void", "bgDeep", "bgPit", "bgWarm", "bgEmber", "panel", "panelDeep", "slot", "slotLocked" } },
-  { name = "Encres",      keys = { "inkBright", "ctaText", "title", "body", "name", "muted", "dim", "faint", "fainter", "ghost", "lock" } },
-  { name = "Sang & Or",   keys = { "blood", "bloodBright", "bloodDeep", "bloodEdge", "dmg", "gold", "goldBright" } },
-  { name = "Statuts",     keys = { "heal", "shield", "drop", "ember" } },
-  { name = "Afflictions", keys = { "poison", "bleed", "bleedDeep", "burn", "rot", "shock" } },
-  { name = "Plateau",     keys = { "slotEdge", "slotEdgeLck", "edgeIdle", "edgeActive" } },
-  { name = "Lignes",      keys = { "hair", "line" } },
-  { name = "Économie",    keys = { "ecoBg", "ecoBgHot", "ecoBorder", "cardHover" } },
+  { name = "Fonds — la pierre du puits", keys = {
+    { "void", "base" }, { "stone900" }, { "stone850" }, { "stone800" }, { "stone700" }, { "stone600" } } },
+  { name = "Encres — os & parchemin", keys = {
+    { "ink", "primaire" }, { "ink2", "corps" }, { "ink3", "sourdine" }, { "ink4", "légende" }, { "ink5", "désactivé" } } },
+  { name = "Laiton — le cadre, terni", keys = {
+    { "iron", "contour" }, { "brassD" }, { "brass" }, { "brassL", "éclairé" }, { "brassS", "reflet" } } },
+  { name = "Accents — sang, braise, or", keys = {
+    { "blood", "action" }, { "bloodL", "survol/PV" }, { "bloodD", "fond CTA" }, { "ember", "lueur" }, { "gold", "valeur" } } },
+  { name = "Afflictions — familles d'altération", keys = {
+    { "burn" }, { "bleed" }, { "poison" }, { "rot" }, { "shock" }, { "regen", "soin" }, { "shield" } } },
 }
 
--- Échantillons de typographie : rôle, fonte, taille de démo, échantillon, note d'usage.
-local TYPE_SAMPLES = {
-  { role = "display",   fn = Theme.display,   px = 30, sample = "The Pit",                     note = "Logotype + grands mots de résultat UNIQUEMENT" },
-  { role = "ui",        fn = Theme.ui,        px = 13, sample = "REROLL   LEVEL   COMBAT",     note = "Labels/boutons courts en CAPITALES (Silkscreen)" },
-  { role = "uiBold",    fn = Theme.uiBold,    px = 13, sample = "GRIMOIRE   BESTIARY",         note = "Labels en gras" },
-  { role = "read",      fn = Theme.read,      px = 16, sample = "Poison 6 dps - 3s : +5% (up to 5).", note = "VALEURS + prose mécanique (lisible, Pixel Operator)" },
-  { role = "loreRoman", fn = Theme.loreRoman, px = 18, sample = "You descend.",                note = "Kickers / citations (serif d'ambiance)" },
-  { role = "lore",      fn = Theme.lore,      px = 18, sample = '"It drinks first."',          note = "Flavor / phrase philosophique (italique)" },
-}
-
+-- ── TYPOGRAPHIE : les quatre voix (kicker, fonte, échantillon, rôle) ──
 local STATE_NAMES = { "idle", "hover", "pressed", "disabled", "selected", "danger", "drop" }
 local AFFL_KEYS = { "poison", "bleed", "burn", "rot", "shock" }
+local ICONO_AFFL = { "burn", "bleed", "poison", "rot", "shock", "regen", "shield" }
+local TYPE_NAMES = { "flesh", "order", "bone", "arcane", "abyss" }
+
+-- Échelle & rôles (Section II du design). Chaque ligne : rôle, fonte+taille, échantillon, note d'usage.
+local TYPE_SCALE = {
+  { tag = "DISPLAY · 48–88", fn = Theme.displayBig, px = 30, s = "VICTORY",                                  note = "Cinzel 900 · bandeaux, logo" },
+  { tag = "TITLE · 22–30",   fn = Theme.title,      px = 24, s = "THE GRIMOIRE",                             note = "Cinzel 800 · titres d'écran" },
+  { tag = "HEADING · 15–18", fn = Theme.heading,    px = 17, s = "GRAVEWARDEN",                              note = "Cinzel 700 · grands mots" },
+  { tag = "SUBHEAD · 15–18", fn = Theme.subhead,    px = 16, s = "Ash-Maw",                                 note = "Cinzel 600 · noms, cartes" },
+  { tag = "BODY · 13–15",    fn = Theme.body,       px = 15, s = "Returns 4 damage to each attacker.",      note = "Spectral 400 · prose" },
+  { tag = "FLAVOR · 12–14",  fn = Theme.flavor,     px = 15, s = "Worn by saints who wished suffering shared.", note = "Spectral italic · lore" },
+  { tag = "LABEL · 10–12",   fn = Theme.label,      px = 13, s = "ENTER THE PIT",                           note = "Space Mono 700 · boutons, chips" },
+  { tag = "VALUE · 11–16",   fn = Theme.value,      px = 15, s = "HP 70  DMG 6  CD 6.0s",                   note = "Space Mono · chiffres tabulaires" },
+}
 
 function Screen.new(palette, vw, vh, host)
   local self = setmetatable({
@@ -90,7 +133,6 @@ function Screen.new(palette, vw, vh, host)
     ambient = Ambient.new(9),
     navRects = {},
   }, Screen)
-  -- quelques ids d'unités pour les mini-rigs (variété ; gardé si le roster change).
   self.rigIds = {}
   for _, i in ipairs({ 1, 6, 12, 20 }) do
     if Units.order[i] then self.rigIds[#self.rigIds + 1] = Units.order[i] end
@@ -100,25 +142,42 @@ function Screen.new(palette, vw, vh, host)
   return self
 end
 
--- ── Construction du CATALOGUE (data + render fns) ───────────────────────────────────────────────────
+-- ── Construction du CATALOGUE (sections numérotées, façon « Reliquaire ») ───────────────────────────
 function Screen:buildSections()
   self.sections = {
-    { level = "TOKENS", entries = {
-      { id = "colors", label = "Couleurs (Theme.c)", h = self:colorsHeight(), draw = Screen.drawColors },
-      { id = "type",   label = "Typographie",        h = #TYPE_SAMPLES * 40 + 6, draw = Screen.drawType },
-      { id = "states", label = "États interactifs (Theme.state)", h = 64, draw = Screen.drawStates },
-      { id = "types",  label = "Types d'unité (pips)", h = 56, draw = Screen.drawTypes },
+    { id = "reliquary", hero = true, navLabel = "RELIQUARY", entries = {
+      { id = "hero", h = 392, draw = Screen.drawHero },
     } },
-    { level = "ATOMS", entries = {
-      { id = "buttons", label = "Boutons (Forge.uiButton)", h = 232, draw = Screen.drawButtons },
-      { id = "status",  label = "Icônes de statut (Keywords)", h = 78, draw = Screen.drawStatus },
-      { id = "chips",   label = "Chips (Chip.draw)", h = 64, draw = Screen.drawChips },
-      { id = "marks",   label = "Pips · diamants · pièces", h = 70, draw = Screen.drawMarks },
-      { id = "frames",  label = "Cadres (Frame.draw)", h = 150, draw = Screen.drawFrames },
-      { id = "plates",  label = "Plaques & sockets (Forge)", h = 110, draw = Screen.drawPlates },
-      { id = "values",  label = "Value-tags · barres · dividers", h = 96, draw = Screen.drawValues },
-      { id = "rigs",    label = "Mini-rigs (MiniRig.draw)", h = 84, draw = Screen.drawRigs },
-    } },
+    { id = "couleur", numeral = "I", kicker = "Foundations · Atomes", title = "Couleur",
+      intro = "Désaturée, oppressante. Un seul accent chaud : le sang. L'information n'est jamais portée par la couleur seule.",
+      navLabel = "I · COULEUR", entries = {
+        { id = "colors", label = "Palette (Theme.c)", h = self:colorsHeight(), draw = Screen.drawColors },
+      } },
+    { id = "typo", numeral = "II", kicker = "Foundations · le cœur de la refonte", title = "Typographie",
+      intro = "Trois voix fonctionnelles + une cérémoniale, très rare. Un rôle chacune — on ne mélange jamais les emplois.",
+      navLabel = "II · TYPOGRAPHIE", entries = {
+        { id = "voices", label = "Les quatre voix", h = 348, draw = Screen.drawVoices },
+        { id = "scale", label = "Échelle & rôles", h = #TYPE_SCALE * 34 + 6, draw = Screen.drawScale },
+      } },
+    { id = "icono", numeral = "III", kicker = "Foundations · Atomes", title = "Iconographie",
+      intro = "Forme + couleur, toujours doublées. On reconnaît un type ou une affliction sans lire, et même sans distinguer la teinte.",
+      navLabel = "III · ICONOGRAPHIE", entries = {
+        { id = "typepips", label = "Types d'unité (une forme par faction)", h = 96, draw = Screen.drawTypePips },
+        { id = "afflicons", label = "Afflictions (une forme par famille)", h = 104, draw = Screen.drawAffl },
+      } },
+    { id = "composants", numeral = "IV", kicker = "Molécules · re-skin en cours", title = "Composants",
+      intro = "Le kit métal porté depuis la référence du designer : pierre gravée, biseau de laiton, runes qui s'éveillent.",
+      navLabel = "IV · COMPOSANTS", entries = {
+        { id = "buttons", label = "Boutons (Forge.uiButton)", h = 232, draw = Screen.drawButtons },
+        { id = "states", label = "États interactifs (Frame)", h = 64, draw = Screen.drawStates },
+        { id = "frames", label = "Cadres (Frame.draw)", h = 150, draw = Screen.drawFrames },
+        { id = "chips", label = "Chips (Chip.draw)", h = 64, draw = Screen.drawChips },
+        { id = "status", label = "Statut + chips (Keywords)", h = 78, draw = Screen.drawStatus },
+        { id = "marks", label = "Pips · diamants · pièces", h = 70, draw = Screen.drawMarks },
+        { id = "plates", label = "Plaques & sockets (Forge)", h = 110, draw = Screen.drawPlates },
+        { id = "values", label = "Value-tags · barres · dividers", h = 96, draw = Screen.drawValues },
+        { id = "rigs", label = "Mini-rigs (MiniRig.draw)", h = 84, draw = Screen.drawRigs },
+      } },
   }
 end
 
@@ -128,24 +187,27 @@ function Screen:colorsHeight()
   local h = 0
   for gi, grp in ipairs(COLOR_GROUPS) do
     local rows = math.ceil(#grp.keys / perRow)
-    h = h + GROUP_LABEL_H + rows * (SWATCH_H + SW_GAP)
+    h = h + GROUP_LABEL_H + rows * (SWATCH_CARD_H + SW_GAP)
     if gi < #COLOR_GROUPS then h = h + GROUP_GAP end
   end
   return h
 end
 
--- Aplatit sections -> self.items {kind, level?/entry?, y (ancre dans le contenu), h} + self.nav (sidebar).
+-- Aplatit sections -> self.items {kind, sec?/entry?, y (ancre dans le contenu), h} + self.nav (sidebar).
 function Screen:layout()
   self.items, self.nav = {}, {}
   local y = 0
   for _, sec in ipairs(self.sections) do
-    self.items[#self.items + 1] = { kind = "header", level = sec.level, y = y, h = HEADER_H }
-    self.nav[#self.nav + 1] = { label = sec.level, y = y, header = true }
-    y = y + HEADER_H
+    local hh = sec.hero and 0 or HEADER_H
+    if hh > 0 then
+      self.items[#self.items + 1] = { kind = "header", sec = sec, y = y, h = hh }
+    end
+    self.nav[#self.nav + 1] = { label = sec.navLabel, y = y, header = true }
+    y = y + hh
     for _, e in ipairs(sec.entries) do
-      local total = LABEL_H + e.h + ENTRY_GAP
-      self.items[#self.items + 1] = { kind = "entry", entry = e, y = y, h = total }
-      self.nav[#self.nav + 1] = { label = e.label, y = y, header = false }
+      local total = (e.label and LABEL_H or 0) + e.h + ENTRY_GAP
+      self.items[#self.items + 1] = { kind = "entry", entry = e, y = y, h = total, showLabel = e.label ~= nil }
+      if e.label then self.nav[#self.nav + 1] = { label = e.label, y = y, header = false } end
       y = y + total
     end
   end
@@ -161,7 +223,7 @@ end
 function Screen:update(frameDt)
   self.t = self.t + (frameDt or 1) / 60 -- horloge en SECONDES (respiration des widgets forge ; cf. frameforge)
   self.ambient:update(frameDt)
-  Forge.uiTick((frameDt or 1) / 60) -- horloge interne des widgets forge (en SECONDES)
+  Forge.uiTick((frameDt or 1) / 60)
 end
 
 function Screen:drawBack(view)
@@ -176,10 +238,13 @@ function Screen:drawOverlay(view)
   self._view = view -- les render fns (mini-rig) en ont besoin pour clipper
   Draw.begin(view)
 
-  -- En-tête.
-  Draw.text(T("designsystem.title"), SB_X, TITLE_Y, C.title, Theme.display(34))
-  Draw.textR(T("designsystem.back"), Draw.W - 30, TITLE_Y + 14, C.ghost, Theme.ui(11))
-  Draw.divider(Draw.W / 2, TOP - 10, Draw.W - 80, C.gold, 0.5)
+  -- La BANDE GRAVÉE du reliquaire ceint tout l'écran (le contenu vit dans l'inset IX/IY).
+  Reliquary.draw(0, 0, Draw.W, Draw.H, { ft = FRAME_FT })
+
+  -- En-tête d'écran (à l'intérieur du cadre).
+  Draw.text(T("designsystem.title"), SB_X, TITLE_Y, C.ink, Theme.title(30))
+  Draw.textR(T("designsystem.back"), IX + IW - 8, TITLE_Y + 12, C.ink4, Theme.labelSmall(11))
+  Draw.divider(IX + IW / 2, TOP - 10, IW - 40, C.brass, 0.45)
 
   self:drawSidebar()
   self:drawPage(view)
@@ -187,27 +252,27 @@ function Screen:drawOverlay(view)
   Draw.finish()
 end
 
--- ── SIDEBAR (navigation atomic : headers de niveau + entrées, clic = saut) ───────────────────────────
+-- ── SIDEBAR (navigation : sections + entrées, clic = saut) ───────────────────────────────────────────
 function Screen:drawSidebar()
-  Draw.rect(SB_X, TOP, SB_W, pageViewH(), C.panelDeep, C.hair, 1)
-  -- quel item de page est « en haut » (surligné dans la sidebar) : le dernier dont l'ancre <= scroll.
+  Draw.rect(SB_X, TOP, SB_W, pageViewH(), C.stone900, C.iron, 1)
+  -- quelle ancre est « en haut » (surlignée) : la dernière dont l'ancre <= scroll.
   local activeY = nil
   for _, n in ipairs(self.nav) do if n.y <= self.scroll + 2 then activeY = n.y end end
   self.navRects = {}
-  local y = TOP + 12
-  local font = Theme.ui(11)
+  local y = TOP + 14
+  local font = Theme.labelSmall(11)
   for i, n in ipairs(self.nav) do
     local r = { x = SB_X + 10, y = y, w = SB_W - 20, h = n.header and 18 or 16 }
     self.navRects[i] = r
     local hov = (self.hoverNav == i)
     local active = (n.y == activeY)
     if n.header then
-      if i > 1 then y = y + 6 end; r.y = y
-      Draw.text(n.label, r.x, y, active and C.gold or C.muted, Theme.uiBold(11))
+      if i > 1 then y = y + 8 end; r.y = y
+      trackL(n.label, r.x, y, active and C.gold or C.ink3, Theme.label(11), 1.5)
       y = y + 18
     else
-      local col = active and C.inkBright or (hov and C.body or C.faint)
-      Draw.text((active and "> " or "  ") .. n.label, r.x + 6, y, col, font)
+      local col = active and C.ink or (hov and C.ink2 or C.ink4)
+      Draw.text((active and "› " or "  ") .. n.label, r.x + 6, y, col, font)
       y = y + 16
     end
   end
@@ -220,12 +285,15 @@ function Screen:drawPage(view)
     local y = TOP + it.y - self.scroll
     if y + it.h >= TOP - 2 and y <= BOTTOM + 2 then
       if it.kind == "header" then
-        Draw.text(it.level, CONTENT_X, y + 6, C.title, Theme.display(28))
-        Draw.divider(PAGE_X + PAGE_W / 2, y + 40, PAGE_W - 40, C.gold, 0.6)
+        self:drawSectionHeader(CONTENT_X, y + 10, CONTENT_W, it.sec)
       else
         local e = it.entry
-        Draw.text(e.label, CONTENT_X, y + 2, C.goldBright, Theme.uiBold(13))
-        e.draw(self, CONTENT_X, y + LABEL_H, CONTENT_W)
+        local ey = y
+        if it.showLabel then
+          groupLabel(e.label, CONTENT_X, y + 2)
+          ey = y + LABEL_H
+        end
+        e.draw(self, CONTENT_X, ey, CONTENT_W)
       end
     end
   end
@@ -237,69 +305,186 @@ function Screen:drawPage(view)
     local vh = pageViewH()
     local thumbH = math.max(28, vh * vh / self.contentH)
     local ty = TOP + (vh - thumbH) * (self.scroll / maxS)
-    Draw.rect(PAGE_X + PAGE_W - 4, TOP, 3, vh, C.panelDeep)
-    Draw.rect(PAGE_X + PAGE_W - 4, ty, 3, thumbH, C.ecoBorder)
+    Draw.rect(PAGE_X + PAGE_W - 4, TOP, 3, vh, C.stone900)
+    Draw.rect(PAGE_X + PAGE_W - 4, ty, 3, thumbH, C.brass)
   end
 end
 
--- ═══════════════════════════ RENDER FNS — TOKENS ═══════════════════════════
+-- En-tête de section « gravé » : grand chiffre romain (laiton) + kicker tracké + titre Cinzel + intro à droite.
+function Screen:drawSectionHeader(x, y, w, sec)
+  local numF = Theme.title(44)
+  Draw.text(sec.numeral, x, y - 8, C.brass, numF)
+  local nx = x + Draw.textWidth(sec.numeral, numF) + 22
+  trackL(sec.kicker:upper(), nx, y, C.ink3, Theme.labelSmall(10), 2)
+  Draw.text(sec.title:upper(), nx, y + 16, C.ink, Theme.title(28))
+  -- intro à droite (italique Spectral, alignée à droite, repliée).
+  local iw = 320
+  Draw.textWrap(sec.intro, x + w - iw, y + 2, iw, C.ink3, Theme.flavor(13), "right")
+  -- filet bas (fer + soupçon d'or).
+  Draw.divider(x + w / 2, y + 58, w, C.iron, 1)
+  Draw.divider(x + w / 2, y + 59, w, C.gold, 0.08)
+end
+
+-- ═══════════════════════════ HERO + MANIFESTE ═══════════════════════════
+
+function Screen:drawHero(x, y, w)
+  local cx = x + w / 2
+  -- kicker
+  local k = "RELIQUARY     SYSTÈME VISUEL     V1"
+  Draw.textTrackedC(k, cx, y, C.ink3, Theme.labelSmall(11), 4)
+  -- titre cérémonial (Jacquard) avec ombre.
+  local tf = Theme.display(104)
+  Draw.textC("The Pit", cx, y + 20 + 2, C.void, tf)
+  Draw.textC("The Pit", cx, y + 20, C.ink, tf)
+  -- filet à losange de sang.
+  local dy = y + 150
+  Draw.divider(cx, dy, 560, C.brass, 0.5)
+  Forge.diamondAt(cx, dy, 4, C.blood, C.bloodD)
+  -- accroche (Spectral italique, centrée).
+  Draw.textWrap("Une refonte du langage visuel. Crasse, sang, et une géométrie qui ment — mais où chaque mot se lit. On descend Le Puits, on ne devine plus l'interface.",
+    cx - 320, y + 168, 640, C.ink2, Theme.flavor(15), "center")
+  -- manifeste : 3 partis pris.
+  self:drawManifesto(x, y + 230, w)
+  return 392
+end
+
+function Screen:drawManifesto(x, y, w)
+  local cols = {
+    { n = "01", h = "La lisibilité d'abord", b = "Trois voix fonctionnelles, plus une quatrième cérémoniale et rare. Le gothique pour le titre et les grands mots du destin — jamais pour dire « 6 dégâts »." },
+    { n = "02", h = "Un seul cadre, pas mille", b = "L'or encadre le jeu, pas chaque bouton. Un reliquaire ceint tout l'écran ; à l'intérieur, les surfaces sont calmes et le texte respire." },
+    { n = "03", h = "Le grimdark par la matière", b = "Pierre noire, laiton terni, os, et le sang comme unique accent chaud. L'ambiance vient des matériaux et de la lumière — pas du bruit." },
+  }
+  local gap = 14
+  local colW = math.floor((w - 2 * gap) / 3)
+  local ch = 150
+  for i, col in ipairs(cols) do
+    local cxx = x + (i - 1) * (colW + gap)
+    card(cxx, y, colW, ch, true)
+    local px = cxx + 18
+    Draw.text(col.n, px, y + 18, C.bloodL, Theme.label(11))
+    Draw.text(col.h:upper(), px, y + 34, C.ink, Theme.heading(14))
+    Draw.textWrap(col.b, px, y + 58, colW - 36, C.ink3, Theme.body(13), "left")
+  end
+  return ch
+end
+
+-- ═══════════════════════════ I · COULEUR ═══════════════════════════
 
 function Screen:drawColors(x, y, w)
   local perRow = swatchPerRow()
   local cy = y
   for _, grp in ipairs(COLOR_GROUPS) do
-    Draw.text(grp.name, x, cy, C.muted, Theme.ui(10))
+    groupLabel(grp.name, x, cy)
     cy = cy + GROUP_LABEL_H
-    for i, key in ipairs(grp.keys) do
+    for i, item in ipairs(grp.keys) do
+      local key = item[1]
+      local note = item[2]
       local col = C[key]
-      local col2 = (i - 1) % perRow
+      local cidx = (i - 1) % perRow
       local row = math.floor((i - 1) / perRow)
-      local sx = x + col2 * (SWATCH_W + SW_GAP)
-      local sy = cy + row * (SWATCH_H + SW_GAP)
-      Draw.rect(sx, sy, 26, 26, col, C.line, 1)
-      Draw.text(key, sx + 32, sy + 1, C.body, Theme.ui(9))
-      Draw.text(hexOf(col), sx + 32, sy + 14, C.faint, Theme.read(11))
+      local sx = x + cidx * (SWATCH_W + SW_GAP)
+      local sy = cy + row * (SWATCH_CARD_H + SW_GAP)
+      Draw.rect(sx, sy, SWATCH_W, SWATCH_BAND, col, C.iron, 1)
+      Draw.text(key, sx, sy + SWATCH_BAND + 5, C.ink, Theme.label(10))
+      Draw.text(hexOf(col) .. (note and ("  " .. note) or ""), sx, sy + SWATCH_BAND + 18, C.ink4, Theme.labelSmall(9))
     end
-    cy = cy + math.ceil(#grp.keys / perRow) * (SWATCH_H + SW_GAP) + GROUP_GAP
+    cy = cy + math.ceil(#grp.keys / perRow) * (SWATCH_CARD_H + SW_GAP) + GROUP_GAP
   end
   return cy - y
 end
 
-function Screen:drawType(x, y, w)
-  local cy = y
-  for _, s in ipairs(TYPE_SAMPLES) do
-    Draw.text(s.role, x, cy + 8, C.muted, Theme.ui(9))
-    local font = s.fn(s.px)
-    if font then Draw.text(s.sample, x + 96, cy + 4, C.body, font) end
-    Draw.textR(s.note, x + w, cy + 12, C.fainter, Theme.ui(9))
-    cy = cy + 40
-  end
-  return cy - y
+-- ═══════════════════════════ II · TYPOGRAPHIE ═══════════════════════════
+
+-- Une carte de « voix » : kicker, grand échantillon dans la fonte, filet, rôle (prose).
+local function voiceCard(x, y, w, h, kicker, big, bigFn, bigPx, role)
+  card(x, y, w, h, true)
+  local px = x + 18
+  trackL(kicker:upper(), px, y + 16, C.bloodL, Theme.labelSmall(10), 1.5)
+  local bf = bigFn(bigPx)
+  if bf then Draw.text(big, px, y + 30, C.ink, bf) end
+  Draw.divider(x + w / 2, y + h - 56, w - 36, C.brass, 0.4)
+  Draw.textWrap(role, px, y + h - 48, w - 36, C.ink3, Theme.body(12.5), "left")
 end
 
-function Screen:drawStates(x, y, w)
-  local bw, bh, gap = 124, 30, 10
-  local font = Theme.uiBold(12)
-  for i, name in ipairs(STATE_NAMES) do
-    local bx = x + (i - 1) * (bw + gap)
-    Frame.button(bx, y, bw, bh, name:upper(), { state = name, font = font, level = "bevel" })
-  end
-  return bh + 8
+function Screen:drawVoices(x, y, w)
+  -- bandeau cérémonial (Jacquard) — la voix la plus rare.
+  local bh = 110
+  card(x, y, w, bh, true)
+  trackL("VOIX CÉRÉMONIALE · LA PLUS RARE", x + 20, y + 16, C.bloodL, Theme.labelSmall(10), 1.5)
+  local jf = Theme.display(58)
+  if jf then Draw.text("The Pit", x + 20, y + 30, C.ink, jf) end
+  Draw.textWrap("Le titre du jeu et les grands mots du destin — Victory, Defeat, Ascension. Quelques mots par partie, pas un de plus. Jamais un libellé, une valeur ou une phrase.",
+    x + w - 360, y + 24, 340, C.ink3, Theme.body(13), "right")
+
+  -- trois voix fonctionnelles (Cinzel / Spectral / Space Mono).
+  local cy = y + bh + 14
+  local gap = 14
+  local colW = math.floor((w - 2 * gap) / 3)
+  local ch = 196
+  voiceCard(x + 0 * (colW + gap), cy, colW, ch, "Voix gravée", "Cinzel", Theme.title, 40,
+    "Titres, logotype, noms, grands mots de résultat. Capitales, interlettrage large.")
+  voiceCard(x + 1 * (colW + gap), cy, colW, ch, "Voix manuscrite", "Spectral", Theme.body, 40,
+    "La prose lisible : descriptions, lore, saveur (en italique). Le texte qui respire.")
+  voiceCard(x + 2 * (colW + gap), cy, colW, ch, "Voix inscrite", "Space Mono", Theme.value, 30,
+    "Libellés & toutes les valeurs : chiffres tabulaires, sans ambiguïté.")
+  return bh + 14 + ch
 end
 
-function Screen:drawTypes(x, y, w)
-  local names = { "flesh", "order", "bone", "arcane", "abyss" }
-  local step = 150
-  for i, name in ipairs(names) do
-    local cx = x + (i - 1) * step + 16
-    Draw.pip(name, cx, y + 18, 12)
-    Draw.text(T("type." .. name):upper(), cx + 22, y + 4, Theme.type(name).color, Theme.ui(10))
-    Draw.text(hexOf(Theme.type(name).color), cx + 22, y + 18, C.faint, Theme.read(11))
+function Screen:drawScale(x, y, w)
+  card(x, y, w, #TYPE_SCALE * 34 + 4, false)
+  local cy = y + 2
+  for i, r in ipairs(TYPE_SCALE) do
+    if i > 1 then Draw.divider(x + w / 2, cy, w - 4, C.iron, 0.7) end
+    Draw.text(r.tag, x + 14, cy + 11, C.ink3, Theme.labelSmall(10))
+    local f = r.fn(r.px)
+    if f then Draw.text(r.s, x + 150, cy + 8, C.ink, f) end
+    Draw.textR(r.note, x + w - 14, cy + 12, C.ink4, Theme.flavor(12))
+    cy = cy + 34
   end
-  return 48
+  return #TYPE_SCALE * 34 + 6
 end
 
--- ═══════════════════════════ RENDER FNS — ATOMS ═══════════════════════════
+-- ═══════════════════════════ III · ICONOGRAPHIE ═══════════════════════════
+
+function Screen:drawTypePips(x, y, w)
+  local n = #TYPE_NAMES
+  local gap = 12
+  local cw = math.floor((w - (n - 1) * gap) / n)
+  local ch = 88
+  for i, name in ipairs(TYPE_NAMES) do
+    local cxx = x + (i - 1) * (cw + gap)
+    card(cxx, y, cw, ch, false)
+    Draw.pip(name, cxx + cw / 2, y + 30, 12)
+    Draw.textTrackedC(T("type." .. name):upper(), cxx + cw / 2, y + 52, C.ink, Theme.label(11), 1)
+    Draw.textC(Theme.type(name).pip, cxx + cw / 2, y + 68, C.ink4, Theme.flavor(11))
+  end
+  return ch
+end
+
+function Screen:drawAffl(x, y, w)
+  self.afflWidgets = self.afflWidgets or {} -- une silhouette bakée par famille (allouée 1×, re-rendue chaque frame)
+  local n = #ICONO_AFFL
+  local gap = 12
+  local cw = math.floor((w - (n - 1) * gap) / n)
+  local ch = 92
+  local aw = 22 -- taille d'art de l'icône (blit ×2 -> 44px design)
+  for i, key in ipairs(ICONO_AFFL) do
+    local cxx = x + (i - 1) * (cw + gap)
+    card(cxx, y, cw, ch, false)
+    -- silhouette d'affliction PAR FORME (Forge.afflShape : les 7 du design system, teintées Theme.c[key]).
+    local wdg = self.afflWidgets[key]
+    if not wdg then wdg = Forge.newWidget(aw, aw); self.afflWidgets[key] = wdg end
+    if wdg then
+      Forge.render(wdg, function(buf, W, H, tt) Forge.afflShape(buf, W, H, key, tt) end, self.t)
+      if wdg.image then Forge.blit(wdg.image, cxx + cw / 2 - aw, y + 12, 2) end
+    end
+    Draw.textTrackedC(key:upper(), cxx + cw / 2, y + 64, C[key] or C.ink, Theme.label(10), 1)
+    Draw.textC(hexOf(C[key]), cxx + cw / 2, y + 78, C.ink4, Theme.labelSmall(9))
+  end
+  return ch
+end
+
+-- ═══════════════════════════ IV · COMPOSANTS ═══════════════════════════
 
 -- Une rangée de boutons d'un ton, montrant ses états figés + (cta) un bouton LIVE qui suit la souris.
 function Screen:_btnRow(x, y, tone, label, bw, bh, opts)
@@ -311,16 +496,15 @@ function Screen:_btnRow(x, y, tone, label, bw, bh, opts)
     Forge.uiButton("ds.btn." .. tone .. "." .. s[1], cx, y, bw, bh, label,
       { tone = tone, hover = s.hover, active = s.active, disabled = s.disabled, cost = opts.cost,
         fontSz = opts.fontSz or 8, eyeR = 7, t = self.t })
-    Draw.textC(s[1], cx + bw / 2, y + bh + 4, C.fainter, Theme.ui(8))
+    Draw.textC(s[1], cx + bw / 2, y + bh + 4, C.ink4, Theme.labelSmall(8))
     cx = cx + bw + gap
   end
-  -- bouton LIVE (hover réel) seulement pour le CTA (le bouton-œil signature).
   if tone == "cta" then
     local hov = ptIn(self.mx, self.my, cx, y, bw, bh)
     Forge.uiButton("ds.btn.cta.live", cx, y, bw, bh, label,
       { tone = tone, hover = hov, active = hov and self._down, mouse = { mx = self.mx, my = self.my },
         fontSz = opts.fontSz or 8, eyeR = 7, t = self.t })
-    Draw.textC("LIVE", cx + bw / 2, y + bh + 4, C.gold, Theme.ui(8))
+    Draw.textC("LIVE", cx + bw / 2, y + bh + 4, C.gold, Theme.labelSmall(8))
   end
   return bh + 18
 end
@@ -331,15 +515,55 @@ function Screen:drawButtons(x, y, w)
   cy = cy + 8
   cy = cy + self:_btnRow(x, cy, "eco", "REROLL", 120, 30, { cost = 2 })
   cy = cy + 8
-  -- ton ICON : opts.cost = kind du glyphe.
   local kinds = { "sigil", "left", "right", "gear" }
   local ix = x
   for _, k in ipairs(kinds) do
     Forge.uiButton("ds.btn.icon." .. k, ix, cy, 36, 36, "", { tone = "icon", cost = k, t = self.t })
-    Draw.textC(k, ix + 18, cy + 40, C.fainter, Theme.ui(8))
+    Draw.textC(k, ix + 18, cy + 40, C.ink4, Theme.labelSmall(8))
     ix = ix + 70
   end
   return (cy - y) + 56
+end
+
+function Screen:drawStates(x, y, w)
+  local bw, bh, gap = 124, 30, 10
+  local font = Theme.label(11)
+  for i, name in ipairs(STATE_NAMES) do
+    local bx = x + (i - 1) * (bw + gap)
+    Frame.button(bx, y, bw, bh, name:upper(), { state = name, font = font, level = "bevel" })
+  end
+  return bh + 8
+end
+
+function Screen:drawFrames(x, y, w)
+  local levels = { "plain", "bevel", "gilded" }
+  local cols = { "idle", "hover", "pressed", "disabled", "selected", "danger" }
+  local bw, bh, gx, gy = 132, 34, 12, 12
+  local font = Theme.label(10)
+  for ci, st in ipairs(cols) do
+    Draw.text(st, x + 70 + (ci - 1) * (bw + gx), y, C.ink4, Theme.labelSmall(8))
+  end
+  for li, lv in ipairs(levels) do
+    local ry = y + 14 + (li - 1) * (bh + gy)
+    Draw.text(lv, x, ry + bh / 2 - 5, C.ink3, Theme.label(10))
+    for ci, st in ipairs(cols) do
+      local bx = x + 70 + (ci - 1) * (bw + gx)
+      Frame.button(bx, ry, bw, bh, lv:upper(), { level = lv, state = st, font = font })
+    end
+  end
+  return 14 + #levels * (bh + gy)
+end
+
+function Screen:drawChips(x, y, w)
+  Chip.row(x, y, {
+    { key = "poison", value = "6dps", font = Theme.label(9), h = 18 },
+    { key = "bleed", value = "4dps-3s", font = Theme.label(9), h = 18 },
+    { key = "burn", font = Theme.label(9), h = 18 },
+    { key = "rot", label = "AMPUTE", icon = false, color = C.rot, font = Theme.label(9), h = 18 },
+    { key = "shock", value = "+15%", font = Theme.label(9), h = 18 },
+  }, { gap = 8 })
+  Draw.text("clé -> icône+couleur+nom ; value à droite ; icon=false pour un tag pur", x, y + 30, C.ink4, Theme.flavor(12))
+  return 48
 end
 
 function Screen:drawStatus(x, y, w)
@@ -352,98 +576,57 @@ function Screen:drawStatus(x, y, w)
       love.graphics.draw(ic.image, math.floor(cx), math.floor(y + 4), 0, 2, 2)
     end
     local kw = Keywords.get(key)
-    Draw.text(Keywords.name(key), cx + 24, y + 6, kw and kw.color or C.muted, Theme.ui(10))
-    Chip.draw(cx, y + 30, { key = key, value = "6dps", font = Theme.ui(9), h = 18 })
+    Draw.text(Keywords.name(key), cx + 24, y + 6, kw and kw.color or C.ink3, Theme.label(10))
+    Chip.draw(cx, y + 30, { key = key, value = "6dps", font = Theme.label(9), h = 18 })
   end
-  -- bouclier : croix dessinée (pas une affliction -> hors Keywords) + chip neutre.
   local sx = x + #AFFL_KEYS * step
   Draw.setColor(C.shield)
   love.graphics.rectangle("fill", sx + 6, y + 4, 12, 4)
   love.graphics.rectangle("fill", sx + 10, y, 4, 12)
-  Draw.text("shield", sx + 24, y + 6, C.shield, Theme.ui(10))
+  Draw.text("shield", sx + 24, y + 6, C.shield, Theme.label(10))
   Draw.reset()
   return 56
 end
 
-function Screen:drawChips(x, y, w)
-  Chip.row(x, y, {
-    { key = "poison", value = "6dps", font = Theme.ui(9), h = 18 },
-    { key = "bleed", value = "4dps-3s", font = Theme.ui(9), h = 18 },
-    { key = "burn", font = Theme.ui(9), h = 18 },
-    { key = "rot", label = "AMPUTE", icon = false, color = C.rot, font = Theme.ui(9), h = 18 },
-    { key = "shock", value = "+15%", font = Theme.ui(9), h = 18 },
-  }, { gap = 8 })
-  Draw.text("clé -> icône+couleur+nom ; value à droite ; icon=false pour un tag pur", x, y + 30, C.fainter, Theme.ui(9))
-  return 48
-end
-
 function Screen:drawMarks(x, y, w)
-  -- pips de type (5 formes).
-  local names = { "flesh", "order", "bone", "arcane", "abyss" }
-  for i, n in ipairs(names) do Draw.pip(n, x + 12 + (i - 1) * 34, y + 14, 9) end
-  Draw.text("Draw.pip", x, y + 32, C.fainter, Theme.ui(9))
-  -- diamants (Forge.diamondAt) à plusieurs tailles/teintes.
+  for i, n in ipairs(TYPE_NAMES) do Draw.pip(n, x + 12 + (i - 1) * 34, y + 14, 9) end
+  Draw.text("Draw.pip", x, y + 32, C.ink4, Theme.flavor(12))
   local dx = x + 220
   Forge.diamondAt(dx, y + 14, 4, C.gold); Forge.diamondAt(dx + 24, y + 14, 6, C.goldBright)
   Forge.diamondAt(dx + 52, y + 14, 8, C.blood, C.bloodDeep)
-  Draw.text("Forge.diamondAt", dx - 4, y + 32, C.fainter, Theme.ui(9))
-  -- pièces (Forge.coinAt) : pleine + éteinte.
+  Draw.text("Forge.diamondAt", dx - 4, y + 32, C.ink4, Theme.flavor(12))
   local cx = x + 420
   Forge.coinAt(cx, y + 14, 6, C.gold); Forge.coinAt(cx + 26, y + 14, 6, C.gold, true)
-  Draw.text("Forge.coinAt (plein / dim)", cx - 6, y + 32, C.fainter, Theme.ui(9))
-  -- label forge (overlay vivant).
+  Draw.text("Forge.coinAt (plein / dim)", cx - 6, y + 32, C.ink4, Theme.flavor(12))
   Forge.label("LABEL", x + 660, y + 14, 16, C.ctaText, { bold = true })
-  Draw.text("Forge.label", x + 624, y + 32, C.fainter, Theme.ui(9))
+  Draw.text("Forge.label", x + 624, y + 32, C.ink4, Theme.flavor(12))
   return 52
-end
-
-function Screen:drawFrames(x, y, w)
-  local levels = { "plain", "bevel", "gilded" }
-  local cols = { "idle", "hover", "pressed", "disabled", "selected", "danger" }
-  local bw, bh, gx, gy = 132, 34, 12, 12
-  local font = Theme.ui(10)
-  -- en-têtes de colonne (états).
-  for ci, st in ipairs(cols) do
-    Draw.text(st, x + 70 + (ci - 1) * (bw + gx), y, C.fainter, Theme.ui(8))
-  end
-  for li, lv in ipairs(levels) do
-    local ry = y + 14 + (li - 1) * (bh + gy)
-    Draw.text(lv, x, ry + bh / 2 - 5, C.muted, Theme.uiBold(10))
-    for ci, st in ipairs(cols) do
-      local bx = x + 70 + (ci - 1) * (bw + gx)
-      Frame.button(bx, ry, bw, bh, lv:upper(), { level = lv, state = st, font = font })
-    end
-  end
-  return 14 + #levels * (bh + gy)
 end
 
 function Screen:drawPlates(x, y, w)
   local bw, bh = 150, 72
   Forge.uiPlate("ds.plate", x, y, bw, bh, {})
-  Draw.textC("uiPlate", x + bw / 2, y + bh + 4, C.fainter, Theme.ui(8))
+  Draw.textC("uiPlate", x + bw / 2, y + bh + 4, C.ink4, Theme.labelSmall(8))
   Forge.uiSocket("ds.socket", x + bw + 24, y, bw, bh, { accentCol = Forge.accentFrom(C.gold) })
-  Draw.textC("uiSocket", x + bw + 24 + bw / 2, y + bh + 4, C.fainter, Theme.ui(8))
+  Draw.textC("uiSocket", x + bw + 24 + bw / 2, y + bh + 4, C.ink4, Theme.labelSmall(8))
   Forge.uiCard("ds.card", x + 2 * (bw + 24), y, bw, bh, { seed = 40, t = self.t })
-  Draw.textC("uiCard (respire)", x + 2 * (bw + 24) + bw / 2, y + bh + 4, C.fainter, Theme.ui(8))
+  Draw.textC("uiCard (respire)", x + 2 * (bw + 24) + bw / 2, y + bh + 4, C.ink4, Theme.labelSmall(8))
   return bh + 16
 end
 
 function Screen:drawValues(x, y, w)
-  -- value-tags (HP/DMG/CD).
-  local specs = { { "HP", 70, C.body }, { "DMG", 6, C.dmg }, { "CD", "6s", C.muted } }
+  local specs = { { "HP", 70, C.body }, { "DMG", 6, C.dmg }, { "CD", "6s", C.ink3 } }
   for i, s in ipairs(specs) do
     Forge.valueTag("ds.vt." .. s[1], x + (i - 1) * 80, y, 70, 40, s[1], s[2],
       { valueColor = s[3], accentCol = Forge.accentFrom(C.gold) })
   end
-  -- barres (Draw.bar) à divers pct.
   local bx = x + 280
-  Draw.bar(bx, y + 6, 160, 12, 0.8, C.heal, C.panelDeep, C.hair)
-  Draw.bar(bx, y + 24, 160, 12, 0.35, C.blood, C.panelDeep, C.hair)
-  Draw.text("Draw.bar (pct)", bx, y + 42, C.fainter, Theme.ui(9))
-  -- divider (Draw.divider).
+  Draw.bar(bx, y + 6, 160, 12, 0.8, C.heal, C.stone900, C.iron)
+  Draw.bar(bx, y + 24, 160, 12, 0.35, C.blood, C.stone900, C.iron)
+  Draw.text("Draw.bar (pct)", bx, y + 42, C.ink4, Theme.flavor(12))
   local dx = x + 480
   Draw.divider(dx + 120, y + 16, 240, C.gold, 1)
-  Draw.text("Draw.divider", dx + 60, y + 42, C.fainter, Theme.ui(9))
+  Draw.text("Draw.divider", dx + 60, y + 42, C.ink4, Theme.flavor(12))
   return 64
 end
 
@@ -451,9 +634,9 @@ function Screen:drawRigs(x, y, w)
   local box = 64
   for i, id in ipairs(self.rigIds) do
     local bx = x + (i - 1) * (box + 24)
-    Draw.rect(bx, y, box, box, C.panelDeep, C.line, 1)
+    Draw.rect(bx, y, box, box, C.stone900, C.iron, 1)
     MiniRig.draw(self._view, id, self.palette, bx, y, box, box, 1)
-    Draw.textC(id, bx + box / 2, y + box + 4, C.fainter, Theme.ui(8))
+    Draw.textC(id, bx + box / 2, y + box + 4, C.ink4, Theme.labelSmall(8))
   end
   return box + 16
 end
@@ -476,7 +659,7 @@ function Screen:mousepressed(vx, vy, button)
   local dx, dy = vx * 4, vy * 4
   self._down = true
   local i = self:navAt(dx, dy)
-  if i then -- saut vers la section/entrée
+  if i then
     self.scroll = self.nav[i].y
     self:clampScroll()
   end
