@@ -256,13 +256,13 @@ function ArenaDraw:drawOverlay(view)
   local c = Theme.c
   Draw.begin(view)
 
-  -- Nom de l'unité : juste AU-DESSUS de l'encadré de vie. Space Mono sobre (ink-4) — fini le Silkscreen.
-  local nameFont = Theme.label(8)
-  local nameH = nameFont and nameFont:getHeight() or 8
+  -- Nom de l'unité : juste AU-DESSUS de l'encadré de vie (et non plus sous l'unité).
+  local nameFont = Theme.ui(9)
+  local nameH = nameFont and nameFont:getHeight() or 9
   for _, u in ipairs(self.arena.units) do
     if u.alive then
       local ny = (u.y + (HealthBar.BAR_DY or -34)) * 4 - nameH - 1
-      Draw.textC((Units[u.id] and T("unit." .. u.id .. ".name")) or u.id, u.x * 4, ny, c.ink4, nameFont)
+      Draw.textC((Units[u.id] and T("unit." .. u.id .. ".name")) or u.id, u.x * 4, ny, c.faint, nameFont)
     end
   end
 
@@ -274,20 +274,13 @@ function ArenaDraw:drawOverlay(view)
 
   -- Nombres flottants : couleur par CAUSE + ICÔNE d'affliction à gauche (poison/saignement/brûlure/
   -- pourriture) -> on lit l'effet d'un coup d'œil. Frappe directe = rouge, sans icône. Fondu en fin de vie.
-  -- Couleurs ET tailles par CAUSE (spec §C.3) : frappe = sang-l (gros), DoT = couleur de famille (+icône),
-  -- choc = or, épines/reflet = rose. Police = Space Mono 700 (Theme.value), JAMAIS Silkscreen. Le nombre
-  -- s'additionne par regroupement (cf. l'abonnement "damage") -> bigger = bigger hit, lecture immédiate.
-  local CAUSE_COL = {
-    attack = c.bloodL, burn = c.burn, bleed = c.bleed, poison = c.poison, rot = c.rot,
-    shock = c.shock, reflect = Theme.hex(0xc2607a), thorns = Theme.hex(0xc2607a),
-  }
-  local CAUSE_SZ = { attack = 18, burn = 15, bleed = 15, poison = 15, rot = 15, shock = 14, reflect = 14, thorns = 14 }
+  local CAUSE_COL = { burn = c.burn, bleed = c.bleed, poison = c.poison, rot = c.rot, shock = c.shock }
+  local numFont = Theme.uiBold(16)
+  local numH = numFont and numFont:getHeight() or 16
   for _, d in ipairs(self.dmgNumbers) do
     local p = d.age / DMG_LIFE
     local alpha = (p < 0.6) and 1 or math.max(0, 1 - (p - 0.6) / 0.4)
-    local col = CAUSE_COL[d.cause] or c.bloodL
-    local numFont = Theme.value(CAUSE_SZ[d.cause] or 16)
-    local numH = numFont and numFont:getHeight() or 16
+    local col = CAUSE_COL[d.cause] or c.dmg
     local str = "-" .. d.val
     local cx, cy = d.x * 4, d.y * 4
     local ic = (d.cause ~= "attack") and HealthBar.icon(d.cause) or nil

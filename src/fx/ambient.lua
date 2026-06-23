@@ -93,20 +93,7 @@ function Ambient:draw(mode)
   local full = (mode == "menu" or mode == "combat" or mode == "relic" or mode == "runover")
 
   -- Base : fond plein + glow chaud diffus en haut (la lueur lointaine du seuil).
-  if mode == "combat" then
-    -- ARÈNE : gradient vertical qui ROUGIT vers le bas — on se bat au-dessus de la gueule du puits
-    -- (spec §C.1 : #0c0810 -> #140a0e à 55% -> #2c0e10). Bandes horizontales (cap 28 -> lisse, peu coûteux).
-    local top, midc, bot = { 0.047, 0.031, 0.063 }, { 0.078, 0.039, 0.055 }, { 0.173, 0.055, 0.063 }
-    local n = 28
-    for i = 0, n - 1 do
-      local p = i / (n - 1)
-      local a, b, q
-      if p < 0.55 then a, b, q = top, midc, p / 0.55 else a, b, q = midc, bot, (p - 0.55) / 0.45 end
-      love.graphics.setColor(a[1] + (b[1] - a[1]) * q, a[2] + (b[2] - a[2]) * q, a[3] + (b[3] - a[3]) * q, 1)
-      love.graphics.rectangle("fill", 0, H * i / n, W, H / n + 1)
-    end
-    drawGlow(W * 0.5, -30, 720, 460, c.bgEmber, 0.32)
-  elseif full then
+  if full then
     love.graphics.setColor(c.void[1], c.void[2], c.void[3], 1)
     love.graphics.rectangle("fill", 0, 0, W, H)
     drawGlow(W * 0.5, -30, 720, 460, c.bgEmber, 0.5)

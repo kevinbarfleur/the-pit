@@ -7,13 +7,8 @@
 -- CHROME = KIT PROPRE (.dc.html / design-system) : la scène ne dessine plus ses panneaux/rangs/onglets À LA
 -- MAIN. Elle compose les ATOMES du kit (Panel/Button/Slot/Dividers/Badge) pour rester cohérente avec le reste
 -- du jeu (build/menu/designsystem) :
---   • ENROBAGE : le cadre de pierre gravée (ScreenFrame/Reliquary) ceint TOUT l'écran + onglet « THE GRIMOIRE »
---     centré sur le bord haut. Le codex (header/onglets/liste/détail) vit DANS l'inset (≈40px de marge) — il
---     ne passe jamais sous la pierre. Tous les rects de layout + clips de scroll sont calculés sur l'aire
---     INTÉRIEURE (self.L, recalculée une fois par new()/resize()).
---   • en-tête centré : titre Cinzel 24 « The Grimoire » + sous-titre Spectral italique « N of 60 inscribed… » ;
---   • tab strip RELIQUES/BESTIAIRE = Button.draw (secondary, état actif) + compteur Space Mono ; un liseré iron
---     court le bas de la bande ; le tri (puce cyclable) est aligné À DROITE de la bande ;
+--   • onglets RELIQUES/BESTIAIRE = Button.draw (secondary, état actif) + compteur Space Mono ;
+--   • puce de tri = Button.draw (secondary, cyclable) ;
 --   • liste scrollable = Panel backing + vignette en Slot.draw (icône RelicGen / rig Rig.draw RESEATÉ dans la
 --     case propre) + nom Cinzel + méta Space Mono ; clip Draw.scissor + molette + thumb laiton ;
 --   • détail = Panel.draw (accent de rareté en bestiaire) + Dividers + Badge.rarity ; noms Cinzel, prose/flavor
@@ -26,7 +21,6 @@
 
 local Theme = require("src.ui.theme")
 local Draw = require("src.ui.draw")
-local ScreenFrame = require("src.ui.screenframe") -- ENROBAGE : cadre de pierre gravée + onglet de nom (spec §A.9)
 local Panel = require("src.ui.panel")      -- surface propre (dégradé + liseré iron + éclat)
 local Button = require("src.ui.button")    -- onglets / tri (secondary) + back (ghost)
 local Slot = require("src.ui.slot")        -- cadre de vignette (case propre) pour icône/rig
@@ -49,8 +43,6 @@ local C = Theme.c
 
 local Screen = {}
 Screen.__index = Screen
-
-local FRAME_FT = 8 -- épaisseur d'art de la bande gravée (×4 = ~32px de pierre) — uniforme sur tous les écrans
 
 -- Catégorie de chaque relique (A stats · B amplis · C paliers · D défensives · E transformatives) — métadonnée
 -- d'affichage/tri (cf. docs/research/relics-design.md). En dur ici : la data de jeu ne porte que tier.
@@ -76,39 +68,17 @@ local SORTS = {
 }
 local SORT_LABEL = { category = "CATEGORY", tier = "TIER", name = "NAME", type = "TYPE", rank = "RANK" }
 
--- Dimensions FIXES (espace design) du codex ; les ORIGINES sont relatives à l'inset (calculées en self:layout()).
+-- Mise en page (espace design). On garde l'inset/colonnes pour préserver les hit-tests + le clip de la liste.
+local TITLE_Y = 30
+local TAB_Y, TAB_W, TAB_H = 84, 168, 32
+local SORT_Y, SORT_W, SORT_H = 124, 200, 26
+local LIST_X, LIST_Y, LIST_W = 32, 158, 396
+local LIST_BOTTOM = 690
 local ROW_H, ROW_GAP = 48, 6
-local TAB_W, TAB_H = 168, 32
-local SORT_W, SORT_H = 200, 26
-local LIST_W = 396 -- largeur de la colonne liste (la détail prend le reste de l'inset)
+local DET_X, DET_Y, DET_W, DET_H = 452, 158, 796, 532
 
+local function listViewH() return LIST_BOTTOM - LIST_Y end
 local function ptIn(px, py, x, y, w, h) return px >= x and px <= x + w and py >= y and py <= y + h end
-
--- (Re)calcule TOUS les rects de layout sur l'aire INTÉRIEURE du cadre de pierre (inset). Appelé en new() et à
--- resize() : le codex ne passe jamais sous la bande gravée, et hit-tests/clips suivent le même repère.
-function Screen:layout()
-  local ix, iy, iw, ih = ScreenFrame.inset({ ft = FRAME_FT, pad = 2 })
-  local L = { ix = ix, iy = iy, iw = iw, ih = ih }
-  L.cx = ix + iw / 2
-  -- En-tête centré : titre Cinzel + sous-titre Spectral italique.
-  L.titleY = iy + 4
-  L.subtitleY = iy + 38
-  -- Bande d'onglets (tabs à gauche + tri à droite) + liseré iron en bas.
-  L.tabY = iy + 60
-  L.stripBottom = L.tabY + TAB_H + 6
-  L.sortY = L.tabY + (TAB_H - SORT_H) / 2
-  -- Liste (colonne gauche, clippée + scrollable) — démarre sous la bande, finit avant le bas de l'inset.
-  L.listX = ix
-  L.listY = L.stripBottom + 14
-  L.listW = LIST_W
-  L.listBottom = iy + ih - 8
-  -- Détail (colonne droite : tout le reste de l'inset).
-  L.detX = L.listX + LIST_W + 24
-  L.detY = L.listY
-  L.detW = (ix + iw) - L.detX
-  L.detH = L.listBottom - L.detY
-  self.L = L
-end
 
 function Screen.new(palette, vw, vh, host)
   local self = setmetatable({
@@ -122,7 +92,6 @@ function Screen.new(palette, vw, vh, host)
     ambient = Ambient.new(5),
   }, Screen)
   Feel.reset() -- repart au repos (survol/press des onglets/tri vierges) en (re)entrant
-  self:layout()
 
   -- ENTRÉES RELIQUES (métadonnée seule ; l'icône bakée est tirée à la volée via RelicGen.cached).
   self.relicEntries = {}
@@ -147,8 +116,6 @@ function Screen.new(palette, vw, vh, host)
   self:refresh()
   return self
 end
-
-function Screen:resize() self:layout() end
 
 -- (Re)lit l'état connu/vu (la persistance change entre deux ouvertures ; le toggle dev aussi) + (re)trie.
 function Screen:refresh()
@@ -197,9 +164,8 @@ function Screen:rebuildRows()
   self.scroll = 0
 end
 
-function Screen:listViewH() return self.L.listBottom - self.L.listY end
 function Screen:contentH() return #self.rows * (ROW_H + ROW_GAP) end
-function Screen:maxScroll() return math.max(0, self:contentH() - self:listViewH()) end
+function Screen:maxScroll() return math.max(0, self:contentH() - listViewH()) end
 
 function Screen:update(frameDt)
   self.t = self.t + frameDt
@@ -243,58 +209,47 @@ end
 
 function Screen:drawOverlay(view)
   Draw.begin(view)
-  local L = self.L
 
-  -- En-tête CENTRÉ (spec §B.2) : titre Cinzel « The Grimoire » + sous-titre Spectral italique « N of 60… ».
-  Draw.textC(T("grimoire.title"), L.cx, L.titleY, C.ink, Theme.title(24))
-  local total = (self.tab == "relics") and #self.relicEntries or #self.beastEntries
-  local known = (self.tab == "relics") and self.knownRelics or self.seenBeasts
-  Draw.textC(T("grimoire.subtitle", { n = known, total = total }), L.cx, L.subtitleY, C.ink4, Theme.flavor(13))
-
-  -- retour = GHOST propre (la convention de l'UI : « [esc] back »), ancré coin haut-droit de l'inset.
-  self.backRect = { x = L.ix + L.iw - 116, y = L.titleY - 2, w = 116, h = 24 }
+  -- En-tête : titre Cinzel (voix gravée) — le « ? ? ? » reste Jacquard (display) pour les inconnus.
+  Draw.text(T("grimoire.title"), LIST_X, TITLE_Y, C.ink, Theme.title(34))
+  -- retour = GHOST propre (la convention de l'UI : « [esc] back »).
+  self.backRect = { x = Draw.W - 132, y = 30, w = 116, h = 24 }
   Button.ghost(self.backRect.x, self.backRect.y, self.backRect.w, self.backRect.h, T("grimoire.back"),
     { hover = Feel.state("grim.back").hover > 0.5 })
 
-  -- BANDE D'ONGLETS : RELIQUES / BESTIAIRE (boutons secondary, l'actif forcé en survol + éclat doré) +
-  -- compteur n/total ; liseré iron en bas de la bande (spec §B.2 « 1px iron bottom »).
-  self:drawTab("relics", T("grimoire.tab_relics"), L.ix, self.knownRelics, #self.relicEntries)
-  self:drawTab("bestiary", T("grimoire.tab_bestiary"), L.ix + TAB_W + 12, self.seenBeasts, #self.beastEntries)
-  Draw.rect(L.ix, L.stripBottom, L.iw, 1, C.iron)
+  -- Onglets RELIQUES / BESTIAIRE = boutons propres (secondary), l'actif forcé en survol + un éclat doré ;
+  -- compteur n/total en Space Mono (gold actif).
+  self:drawTab("relics", T("grimoire.tab_relics"), LIST_X, self.knownRelics, #self.relicEntries)
+  self:drawTab("bestiary", T("grimoire.tab_bestiary"), LIST_X + TAB_W + 12, self.seenBeasts, #self.beastEntries)
 
-  -- Puce de TRI cyclable = bouton secondary compact, ALIGNÉE À DROITE de la bande.
+  -- Puce de TRI cyclable = bouton secondary compact.
   local sortStr = T("grimoire.sort", { mode = SORT_LABEL[self.sort[self.tab]] or "?" })
-  self.sortRect = { x = L.ix + L.iw - SORT_W, y = L.sortY, w = SORT_W, h = SORT_H }
+  self.sortRect = { x = LIST_X, y = SORT_Y, w = SORT_W, h = SORT_H }
   local sf = Feel.state("grim.sort")
   Button.draw(self.sortRect.x, self.sortRect.y, self.sortRect.w, self.sortRect.h, "secondary", sortStr,
     { hover = sf.hover > 0.5, feel = sf })
 
-  -- Liste : Panel de fond (dégradé + liseré iron) sous la zone, puis lignes clippées (DANS l'inset).
-  local viewH = self:listViewH()
-  Panel.draw(L.listX - 6, L.listY - 6, L.listW + 14, viewH + 12, { fill = C.stone900 })
-  Draw.scissor(view, L.listX - 4, L.listY - 2, L.listW + 12, viewH + 4)
+  -- Liste : Panel de fond (dégradé + liseré iron) sous la zone, puis lignes clippées.
+  Panel.draw(LIST_X - 6, LIST_Y - 6, LIST_W + 14, listViewH() + 12, { fill = C.stone900 })
+  Draw.scissor(view, LIST_X - 4, LIST_Y - 2, LIST_W + 12, listViewH() + 4)
   for i, row in ipairs(self.rows) do
-    local y = L.listY + (i - 1) * (ROW_H + ROW_GAP) - self.scroll
-    if y + ROW_H >= L.listY - 2 and y <= L.listBottom then self:drawRow(i, row, y) end
+    local y = LIST_Y + (i - 1) * (ROW_H + ROW_GAP) - self.scroll
+    if y + ROW_H >= LIST_Y - 2 and y <= LIST_BOTTOM then self:drawRow(i, row, y) end
   end
   Draw.noScissor()
 
   -- Barre de défilement (thumb laiton, idiome design-system).
   local maxS = self:maxScroll()
   if maxS > 0 then
-    local thumbH = math.max(28, viewH * viewH / self:contentH())
-    local ty = L.listY + (viewH - thumbH) * (self.scroll / maxS)
-    Draw.rect(L.listX + L.listW + 4, L.listY, 3, viewH, C.stone900)
-    Draw.rect(L.listX + L.listW + 4, ty, 3, thumbH, C.brass)
+    local vh = listViewH()
+    local thumbH = math.max(28, vh * vh / self:contentH())
+    local ty = LIST_Y + (vh - thumbH) * (self.scroll / maxS)
+    Draw.rect(LIST_X + LIST_W + 4, LIST_Y, 3, vh, C.stone900)
+    Draw.rect(LIST_X + LIST_W + 4, ty, 3, thumbH, C.brass)
   end
 
   -- Détail (droite).
   self:drawDetail()
-
-  -- ENROBAGE : le cadre de pierre gravée ceint l'écran + onglet « THE GRIMOIRE » (dessiné APRÈS le contenu :
-  -- le centre est transparent, la pierre borde la marge — le codex reste DANS l'inset). Réutilise la clé
-  -- existante (grimoire.title) en capitales -> aucune nouvelle clé i18n (un seul fichier touché).
-  ScreenFrame.draw(T("grimoire.title"):upper())
   Draw.finish()
 end
 
@@ -302,15 +257,14 @@ end
 -- -> état idle/survol selon Feel. Le compteur (n/total) est posé À DROITE en Space Mono (gold si actif).
 function Screen:drawTab(id, label, x, n, total)
   local active = (self.tab == id)
-  local tabY = self.L.tabY
-  self._tabRects[id] = { x = x, y = tabY, w = TAB_W, h = TAB_H }
+  self._tabRects[id] = { x = x, y = TAB_Y, w = TAB_W, h = TAB_H }
   local fs = Feel.state("grim.tab." .. id)
-  Button.draw(x, tabY, TAB_W, TAB_H, "secondary", label, { hover = active or fs.hover > 0.5, feel = fs })
+  Button.draw(x, TAB_Y, TAB_W, TAB_H, "secondary", label, { hover = active or fs.hover > 0.5, feel = fs })
   if active then -- liseré doré (l'onglet retenu = héros léger), comme l'accent Panel
-    Draw.rect(x, tabY, TAB_W, TAB_H, nil, C.brass, 1)
+    Draw.rect(x, TAB_Y, TAB_W, TAB_H, nil, C.brass, 1)
   end
   -- compteur n/total à droite du bouton (Space Mono ; gold sur l'actif).
-  Draw.textR(n .. "/" .. total, x + TAB_W - 10, tabY + (TAB_H - 12) / 2 - 1,
+  Draw.textR(n .. "/" .. total, x + TAB_W - 10, TAB_Y + (TAB_H - 12) / 2 - 1,
     active and C.gold or C.ink4, Theme.labelSmall(10))
 end
 
@@ -319,20 +273,19 @@ end
 function Screen:drawRow(i, row, y)
   local e, on = row.e, row.on
   local sel, hov = (self.sel == i), (self.hover == i)
-  local listX, listW = self.L.listX, self.L.listW
 
   -- Fond de ligne : Panel propre. Sélection = éclat haut + accent laiton ; survol = liseré laiton ; sinon plat.
   if sel then
-    Panel.draw(listX, y, listW, ROW_H, { fill1 = C.stone800, fill2 = C.stone900, border = C.brass, accent = C.brassD })
+    Panel.draw(LIST_X, y, LIST_W, ROW_H, { fill1 = C.stone800, fill2 = C.stone900, border = C.brass, accent = C.brassD })
   elseif hov then
-    Panel.draw(listX, y, listW, ROW_H, { fill1 = C.stone850, fill2 = C.stone900, border = C.brassL, hi = false })
+    Panel.draw(LIST_X, y, LIST_W, ROW_H, { fill1 = C.stone850, fill2 = C.stone900, border = C.brassL, hi = false })
   else
-    Panel.draw(listX, y, listW, ROW_H, { fill = C.stone850, border = C.iron, hi = false })
+    Panel.draw(LIST_X, y, LIST_W, ROW_H, { fill = C.stone850, border = C.iron, hi = false })
   end
 
   -- Vignette = CASE PROPRE Slot (38px) ; l'icône (relique) / le rig (créature) y est REASSIS, ou « ? » si voilé.
   local TH = ROW_H - 10
-  local tx, ty = listX + 5, y + 5
+  local tx, ty = LIST_X + 5, y + 5
   Slot.draw(tx, ty, TH, on and "selected" or "locked",
     on and (self.tab == "bestiary" and { typePip = e.type }) or nil)
   local thumbCx, thumbCy = tx + TH / 2, ty + TH / 2
@@ -361,8 +314,6 @@ function Screen:drawRow(i, row, y)
 end
 
 function Screen:drawDetail()
-  local L = self.L
-  local DET_X, DET_Y, DET_W, DET_H = L.detX, L.detY, L.detW, L.detH
   local row = self.rows[self.sel]
   -- Panneau de détail PROPRE. Accent de rareté (bestiaire révélé) -> liseré interne héros ; sinon nu.
   local accent
@@ -487,9 +438,8 @@ function Screen:cycleSort()
 end
 
 function Screen:rowAt(dx, dy)
-  local L = self.L
-  if not ptIn(dx, dy, L.listX, L.listY, L.listW, self:listViewH()) then return nil end
-  local rel = dy - L.listY + self.scroll
+  if not ptIn(dx, dy, LIST_X, LIST_Y, LIST_W, listViewH()) then return nil end
+  local rel = dy - LIST_Y + self.scroll
   local i = math.floor(rel / (ROW_H + ROW_GAP)) + 1
   if i >= 1 and i <= #self.rows then
     local within = rel - (i - 1) * (ROW_H + ROW_GAP)
@@ -541,7 +491,7 @@ function Screen:ensureVisible()
   local top = (self.sel - 1) * (ROW_H + ROW_GAP)
   local bot = top + ROW_H
   if top < self.scroll then self.scroll = top
-  elseif bot > self.scroll + self:listViewH() then self.scroll = bot - self:listViewH() end
+  elseif bot > self.scroll + listViewH() then self.scroll = bot - listViewH() end
 end
 
 return Screen
