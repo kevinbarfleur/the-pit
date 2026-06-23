@@ -63,17 +63,10 @@ local function hexOf(col)
   return string.format("#%02x%02x%02x", r, g, b)
 end
 
--- Texte tracké ALIGNÉ À GAUCHE (kickers/petites capitales en Space Mono) : Draw n'expose que la version
--- centrée, on étale caractère par caractère ici (ASCII des kickers). Renvoie la largeur consommée.
+-- Texte tracké ALIGNÉ À GAUCHE (kickers/petites capitales) -> délègue au helper UTF-8-safe de Draw
+-- (l'ancienne version locale découpait en octets et crashait sur « · »/« — »/accents en vrai LÖVE).
 local function trackL(str, x, y, color, font, sp)
-  sp = sp or 2
-  local cx = x
-  for i = 1, #str do
-    local ch = str:sub(i, i)
-    Draw.text(ch, cx, y, color, font)
-    cx = cx + Draw.textWidth(ch, font) + sp
-  end
-  return cx - x
+  return Draw.textTrackedL(str, x, y, color, font, sp or 2)
 end
 
 -- Petit « tick » de laiton + libellé de groupe tracké (le « ▚ Fonds » du design, sans dépendre d'un glyphe).

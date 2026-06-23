@@ -85,25 +85,54 @@ function Draw.textC(str, cx, y, color, font)
   love.graphics.print(str, math.floor(cx - w / 2 + 0.5), math.floor(y + 0.5))
 end
 
--- Texte centré AVEC interlettrage (letter-spacing, en px design) : effet cérémonial de la DA.
--- ASCII uniquement (les chaînes affichées le sont) -> #str = nombre de caractères.
+-- Itère les CARACTÈRES UTF-8 d'une chaîne (longueur déduite de l'octet de tête) : sûr pour « · », « — » et
+-- les accents. On ne découpe JAMAIS au milieu d'un caractère multi-octets -> plus d'« UTF-8 decoding error »
+-- (le tracking par caractère le faisait). Pur Lua : fonctionne en LÖVE comme en headless (pas besoin du
+-- module utf8, absent de LuaJIT).
+local function utf8chars(str)
+  local i, n = 1, #str
+  return function()
+    if i > n then return nil end
+    local b = string.byte(str, i) or 0
+    local len = (b >= 0xF0 and 4) or (b >= 0xE0 and 3) or (b >= 0xC0 and 2) or 1
+    local ch = string.sub(str, i, i + len - 1)
+    i = i + len
+    return ch
+  end
+end
+
+-- Texte centré AVEC interlettrage (letter-spacing, en px design) : effet cérémonial de la DA. UTF-8-safe.
 function Draw.textTrackedC(str, cx, y, color, font, spacing)
   font = font or love.graphics.getFont()
   love.graphics.setFont(font)
   Draw.setColor(color)
   spacing = spacing or 0
-  local total = 0
-  for i = 1, #str do
-    total = total + font:getWidth(str:sub(i, i))
-    if i < #str then total = total + spacing end
+  local total, first = 0, true
+  for ch in utf8chars(str) do
+    if not first then total = total + spacing end
+    total = total + font:getWidth(ch)
+    first = false
   end
   local x = cx - total / 2
-  for i = 1, #str do
-    local ch = str:sub(i, i)
+  for ch in utf8chars(str) do
     love.graphics.print(ch, math.floor(x + 0.5), math.floor(y + 0.5))
     x = x + font:getWidth(ch) + spacing
   end
   return total
+end
+
+-- Texte ALIGNÉ À GAUCHE avec interlettrage (kickers / petites capitales) : UTF-8-safe. Renvoie la largeur.
+function Draw.textTrackedL(str, x, y, color, font, spacing)
+  font = font or love.graphics.getFont()
+  love.graphics.setFont(font)
+  Draw.setColor(color)
+  spacing = spacing or 0
+  local cx = x
+  for ch in utf8chars(str) do
+    love.graphics.print(ch, math.floor(cx + 0.5), math.floor(y + 0.5))
+    cx = cx + font:getWidth(ch) + spacing
+  end
+  return cx - x
 end
 
 -- Aligné à droite : le texte se termine à rx.
