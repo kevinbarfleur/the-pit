@@ -127,9 +127,19 @@ function RunState.new(seed)
     shop = {},
     relics = {}, -- possédées : { { id } } (modèle LISIBLE : effet affiché ; collection Grimoire inscrite au grant)
     relicFromLevelThisRound = false, -- Lot 5 (§5.2) : une seule récompense de relique par level-up et PAR round
+    chronicles = {}, -- HISTORIQUE des journaux de combat (1 par combat) pour le sélecteur de round (UI, hors éco)
   }, RunState)
   self:startRound()
   return self
+end
+
+-- Archive le journal d'un combat (entries sérialisées) pour consultation ultérieure via le sélecteur de
+-- round. PUR (ids/équipes/nombres) ; hors économie -> n'affecte pas le déterminisme du run.
+function RunState:archiveChronicle(entries, meta)
+  meta = meta or {}
+  self.chronicles[#self.chronicles + 1] = {
+    round = meta.round or self.round, win = meta.win, enemyKey = meta.enemyKey, entries = entries or {},
+  }
 end
 
 -- Tire un RANG (1..MAX_TIER) selon une ligne de cotes `odds` (fournie par roll() = ODDS du tier décalé),

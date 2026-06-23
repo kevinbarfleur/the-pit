@@ -19,6 +19,7 @@ local GrimoireScene = require("src.scenes.grimoire")
 local Playground = require("src.scenes.playground")
 local ForgeIter = require("src.scenes.forge_iter") -- vue d'iteration dev : isole les creatures en cours de refonte
 local RunState = require("src.run.state")
+local ChronicleOverlay = require("src.render.chronicle_overlay") -- LA CHRONIQUE : overlay modal (journal de combat)
 local Grimoire = require("src.core.grimoire")
 local Dev = require("src.core.dev") -- MODE DEV (cheat) : toggle full-unlock du codex (menu) ; master switch Dev.ENABLED
 local Bestiary = require("src.core.bestiary") -- codex des créatures rencontrées (persistant, full-unlock-aware)
@@ -33,7 +34,16 @@ local view = { scale = 1, ox = 0, oy = 0 }
 -- Mini state-machine : build <-> combat, enrobée par la méta de RUN (host.run). Une scène demande
 -- une transition via host.goto(name, payload). La phase build est PERSISTANTE sur tout le run (le
 -- plateau est conservé de round en round) ; combat et runover sont recréés à chaque entrée.
-local host = { scene = nil, name = nil, build = nil, run = nil }
+local host = { scene = nil, name = nil, build = nil, run = nil, overlay = nil }
+
+-- LA CHRONIQUE : overlay modal ouvrable n'importe où dans une run ([c]). Construit avec la chronique du
+-- combat EN COURS (si on y est) + l'historique archivé (run.chronicles). Toggle : referme si déjà ouvert.
+function host.openChronicle()
+  if host.overlay then host.overlay = nil; return end
+  if not host.run then return end -- pas de chronique hors run (menu)
+  local cur = (host.name == "combat" and host.scene and host.scene.chron) or nil
+  host.overlay = ChronicleOverlay.new(host.run, cur)
+end
 
 function host.goto(name, payload)
   if name == "combat" then
@@ -76,6 +86,11 @@ end
 -- Fin d'un combat : la méta de run résout l'issue (vies/victoires/streaks), puis ouvre le round
 -- suivant (retour build, plateau PERSISTANT) — ou l'écran de fin de run si le run est conclu.
 function host.finishCombat(win)
+  -- Archive le journal du combat (pour le sélecteur de round de la Chronique) AVANT de résoudre/changer de scène.
+  if host.scene and host.scene.chron then
+    host.run:archiveChronicle(host.scene.chron.entries,
+      { round = host.run.round, win = win, enemyKey = host.scene.enemyKey })
+  end
   host.run:resolve(win)
   local over = host.run:isOver()
   if over then
@@ -170,6 +185,7 @@ function love.load()
 end
 
 function love.update(dt)
+  if host.overlay then return end -- Chronique ouverte : le jeu derrière est FIGÉ (combat/anims gelés)
   host.scene:update(dt * FRAME) -- ~1.0 par tick au pas fixe 1/60
 end
 
@@ -211,9 +227,21 @@ function love.draw()
   -- 4. UI native par-dessus (texte net). La chrome DA est portée par la scène ; sinon HUD générique.
   scene:drawOverlay(view)
   if not scene.daChrome then drawHud(scene) end
+
+  -- 5. Overlay MODAL (La Chronique) par-dessus tout, si ouvert.
+  if host.overlay then host.overlay:draw(view) end
 end
 
 function love.keypressed(key)
+  -- LA CHRONIQUE (overlay modal) : capte le clavier en priorité tant qu'elle est ouverte.
+  if host.overlay then
+    if key == "escape" or key == "c" then host.overlay = nil; return end
+    host.overlay:keypressed(key); return
+  end
+  -- [c] ouvre la Chronique (n'importe où dans une run) : journal du combat + sélecteur de round.
+  if key == "c" and host.run and (host.name == "build" or host.name == "combat" or host.name == "runover") then
+    host.openChronicle(); return
+  end
   if key == "escape" then
     -- Depuis le Grimoire ou le Proving Ground (ouverts via le menu) : retour menu ; sinon quitte.
     if host.name == "grimoire" or host.name == "playground" then host.goto("menu"); return end
@@ -236,18 +264,21 @@ function love.keypressed(key)
 end
 
 function love.mousepressed(x, y, button)
-  if not host.scene.mousepressed then return end
   local vx, vy = toVirtual(x, y)
+  if host.overlay then host.overlay:mousepressed(vx, vy, button); return end -- modal : capte tout
+  if not host.scene.mousepressed then return end
   host.scene:mousepressed(vx, vy, button)
 end
 
 function love.mousereleased(x, y, button)
+  if host.overlay then return end
   if not host.scene.mousereleased then return end
   local vx, vy = toVirtual(x, y)
   host.scene:mousereleased(vx, vy, button)
 end
 
 function love.mousemoved(x, y)
+  if host.overlay then return end -- la scène derrière est figée
   if not host.scene.mousemoved then return end
   local vx, vy = toVirtual(x, y)
   host.scene:mousemoved(vx, vy)
@@ -255,6 +286,7 @@ end
 
 -- Molette : défilement des listes scrollables (la scène décide). dx,dy en crans.
 function love.wheelmoved(dx, dy)
+  if host.overlay then host.overlay:wheelmoved(dx, dy); return end -- scroll du journal
   if host.scene.wheelmoved then host.scene:wheelmoved(dx, dy) end
 end
 

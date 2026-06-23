@@ -65,6 +65,9 @@ luajit tests/synergies.lua
 echo "== chronicle (journal de combat : agregation lignes vivantes + entrees + filtrage) =="
 luajit tests/chronicle.lua
 
+echo "== chronicle-ui (panneau + overlay carrousel : draw + navigation headless) =="
+luajit tests/chronicle_ui.lua
+
 echo "== payoff (renforcements forts mais bornes : spread + boucliers + caps) =="
 luajit tests/payoff.lua
 

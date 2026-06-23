@@ -20,7 +20,7 @@ return {
   ["scene.gallery"] = "gallery",
   ["ui.hint_build"] = "[click-drag] buy/place  -  REROLL  -  place/refuse SLOT  -  [s] sigil  -  [g] gallery  -  FIGHT",
   ["ui.hint_combat"] = "auto-battle in progress...",
-  ["ui.hint_combat_end"] = "[click] back to build   [r] replay",
+  ["ui.hint_combat_end"] = "[click] continue   [c] chronicle   [r] replay",
   ["ui.hint_runover"] = "[click] new run   -   [r] new run",
   ["ui.hint_gallery"] = "[hover] inspect  -  [click]/[a] attack  -  [h] hurt  -  [</>] page  -  [g] back",
   ["ui.hint_playground"] = "[up/down] trial  -  [enter] WATCH  -  [s] SIM  -  [esc] menu",
@@ -104,6 +104,12 @@ return {
   ["chronicle.team.all"] = "All",
   ["chronicle.team.you"] = "You",
   ["chronicle.team.foe"] = "Foe",
+  ["chronicle.now"] = "THIS FIGHT",
+  ["chronicle.round"] = "ROUND {n}",
+  ["chronicle.win"] = "VICTORY",
+  ["chronicle.loss"] = "DEFEAT",
+  ["chronicle.close_hint"] = "[c]/[esc] close    [<] [>] round",
+  ["chronicle.empty_hist"] = "no chronicle yet",
 
   -- run over
   ["runover.win"] = "ASCENSION",

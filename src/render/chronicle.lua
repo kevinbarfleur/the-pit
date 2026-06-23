@@ -36,6 +36,12 @@ function Chronicle.new(arena)
   return self
 end
 
+-- Modèle DÉTACHÉ : relit une chronique ARCHIVÉE (entries sérialisées d'un round passé) avec les mêmes
+-- méthodes de lecture (segments/value/timeStr/visible), SANS abonnement au bus. Sert au sélecteur de round.
+function Chronicle.fromEntries(entries)
+  return setmetatable({ entries = entries or {}, live = {} }, Chronicle)
+end
+
 function Chronicle:_key(source, target, family)
   return tostring(source) .. "#" .. tostring(target) .. "#" .. family
 end
