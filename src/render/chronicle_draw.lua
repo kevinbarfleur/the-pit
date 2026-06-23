@@ -17,6 +17,7 @@ local Frame = require("src.ui.frame")       -- cadre runique gildé (bloc MORT)
 local Keywords = require("src.ui.keywords") -- couleurs + icônes d'affliction
 local Chip = require("src.ui.chip")         -- chips de filtre (liseré famille)
 local Forge = require("src.ui.forge")       -- plaque + diamant de séparateur
+local MiniRig = require("src.render.minirig") -- frimousse figée préfixant chaque nom de monstre (J3)
 local T = require("src.core.i18n").t
 
 local CD = {}
@@ -27,6 +28,11 @@ local H_DEATH   = 32
 local H_ROW     = 22 -- coup / bouclier / affliction racine
 local H_CAUSED  = 20 -- conséquence indentée / propagation
 local INDENT    = 22 -- décalage des conséquences (sous leur cause)
+-- Frimousse (mini-rig figé) devant chaque nom : carrée, ≈ hauteur de la police du nom, avec une gouttière.
+local MINI_ROW   = 16 -- boîte sur une ligne 22px (≈ police de lecture 13)
+local MINI_CAUSE = 14 -- boîte sur une conséquence 20px (police 12)
+local MINI_DEATH = 22 -- boîte sur le bloc MORT 32px (gros, du poids visuel)
+local MINI_GAP   = 3  -- gouttière entre la frimousse et le nom
 
 local KINDS = { "strike", "affliction", "spread", "shield", "death" }
 local FLABEL = {
@@ -89,6 +95,8 @@ end
 
 function CD:draw(view, x, y, w, h)
   local c = Theme.c
+  self._view = view          -- mémorise la vue : les lignes clippent leur frimousse (Draw.scissor) avec (J3)
+  self._nameRects = {}       -- rects {x,y,w,h,id} des NOMS dessinés cette frame -> survol = carte (J4)
   Draw.begin(view)
   -- la plaque forge RESPIRE : on avance une horloge locale à chaque frame de rendu (cosmétique, RENDER pur ;
   -- l'overlay modal n'a pas de boucle update -> on pilote l'animation ici, pas de couplage au host).
@@ -150,6 +158,12 @@ function CD:draw(view, x, y, w, h)
     Draw.rect(x + w - 4, ty, 2, thumbH, c.gold)
   end
   if #entries == 0 then Draw.text(T("chronicle.empty"), x + 12, listY + 8, c.fainter, font) end
+
+  -- HOVER (J4) : on résout le nom survolé MAINTENANT (les _nameRects de cette frame sont à jour) -> l'appelant
+  -- (overlay) lit hoveredName() et dessine la carte PAR-DESSUS, hors clip. Pas de carte dessinée ici (elle
+  -- déborde volontairement du panneau -> l'overlay s'en charge au niveau supérieur).
+  self._hoverId, self._hoverRect = self:_hitName()
+
   Draw.finish()
 end
 
@@ -195,6 +209,24 @@ local function drawFamilyIcon(family, x, midY)
   return ic.w + 2
 end
 
+-- id du monstre porté par un fragment de NOM : le segment n'a pas d'id -> on mappe par rôle
+-- (actor -> e.actorId, target -> e.targetId). Renvoie nil pour les autres rôles (op/family).
+local function idForSeg(seg, e)
+  if seg.role == "actor" then return e.actorId end
+  if seg.role == "target" then return e.targetId end
+  return nil
+end
+
+-- Dessine la FRIMOUSSE (mini-rig figé) de `id` calée à gauche du nom, centrée sur midY, et renvoie la
+-- largeur consommée (boîte + gouttière), ou 0 si pas d'id. `box` = côté carré ; `team` oriente la frimousse
+-- (toi/"left" regarde à DROITE +1 ; ennemi/"right" regarde à GAUCHE -1) -> lecture « face-à-face » du combat.
+function CD:_mini(id, cx, midY, box, team)
+  if not id then return 0 end
+  local facing = (team == "right") and -1 or 1
+  MiniRig.draw(self._view, id, nil, cx, math.floor(midY - box / 2 + 0.5), box, box, facing)
+  return box + MINI_GAP
+end
+
 function CD:_drawRow(c, font, e, x, y, w)
   if e.kind == "death" then return self:_drawDeath(c, e, x, y, w) end
 
@@ -238,10 +270,20 @@ function CD:_drawRow(c, font, e, x, y, w)
     cx = cx + self:_shieldIcon(c, cx, midY)
   end
 
-  -- Texte = fragments (acteur coloré équipe / verbe atténué / cible / famille colorée).
+  -- Texte = fragments (acteur coloré équipe / verbe atténué / cible / famille colorée). Chaque fragment de
+  -- NOM (actor/target) est préfixé de la FRIMOUSSE du monstre (J3) et enregistre son rect pour le survol (J4).
+  local mbox = caused and MINI_CAUSE or MINI_ROW
   for _, seg in ipairs(self.chron:segments(e)) do
+    local id = idForSeg(seg, e)
+    local nameX = cx
+    if id then cx = cx + self:_mini(id, cx, midY, mbox, seg.team) end
     Draw.text(seg.text, cx, ty, self:_segColor(c, seg, e), rfont)
-    cx = cx + Draw.textWidth(seg.text, rfont)
+    local tw = Draw.textWidth(seg.text, rfont)
+    if id then
+      -- le rect couvre frimousse + nom (zone de survol naturelle) -> carte au survol du « bloc monstre ».
+      self._nameRects[#self._nameRects + 1] = { x = nameX, y = y, w = (cx + tw) - nameX, h = rh, id = id }
+    end
+    cx = cx + tw
   end
 
   -- VALEURS à droite : total cumulé de dégât de l'affliction (nombre en rouge dégât, précédé d'un petit point
@@ -283,12 +325,20 @@ function CD:_drawDeath(c, e, x, y, w)
   -- CRÂNE (préfixe) : un diamant Forge en sang vif tient lieu de glyphe (les polices ne garantissent pas ☠).
   Forge.diamondAt(cx + 3, midY, 4, c.bloodBright, c.bloodDeep)
   cx = cx + 12
+  -- FRIMOUSSE du défunt (J3) entre le crâne et le nom -> on voit QUI tombe, en grand (bloc le plus lourd).
+  local nameX = cx
+  cx = cx + self:_mini(e.targetId, cx, midY, MINI_DEATH, e.targetTeam)
   -- NOM du défunt en gras (lecture immédiate de QUI tombe).
   local nfont = Theme.uiBold(13)
   local name = self.chron:segments(e)
   local who = (name[1] and name[1].text) or "?"
   Draw.text(who, cx, midY - nfont:getHeight() / 2, c.inkBright, nfont)
-  cx = cx + Draw.textWidth(who, nfont) + 4
+  local whoW = Draw.textWidth(who, nfont)
+  -- rect de survol = frimousse + nom du défunt -> carte au survol (J4).
+  if e.targetId then
+    self._nameRects[#self._nameRects + 1] = { x = nameX, y = y, w = (cx + whoW) - nameX, h = H_DEATH - 4, id = e.targetId }
+  end
+  cx = cx + whoW + 4
   -- « falls » en lecture, atténué.
   local rfont = Theme.read(12)
   Draw.text(T("chronicle.v.fall"), cx, midY - rfont:getHeight() / 2, c.faint, rfont)
@@ -302,6 +352,25 @@ function CD:_drawDeath(c, e, x, y, w)
 end
 
 function CD:wheelmoved(_, dy) self.scroll = self.scroll - (dy or 0) * H_ROW * 2 end
+
+-- SURVOL d'un nom (J4) : mémorise la position souris (ESPACE DESIGN, comme les rects). Le hit-test réel se
+-- fait en fin de :draw (mêmes positions que les _nameRects fraîchement posés -> pas de décalage de frame).
+function CD:mousemoved(dx, dy) self._mx, self._my = dx, dy end
+
+-- Détecte le nom sous le curseur dans les _nameRects de la frame courante. Renvoie (id, rect) ou nil.
+-- Clippe le hit-test à la zone de liste (les rects au-dessus/dessous du clip ne comptent pas).
+function CD:_hitName()
+  if not (self._mx and self._nameRects and self._rect) then return nil end
+  local lr = self._rect
+  if not ptIn(self._mx, self._my, lr.x, lr.y, lr.w, lr.h) then return nil end -- hors liste
+  for _, r in ipairs(self._nameRects) do
+    if ptIn(self._mx, self._my, r.x, r.y, r.w, r.h) then return r.id, r end
+  end
+  return nil
+end
+
+-- id du monstre actuellement survolé (calculé en fin de :draw) + son rect, pour l'appelant (carte au survol).
+function CD:hoveredName() return self._hoverId, self._hoverRect end
 
 -- Renvoie true si le clic a été consommé (puce de filtre / sélecteur d'équipe).
 function CD:mousepressed(vx, vy)

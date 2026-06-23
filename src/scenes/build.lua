@@ -41,6 +41,8 @@ local Keywords = require("src.ui.keywords") -- registre afflictions (mini-chips 
 local Chip = require("src.ui.chip") -- pastilles keyword (icône d'affliction)
 local Ambient = require("src.fx.ambient")
 local Rarity = require("src.gen.rarity") -- rang -> couleur de cadre + glow (accent de rareté de la fiche)
+local MiniRig = require("src.render.minirig") -- mesure OPAQUE mutualisée des rigs (bounds/fit) : seule source de vérité
+local MonsterCard = require("src.render.monstercard") -- FICHE de monstre (extraite de drawTooltip) : réutilisée ici + Chronique
 local I18n = require("src.core.i18n")
 local T = I18n.t
 
@@ -121,63 +123,14 @@ function Build:newRig(id)
   return c
 end
 
--- ── FIT-TO-BOX (FIX overflow) : on borne l'étendue OPAQUE RÉELLE d'un rig en le rendant UNE FOIS sur un
--- canvas hors-écran (pose idle) et en scannant les pixels non transparents -> { w, h, top, bot } en unités
--- VIRTUELLES, relatives à l'origine du rig (l'origine est au SOL ~pieds). Mémoïsé par id (déterministe :
--- la silhouette idle ne bouge pas). On ne mesure PAS les coins des grilles (64px pleines de transparence)
--- mais les VRAIS pixels -> le scale qui en découle CONTIENT la créature sans la rapetisser à l'excès. Sert
--- à caler chaque créature dans son conteneur (case 80px / carte boutique / portrait) -> jamais coupée.
--- Headless-safe : sans canvas réel, on retourne une boîte de repli (la scène ne crashe pas, no-op visuel).
-Build._rigBounds = {}
-local FIT_PROBE = 96 -- demi-canvas de mesure (origine du rig au centre) : couvre toute créature (max ~27)
+-- ── FIT-TO-BOX (FIX overflow) : étendue OPAQUE RÉELLE d'un rig (pose idle) en unités VIRTUELLES relatives à
+-- l'origine au sol -> { w, h, top, bot }. La mesure (canvas hors-écran + scan de pixels, mémoïsée, repli
+-- headless) est désormais MUTUALISÉE dans src/render/minirig.lua (MiniRig.bounds), seule source de vérité,
+-- partagée avec la fiche de monstre (MonsterCard) et La Chronique. Le build n'en garde qu'une délégation ->
+-- plus de duplication de l'algo, et la mesure est DÉTERMINISTE (idlePhase figé) : le portrait ne « tremble »
+-- plus d'un rechargement à l'autre. Sert à caler chaque créature dans son conteneur (case / carte / portrait).
 function Build:rigBounds(id)
-  local cached = Build._rigBounds[id]
-  if cached then return cached end
-  -- repli (mock LÖVE / pas de canvas) : boîte conservatrice (≈ plus grande créature observée).
-  local fallback = { w = 28, h = 26, top = -24, bot = 2 }
-  if not (love.graphics and love.graphics.newCanvas and love.graphics.getCanvas) then
-    Build._rigBounds[id] = fallback; return fallback
-  end
-  local okCv, cv = pcall(love.graphics.newCanvas, FIT_PROBE * 2, FIT_PROBE * 2)
-  if not okCv or not cv then Build._rigBounds[id] = fallback; return fallback end
-  pcall(cv.setFilter, cv, "nearest", "nearest")
-  local c = self:newRig(id)
-  c.facing, c.x, c.y = 1, FIT_PROBE, FIT_PROBE -- origine du rig au centre du canvas de mesure
-  Rig.update(c, 0, 0)
-  local ok = pcall(function()
-    local prev = love.graphics.getCanvas()
-    love.graphics.push("all")
-    love.graphics.origin()
-    love.graphics.setCanvas(cv)
-    love.graphics.clear(0, 0, 0, 0)
-    love.graphics.setColor(1, 1, 1, 1)
-    Rig.draw(c)
-    love.graphics.setCanvas(prev)
-    love.graphics.pop()
-  end)
-  if not ok then Build._rigBounds[id] = fallback; return fallback end
-  local okI, idata = pcall(function() return cv:newImageData() end)
-  if not okI or not idata then Build._rigBounds[id] = fallback; return fallback end
-  local minx, miny, maxx, maxy = math.huge, math.huge, -math.huge, -math.huge
-  local W2 = FIT_PROBE * 2
-  for y = 0, W2 - 1 do
-    for x = 0, W2 - 1 do
-      local okp, _, _, _, a = pcall(function() return idata:getPixel(x, y) end)
-      if okp and a and a > 0.2 then
-        if x < minx then minx = x end; if x > maxx then maxx = x end
-        if y < miny then miny = y end; if y > maxy then maxy = y end
-      end
-    end
-  end
-  if minx == math.huge then Build._rigBounds[id] = fallback; return fallback end
-  -- relatif à l'origine (FIT_PROBE,FIT_PROBE). demi-largeur = max(|left|,|right|) -> contient le côté le
-  -- plus large sans couper. bot ~= pieds (sert à caler la créature au sol de son conteneur).
-  local left, right = minx - FIT_PROBE, maxx - FIT_PROBE
-  local top, bot = miny - FIT_PROBE, maxy - FIT_PROBE
-  local halfW = math.max(math.abs(left), math.abs(right))
-  local res = { w = halfW * 2, h = bot - top, top = top, bot = bot }
-  Build._rigBounds[id] = res
-  return res
+  return MiniRig.bounds(id, self.palette)
 end
 
 -- Échelle qui CONTIENT le rig (id) dans une boîte virtuelle (boxW × boxH), avec une marge (0..1). On prend
@@ -1241,318 +1194,22 @@ end
 -- capacités) ni de doublon d'affliction (les afflictions vivent UNIQUEMENT dans la section capacités).
 -- Suit le curseur, rebond sur les bords. Survol PLATEAU et BOUTIQUE. PUR-RENDER (golden inchangé).
 
--- Valeur lisible d'un effet d'affliction (« 6 dps · 3s ») depuis ses params dps/dur (dur en FRAMES @60fps).
--- Renvoie nil si l'effet n'expose pas de DoT chiffrable.
-local function afflValue(params)
-  if not params then return nil end
-  local bits = {}
-  local dps = params.dps or params.base
-  if dps then bits[#bits + 1] = tostring(dps) .. " dps" end
-  if params.dur then bits[#bits + 1] = string.format("%.0fs", params.dur / 60) end
-  if #bits == 0 then return nil end
-  return table.concat(bits, " ")
-end
-Build.afflValue = afflValue
-
--- Rang de rareté -> teinte d'accent du cadre forge (Forge attend des octets 0..255). Rarity.frame = floats 0..1.
-local function rarityAccent(rank)
-  local fr = Rarity.frame(rank or 1)
-  return Forge.accentFrom(fr)
-end
-
--- ── TOKENISATION DES VALEURS INLINE (carte monstre) ────────────────────────────────────────────────
--- On veut COLORER les nombres d'une ligne de description dans la couleur de l'AFFLICTION de l'unité
--- (shock=jaune, burn=orange, poison=vert, bleed=cramoisi, rot=violet) et préfixer la PREMIÈRE valeur de
--- la ligne par l'icône de l'affliction — SANS toucher les chaînes i18n (en.lua appartient à un chantier).
--- On fait tout AU RENDU, en découpant la chaîne en segments {text, value?}. Un segment "valeur" contient
--- au moins un chiffre et l'enveloppe de signe/pourcent/point (+7%, 16, 1.5s, 60%...). On préserve les
--- espaces (rattachés au segment de mot qui les précède) -> le tracé reste fidèle au wrap d'origine.
--- PUR (testable headless) : split par MOTS (séparés par espaces) ; un mot est "valeur" s'il matche un nombre.
-local function tokenizeValues(line)
-  local out = {}
-  -- on itère mot + espaces qui suivent, en gardant les espaces pour un tracé continu.
-  for word, sp in line:gmatch("(%S+)(%s*)") do
-    -- une "valeur" : une fois la ponctuation OUVRANTE retirée (parenthèse/crochet/guillemet), le mot commence
-    -- par un nombre éventuellement signé. Couvre +7%, 16, 1.5s, 2x ET « (6 dmg/s) » -> le « (6 » se colore.
-    local core = word:gsub("^[%(%[%{<\"']+", "")
-    local isVal = core:match("^[%+%-]?%d") ~= nil
-    out[#out + 1] = { text = word, sp = sp, value = isVal }
-  end
-  return out
-end
-Build.tokenizeValues = tokenizeValues
-
-function Build:drawTooltip(id)
-  local U, c = Units[id], Theme.c
-  local rank = U.rank or 1
-  local rich = rank >= 4 -- héros R4-R5 : cadre plus riche + œil qui guette
-  local rarCol = Rarity.frame(rank)
-
-  -- ── 1) MESURE : hauteur dérivée du contenu (capacités + lignes de prose) -> jamais cramé. ──
-  -- Description LISIBLE : POLICE READ (Pixel Operator Bold, pixel-font à minuscules ET trait gras) -> la phrase
-  -- mécanique se LIT comme une phrase, ≠ le bloc tout-capitales de Silkscreen, et reste nette au scale non-entier
-  -- (Jersey 15 floutait à 0.75). 13px + interligne ample.
-  local fontDesc = Theme.read(13)
-  local DESC_LINE = fontDesc:getHeight() + 3 -- interligne ample (lisibilité)
-  local W = 318
-  local PAD = 14
-  local contentW = W - PAD * 2
-  -- AFFLICTION primaire de l'unité (1re du registre) : couleur + icône des valeurs inline de la description.
-  local affl = Keywords.applied(U)
-  local primAff = affl[1]
-  local passiveName = T("unit." .. id .. ".passive_name")
-  local passiveDesc = T("unit." .. id .. ".passive_desc")
-  local _, descLines = fontDesc:getWrap(passiveDesc, contentW)
-  local nDescLines = math.max(1, #descLines)
-  local hasPassiveName = passiveName ~= ("unit." .. id .. ".passive_name")
-  local flavorKey = "unit." .. id .. ".flavor"
-  local hasFlavor = I18n.has(flavorKey)
-
-  -- empilage vertical (px design), RYTHME RÉGULIER : header 22 + portrait 72 + identité 18 + div 8 +
-  -- STATS (value-tags) 34 + div 8 + capacités (chips-tags 20 si afflictions + nom 18 + prose) + flavor.
-  local GAPV = 7
-  local PORTRAIT_H = 72
-  local STATS_H = 34            -- value-tags HP/DMG/CD (mini label + grande valeur)
-  local h = PAD                 -- top pad
-  h = h + 22                    -- header
-  h = h + GAPV + PORTRAIT_H     -- portrait
-  h = h + GAPV + 18             -- identité
-  h = h + GAPV + 8              -- divider
-  h = h + GAPV + STATS_H        -- stats (value-tags)
-  h = h + GAPV + 8              -- divider
-  h = h + GAPV                  -- gap avant le bloc capacités
-  if #affl > 0 then h = h + 22 end -- rangée de value-chips d'affliction
-  if hasPassiveName then h = h + 18 end
-  h = h + 3 + nDescLines * DESC_LINE
-  -- FLAVOR (phrase philosophique) SÉPARÉE : sa propre ligne en pied, italique IM Fell, détachée du « comment
-  -- ça marche » par un GAP + un divider -> visible mais jamais confondue avec la prose mécanique.
-  local fontFlav = Theme.lore(13)
-  if hasFlavor then
-    local _, fLines = fontFlav:getWrap(T(flavorKey), contentW)
-    h = h + 10 + #fLines * (fontFlav:getHeight() + 1) -- gap (divider) + lignes italiques
-  end
-  h = h + PAD                   -- bottom pad
-
-  -- ── 2) POSITION : suit le curseur, rebond sur les bords (jamais hors écran). ──
-  local x, y = self.mx * 4 + 18, self.my * 4 + 10
-  if x + W > Draw.W then x = self.mx * 4 - W - 18 end
-  if x < 4 then x = 4 end
-  if y + h > Draw.H then y = Draw.H - h - 6 end
-  if y < 4 then y = 4 end
-  x, y = math.floor(x), math.floor(y)
-
-  -- ── 3) FOND forge (plaque qui respire + cadre patiné, accent de rareté, œil qui guette si héros). Le
-  -- FOND est LAVÉ vers la couleur de rareté (Forge.tintFrom) : la fiche « lit » sa rareté par sa matière
-  -- même, en restant du métal grimdark sombre (lavage RETENU). ──
-  Forge.uiCard("build.card." .. id, x, y, W, h,
-    { px = 2, seed = 40 + (#id), accentCol = rarityAccent(rank), rich = rich, t = self.t / 60,
-      tint = Forge.tintFrom(rarCol, 0.16) })
-
-  -- ── 4) CONTENU posé par-dessus, en colonne Layout (rythme RÉGULIER : gap = GAPV partout). ──
-  local box = { x = x, y = y, w = W, h = h }
-  local inner = Layout.inset(box, PAD)
-  local rows = Layout.column(inner, {
-    { size = 22 },         -- 1 header
-    { size = PORTRAIT_H }, -- 2 portrait
-    { size = 18 },         -- 3 identité
-    { size = 8 },          -- 4 divider
-    { size = STATS_H },    -- 5 stats (value-tags)
-    { size = 8 },          -- 6 divider
-    { flex = 1 },          -- 7 capacités + flavor (le reste)
-  }, { gap = GAPV, align = "stretch" })
-  local rHead, rPort, rIdent, rDiv1, rStats, rDiv2, rAbil = rows[1], rows[2], rows[3], rows[4], rows[5], rows[6], rows[7]
-
-  -- (a) HEADER : nom (gauche) + coût (PIÈCE d'or + valeur READ, droite) -> prix lisible et cohérent boutique.
-  local fontName = Theme.uiBold(14)
-  Draw.text(T("unit." .. id .. ".name"), rHead.x, rHead.y + 3, c.title, fontName)
-  if U.cost then
-    local costStr = tostring(U.cost)
-    local cw = Theme.read(16):getWidth(costStr)
-    local cmY = rHead.y + 11
-    Forge.label(costStr, rHead.x + rHead.w, cmY, 16, { c.gold[1], c.gold[2], c.gold[3] },
-      { read = true, right = true, shadow = true })
-    Forge.coinAt(rHead.x + rHead.w - cw - 7, cmY, 4, c.goldBright)
-  end
-
-  -- (b) PORTRAIT : rig AJUSTÉ pour REMPLIR (fit-to-box), clippé. Halo de rareté pour les héros.
-  self:drawCardPortrait(id, rPort, rank, rarCol, rich)
-
-  -- (c) IDENTITÉ : [ pip · TYPE · Famille ........ ◆◆ rareté ]. Rareté = N diamants teintés à droite (unique).
-  local fontId = Theme.ui(10)
-  local ix = rIdent.x
-  local midI = math.floor(rIdent.y + rIdent.h / 2)
-  Draw.pip(U.type, ix + 5, midI, 5)
-  ix = ix + 14
-  local tcol = Theme.type(U.type).color
-  local typeStr = T("type." .. U.type):upper()
-  Draw.text(typeStr, ix, midI - fontId:getHeight() / 2, tcol, fontId)
-  ix = ix + fontId:getWidth(typeStr) + 8
-  if U.family then
-    local famStr = (U.family:gsub("^%l", string.upper))
-    Draw.text(famStr, ix, midI - fontId:getHeight() / 2, c.muted, fontId)
-  end
-  local DSP = 8
-  local rx0 = rIdent.x + rIdent.w - (rank * DSP) + 1
-  for k = 1, rank do
-    Forge.diamondAt(rx0 + (k - 1) * DSP, midI, 3, rarCol)
-  end
-
-  -- (d) divider forge entre identité et stats.
-  Draw.divider(rDiv1.x + rDiv1.w / 2, rDiv1.y + rDiv1.h / 2, rDiv1.w - 8, c.gold, 0.7)
-  Forge.diamondAt(rDiv1.x + rDiv1.w / 2, rDiv1.y + rDiv1.h / 2, 2, c.goldBright)
-
-  -- (e) STATS = VALUE-TAGS runiques (HP / DMG / CD) : 3 plaques forge bordées, mini-label + GRANDE valeur.
-  self:drawCardStats(id, U, rStats, rarCol)
-
-  -- (f) divider forge.
-  Draw.divider(rDiv2.x + rDiv2.w / 2, rDiv2.y + rDiv2.h / 2, rDiv2.w - 8, c.gold, 0.7)
-  Forge.diamondAt(rDiv2.x + rDiv2.w / 2, rDiv2.y + rDiv2.h / 2, 2, c.goldBright)
-
-  -- (g) CAPACITÉS : value-chips d'affliction (ce que l'unité APPLIQUE, avec dps/durée) + nom de passif (or)
-  -- + description LISIBLE. UNIQUE place des afflictions (plus de doublon avec une rangée de tags).
-  local ay = rAbil.y
-  if #affl > 0 then
-    local fontChip = Theme.ui(9)
-    -- valeur par affliction : 1er effet qui pose chaque affliction -> ses params chiffrables (dps/durée).
-    local valBy = {}
-    for _, e in ipairs(U.effects or {}) do
-      local k = Keywords.opAffliction(e.op)
-      if k and not valBy[k] then valBy[k] = afflValue(e.params) end
-    end
-    local cx = rAbil.x
-    for _, k in ipairs(affl) do
-      local w2 = Chip.draw(cx, ay, { key = k, value = valBy[k], font = fontChip, h = 18 })
-      cx = cx + w2 + 5
-      if cx > rAbil.x + rAbil.w - 30 then break end
-    end
-    ay = ay + 22
-  end
-  if hasPassiveName then
-    Draw.text(passiveName, rAbil.x, ay, c.goldBright, Theme.uiBold(11))
-    ay = ay + 18
-  end
-  -- DESCRIPTION : casse AUTHORED conservée, POLICE READ (lisible), dessinée LIGNE PAR LIGNE. Les VALEURS
-  -- (nombres/%) sont colorées dans la couleur de l'AFFLICTION de l'unité + 1re valeur préfixée de son icône.
-  ay = ay + 3
-  for _, line in ipairs(descLines) do
-    self:drawDescLine(line, rAbil.x, ay, fontDesc, c.body, primAff, contentW)
-    ay = ay + DESC_LINE
-  end
-
-  -- (h) FLAVOR (phrase philosophique) : SA PROPRE ligne en pied, ITALIQUE IM Fell (Theme.lore), détachée du
-  -- bloc mécanique par un GAP + un divider doré discret -> visible, jamais confondue avec le « comment ça marche ».
-  if hasFlavor then
-    ay = ay + 4
-    Draw.divider(rAbil.x + contentW / 2, ay, contentW - 20, c.gold, 0.3)
-    ay = ay + 5
-    Draw.textWrap(T(flavorKey), rAbil.x, ay, contentW, c.dim, fontFlav)
-  end
-end
-
--- Trace une LIGNE de description en colorant les VALEURS (nombres/%) dans la couleur de l'affliction `aff`
--- (shock=jaune, burn=orange, poison=vert, bleed=cramoisi, rot=violet) et en préfixant la PREMIÈRE valeur de
--- la ligne par l'icône bakée de l'affliction. Le texte non-valeur reste en `baseCol`. PUR-RENDER : on
--- tokenise la chaîne RENDUE (jamais l'i18n). Sans affliction, tout est tracé en `baseCol` (chemin neutre).
+-- ── FICHE de monstre = src/render/monstercard.lua (extraite de l'ancien Build:drawTooltip + helpers) ──
+-- Le build n'en garde qu'un MINCE wrapper : il passe le contexte (vue/palette/curseur/horloge) + son rig
+-- d'aperçu ANIMÉ (portrait qui respire, comme avant). Les helpers historiques (afflValue/tokenizeValues/
+-- drawDescLine) restent EXPOSÉS via Build pour la rétrocompat (tests/ui.lua), en délégation au module —
+-- plus aucune duplication. C'est la réutilisation visée (même fiche pour build ET Chronique).
+Build.afflValue = MonsterCard.afflValue
+Build.tokenizeValues = MonsterCard.tokenizeValues
 function Build:drawDescLine(line, x, y, font, baseCol, aff, maxW)
-  love.graphics.setFont(font)
-  local affCol = aff and Keywords.get(aff)
-  affCol = affCol and affCol.color or nil
-  local icon = aff and Keywords.icon(aff) or nil
-  if not affCol then
-    -- chemin neutre (unité sans affliction) : ligne unie, pas de tokenisation.
-    Draw.text(line, x, y, baseCol, font)
-    return
-  end
-  local cx, cy, fh = x, y, font:getHeight()
-  -- l'icône n'est posée que si la ligne A de la place pour son débord (≈10px) -> jamais de dépassement
-  -- du contenu (le wrap a été mesuré SANS l'icône). Sinon on garde la couleur, sans icône.
-  local roomForIcon = (not maxW) or (font:getWidth(line) + (icon and (icon.w + 2) or 0) <= maxW)
-  local iconUsed = false
-  for _, tok in ipairs(tokenizeValues(line)) do
-    if tok.value then
-      if icon and roomForIcon and not iconUsed then
-        love.graphics.setColor(1, 1, 1, 1)
-        love.graphics.draw(icon.image, math.floor(cx), math.floor(cy + fh / 2 - icon.h / 2), 0, 1, 1)
-        cx = cx + icon.w + 2
-        iconUsed = true
-      end
-      Draw.setColor(affCol)
-    else
-      Draw.setColor(baseCol)
-    end
-    love.graphics.print(tok.text, math.floor(cx), math.floor(cy))
-    cx = cx + font:getWidth(tok.text)
-    if tok.sp ~= "" then cx = cx + font:getWidth(tok.sp) end
-  end
-  love.graphics.setColor(1, 1, 1, 1)
+  return MonsterCard.drawDescLine(line, x, y, font, baseCol, aff, maxW)
 end
 
--- Portrait de la fiche : re-rend le rig de l'unité dans une région, CLIPPÉ (Draw.scissor), halo de
--- rareté additif derrière pour les héros. Réutilise self.previewRigs[id] (aperçu déjà animé) si présent,
--- sinon en construit un éphémère. Tout en ESPACE DESIGN (sous Draw.begin de drawOverlay).
-function Build:drawCardPortrait(id, region, rank, rarCol, rich)
-  local rigc = self.previewRigs[id] or self:newRig(id)
-  -- PAS de logement noir (révision Kévin) : la créature vit DIRECTEMENT sur le fond de la plaque (teinté
-  -- rareté). Deux fins filets en haut/bas DÉLIMITENT la zone du portrait sans la boxer (matière continue).
-  local divW = region.w - 12
-  Draw.divider(region.x + region.w / 2, region.y + 1, divW, Theme.c.gold, 0.35)
-  Draw.divider(region.x + region.w / 2, region.y + region.h - 1, divW, Theme.c.gold, 0.35)
-  local cx = region.x + region.w / 2
-  -- FIT : la créature REMPLIT la région (plus de petit sprite perdu dans un grand vide noir). On scale pour
-  -- contenir l'étendue OPAQUE réelle (rigBounds) dans la région, pieds calés au sol -> grande et entière.
-  -- maxScale 3.5 : on AGRANDIT un petit sprite jusqu'à remplir le logement (sans jamais le couper).
-  local bnd = self:rigBounds(id)
-  local s = self:rigFitScale(id, region.w, region.h, 0.82, 3.5)
-  local feet = region.y + region.h - 5
-  -- halo de rareté additif (héros) derrière la créature, cohérent avec le bestiaire. setBlendMode peut
-  -- manquer sous le mock LÖVE -> garde-fou (le halo est cosmétique, jamais bloquant).
-  if rich and love.graphics.setBlendMode and love.graphics.circle then
-    local rar = Rarity.get(rank)
-    if rar and rar.glow and rar.glow > 0 then
-      love.graphics.setBlendMode("add")
-      for k = 3, 1, -1 do
-        love.graphics.setColor(rarCol[1], rarCol[2], rarCol[3], rar.glow * 0.10 * k)
-        love.graphics.circle("fill", cx, region.y + region.h * 0.5, region.h * 0.42 * (k / 3))
-      end
-      love.graphics.setBlendMode("alpha"); love.graphics.setColor(1, 1, 1, 1)
-    end
-  end
-  if self.view then Draw.scissor(self.view, region.x, region.y, region.w, region.h) end
-  love.graphics.push()
-  love.graphics.translate(math.floor(cx), math.floor(feet))
-  love.graphics.scale(s, s)
-  love.graphics.translate(0, -bnd.bot)
-  rigc.x, rigc.y, rigc.facing = 0, 0, 1
-  Rig.draw(rigc)
-  love.graphics.pop()
-  if self.view then Draw.noScissor() end
-  love.graphics.setColor(1, 1, 1, 1)
-end
-
--- STATS = 3 valeurs FRAMELESS [HP] [DMG] [CD] (révision Kévin : plus d'encadré métal autour des nombres).
--- Chaque stat = GRANDE valeur lisible (Forge.label, vraie police) + MINI label dessous, alignées en rangée
--- ÉGALE (Layout.row, gouttières égales). De fins POINTS-diamants séparent les colonnes (≠ boîtes). Teintes :
--- HP corps, DMG rouge dégâts, CD doré sobre. rarCol n'est plus utilisé pour un liseré (gardé pour signature).
-function Build:drawCardStats(id, U, region, rarCol)
-  local c = Theme.c
-  local cols = Layout.row(region, { { flex = 1 }, { flex = 1 }, { flex = 1 } }, { gap = 4, align = "stretch" })
-  local specs = {
-    { key = T("ui.stat_hp"),  value = tostring(U.hp),                            vcol = c.body },
-    { key = T("ui.stat_dmg"), value = tostring(U.dmg),                           vcol = c.dmg },
-    { key = T("ui.stat_cd"),  value = string.format("%.1fs", (U.cd or 60) / 60), vcol = c.muted },
-  }
-  for k = 1, 3 do
-    local col, s = cols[k], specs[k]
-    local ccx = col.x + col.w / 2
-    -- GRANDE valeur (haut, centrée) en POLICE READ (lisible, prominente) puis petit label Silkscreen (bas,
-    -- éteint) -> « ceci est un nombre qui compte », sans cadre. Teintes neutres (DMG garde le rouge dégâts).
-    Forge.label(s.value, ccx, col.y + 11, 18, { s.vcol[1], s.vcol[2], s.vcol[3] }, { read = true, shadow = true })
-    Draw.textC(s.key, ccx, col.y + col.h - 11, c.faint, Theme.ui(8))
-    -- séparateur entre colonnes = un point-diamant forge centré dans la gouttière (pas un trait de boîte).
-    if k < 3 then
-      Forge.diamondAt(col.x + col.w + 2, col.y + col.h / 2 - 2, 2, c.fainter)
-    end
-  end
+-- Infobulle d'unité (survol plateau / boutique) : la FICHE de monstre, ancrée au curseur. On passe le rig
+-- d'APERÇU (animé) pour que le portrait respire à l'identique de l'ancienne carte ; bake/bounds via MiniRig.
+function Build:drawTooltip(id)
+  MonsterCard.draw(self.view, self.palette, id, self.mx * 4, self.my * 4, self.t / 60,
+    { rig = self.previewRigs[id] })
 end
 
 -- Rangée de reliques possédées : SOCLES forge patinés (Forge.uiSocket, fond transparent) bordant

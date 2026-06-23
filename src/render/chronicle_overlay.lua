@@ -8,6 +8,7 @@ local Theme = require("src.ui.theme")
 local Forge = require("src.ui.forge")       -- boutons-icône forge (‹ › carrousel + X de fermeture)
 local Chronicle = require("src.render.chronicle")
 local ChronicleDraw = require("src.render.chronicle_draw")
+local MonsterCard = require("src.render.monstercard") -- fiche TCG flottante au survol d'un nom (J4)
 local T = require("src.core.i18n").t
 
 local Overlay = {}
@@ -30,10 +31,17 @@ function Overlay.new(run, currentChron)
   end
   if #sources == 0 then sources[1] = { label = T("chronicle.empty_hist"), model = Chronicle.fromEntries({}) } end
   return setmetatable({ sources = sources, sel = 1, panel = ChronicleDraw.new(sources[1].model),
-    mx = -1, my = -1 }, Overlay)
+    mx = -1, my = -1, t = 0 }, Overlay)
 end
 
 local function inR(mx, my, r) return r and mx >= r.x and mx <= r.x + r.w and my >= r.y and my <= r.y + r.h end
+
+-- Les inputs arrivent en espace VIRTUEL (main.lua:toVirtual divise par view.scale -> 320×180). Mais TOUTE
+-- l'UI de l'overlay (et du panel) est composée en espace DESIGN 1280×720 (= virtuel ×4, la convention de
+-- src/ui/draw.lua). On convertit donc ici, à l'unique point d'entrée souris. Le facteur est CONSTANT (×4 :
+-- design = VW×4), indépendant de view.scale (qui, lui, mappe écran->virtuel). [Corrige le hit-test des
+-- boutons/du carrousel, jusqu'ici en facteur 4 -> jamais déclenché à la souris ; RENDER pur, golden inchangé.]
+local function toDesign(vx, vy) return vx * 4, vy * 4 end
 
 function Overlay:_select(i)
   if i < 1 or i > #self.sources or i == self.sel then return end
@@ -43,6 +51,7 @@ end
 
 function Overlay:draw(view)
   local c = Theme.c
+  self.t = self.t + 1 / 60 -- horloge locale (overlay modal sans boucle update) : respiration de la fiche au survol
   Draw.begin(view)
   Forge.uiTick(1 / 60) -- horloge des boutons forge (overlay modal : pas de boucle update -> tick au rendu)
   Draw.rect(0, 0, Draw.W, Draw.H, { 0.02, 0.012, 0.03, 0.93 }) -- voile : le jeu derrière est figé
@@ -85,16 +94,30 @@ function Overlay:draw(view)
   Draw.finish()
 
   self.panel:draw(view, 24, 92, Draw.W - 48, Draw.H - 108)
+
+  -- FICHE de monstre au SURVOL d'un nom (J4) : dessinée AU NIVEAU OVERLAY, PAR-DESSUS la liste et HORS de
+  -- son clip (la carte déborde volontairement du panneau). Ancrée au curseur (en design), rebond sur les
+  -- bords géré par MonsterCard. Sprite FIGÉ (pas de rig animé passé) : une fiche posée, pas vivante.
+  local hid = self.panel:hoveredName()
+  if hid then
+    Draw.begin(view)
+    MonsterCard.draw(view, nil, hid, self.mx, self.my, self.t)
+    Draw.finish()
+  end
 end
 
-function Overlay:mousemoved(vx, vy) self.mx, self.my = vx, vy end
+function Overlay:mousemoved(vx, vy)
+  self.mx, self.my = toDesign(vx, vy) -- mémorise en DESIGN (cohérent avec les rects de l'overlay/panel)
+  self.panel:mousemoved(self.mx, self.my) -- propage : le panel détecte le NOM survolé (carte au survol, J4)
+end
 
 -- Renvoie "close" si le X a été cliqué (main.lua referme l'overlay), sinon true (modal : capte tout).
 function Overlay:mousepressed(vx, vy)
-  if inR(vx, vy, self._close) then return "close" end
-  if inR(vx, vy, self._prev) then self:_select(self.sel - 1); return true end
-  if inR(vx, vy, self._next) then self:_select(self.sel + 1); return true end
-  self.panel:mousepressed(vx, vy)
+  local dx, dy = toDesign(vx, vy)
+  if inR(dx, dy, self._close) then return "close" end
+  if inR(dx, dy, self._prev) then self:_select(self.sel - 1); return true end
+  if inR(dx, dy, self._next) then self:_select(self.sel + 1); return true end
+  self.panel:mousepressed(dx, dy)
   return true -- MODAL : capte tout (rien ne fuit vers la scène derrière)
 end
 
