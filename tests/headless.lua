@@ -232,16 +232,28 @@ local ok, err = pcall(function()
   for i = 1, 60 do cs:update(1.0); if i % 7 == 0 then cs:drawWorld(); cs:drawOverlay(view) end end
   print("  build+combat : compo, aura bouclier, passifs (bouclier/poison/bonus/epines/vol de vie) OK")
 
-  -- Routing fin-de-combat : combat conclu + clic -> host.finishCombat(win) reçoit l'issue.
+  -- Routing fin-de-combat : combat conclu -> écran de fin (drawOverlay pose les rects de boutons) -> clic
+  -- sur le bouton CONTINUE appelle host.finishCombat(win). Le clic-n'importe-où a été retiré (boutons only).
   do
     local finished, called = nil, false
-    local host = { goto = function() end, finishCombat = function(win) finished = win; called = true end }
+    local opened = false
+    local host = { goto = function() end, finishCombat = function(win) finished = win; called = true end,
+      openChronicle = function() opened = true end }
     local rc = Combat.new(Palette, 320, 180, host, { left = left, right = right, seed = 7 })
     for _ = 1, 8000 do rc:update(1.0); if rc.arena.over then break end end
     assert(rc.arena.over, "le combat de routing devrait se conclure")
-    rc:mousepressed(0, 0, 1)
-    assert(called and finished ~= nil, "fin de combat: host.finishCombat appele avec l'issue")
-    print("  routing : combat conclu -> host.finishCombat(win) OK")
+    for _ = 1, 30 do rc:update(1.0) end -- laisse overAge dépasser le seuil (20) -> les boutons s'affichent
+    rc:drawOverlay(view)                 -- pose self._btnChron / self._btnCont (rects en espace design)
+    assert(rc._btnCont and rc._btnChron, "l'ecran de fin doit poser les rects des 2 boutons")
+    -- clic HORS des boutons : ne termine RIEN (plus de clic-n'importe-où).
+    rc:mousepressed(2, 2, 1)
+    assert(not called, "un clic hors bouton ne termine plus le combat")
+    -- clic au centre de CHRONICLE -> host.openChronicle ; clic au centre de CONTINUE -> finishCombat.
+    rc:mousepressed(rc._btnChron.x + rc._btnChron.w / 2, rc._btnChron.y + rc._btnChron.h / 2, 1)
+    assert(opened, "clic CHRONICLE -> host.openChronicle")
+    rc:mousepressed(rc._btnCont.x + rc._btnCont.w / 2, rc._btnCont.y + rc._btnCont.h / 2, 1)
+    assert(called and finished ~= nil, "clic CONTINUE -> host.finishCombat appele avec l'issue")
+    print("  routing : ecran de fin (CHRONICLE/CONTINUE) -> openChronicle / finishCombat OK")
   end
 
   -- CADENCE DU MARCHAND (Lot 4) : un écran de relique tous les 3 COMBATS (victoire OU défaite), pas toutes

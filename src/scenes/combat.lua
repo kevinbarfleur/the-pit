@@ -14,6 +14,8 @@ local Chronicle = require("src.render.chronicle")
 local Ambient = require("src.fx.ambient")
 local Theme = require("src.ui.theme")
 local Draw = require("src.ui.draw")
+local Forge = require("src.ui.forge")       -- boutons forge de l'écran de fin (CHRONICLE / CONTINUE)
+local Keywords = require("src.ui.keywords")  -- icône d'affliction du post-mortem
 local T = require("src.core.i18n").t
 
 local Combat = {}
@@ -22,6 +24,11 @@ Combat.__index = Combat
 -- Post-mortem "pourquoi" (1.3) : ordre FIXE des causes de mort = tie-break déterministe pour la
 -- cause dominante (jamais `pairs`). Les afflictions priment sur la frappe à égalité (thème + clarté).
 local CAUSE_ORDER = { "poison", "rot", "bleed", "burn", "shock", "reflect", "attack" }
+
+-- Hit-test d'un rect (espace design). Tolère un curseur hors-écran (mx<0) et un rect absent.
+local function inBtn(mx, my, r)
+  return r and mx >= r.x and mx <= r.x + r.w and my >= r.y and my <= r.y + r.h
+end
 
 function Combat.new(palette, vw, vh, host, payload)
   payload = payload or {}
@@ -37,6 +44,7 @@ function Combat.new(palette, vw, vh, host, payload)
     arena = arena,
     renderer = ArenaDraw.new(arena, palette),
     paused = false, -- PAUSE spectateur (Espace) : gèle entièrement le combat (analyse / screenshots)
+    mx = -1, my = -1, -- curseur (espace design) : survol des boutons de fin + gaze des yeux du CTA
   }, Combat)
   self:_track() -- écoute le bus SIM (lecture seule) pour le post-mortem "pourquoi" (1.3)
   return self
@@ -86,6 +94,7 @@ function Combat:_computeSummary()
 end
 
 function Combat:update(frameDt)
+  Forge.uiTick(frameDt / 60) -- horloge des boutons forge (en SECONDES ; frameDt ~1.0/tick au 1/60)
   if self.paused then return end -- combat GELÉ (sim + anims + horloge) -> reprise identique via Espace
   self.t = self.t + frameDt
   self.ambient:update(frameDt)
@@ -95,6 +104,8 @@ function Combat:update(frameDt)
     self.hintKey = "ui.hint_combat_end"
   end
 end
+
+function Combat:mousemoved(vx, vy) self.mx, self.my = vx, vy end
 
 -- Atmosphère "combat" native (gueule du puits + braises), derrière les combattants pixel.
 function Combat:drawBack(view)
@@ -125,26 +136,57 @@ function Combat:drawOverlay(view)
 
   -- Bandeau VICTORY / DEFEAT (logotype gothique) + post-mortem "POURQUOI" (1.3) : cause dominante +
   -- 1re perte, attribuées depuis le bus. L'attribution causale est la précondition du ranked/rétention.
+  -- Le post-mortem est en POLICE DE LECTURE (Theme.read) et PRÉFIXÉ de l'icône d'affliction si la cause
+  -- dominante en est une. Deux BOUTONS FORGE (CHRONICLE / CONTINUE) remplacent le clic-n'importe-où (2A).
   if self.arena.over and self.arena.overAge >= 20 then
     local won = self.arena.win
     if not self.summary then self.summary = self:_computeSummary() end
     local s = self.summary
     Draw.begin(view)
-    Draw.rect(0, Draw.H / 2 - 100, Draw.W, 200, { 0.02, 0.012, 0.03, 0.66 })
+    Draw.rect(0, Draw.H / 2 - 100, Draw.W, 220, { 0.02, 0.012, 0.03, 0.66 })
     Draw.textC(won and T("result.victory") or T("result.defeat"), Draw.W / 2, Draw.H / 2 - 80,
       won and c.gold or c.bloodBright, Theme.display(104))
-    local y = Draw.H / 2 + 28
+    local y = Draw.H / 2 + 24
     if s.cause and s.n > 0 then
-      Draw.textC(T(won and "combat.why.dealt" or "combat.why.slain",
-          { cause = T("combat.cause." .. s.cause), n = s.n }),
-        Draw.W / 2, y, won and c.gold or c.bloodBright, Theme.ui(15))
-      y = y + 24
+      -- icône d'affliction en préfixe (poison/bleed/burn/rot/shock) : la frappe/le reflet n'en ont pas.
+      local rfont = Theme.read(15)
+      local line = T(won and "combat.why.dealt" or "combat.why.slain",
+        { cause = T("combat.cause." .. s.cause), n = s.n })
+      local icon = Keywords.icon(s.cause)
+      local lw = Draw.textWidth(line, rfont) + (icon and (icon.w + 4) or 0)
+      local lx = Draw.W / 2 - lw / 2
+      if icon then
+        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.draw(icon.image, math.floor(lx), math.floor(y + rfont:getHeight() / 2 - icon.h / 2), 0, 1, 1)
+        lx = lx + icon.w + 4
+      end
+      Draw.text(line, lx, y, won and c.gold or c.bloodBright, rfont)
+      y = y + 26
     end
     if s.firstLoss then
       Draw.textC(T("combat.why.first_loss", { name = T("unit." .. s.firstLoss.id .. ".name") }),
-        Draw.W / 2, y, c.faint, Theme.ui(13))
+        Draw.W / 2, y, c.faint, Theme.read(13))
     end
-    Draw.textC(T("ui.hint_combat_end"), Draw.W / 2, Draw.H / 2 + 78, c.muted, Theme.ui(12))
+    -- raccourcis clavier en complément (le user refuse le clavier-seul : les boutons priment ; ceci aide).
+    Draw.textC(T("ui.hint_combat_end"), Draw.W / 2, Draw.H / 2 + 96, c.fainter, Theme.read(12))
+    Draw.finish()
+
+    -- DEUX BOUTONS FORGE centrés : CHRONICLE (eco) ouvre l'overlay, CONTINUE (cta) termine le combat.
+    local BW, BH, GAP = 168, 40, 16
+    local totalW = BW * 2 + GAP
+    local bx = math.floor(Draw.W / 2 - totalW / 2)
+    local by = math.floor(Draw.H / 2 + 44)
+    self._btnChron = { x = bx, y = by, w = BW, h = BH }
+    self._btnCont = { x = bx + BW + GAP, y = by, w = BW, h = BH }
+    Draw.begin(view)
+    local overChron = inBtn(self.mx, self.my, self._btnChron)
+    local overCont = inBtn(self.mx, self.my, self._btnCont)
+    local down = love.mouse and love.mouse.isDown and love.mouse.isDown(1)
+    Forge.uiButton("combat.chron", self._btnChron.x, self._btnChron.y, BW, BH, T("ui.chronicle"),
+      { tone = "eco", hover = overChron, active = overChron and down, fontSz = 9 })
+    Forge.uiButton("combat.cont", self._btnCont.x, self._btnCont.y, BW, BH, T("ui.continue"),
+      { tone = "cta", hover = overCont, active = overCont and down, fontSz = 9, eyeR = 6,
+        mouse = { mx = self.mx, my = self.my } })
     Draw.finish()
   end
 
@@ -167,13 +209,20 @@ function Combat:keypressed(key)
 end
 
 function Combat:mousepressed(vx, vy, button)
-  if button == 1 and self.arena.over then
-    -- EXHIBITION (banc d'essai) : payload.onFinish prend la main -> retour au Proving Ground, SANS
-    -- toucher la méta de run. Sinon route normale via le host (résout vies/victoires, round suivant ou
-    -- fin de run). Fallback goto("build") pour les contextes sans run (tests).
+  if button ~= 1 or not self.arena.over then return end -- entrées ignorées tant que le combat n'est pas fini
+  -- 2A — plus de clic-n'importe-où : on hit-teste UNIQUEMENT les deux boutons de l'écran de fin.
+  if inBtn(vx, vy, self._btnChron) then
+    -- CHRONICLE : ouvre l'overlay modal (chronique du combat en cours). No-op hors run (exhibition).
+    if self.host.openChronicle then self.host.openChronicle() end
+    return
+  end
+  if inBtn(vx, vy, self._btnCont) then
+    -- CONTINUE : route normale (comme l'ancien clic). EXHIBITION (banc d'essai) : payload.onFinish prend
+    -- la main (retour Proving Ground, SANS toucher la méta de run). Sinon host (résout vies/victoires).
     if self.payload.onFinish then self.payload.onFinish(self.arena.win, self.arena)
     elseif self.host.finishCombat then self.host.finishCombat(self.arena.win)
     else self.host.goto("build") end
+    return
   end
 end
 

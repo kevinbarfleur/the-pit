@@ -265,7 +265,11 @@ end
 
 function love.mousepressed(x, y, button)
   local vx, vy = toVirtual(x, y)
-  if host.overlay then host.overlay:mousepressed(vx, vy, button); return end -- modal : capte tout
+  if host.overlay then
+    -- modal : capte tout. Le bouton X renvoie "close" -> on referme l'overlay (le reste reste capté).
+    if host.overlay:mousepressed(vx, vy, button) == "close" then host.overlay = nil end
+    return
+  end
   if not host.scene.mousepressed then return end
   host.scene:mousepressed(vx, vy, button)
 end
@@ -278,9 +282,12 @@ function love.mousereleased(x, y, button)
 end
 
 function love.mousemoved(x, y)
-  if host.overlay then return end -- la scène derrière est figée
-  if not host.scene.mousemoved then return end
   local vx, vy = toVirtual(x, y)
+  if host.overlay then
+    if host.overlay.mousemoved then host.overlay:mousemoved(vx, vy) end -- survol des boutons forge de l'overlay
+    return -- la scène derrière est figée
+  end
+  if not host.scene.mousemoved then return end
   host.scene:mousemoved(vx, vy)
 end
 

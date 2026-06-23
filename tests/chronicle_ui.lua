@@ -38,12 +38,17 @@ local run = { chronicles = {
 } }
 local ov = Overlay.new(run, model)
 assert(#ov.sources == 3, "courant + 2 archives = 3 sources, vu " .. #ov.sources)
-ov:draw(view) -- settle les rects du carrousel
+ov:draw(view) -- settle les rects du carrousel + des boutons forge
 ov:keypressed("right"); assert(ov.sel == 2, "[>] round suivant")
 ov:keypressed("right"); assert(ov.sel == 3, "[>] encore")
 ov:keypressed("left"); assert(ov.sel == 2, "[<] round précédent")
 ov:wheelmoved(0, -2)
-ov:mousepressed(ov._prev.x + 1, ov._prev.y + 1); assert(ov.sel == 1, "clic [<] -> 1er")
+-- boutons-icône forge : clic sur la flèche précédente (centre) -> round précédent.
+ov:mousemoved(ov._prev.x + ov._prev.w / 2, ov._prev.y + ov._prev.h / 2) -- survol (hover des boutons forge)
+ov:mousepressed(ov._prev.x + ov._prev.w / 2, ov._prev.y + ov._prev.h / 2); assert(ov.sel == 1, "clic [<] -> 1er")
+-- bouton X (close) : renvoie "close" (main.lua referme l'overlay).
+assert(ov._close, "l'overlay pose le rect du bouton de fermeture")
+assert(ov:mousepressed(ov._close.x + 1, ov._close.y + 1) == "close", "clic sur X -> 'close'")
 ov:draw(view) -- re-draw après navigation : no-crash
 
-print("=> CHRONICLE-UI OK : panneau + overlay (carrousel de round) se dessinent et naviguent (headless).")
+print("=> CHRONICLE-UI OK : panneau + overlay (boutons forge + X de fermeture) se dessinent et naviguent (headless).")

@@ -31,6 +31,7 @@ function Chronicle.new(arena)
     arena = arena,
     entries = {}, -- liste ORDONNÉE (par tick d'insertion) : { tick, kind, actor*, target*, family, ... }
     live = {},    -- instances vivantes d'affliction : clé(source,cible,famille) -> entrée (agrégation)
+    _lastStrike = nil, -- dernier COUP inséré { source, tick } : sert à TAGGER sa conséquence immédiate (indentation causale)
   }, Chronicle)
   if arena and arena.bus then self:_subscribe(arena.bus) end
   return self
@@ -49,7 +50,16 @@ end
 function Chronicle:_add(e)
   e.tick = self.arena.t or 0
   self.entries[#self.entries + 1] = e
+  e._idx = #self.entries -- rang d'insertion (sert à choisir la cause d'affliction la plus récente à la mort)
   return e
+end
+
+-- 1A — heuristique d'indentation causale : vrai si le DERNIER coup inséré vient de `source` AU MÊME tick
+-- que l'instant courant (arena.t). Une affliction/propagation posée juste après un coup du même acteur,
+-- au même tick, EST la conséquence de ce coup (le coup applique le DoT) -> on l'indente sous sa cause.
+function Chronicle:_causedBy(source)
+  local ls = self._lastStrike
+  return (ls and source and ls.source == source and ls.tick == (self.arena.t or 0)) or nil
 end
 
 function Chronicle:_subscribe(bus)
@@ -66,6 +76,7 @@ function Chronicle:_subscribe(bus)
         actorId = idOf(e.source), actorTeam = teamOf(e.source),
         targetId = idOf(e.target), targetTeam = teamOf(e.target),
         dps = e.dps, dur = e.dur, stacks = e.stacks, total = 0, open = true,
+        caused = self:_causedBy(e.source), -- indentée si elle suit un coup du même acteur au même tick (1A)
       })
       self.live[key] = inst
     end
@@ -85,6 +96,9 @@ function Chronicle:_subscribe(bus)
         targetId = idOf(r.target), targetTeam = teamOf(r.target),
         amount = amount, absorbed = r.absorbed,
       })
+      -- mémorise ce coup (source + tick) -> une affliction/propagation du MÊME acteur, AU MÊME tick, juste
+      -- après, est sa CONSÉQUENCE directe (le coup applique le DoT) -> on l'indentera sous sa cause (1A).
+      self._lastStrike = { source = r.source, tick = self.arena.t or 0 }
     end
   end)
 
@@ -95,6 +109,7 @@ function Chronicle:_subscribe(bus)
       actorId = idOf(e.from), actorTeam = teamOf(e.from),
       targetId = idOf(e.to), targetTeam = teamOf(e.to),
       amount = e.magnitude,
+      caused = self:_causedBy(e.from), -- propagation déclenchée par un coup du même acteur au même tick (1A)
     })
   end)
 
@@ -107,12 +122,19 @@ function Chronicle:_subscribe(bus)
     })
   end)
 
-  -- MORT : entrée + on FERME les lignes vivantes d'affliction sur le défunt (elles ne tickeront plus).
+  -- MORT : entrée + on FERME les lignes vivantes d'affliction sur le défunt (elles ne tickeront plus). On
+  -- repère AUSSI la dernière affliction encore active (la plus « avancée » dans entries) comme cause probable
+  -- -> suffixe « par <icône famille> » sur le bloc MORT (lecture du POURQUOI au coup d'œil).
   bus:on("death", function(u)
-    self:_add({ kind = "death", targetId = idOf(u), targetTeam = teamOf(u), actorTeam = teamOf(u) })
+    local entry = self:_add({ kind = "death", targetId = idOf(u), targetTeam = teamOf(u), actorTeam = teamOf(u) })
+    local bestIdx, causeFamily = -1, nil
     for _, inst in pairs(self.live) do -- RENDER : pairs toléré (on ne modifie qu'un flag, l'ordre des entrées ne change pas)
-      if inst.targetId == idOf(u) and inst.targetTeam == teamOf(u) then inst.open = false; inst.killed = true end
+      if inst.targetId == idOf(u) and inst.targetTeam == teamOf(u) then
+        inst.open = false; inst.killed = true
+        if (inst._idx or 0) > bestIdx then bestIdx = inst._idx or 0; causeFamily = inst.family end
+      end
     end
+    entry.causeFamily = causeFamily -- nil si la mort vient d'un coup (pas d'icône de cause)
   end)
 end
 
