@@ -73,6 +73,18 @@ return {
   ["result.left"] = "Left Prevails",
   ["result.right"] = "Right Prevails",
 
+  -- post-mortem "pourquoi" (1.3) : attribution causale lue du bus de combat (RENDER)
+  ["combat.why.dealt"] = "Your {cause} struck down {n}",
+  ["combat.why.slain"] = "Cut down by {cause} ({n})",
+  ["combat.why.first_loss"] = "First to fall: {name}",
+  ["combat.cause.attack"] = "blades",
+  ["combat.cause.burn"] = "burning",
+  ["combat.cause.bleed"] = "bleeding",
+  ["combat.cause.poison"] = "venom",
+  ["combat.cause.rot"] = "rot",
+  ["combat.cause.shock"] = "shock",
+  ["combat.cause.reflect"] = "reflected wounds",
+
   -- run over
   ["runover.win"] = "ASCENSION",
   ["runover.lose"] = "THE PIT KEEPS YOU",

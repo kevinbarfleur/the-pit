@@ -754,13 +754,44 @@ function Build:drawBack(view)
       love.graphics.line(pa.x * 4, pa.y * 4, pk.x * 4, pk.y * 4)
     end
   end
+  -- Synergies d'adjacence ACTIVES (1.1) : survoler une case OCCUPÉE allume EN OR les arêtes vers
+  -- ses voisins OCCUPÉS = la lecture concrète "qui buffe qui". Survol d'une case vide -> les arêtes
+  -- restent rouges (active) : "si tu poses ici, tu touches ces voisins". La forme EST le graphe.
+  local focus = ui.hover or ui.dropTarget
+  if focus and b.slots[focus].unlocked and b.slots[focus].unit then
+    for _, j in ipairs(b:neighbors(focus)) do
+      if b.slots[j].unlocked and b.slots[j].unit then
+        local pf, pj = self.pos[focus], self.pos[j]
+        Draw.setColor(c.goldBright or c.gold)
+        love.graphics.setLineWidth(5)
+        love.graphics.line(pf.x * 4, pf.y * 4, pj.x * 4, pj.y * 4)
+      end
+    end
+  end
   love.graphics.setLineWidth(1)
 
-  -- Fonds des cases (l'ÉTAT est porté par la bordure en overlay, pas par le fond).
+  -- Fonds des cases + CARTE DE RISQUE (1.2). depth = maxCol - cell.x (0 = front = exposé au ciblage
+  -- de colonne). Voile de sang d'autant plus dense que la case est avancée -> rend visible le coût de
+  -- placer un carry au front, convertit la frustration RNG en skill de placement (combat-model §4-6).
+  -- (l'ÉTAT reste porté par la bordure en overlay, pas par le fond.)
+  local minCol, maxCol = math.huge, -math.huge
+  for _, cell in ipairs(b.shape.cells) do
+    if cell.x < minCol then minCol = cell.x end
+    if cell.x > maxCol then maxCol = cell.x end
+  end
+  local spanCol = math.max(1, maxCol - minCol)
   for i = 1, 9 do
     local p = self.pos[i]
     Draw.rect(p.x * 4 - SLOT_HALF, p.y * 4 - SLOT_HALF, SLOT_HALF * 2, SLOT_HALF * 2,
       b.slots[i].unlocked and c.slot or c.slotLocked)
+    local cell = b.shape.cells[i]
+    if b.slots[i].unlocked and cell then
+      local expo = 1 - (maxCol - cell.x) / spanCol -- 1 = front exposé, 0 = arrière protégé
+      if expo > 0.001 then
+        Draw.setColor({ c.edgeActive[1], c.edgeActive[2], c.edgeActive[3], 0.16 * expo })
+        love.graphics.rectangle("fill", p.x * 4 - SLOT_HALF, p.y * 4 - SLOT_HALF, SLOT_HALF * 2, SLOT_HALF * 2)
+      end
+    end
   end
 
   -- Panneau boutique + FONDS de carte = PLAQUES FORGE PLEINES (matière patinée, derrière les rigs d'aperçu)
