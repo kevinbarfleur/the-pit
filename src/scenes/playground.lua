@@ -10,9 +10,18 @@
 --
 -- Couche RENDER/scène (DA) : atmosphère en pre-pass (drawBack), UI native en overlay (drawOverlay) en
 -- ESPACE DESIGN 1280x720. Aucun monde pixel (les compos sont dessinées en PIPS de type). daChrome=true.
+--
+-- CHROME = KIT PROPRE (.dc.html / design-system) : aligné sur build/grimoire/designsystem. Plus de
+-- panneaux/boutons dessinés à la main -> on réutilise les ATOMES : Panel (surfaces A/B), Button (WATCH
+-- primary + SIM eco, avec Feel), Dividers (en-têtes de section), Draw.bar (barres d'investissement/SIM).
+-- Le texte passe par les voix Theme (Cinzel titres / Spectral prose / Space Mono labels & valeurs).
 
 local Theme = require("src.ui.theme")
 local Draw = require("src.ui.draw")
+local Panel = require("src.ui.panel")       -- surface propre (dégradé + liseré iron + éclat) : A/B + scénarios
+local Button = require("src.ui.button")     -- boutons propres : primary (WATCH) / eco (SIM)
+local Dividers = require("src.ui.dividers")  -- séparateurs laiton/sang (en-têtes de blocs)
+local Feel = require("src.ui.feel")          -- JUICE : survol (glow/lift) + press (squash/flash)
 local Ambient = require("src.fx.ambient")
 local Units = require("src.data.units")
 local Shapes = require("src.board.shapes")
@@ -21,9 +30,14 @@ local Compbuild = require("src.lab.compbuild")
 local Compcost = require("src.lab.compcost")
 local Match = require("src.combat.match")
 local T = require("src.core.i18n").t
+local C = Theme.c
 
 local Playground = {}
 Playground.__index = Playground
+
+-- Hit-test point-dans-rect (espace design). Module-local (déclaré tôt : update() s'en sert pour le survol
+-- des boutons WATCH/SIM, avant les hit-tests souris plus bas).
+local function inRect(x, y, r) return x >= r.x and x <= r.x + r.w and y >= r.y and y <= r.y + r.h end
 
 local SIM_N = 200          -- nb de matchs par batch SIM
 local SIM_PER_FRAME = 10   -- matchs joués par frame (étalé -> pas de gel)
@@ -32,8 +46,9 @@ local SIM_PER_FRAME = 10   -- matchs joués par frame (étalé -> pas de gel)
 local LIST_X, LIST_W, ROW_H, ROW_GAP = 28, 300, 46, 6
 local LIST_STEP = ROW_H + ROW_GAP               -- 52 px par ligne
 local LIST_BOTTOM = 518                          -- bas du conteneur scrollable (aligne sur le bas des panneaux : PANEL_Y+PANEL_H)
-local FILTER_Y, CHIP_H, CHIP_PAD, CHIP_GAP = 92, 18, 8, 4 -- filtre : chips cliquables (archetypes + tags), wrap multi-rangs
+local FILTER_Y, CHIP_H, CHIP_PAD, CHIP_GAP = 92, 20, 9, 5 -- filtre : chips cliquables (archetypes + tags), wrap multi-rangs
 local AX, BX, PANEL_Y, PANEL_W, PANEL_H = 356, 818, 122, 408, 396
+local BTN_W, BTN_GAP = 200, 16
 local BTN_Y, BTN_H = 540, 54
 -- listY / listViewH / listVisible sont CALCULES (layoutChips) : la liste commence sous la derniere rangee de
 -- chips et garde son bas aligne sur LIST_BOTTOM -> le filtre peut occuper 1, 2 ou 3 rangs sans chevauchement.
@@ -47,12 +62,14 @@ function Playground.new(palette, vw, vh, host)
     scenarios = Compositions.scenarios,    -- VUE courante (= master filtre par categorie ; toutes les fonctions liste s'en servent)
     filter = "all",
     sel = 0, hover = nil, scroll = 0,
+    mx = -100, my = -100,
     compA = nil, compB = nil, costA = nil, costB = nil,
     result = nil, sim = nil,
   }, Playground)
   self:buildChips() -- chips presentes (archetypes + tags) dans les scenarios
   self:layoutChips() -- positions des chips (wrap) + geometrie de la liste sous le filtre
   self:select(1)
+  Feel.reset() -- repart au repos (survol/press vierges) en (re)entrant dans la scène
   return self
 end
 
@@ -79,17 +96,17 @@ end
 
 -- Place les chips en rangs qui s'enroulent dans LIST_W, PUIS positionne la liste juste dessous.
 function Playground:layoutChips()
-  local font = Theme.ui(8)
+  local font = Theme.label(10) -- Space Mono (voix inscrite) : libellés courts de filtre
   self.chipRects = {}
   local x, y = LIST_X, FILTER_Y
   for _, ch in ipairs(self.chips) do
-    local w = (font and font:getWidth(ch.label) or #ch.label * 5) + CHIP_PAD * 2
+    local w = (font and font:getWidth(ch.label) or #ch.label * 6) + CHIP_PAD * 2
     if x > LIST_X and x + w > LIST_X + LIST_W then x = LIST_X; y = y + CHIP_H + CHIP_GAP end
     self.chipRects[#self.chipRects + 1] = { key = ch.key, kind = ch.kind, label = ch.label, x = x, y = y, w = w, h = CHIP_H }
     x = x + w + CHIP_GAP
   end
   -- La liste commence sous la derniere rangee de chips ; son bas reste aligne sur les panneaux.
-  self.listY = y + CHIP_H + 14
+  self.listY = y + CHIP_H + 16
   self.listViewH = math.max(LIST_STEP, LIST_BOTTOM - self.listY)
   self.listVisible = math.max(1, math.floor(self.listViewH / LIST_STEP))
 end
@@ -162,9 +179,17 @@ function Playground:startSim()
   self.result = nil
 end
 
+-- Rects (espace design) des deux boutons (WATCH primary | SIM eco) — source unique pour rendu ET hit-test.
+function Playground:watchRect() return { x = AX, y = BTN_Y, w = BTN_W, h = BTN_H } end
+function Playground:simRect() return { x = AX + BTN_W + BTN_GAP, y = BTN_Y, w = BTN_W, h = BTN_H } end
+
 function Playground:update(dt)
   self.t = self.t + (dt or 1)
   self.ambient:update(dt)
+  Feel.update(dt) -- avance survol/press (RENDER pur ; aucune action différée ici)
+  local wr, sr = self:watchRect(), self:simRect()
+  Feel.hover("pg.watch", inRect(self.mx, self.my, wr))
+  Feel.hover("pg.sim", (not self.sim) and inRect(self.mx, self.my, sr) or false)
   if self.sim then
     local s, k = self.sim, 0
     while s.done < s.n and k < SIM_PER_FRAME do
@@ -198,14 +223,16 @@ local function shapeBounds(shape)
   return minX, maxX, minY, maxY
 end
 
+-- Carte d'aperçu d'une compo : SURFACE PROPRE (Panel.draw : dégradé + liseré iron + éclat) — accent doré
+-- quand ce côté a remporté un WATCH (le liseré héros de la rareté). Le contenu (titre Cinzel, sigil en pips,
+-- barre d'investissement Space Mono) se pose à l'intérieur du rect renvoyé par Panel.
 function Playground:drawComp(comp, resolved, cost, px, py, pw, ph, won)
-  local c = Theme.c
-  Draw.rect(px, py, pw, ph, c.panelDeep, won and c.ecoBorder or c.hair, won and 2 or 1)
+  local ix, iy, iw = Panel.draw(px, py, pw, ph, { accent = won and C.gold or nil })
 
-  -- Titre : archétype — variant (Silkscreen, fonctionnel lisible).
+  -- Titre : archétype — variant (Cinzel gravée, la voix des noms) + sigil (Space Mono, inscrite).
   local titleStr = T("pg.archetype." .. comp.archetype) .. "  -  " .. T("pg.variant." .. comp.variant)
-  Draw.textC(titleStr, px + pw / 2, py + 12, c.title, Theme.uiBold(14))
-  Draw.textC(T("shape." .. comp.sigil .. ".label"), px + pw / 2, py + 34, c.faint, Theme.ui(9))
+  Draw.textC(titleStr, ix + iw / 2, iy + 12, C.ink, Theme.subhead(16))
+  Draw.textC(T("shape." .. comp.sigil .. ".label"), ix + iw / 2, iy + 34, C.ink4, Theme.label(10))
 
   -- Grille du sigil : cases vides en points ténus, unités en pips colorés par type + nom.
   local shape = Shapes[comp.sigil]
@@ -218,7 +245,7 @@ function Playground:drawComp(comp, resolved, cost, px, py, pw, ph, won)
   end
   for _, cell in ipairs(shape.cells) do
     local cx, cy = cellPx(cell)
-    Draw.setColor(c.edgeIdle); love.graphics.circle("fill", cx, cy, 2)
+    Draw.setColor(C.edgeIdle); love.graphics.circle("fill", cx, cy, 2)
   end
   local used = {}
   for _, u in ipairs(comp.units) do used[u.slot] = u end
@@ -227,50 +254,59 @@ function Playground:drawComp(comp, resolved, cost, px, py, pw, ph, won)
     local cx, cy = cellPx(cell)
     local ut = Units[u.id]
     Draw.pip(ut and ut.type or "bone", cx, cy, 9)
-    Draw.textC(T("unit." .. u.id .. ".name"), cx, cy + 12, c.muted, Theme.ui(7))
+    Draw.textC(T("unit." .. u.id .. ".name"), cx, cy + 12, C.ink3, Theme.label(8))
     if (u.level or 1) > 1 then -- pips de niveau (or)
       for p = 1, (u.level - 1) do
-        Draw.setColor(c.goldBright); love.graphics.circle("fill", cx - 6 + p * 6, cy - 13, 1.6)
+        Draw.setColor(C.brassS); love.graphics.circle("fill", cx - 6 + p * 6, cy - 13, 1.6)
       end
     end
   end
 
-  -- Investissement : barre de score + or (le contexte qui rend le win% lisible).
-  local iy = py + ph - 56
-  Draw.text(T("pg.invest"), px + 18, iy, c.faint, Theme.ui(9))
-  Draw.bar(px + 18, iy + 14, pw - 36, 8, cost.score, c.gold, c.ecoBg, c.ecoBorder)
-  Draw.textR(T("pg.gold", { n = cost.gold }), px + pw - 18, iy + 26, c.muted, Theme.ui(9))
+  -- Investissement : séparateur de bloc + barre de score + or (le contexte qui rend le win% lisible).
+  local iyv = py + ph - 60
+  Dividers.text(px + pw / 2, iyv, pw - 36, T("pg.invest"))
+  Draw.bar(px + 18, iyv + 22, pw - 36, 8, cost.score, C.gold, C.ecoBg, C.brass)
+  Draw.textR(T("pg.gold", { n = cost.gold }), px + pw - 18, iyv + 34, C.ink3, Theme.label(10))
 end
 
 function Playground:drawOverlay(view)
-  local c = Theme.c
   Draw.begin(view)
 
-  -- En-tête (titre gothique en CASSE DE TITRE, comme le Grimoire).
-  Draw.text(T("pg.title"), LIST_X, 24, c.title, Theme.display(40))
-  Draw.text(T("pg.subtitle"), LIST_X + 2, 78, c.faint, Theme.ui(9))
+  -- En-tête (titre gothique cérémonial, comme le Grimoire) + sous-titre Spectral lisible.
+  Draw.text(T("pg.title"), LIST_X, 24, C.ink, Theme.display(40))
+  Draw.text(T("pg.subtitle"), LIST_X + 2, 78, C.ink3, Theme.body(13))
 
-  -- Filtre : rang(s) de chips cliquables. Famille active = bordée d'or ; thème (tag) actif = bordé de sang
-  -- (lecture « familles | thèmes »).
+  -- Filtre : rang(s) de chips cliquables (surfaces propres). Famille active = liseré d'or ; thème (tag)
+  -- actif = liseré de sang (lecture « familles | thèmes »). Inactif = pierre + liseré iron net.
   for _, ch in ipairs(self.chipRects) do
     local on = (self.filter == ch.key)
-    local accent = (ch.kind == "tag") and c.bloodBright or c.gold
-    Draw.rect(ch.x, ch.y, ch.w, ch.h, on and c.panel or c.panelDeep, on and accent or c.line, 1)
-    Draw.textC(ch.label, ch.x + ch.w / 2, ch.y + 4, on and accent or c.faint, Theme.ui(8))
+    local accent = (ch.kind == "tag") and C.blood or C.gold
+    if on then
+      Panel.draw(ch.x, ch.y, ch.w, ch.h, { fill1 = C.stone700, fill2 = C.stone800, border = accent, accent = accent })
+    else
+      Panel.draw(ch.x, ch.y, ch.w, ch.h, { fill1 = C.stone850, fill2 = C.stone900, border = C.iron, hi = false })
+    end
+    Draw.textC(ch.label, ch.x + ch.w / 2, ch.y + (ch.h - 11) / 2, on and accent or C.ink3, Theme.label(10))
   end
 
   -- Liste des scénarios : CONTENEUR scrollable (clip au viewport -> aucun débordement hors-fenêtre).
   local listY, listViewH = self.listY, self.listViewH
-  Draw.scissor(view, LIST_X - 4, listY - 2, LIST_W + 10, listViewH + 4)
+  Draw.scissor(view, LIST_X - 4, listY - 2, LIST_W + 12, listViewH + 4)
   for i, sc in ipairs(self.scenarios) do
     local r = self:rowRect(i)
     if r.y + r.h > listY - 2 and r.y < listY + listViewH then -- saute les lignes hors-champ
       local on = (self.sel == i)
-      Draw.rect(r.x, r.y, r.w, r.h, on and c.panel or c.panelDeep, on and c.ecoBorder or c.line, 1)
-      Draw.text(T("scenario." .. sc.id .. ".label"), r.x + 12, r.y + 7, on and c.title or c.body, Theme.ui(11))
+      local hov = (self.hover == i)
+      -- ligne = SURFACE PROPRE (Panel) : sélection bordée d'or (héros) ; survol bordé de laiton ; sinon iron.
+      Panel.draw(r.x, r.y, r.w, r.h, {
+        fill1 = on and C.stone700 or C.stone850, fill2 = C.stone900,
+        border = on and C.gold or (hov and C.brass or C.iron),
+        accent = on and C.gold or nil, hi = on,
+      })
+      Draw.text(T("scenario." .. sc.id .. ".label"), r.x + 14, r.y + 8, on and C.ink or C.ink2, Theme.subhead(14))
       local a, b = Compositions.byId[sc.a], Compositions.byId[sc.b]
       Draw.text(T("pg.archetype." .. a.archetype) .. "  vs  " .. T("pg.archetype." .. b.archetype),
-        r.x + 12, r.y + 26, c.faint, Theme.ui(8))
+        r.x + 14, r.y + 27, C.ink4, Theme.label(9))
     end
   end
   Draw.noScissor()
@@ -278,59 +314,64 @@ function Playground:drawOverlay(view)
   local maxS = self:maxScroll()
   if maxS > 0 then
     local tx = LIST_X + LIST_W + 6
-    Draw.rect(tx, listY, 3, listViewH, c.line)
+    Draw.rect(tx, listY, 3, listViewH, C.stone900)
     local thumbH = math.max(24, listViewH * self.listVisible / #self.scenarios)
-    Draw.rect(tx, listY + (listViewH - thumbH) * (self.scroll / maxS), 3, thumbH, c.ecoBorder)
+    Draw.rect(tx, listY + (listViewH - thumbH) * (self.scroll / maxS), 3, thumbH, C.brass)
   end
-  Draw.text(T("pg.trials", { n = #self.scenarios }), LIST_X, listY + listViewH + 8, c.ghost, Theme.ui(8))
+  Draw.text(T("pg.trials", { n = #self.scenarios }), LIST_X, listY + listViewH + 8, C.ink5, Theme.label(9))
 
   -- Aperçus A (gauche) / B (droite) + "Vs".
   local watched = self.result and self.result.kind == "watch"
   self:drawComp(self.cA, self.compA, self.costA, AX, PANEL_Y, PANEL_W, PANEL_H, watched and self.result.win)
   self:drawComp(self.cB, self.compB, self.costB, BX, PANEL_Y, PANEL_W, PANEL_H, watched and (self.result.win == false))
-  Draw.textC(T("pg.vs"), (AX + PANEL_W + BX) / 2, PANEL_Y + PANEL_H / 2 - 24, c.bloodBright, Theme.display(34))
+  Draw.textC(T("pg.vs"), (AX + PANEL_W + BX) / 2, PANEL_Y + PANEL_H / 2 - 24, C.bloodL, Theme.display(34))
 
   -- Boutons WATCH / SIM + lecture du résultat (contextualisée par l'investissement).
-  self:drawButton(AX, BTN_Y, 200, BTN_H, T("pg.watch"), "cta", self.watchHover)
-  if self.sim then
-    self:drawButton(AX + 216, BTN_Y, 200, BTN_H, T("pg.simming", { done = self.sim.done, n = self.sim.n }), "eco", false)
-    Draw.bar(AX + 216, BTN_Y + BTN_H - 5, 200, 4, self.sim.done / self.sim.n, c.gold, c.ecoBg, nil)
-  else
-    self:drawButton(AX + 216, BTN_Y, 200, BTN_H, T("pg.sim", { n = SIM_N }), "eco", self.simHover)
-  end
-  self:drawResult(c)
+  self:drawButtons()
+  self:drawResult()
 
   -- Pied.
-  Draw.text(T("ui.hint_playground"), LIST_X, 694, c.ghost, Theme.ui(9))
+  Draw.text(T("ui.hint_playground"), LIST_X, 694, C.ink5, Theme.label(9))
   Draw.finish()
 end
 
--- Bouton du banc d'essai : un TON (cta = WATCH, eco = SIM) + survol -> état Frame (biseau + dorures CTA).
-function Playground:drawButton(x, y, w, h, label, tone, hover)
-  Draw.button(x, y, w, h, label, Theme.uiBold(15),
-    { state = Theme.btnState({ tone = tone, enabled = true, hover = hover }) })
+-- Boutons du banc d'essai (ATOMES PROPRES) : WATCH = primary (l'action héros, sang + yeux) ; SIM = eco
+-- (compact, voix terne). Pendant un batch, SIM bascule en secondary désactivé + barre de progression.
+function Playground:drawButtons()
+  local wr, sr = self:watchRect(), self:simRect()
+  Button.draw(wr.x, wr.y, wr.w, wr.h, "primary", T("pg.watch"),
+    { hover = inRect(self.mx, self.my, wr), feel = Feel.state("pg.watch"), id = "pg.watch",
+      mouse = { mx = self.mx, my = self.my }, t = self.t })
+  if self.sim then
+    Button.draw(sr.x, sr.y, sr.w, sr.h, "secondary", T("pg.simming", { done = self.sim.done, n = self.sim.n }),
+      { disabled = true })
+    Draw.bar(sr.x + 2, sr.y + sr.h - 6, sr.w - 4, 4, self.sim.done / self.sim.n, C.gold, C.ecoBg, nil)
+  else
+    Button.draw(sr.x, sr.y, sr.w, sr.h, "eco", T("pg.sim", { n = SIM_N }),
+      { hover = inRect(self.mx, self.my, sr), feel = Feel.state("pg.sim") })
+  end
 end
 
-function Playground:drawResult(c)
+function Playground:drawResult()
   local rx, ry = BX, BTN_Y
   if not self.result then
-    Draw.textC(T("pg.idle"), rx + PANEL_W / 2, ry + 18, c.fainter, Theme.ui(10))
+    Draw.textC(T("pg.idle"), rx + PANEL_W / 2, ry + 18, C.ink4, Theme.label(10))
     return
   end
   if self.result.kind == "watch" then
     local who = self.result.win and T("result.left") or T("result.right")
-    Draw.textC(who, rx + PANEL_W / 2, ry + 10, self.result.win and c.gold or c.bloodBright, Theme.uiBold(16))
-    Draw.textC(T("pg.watched"), rx + PANEL_W / 2, ry + 34, c.faint, Theme.ui(9))
+    Draw.textC(who, rx + PANEL_W / 2, ry + 8, self.result.win and C.gold or C.bloodL, Theme.heading(16))
+    Draw.textC(T("pg.watched"), rx + PANEL_W / 2, ry + 32, C.ink4, Theme.label(9))
   else
     local pct = self.result.wins / self.result.n * 100
     local dpct = self.result.decided / self.result.n * 100
     Draw.textC(T("pg.winrate", { pct = string.format("%.0f", pct), n = self.result.n }),
-      rx + PANEL_W / 2, ry + 8, c.title, Theme.uiBold(15))
-    Draw.textC(T("pg.decided", { pct = string.format("%.0f", dpct) }), rx + PANEL_W / 2, ry + 30, c.faint, Theme.ui(9))
+      rx + PANEL_W / 2, ry + 6, C.ink, Theme.value(15))
+    Draw.textC(T("pg.decided", { pct = string.format("%.0f", dpct) }), rx + PANEL_W / 2, ry + 28, C.ink4, Theme.label(9))
     -- contexte : delta d'investissement (rappelle que le win% se lit en regard du coût).
     local dScore = (self.costA.score - self.costB.score)
     Draw.textC(T("pg.invest_delta", { d = string.format("%+.2f", dScore) }),
-      rx + PANEL_W / 2, ry + 44, c.muted, Theme.ui(9))
+      rx + PANEL_W / 2, ry + 42, C.ink3, Theme.label(9))
   end
 end
 
@@ -358,14 +399,13 @@ end
 function Playground:rowRect(i)
   return { x = LIST_X, y = self.listY + (i - 1 - self.scroll) * LIST_STEP, w = LIST_W, h = ROW_H }
 end
-local function ptIn(x, y, r) return x >= r.x and x <= r.x + r.w and y >= r.y and y <= r.y + r.h end
+local ptIn = inRect
 -- Le clic/survol n'est valide que DANS le conteneur (une ligne scrollée hors-champ n'est pas cliquable).
 function Playground:inList(dx, dy) return dx >= LIST_X and dx <= LIST_X + LIST_W and dy >= self.listY and dy <= self.listY + self.listViewH end
 
 function Playground:mousemoved(vx, vy)
   local dx, dy = vx * 4, vy * 4
-  self.watchHover = ptIn(dx, dy, { x = AX, y = BTN_Y, w = 200, h = BTN_H })
-  self.simHover = ptIn(dx, dy, { x = AX + 216, y = BTN_Y, w = 200, h = BTN_H })
+  self.mx, self.my = dx, dy
   self.hover = nil
   if not self:inList(dx, dy) then return end
   for i = 1, #self.scenarios do if ptIn(dx, dy, self:rowRect(i)) then self.hover = i; return end end
@@ -374,6 +414,7 @@ end
 function Playground:mousepressed(vx, vy, button)
   if button ~= 1 then return end
   local dx, dy = vx * 4, vy * 4
+  self.mx, self.my = dx, dy
   for _, ch in ipairs(self.chipRects) do -- clic sur une chip de filtre
     if ptIn(dx, dy, ch) then self:setFilter(ch.key); return end
   end
@@ -383,8 +424,11 @@ function Playground:mousepressed(vx, vy, button)
     end
     return
   end
-  if ptIn(dx, dy, { x = AX, y = BTN_Y, w = 200, h = BTN_H }) then self:startWatch(); return end
-  if ptIn(dx, dy, { x = AX + 216, y = BTN_Y, w = 200, h = BTN_H }) then self:startSim(); return end
+  -- WATCH / SIM : feedback de press IMMÉDIAT (squash + flash) puis action TOUT DE SUITE (WATCH bascule de
+  -- scène, SIM lance le batch). On ne diffère pas (cohérent build.lua : les actions « lourdes » de banc
+  -- d'essai partent au press ; pas de mousereleased dans cette scène).
+  if ptIn(dx, dy, self:watchRect()) then Feel.press("pg.watch"); self:startWatch(); return end
+  if ptIn(dx, dy, self:simRect()) then Feel.press("pg.sim"); self:startSim(); return end
 end
 
 function Playground:keypressed(key)

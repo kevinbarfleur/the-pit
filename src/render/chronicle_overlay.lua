@@ -1,15 +1,25 @@
 -- src/render/chronicle_overlay.lua
 -- LA CHRONIQUE — overlay MODAL, ouvrable n'importe où ([c]) et figeant le jeu derrière. Voile plein écran
 -- + SÉLECTEUR DE ROUND (carrousel ‹ ... ›) + le panneau journal (chronicle_draw) pour la chronique choisie.
--- Le host route les inputs ici tant qu'il est ouvert -> aucune interaction ne termine un match (le bug à corriger).
+-- Le host route les inputs ici tant qu'il est ouvert -> aucune interaction ne termine un match.
+--
+-- ── Kit PROPRE (.dc.html / design-system), aligné sur src/scenes/combat.lua qui OUVRE cet overlay ──────
+-- Plus de Forge (kit legacy : boutons-icône bakés, plaque qui respire). La chrome est propre : titre Cinzel
+-- gravé (Theme.heading) + filet laiton (Dividers.brass) ; le carrousel et le X = Button.icon / plaque Panel
+-- propre + glyphe net ; le label de round en Cinzel (subhead) + l'index en Space Mono (label). Le survol des
+-- boutons est lissé par Feel (RENDER pur, headless-safe). RENDER pur ; ne touche jamais la SIM.
 
 local Draw = require("src.ui.draw")
 local Theme = require("src.ui.theme")
-local Forge = require("src.ui.forge")       -- boutons-icône forge (‹ › carrousel + X de fermeture)
+local Panel = require("src.ui.panel")       -- plaque propre du bouton X (remplace le cadre forge)
+local Button = require("src.ui.button")     -- boutons-icône PROPRES (‹ › du carrousel) : remplace Forge.uiButton
+local Dividers = require("src.ui.dividers")  -- filet laiton sous le titre (chrome propre)
+local Feel = require("src.ui.feel")          -- JUICE : survol lissé des boutons (glow/lift), RENDER pur
 local Chronicle = require("src.render.chronicle")
 local ChronicleDraw = require("src.render.chronicle_draw")
 local MonsterCard = require("src.render.monstercard") -- fiche TCG flottante au survol d'un nom (J4)
 local T = require("src.core.i18n").t
+local C = Theme.c
 
 local Overlay = {}
 Overlay.__index = Overlay
@@ -39,8 +49,7 @@ local function inR(mx, my, r) return r and mx >= r.x and mx <= r.x + r.w and my 
 -- Les inputs arrivent en espace VIRTUEL (main.lua:toVirtual divise par view.scale -> 320×180). Mais TOUTE
 -- l'UI de l'overlay (et du panel) est composée en espace DESIGN 1280×720 (= virtuel ×4, la convention de
 -- src/ui/draw.lua). On convertit donc ici, à l'unique point d'entrée souris. Le facteur est CONSTANT (×4 :
--- design = VW×4), indépendant de view.scale (qui, lui, mappe écran->virtuel). [Corrige le hit-test des
--- boutons/du carrousel, jusqu'ici en facteur 4 -> jamais déclenché à la souris ; RENDER pur, golden inchangé.]
+-- design = VW×4), indépendant de view.scale (qui, lui, mappe écran->virtuel).
 local function toDesign(vx, vy) return vx * 4, vy * 4 end
 
 function Overlay:_select(i)
@@ -49,51 +58,60 @@ function Overlay:_select(i)
   self.panel:setChron(self.sources[i].model)
 end
 
-function Overlay:draw(view)
-  local c = Theme.c
-  self.t = self.t + 1 / 60 -- horloge locale (overlay modal sans boucle update) : respiration de la fiche au survol
-  Draw.begin(view)
-  Forge.uiTick(1 / 60) -- horloge des boutons forge (overlay modal : pas de boucle update -> tick au rendu)
-  Draw.rect(0, 0, Draw.W, Draw.H, { 0.02, 0.012, 0.03, 0.93 }) -- voile : le jeu derrière est figé
-  Draw.text(T("chronicle.title"), 24, 16, c.title, Theme.display(30))
-  Draw.textR(T("chronicle.close_hint"), Draw.W - 24 - 26 - 12, 26, c.fainter, Theme.read(12)) -- hint clavier (complément)
-
-  -- Carrousel de round : [‹] label [›]  +  i / n. Boutons-ICÔNE FORGE (le carrousel texte est retiré).
-  local font = Theme.read(15)
-  local label = self.sources[self.sel].label
-  local lw = Draw.textWidth(label, font)
-  local cy = 50
-  local many = #self.sources > 1
-  Draw.text(label, math.floor(Draw.W / 2 - lw / 2), cy + 4, c.title, font)
-  Draw.textC(string.format("%d / %d", self.sel, #self.sources), Draw.W / 2, cy + 24, c.fainter, Theme.read(11))
-  -- rects des boutons (espace design) : flèches de part et d'autre du label, X en haut à droite.
-  local BS = 26
-  self._prev = { x = math.floor(Draw.W / 2 - lw / 2 - BS - 12), y = cy, w = BS, h = BS }
-  self._next = { x = math.floor(Draw.W / 2 + lw / 2 + 12), y = cy, w = BS, h = BS }
-  self._close = { x = Draw.W - 24 - BS, y = 16, w = BS, h = BS }
-  Draw.finish()
-
-  -- boutons forge (icon) : seulement si plusieurs rounds pour les flèches ; le X est toujours présent.
-  Draw.begin(view)
-  if many then
-    Forge.uiButton("chron.ov.prev", self._prev.x, self._prev.y, BS, BS, "",
-      { tone = "icon", cost = "left", hover = inR(self.mx, self.my, self._prev) })
-    Forge.uiButton("chron.ov.next", self._next.x, self._next.y, BS, BS, "",
-      { tone = "icon", cost = "right", hover = inR(self.mx, self.my, self._next) })
-  end
-  Forge.uiButton("chron.ov.close", self._close.x, self._close.y, BS, BS, "",
-    { tone = "icon", cost = "gear", hover = inR(self.mx, self.my, self._close) })
-  -- CROIX nette par-dessus le cadre forge (lecture « fermer » sans ambiguïté avec la roue).
-  local xc = self._close.x + BS / 2
-  local yc = self._close.y + BS / 2
-  local cl = inR(self.mx, self.my, self._close) and c.inkBright or c.muted
+-- Bouton X (fermeture) PROPRE : plaque Panel (dégradé + liseré iron) + croix nette par-dessus. Pas de cadre
+-- forge ni de roue (le glyphe X dit « fermer » sans ambiguïté). `hot` = survol -> encre vive.
+function Overlay:_drawClose(r, hot)
+  Panel.draw(r.x, r.y, r.w, r.h, { fill1 = hot and C.stone700 or C.stone800, fill2 = C.stone900, border = C.iron })
+  local xc, yc = r.x + r.w / 2, r.y + r.h / 2
+  local cl = hot and C.ink or C.ink3
   for d = -4, 4 do
     Draw.rect(xc + d - 0.5, yc + d - 0.5, 2, 2, cl)
     Draw.rect(xc + d - 0.5, yc - d - 0.5, 2, 2, cl)
   end
+end
+
+function Overlay:draw(view)
+  local c = Theme.c
+  self.t = self.t + 1 / 60 -- horloge locale (overlay modal sans boucle update) : respiration de la fiche au survol
+  Feel.update(1)           -- JUICE : avance le survol lissé des boutons (overlay modal -> pas de boucle update)
+
+  -- Survol des boutons (lissé) — résolu avant le draw pour piloter glow/lift via Feel.state.
+  Feel.hover("chron.ov.prev", inR(self.mx, self.my, self._prev))
+  Feel.hover("chron.ov.next", inR(self.mx, self.my, self._next))
+  Feel.hover("chron.ov.close", inR(self.mx, self.my, self._close))
+
+  Draw.begin(view)
+  Draw.rect(0, 0, Draw.W, Draw.H, { 0.02, 0.012, 0.03, 0.93 }) -- voile : le jeu derrière est figé
+  -- Titre Cinzel gravé (capitales, interlettrage) + hint clavier en Space Mono ; filet laiton dessous.
+  Draw.textTrackedL(T("chronicle.title"):upper(), 24, 16, c.ink, Theme.heading(24), 2)
+  Draw.textR(T("chronicle.close_hint"), Draw.W - 24 - 26 - 12, 26, c.ink4, Theme.label(11)) -- hint clavier (complément)
+
+  -- Carrousel de round : [‹] label [›]  +  i / n. Label en Cinzel (subhead), index en Space Mono (label).
+  local font = Theme.subhead(16)
+  local label = self.sources[self.sel].label
+  local lw = Draw.textWidth(label, font)
+  local cy = 50
+  local many = #self.sources > 1
+  Draw.textC(label, Draw.W / 2, cy + 2, c.ink, font)
+  Draw.textC(string.format("%d / %d", self.sel, #self.sources), Draw.W / 2, cy + 26, c.ink4, Theme.label(11))
+  -- rects des boutons (espace design) : flèches de part et d'autre du label, X en haut à droite.
+  local BS = 26
+  self._prev = { x = math.floor(Draw.W / 2 - lw / 2 - BS - 14), y = cy, w = BS, h = BS }
+  self._next = { x = math.floor(Draw.W / 2 + lw / 2 + 14), y = cy, w = BS, h = BS }
+  self._close = { x = Draw.W - 24 - BS, y = 16, w = BS, h = BS }
+  -- filet laiton sous la chrome (séparation propre, profil triangulaire centré).
+  Dividers.brass(Draw.W / 2, 84, 520)
+
+  -- boutons-icône PROPRES (Button.icon : plaque + glyphe net) : flèches seulement si plusieurs rounds.
+  if many then
+    Button.icon(self._prev.x, self._prev.y, BS, "prev", { hover = inR(self.mx, self.my, self._prev) })
+    Button.icon(self._next.x, self._next.y, BS, "next", { hover = inR(self.mx, self.my, self._next) })
+  end
+  -- bouton X (close) : plaque propre + croix nette (toujours présent).
+  self:_drawClose(self._close, inR(self.mx, self.my, self._close))
   Draw.finish()
 
-  self.panel:draw(view, 24, 92, Draw.W - 48, Draw.H - 108)
+  self.panel:draw(view, 24, 96, Draw.W - 48, Draw.H - 112)
 
   -- FICHE de monstre au SURVOL d'un nom (J4) : dessinée AU NIVEAU OVERLAY, PAR-DESSUS la liste et HORS de
   -- son clip (la carte déborde volontairement du panneau). Ancrée au curseur (en design), rebond sur les
@@ -114,9 +132,9 @@ end
 -- Renvoie "close" si le X a été cliqué (main.lua referme l'overlay), sinon true (modal : capte tout).
 function Overlay:mousepressed(vx, vy)
   local dx, dy = toDesign(vx, vy)
-  if inR(dx, dy, self._close) then return "close" end
-  if inR(dx, dy, self._prev) then self:_select(self.sel - 1); return true end
-  if inR(dx, dy, self._next) then self:_select(self.sel + 1); return true end
+  if inR(dx, dy, self._close) then Feel.press("chron.ov.close"); return "close" end
+  if inR(dx, dy, self._prev) then Feel.press("chron.ov.prev"); self:_select(self.sel - 1); return true end
+  if inR(dx, dy, self._next) then Feel.press("chron.ov.next"); self:_select(self.sel + 1); return true end
   self.panel:mousepressed(dx, dy)
   return true -- MODAL : capte tout (rien ne fuit vers la scène derrière)
 end
