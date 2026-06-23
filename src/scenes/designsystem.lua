@@ -65,6 +65,51 @@ local function swatchPerRow() return math.max(1, math.floor((CONTENT_W + SW_GAP)
 
 local function ptIn(px, py, x, y, w, h) return px >= x and px <= x + w and py >= y and py <= y + h end
 
+-- Itère les CARACTÈRES UTF-8 (longueur déduite de l'octet de tête) : coupe sûre (jamais au milieu d'un
+-- multi-octet — « · », « — », accents). Pur Lua : marche en LÖVE comme headless (utf8 absent de LuaJIT).
+local function utf8chars(str)
+  local i, n = 1, #str
+  return function()
+    if i > n then return nil end
+    local b = string.byte(str, i) or 0
+    local len = (b >= 0xF0 and 4) or (b >= 0xE0 and 3) or (b >= 0xC0 and 2) or 1
+    local ch = string.sub(str, i, i + len - 1)
+    i = i + len
+    return ch
+  end
+end
+
+-- TRONCATURE par CARACTÈRE + ellipsis « … » : si `str` tient dans `maxW` (px design), renvoyé tel quel ;
+-- sinon on coupe au DERNIER caractère entier qui laisse la place à l'ellipsis (jamais au milieu d'un mot
+-- brutalement — on accumule des caractères entiers, pas des octets). `sp` = interlettrage éventuel (les
+-- libellés trackés en tiennent compte dans leur largeur). Mesure via la police d'origine (métriques design).
+local function trackedWidth(str, font, sp)
+  local total, first = 0, true
+  for ch in utf8chars(str) do
+    if not first then total = total + sp end
+    total = total + font:getWidth(ch); first = false
+  end
+  return total
+end
+
+local function truncate(str, maxW, font, sp)
+  sp = sp or 0
+  if not font then return str end
+  if trackedWidth(str, font, sp) <= maxW then return str end -- tient déjà : rien à couper.
+  local ell = "…"
+  local ellW = font and font:getWidth(ell) or 0
+  local budget = maxW - ellW - sp
+  if budget <= 0 then return ell end
+  local out, w, first = {}, 0, true
+  for ch in utf8chars(str) do
+    local adv = font:getWidth(ch) + (first and 0 or sp)
+    if w + adv > budget then break end
+    out[#out + 1] = ch; w = w + adv; first = false
+  end
+  if #out == 0 then return ell end
+  return table.concat(out) .. ell
+end
+
 -- float {r,g,b} -> "#rrggbb" (recompose le hex du token pour l'afficher tel qu'il est défini dans theme.lua).
 local function hexOf(col)
   local r = math.floor((col[1] or 0) * 255 + 0.5)
@@ -127,6 +172,24 @@ local TYPE_SCALE = {
   { tag = "VALUE · 11–16",   fn = Theme.value,      px = 15, s = "HP 70  DMG 6  CD 6.0s",                   note = "Space Mono · chiffres tabulaires" },
 }
 
+-- ── §V : les trois cartes de relique (data) + leur HAUTEUR MESURÉE ──
+-- La hauteur de la rangée vient de RelicCard.measure (wrap de l'effet ET du flavor) : on prend le MAX des
+-- trois -> rangée homogène où AUCUN flavor ne déborde sous le bord (la carte CONTIENT tout son contenu).
+local RELIC_CARDS = {
+  { state = "identified", name = "BLOODSTONE", fam = "flesh", affKey = "bleed", status = "INKED",
+    effect = "Your units strike for +20% more.", flavor = "A heart of compressed murder, still warm to the touch." },
+  { state = "selected", name = "THE KINGS' BOWL", fam = "abyss", affKey = "poison",
+    effect = "Poison deals 20% more damage.", flavor = "A bowl of endless hunger." },
+  { state = "cryptic", name = "Hidden Thing", fam = "arcane",
+    effect = "The ink runs here. Something was seen in the Pit and never understood. Carry it, and watch." },
+}
+local RELIC_CARD_W, RELIC_CARD_GAP = 234, 22
+local function relicCardsHeight()
+  local h = 0
+  for _, o in ipairs(RELIC_CARDS) do h = math.max(h, RelicCard.measure(RELIC_CARD_W, o)) end
+  return h
+end
+
 function Screen.new(palette, vw, vh, host)
   local self = setmetatable({
     palette = palette, vw = vw, vh = vh, host = host, t = 0,
@@ -182,7 +245,7 @@ function Screen:buildSections()
     { id = "molecules", numeral = "V", kicker = "Molécules · assemblages propres", title = "Molécules",
       intro = "Trois assemblages d'atomes : la carte de relique (inscrite / cryptique), le bandeau de destin (les trois verdicts), l'infobulle d'unité.",
       navLabel = "V · MOLÉCULES", entries = {
-        { id = "reliccards", label = "Cartes de relique (RelicCard — inscrite / cryptique)", h = 224, draw = Screen.drawRelicCards },
+        { id = "reliccards", label = "Cartes de relique (RelicCard — inscrite / cryptique)", h = relicCardsHeight(), draw = Screen.drawRelicCards },
         { id = "banners", label = "Bandeaux de destin (Banner — victory / defeat / ascension)", h = 200, draw = Screen.drawBanners },
         { id = "tooltip", label = "Infobulle d'unité (Tooltip.draw)", h = 180, draw = Screen.drawTooltip },
       } },
@@ -260,14 +323,21 @@ function Screen:drawOverlay(view)
 end
 
 -- ── SIDEBAR (navigation : sections + entrées, clic = saut) ───────────────────────────────────────────
+-- DÉBORDEMENT MAÎTRISÉ : la liste est CLIPPÉE à ses bornes (rien ne spille horizontalement sous la page ni
+-- verticalement sous le cadre) ET chaque libellé trop long est TRONQUÉ à la largeur dispo avec une ellipsis
+-- « … » (coupe au caractère ENTIER, jamais au milieu d'un mot). Les hit-rects gardent la largeur PLEINE
+-- (r.w = SB_W-20) -> le clic/survol reste sur toute la bande (le test survole design x=70 ∈ [58,226]).
 function Screen:drawSidebar()
   Draw.rect(SB_X, TOP, SB_W, pageViewH(), C.stone900, C.iron, 1)
   -- quelle ancre est « en haut » (surlignée) : la dernière dont l'ancre <= scroll.
   local activeY = nil
   for _, n in ipairs(self.nav) do if n.y <= self.scroll + 2 then activeY = n.y end end
   self.navRects = {}
+  -- CLIP à l'intérieur du cadre de la sidebar (inset de 1px pour ne pas mordre le liseré iron).
+  Draw.scissor(self._view, SB_X + 1, TOP + 1, SB_W - 2, pageViewH() - 2)
   local y = TOP + 14
   local font = Theme.labelSmall(11)
+  local hf = Theme.label(11)
   for i, n in ipairs(self.nav) do
     local r = { x = SB_X + 10, y = y, w = SB_W - 20, h = n.header and 18 or 16 }
     self.navRects[i] = r
@@ -275,14 +345,19 @@ function Screen:drawSidebar()
     local active = (n.y == activeY)
     if n.header then
       if i > 1 then y = y + 8 end; r.y = y
-      trackL(n.label, r.x, y, active and C.gold or C.ink3, Theme.label(11), 1.5)
+      -- header tracké : tronqué à la largeur de la bande (interlettrage 1.5 compté).
+      local label = truncate(n.label, r.w, hf, 1.5)
+      trackL(label, r.x, y, active and C.gold or C.ink3, hf, 1.5)
       y = y + 18
     else
       local col = active and C.ink or (hov and C.ink2 or C.ink4)
-      Draw.text((active and "› " or "  ") .. n.label, r.x + 6, y, col, font)
+      -- préfixe (« › » actif / deux espaces sinon) inclus dans la troncature ; dispo = r.w - 6 (indent).
+      local label = truncate((active and "› " or "  ") .. n.label, r.w - 6, font, 0)
+      Draw.text(label, r.x + 6, y, col, font)
       y = y + 16
     end
   end
+  Draw.noScissor()
 end
 
 -- ── PAGE scrollable (empile les sections ; clip + molette + thumb, idiome grimoire) ──────────────────
@@ -656,19 +731,11 @@ end
 
 -- Carte de relique : INSCRITE (gemme de famille + effet lisible) vs CRYPTIQUE (gemme hachurée + « ? ? ? »).
 function Screen:drawRelicCards(x, y, w)
-  local cw, ch, gap = 234, 210, 22
-  RelicCard.draw(x, y, cw, ch, {
-    state = "identified", name = "BLOODSTONE", fam = "flesh", affKey = "bleed", status = "INKED",
-    effect = "Your units strike for +20% more.", flavor = "A heart of compressed murder, still warm to the touch.",
-  })
-  RelicCard.draw(x + cw + gap, y, cw, ch, {
-    state = "selected", name = "THE KINGS' BOWL", fam = "abyss", affKey = "poison",
-    effect = "Poison deals 20% more damage.", flavor = "A bowl of endless hunger.",
-  })
-  RelicCard.draw(x + 2 * (cw + gap), y, cw, ch, {
-    state = "cryptic", name = "Hidden Thing", fam = "arcane",
-    effect = "The ink runs here. Something was seen in the Pit and never understood. Carry it, and watch.",
-  })
+  local cw, gap = RELIC_CARD_W, RELIC_CARD_GAP
+  local ch = relicCardsHeight()
+  for i, o in ipairs(RELIC_CARDS) do
+    RelicCard.draw(x + (i - 1) * (cw + gap), y, cw, ch, o)
+  end
   return ch
 end
 

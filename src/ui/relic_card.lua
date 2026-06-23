@@ -37,7 +37,120 @@ local C = Theme.c
 
 local RelicCard = {}
 
-local floor, max, min, abs = math.floor, math.max, math.min, math.abs
+local floor, max, abs = math.floor, math.max, math.abs
+
+-- ── ÉCHELLE D'ESPACEMENT (8pt) — un seul barème pour faire RESPIRER la carte (jamais un littéral au pif) ──
+local PAD_X = 14       -- marge latérale du corps
+local PAD_TOP = 12     -- air sous le cadre, avant la gemme
+local PAD_BOTTOM = 12  -- air sous le flavor, avant le bord bas (le flavor ne touche JAMAIS le liseré)
+local GAP_SM = 8       -- petit interbloc
+local GAP_MD = 12      -- interbloc moyen (gemme->nom, divider->corps)
+local SEP_AIR = 8      -- air AU-DESSUS et EN DESSOUS d'un séparateur (respiration des filets)
+
+-- Hauteur d'une police (fallback 12 headless / si nil).
+local function fh(font, d) return (font and font.getHeight and font:getHeight()) or d or 12 end
+
+-- Nombre de lignes d'un texte wrappé à `limit` (Font:getWrap -> width, lines[]). Mock = 1 ligne ; vrai
+-- LÖVE = compte réel -> la MESURE suit le contenu (le flavor sur 2 lignes agrandit bien la carte).
+local function wrapLines(font, str, limit)
+  if not (font and font.getWrap and str and str ~= "") then return 0 end
+  local _, lines = font:getWrap(str, limit)
+  return max(1, #lines)
+end
+
+local function hasDigit(word)
+  for i = 1, #word do
+    local b = word:byte(i)
+    if b >= 48 and b <= 57 then return true end -- '0'..'9'
+  end
+  return false
+end
+
+-- HAUTEUR de l'effet rendu par _drawEffect : MÊME wrap manuel par MOT (prose vs valeurs chiffrées en Space
+-- Mono, plus large) -> la MESURE et le DESSIN comptent IDENTIQUEMENT les lignes (le flavor ne peut pas
+-- chevaucher un effet qui aurait wrappé une ligne de plus). 0 si vide / pas de police.
+local function effectHeight(effect, limit)
+  if not effect or effect == "" then return 0 end
+  local proseF = Theme.body(14) or Theme.bodyLight(14)
+  local valF = Theme.value(14) or Theme.label(14)
+  if not proseF then return 0 end
+  local lineH = proseF:getHeight()
+  local spaceW = proseF:getWidth(" ")
+  local cx, lines = 0, 1
+  for word in (effect .. " "):gmatch("(.-) ") do
+    if word ~= "" then
+      local f = hasDigit(word) and valF or proseF
+      local ww = f:getWidth(word)
+      if cx > 0 and cx + ww > limit then cx = 0; lines = lines + 1 end
+      cx = cx + ww + spaceW
+    end
+  end
+  return lines * lineH
+end
+
+-- ── LAYOUT MESURÉ (source unique pour measure ET draw) ───────────────────────────────────────────────
+-- Calcule, pour une largeur `w` et des options, toutes les ancres verticales RELATIVES au coin haut de la
+-- carte + la hauteur TOTALE requise. Le header est dérivé de la GEMME + du NOM (pas d'un ratio de `h` :
+-- on casse la dépendance circulaire) ; le corps mesure le wrap de l'effet/prose ET du flavor. Résultat :
+-- la carte CONTIENT tout son contenu + marge basse — aucun texte ne passe sous la bordure.
+local function layoutCard(w, opts)
+  opts = opts or {}
+  local cryptic = (opts.state == "cryptic")
+  local bodyW = floor(w - 2) - 2 * PAD_X
+  if bodyW < 8 then bodyW = 8 end
+
+  -- gemme : rayon dérivé de la LARGEUR seule (indépendant de h).
+  local gr = max(8, floor(w * 0.14 + 0.5))
+  local nameF = Theme.heading(17) or Theme.subhead(17)
+
+  -- HEADER : pad top + gemme (diam) + air + nom + air bas (avant le filet de séparation).
+  local gemCy = PAD_TOP + gr
+  local nameY = gemCy + gr + GAP_SM
+  local headH = nameY + fh(nameF, 16) + GAP_MD
+  -- (le filet brass de fin de bande se pose à divY = headH - 1)
+
+  -- CORPS : démarre sous le header, avec un peu d'air.
+  local cy = headH + GAP_MD
+
+  if cryptic then
+    local kf = Theme.labelSmall(9) or Theme.label(9)
+    cy = cy + fh(kf, 11) + GAP_SM
+    local pf = Theme.flavor(13) or Theme.bodyItalic(13)
+    local prose = opts.effect or "Its purpose hides beneath the surface."
+    cy = cy + wrapLines(pf, prose, bodyW) * fh(pf, 14)
+  else
+    if opts.affKey then
+      cy = cy + 16 + GAP_SM -- chip d'affliction (h=16) + air
+    end
+    local kf = Theme.labelSmall(9) or Theme.label(9)
+    cy = cy + fh(kf, 11) + GAP_SM -- sublabel « KNOWN EFFECT »
+    cy = cy + effectHeight(opts.effect or "", bodyW) -- même wrap par-mot que _drawEffect
+  end
+
+  -- FLAVOR : filet de séparation (avec air dessus/dessous) + lignes wrappées + marge basse.
+  local flavorTop, flavY, flavLines = nil, nil, 0
+  if opts.flavor and opts.flavor ~= "" then
+    local ff = Theme.flavor(12) or Theme.bodyItalic(12)
+    flavLines = wrapLines(ff, opts.flavor, bodyW)
+    cy = cy + SEP_AIR        -- air AU-DESSUS du séparateur
+    flavorTop = cy           -- y du filet iron
+    cy = cy + SEP_AIR        -- air EN DESSOUS du séparateur, avant le texte
+    flavY = cy
+    cy = cy + flavLines * fh(ff, 14)
+  end
+
+  local totalH = cy + PAD_BOTTOM
+  return {
+    bodyW = bodyW, gr = gr, gemCy = gemCy, nameY = nameY, headH = headH,
+    bodyTop = headH + GAP_MD, flavorTop = flavorTop, flavY = flavY, flavLines = flavLines,
+    totalH = totalH,
+  }
+end
+
+-- HAUTEUR requise pour contenir tout le contenu (le caller dimensionne la carte avec ça : aucun spill).
+function RelicCard.measure(w, opts)
+  return layoutCard(floor(w), opts).totalH
+end
 
 -- Garde-fou love.graphics (no-op headless) pour les tracés directs (voile radial, hachures).
 local function g() return love and love.graphics or nil end
@@ -90,12 +203,18 @@ local function crypticGem(cx, cy, r)
 end
 
 -- ── DRAW (composition d'atomes propres) ─────────────────────────────────────────────────────────────
+-- DÉBORDEMENT MAÎTRISÉ : la mise en page verticale vient du LAYOUT MESURÉ (layoutCard) — header dérivé de la
+-- gemme+nom, corps mesuré (wrap de l'effet ET du flavor). Le flavor est ancré sur la pile MESURÉE (pas sur
+-- le bord bas) avec un séparateur qui RESPIRE -> aucun texte ne passe sous la bordure. Si `h` < hauteur
+-- requise, on dessine quand même (le caller doit passer h>=measure ; le design-system le fait).
 function RelicCard.draw(x, y, w, h, opts)
   opts = opts or {}
   x, y, w, h = floor(x), floor(y), floor(w), floor(h)
   local state = opts.state or "identified"
   local cryptic = (state == "cryptic")
   local selected = (state == "selected")
+
+  local L = layoutCard(w, opts)
 
   -- 1) FOND de carte : Panel propre (dégradé sombre + liseré iron + éclat haut). Cryptique = base un poil
   --    plus froide (stone850→stone900) ; identifiée/sélectionnée = stone800→stone900. Accent doré si selected.
@@ -107,14 +226,14 @@ function RelicCard.draw(x, y, w, h, opts)
   local ix, iy = x + 1, y + 1
   local iw, ih = w - 2, h - 2
 
-  -- 2) BANDE D'EN-TÊTE (≈46% du haut) : voile radial (sang / rot) + gemme + nom + badge d'état + filet bas.
-  local headH = floor(h * 0.46 + 0.5)
+  -- 2) BANDE D'EN-TÊTE (hauteur MESURÉE) : voile radial (sang / rot) + gemme + nom + badge d'état + filet bas.
+  local headH = L.headH
   local veilCol = cryptic and C.rot or C.blood
   radialVeil(ix, iy, iw, headH, veilCol, cryptic and 0.14 or 0.16)
 
   local cx = x + w / 2
-  local gy = floor(y + headH * 0.42 + 0.5)
-  local gr = max(8, floor(min(w, h) * 0.14 + 0.5))
+  local gy = y + L.gemCy
+  local gr = L.gr
 
   if cryptic then
     crypticGem(cx, gy, gr)
@@ -130,7 +249,7 @@ function RelicCard.draw(x, y, w, h, opts)
   end
 
   -- filet bas de la bande (Dividers.brass : repère où commence le corps).
-  local divY = iy + headH - 1
+  local divY = y + headH - 1
   Dividers.brass(cx, divY, iw - 8)
 
   -- 3) OVERLAYS TYPOGRAPHIQUES (no-op headless via Draw -> love.graphics absent sous le mock).
@@ -144,57 +263,51 @@ function RelicCard.draw(x, y, w, h, opts)
       Draw.textTrackedL(status, x + w - 10 - sw, y + 9, stCol, sf, 1.4)
     end
 
-    -- ── NOM (Cinzel 700 ; cryptique = « ? ? ? » sourdine, large interlettrage) ──
-    local nameY = floor(gy + gr + 8)
+    -- ── NOM (Cinzel 700 ; cryptique = « ? ? ? » sourdine, large interlettrage) ── (ancre mesurée)
+    local nameY = y + L.nameY
     local nf = Theme.heading(17) or Theme.subhead(17)
     local nameStr = cryptic and "? ? ?" or (opts.name or "RELIC")
     local nameCol = cryptic and C.ink3 or C.ink
     Draw.textTrackedC(nameStr, cx, nameY, nameCol, nf, cryptic and 3 or 1)
 
-    -- ── corps (sous la bande d'en-tête) : sublabel + effet/prose + flavor ──
-    local bodyX = floor(ix + 14)
-    local bodyW = floor(iw - 28)
-    local cursorY = floor(iy + headH + 12)
+    -- ── corps (sous la bande d'en-tête) : sublabel + effet/prose ── (ancres mesurées, espacement 8pt)
+    local bodyX = floor(ix + PAD_X)
+    local bodyW = L.bodyW
+    local cursorY = y + L.bodyTop
 
+    local bodyBottom = cursorY -- bas RÉEL du corps (effet/prose) — sert de plancher au flavor.
     if cryptic then
       -- sublabel énigmatique (text-divider) + prose (Spectral italique).
       local kf = Theme.labelSmall(9) or Theme.label(9)
       Draw.textTrackedL("EFFECT UNKNOWN · REVEALS IN USE", bodyX, cursorY, C.ink4, kf, 1.4)
-      cursorY = cursorY + 14
+      cursorY = cursorY + fh(kf, 11) + GAP_SM
       local pf = Theme.flavor(13) or Theme.bodyItalic(13)
       local prose = opts.effect or "Its purpose hides beneath the surface."
-      Draw.textWrap(prose, bodyX, cursorY, bodyW, C.ink3, pf, "left")
+      bodyBottom = cursorY + Draw.textWrap(prose, bodyX, cursorY, bodyW, C.ink3, pf, "left")
     else
       -- chip d'AFFLICTION (foyer de la relique) : front-load du mot-clé via le registre unique (Chip).
       if opts.affKey then
         local cf = Theme.label(9) or Theme.value(9)
         local cw = Chip.width({ key = opts.affKey, font = cf, h = 16 })
-        Chip.draw(floor(cx - cw / 2), cursorY - 2, { key = opts.affKey, font = cf, h = 16 })
-        cursorY = cursorY + 18
+        Chip.draw(floor(cx - cw / 2), cursorY, { key = opts.affKey, font = cf, h = 16 })
+        cursorY = cursorY + 16 + GAP_SM
       end
       -- sublabel « KNOWN EFFECT » (Space Mono, ink4, tracké).
       local kf = Theme.labelSmall(9) or Theme.label(9)
       Draw.textTrackedL("KNOWN EFFECT", bodyX, cursorY, C.ink4, kf, 1.4)
-      cursorY = cursorY + 14
-      -- texte d'effet : Spectral ink, valeurs (tokens chiffrés) en Space Mono `bloodL`.
-      local effH = RelicCard._drawEffect(opts.effect or "", bodyX, cursorY, bodyW)
-      cursorY = cursorY + effH + 6
+      cursorY = cursorY + fh(kf, 11) + GAP_SM
+      -- texte d'effet : Spectral ink, valeurs (tokens chiffrés) en Space Mono `bloodL`. (hauteur RÉELLE)
+      bodyBottom = cursorY + RelicCard._drawEffect(opts.effect or "", bodyX, cursorY, bodyW)
     end
 
-    -- flavor (Spectral italique, ink3) ancré BAS (au-dessus du liseré inférieur). On MESURE le wrap pour
-    -- caler le bloc juste au-dessus du bord, sans empiéter sur l'effet déjà posé (max avec cursorY).
-    if opts.flavor and opts.flavor ~= "" then
-      -- filet de séparation iron juste au-dessus du flavor (le « height:1px background:iron » du §2.13).
+    -- ── flavor (Spectral italique, ink3) ── ancré sur la PILE MESURÉE (jamais sous la bordure) : filet de
+    --    séparation iron qui RESPIRE (air dessus/dessous), puis le bloc wrappé, puis la marge basse (PAD_BOTTOM).
+    --    On prend le MAX(mesuré, bas réel du corps + air) -> robuste si le wrap manuel diffère de getWrap.
+    if opts.flavor and opts.flavor ~= "" and L.flavY then
       local ff = Theme.flavor(12) or Theme.bodyItalic(12)
-      local nLines, fh = 1, 12
-      if ff then
-        local _, lines = ff:getWrap(opts.flavor, bodyW)
-        nLines = max(1, #lines)
-        fh = ff:getHeight()
-      end
-      local flavY = max(cursorY + 6, floor(y + h - 10 - nLines * fh - 6))
-      Draw.rect(bodyX, flavY - 8, bodyW, 1, C.iron)
-      Draw.textWrap(opts.flavor, bodyX, flavY, bodyW, C.ink3, ff, "left")
+      local sepY = max(y + L.flavorTop, bodyBottom + SEP_AIR)
+      Draw.rect(bodyX, sepY, bodyW, 1, C.iron) -- « height:1px background:iron » du §2.13
+      Draw.textWrap(opts.flavor, bodyX, sepY + SEP_AIR, bodyW, C.ink3, ff, "left")
     end
     Draw.reset()
   end
@@ -204,15 +317,8 @@ end
 
 -- _drawEffect : pose le texte d'effet en Spectral `ink2`, mais chaque MOT qui contient un CHIFFRE (« +15% »,
 -- « 2 », « 40 » ...) est rendu en Space Mono 700 `bloodL` (les valeurs « ressortent »). Découpe par ESPACES
--- (jamais par octet -> les multi-octets restent intacts) ; wrap manuel borné à `limit`. Retourne la hauteur.
-local function hasDigit(word)
-  for i = 1, #word do
-    local b = word:byte(i)
-    if b >= 48 and b <= 57 then return true end -- '0'..'9'
-  end
-  return false
-end
-
+-- (jamais par octet -> les multi-octets restent intacts) ; wrap manuel borné à `limit` (IDENTIQUE à
+-- effectHeight ci-dessus -> mesure = dessin). Retourne la hauteur dessinée.
 function RelicCard._drawEffect(effect, x, y, limit)
   if not (love and love.graphics and love.graphics.print) or effect == "" then return 0 end
   local proseF = Theme.body(14) or Theme.bodyLight(14)

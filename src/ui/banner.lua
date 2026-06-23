@@ -34,6 +34,9 @@ local Banner = {}
 local floor, max, sin = math.floor, math.max, math.sin
 
 local DEFAULT_H = 170 -- §2.19 : « height 170px »
+local SEP_AIR = 8     -- air (8pt) entre le filet gravé et le texte qui le suit (respiration des séparateurs)
+
+local function fh(font, d) return (font and font.getHeight and font:getHeight()) or d or 12 end
 
 local function g() return love and love.graphics or nil end
 
@@ -92,16 +95,19 @@ function Banner.draw(x, y, w, kind, word, opts)
 
   -- 2) OVERLAYS. No-op headless via Draw.
   if love and love.graphics and love.graphics.print then
-    -- ── sous-titre (kicker) au-dessus du mot ──
-    if opts.subtitle and opts.subtitle ~= "" then
-      local sf = ascension and (Theme.flavor(12) or Theme.bodyItalic(12)) or (Theme.labelSmall(10) or Theme.label(10))
-      Draw.textTrackedC(opts.subtitle, cx, floor(y + h * 0.17 + 0.5), C.ink3, sf, ascension and 0 or 2.0)
-    end
-
     -- ── double FILET gravé (au-dessus et en dessous du mot) — Dividers.brass, atome propre ──
     local span = floor(h * 0.20)
-    Dividers.brass(cx, cy - span, floor(w * 0.58))
-    Dividers.brass(cx, cy + span, floor(w * 0.58))
+    local upperDivY = cy - span
+    local lowerDivY = cy + span
+    Dividers.brass(cx, upperDivY, floor(w * 0.58))
+    Dividers.brass(cx, lowerDivY, floor(w * 0.58))
+
+    -- ── sous-titre (kicker) AU-DESSUS du filet supérieur (avec air -> il respire, ne touche pas le filet) ──
+    if opts.subtitle and opts.subtitle ~= "" then
+      local sf = ascension and (Theme.flavor(12) or Theme.bodyItalic(12)) or (Theme.labelSmall(10) or Theme.label(10))
+      local sy = upperDivY - SEP_AIR - fh(sf, 12)
+      Draw.textTrackedC(opts.subtitle, cx, floor(sy + 0.5), C.ink3, sf, ascension and 0 or 2.0)
+    end
 
     -- ── LE MOT (Jacquard, taille ∝ hauteur) avec lueur pulsée (additive) ──
     local wpx = floor(h * (ascension and 0.30 or 0.32))
@@ -130,17 +136,23 @@ function Banner.draw(x, y, w, kind, word, opts)
       love.graphics.print(word, wx, wy)
     end
 
-    -- ── score (sous le mot, Spectral ; ascension = Space Mono or) ──
+    -- ── score (SOUS le filet inférieur, avec air -> il respire ; ascension = Space Mono or) ──
+    local scoreBottom = lowerDivY -- repère pour empiler le hint dessous
     if opts.score and opts.score ~= "" then
       local scf = ascension and (Theme.label(12) or Theme.value(12)) or (Theme.body(13) or Theme.bodyLight(13))
       local scCol = ascension and C.gold or C.ink2
-      Draw.textC(opts.score, cx, floor(y + h * 0.68 + 0.5), scCol, scf)
+      local scy = lowerDivY + SEP_AIR
+      Draw.textC(opts.score, cx, floor(scy + 0.5), scCol, scf)
+      scoreBottom = scy + fh(scf, 13)
     end
 
-    -- ── hint (pied, Space Mono ink5) ──
+    -- ── hint (pied, Space Mono ink5) : sous le score (ou sous le filet si pas de score), avec air ──
     if opts.hint and opts.hint ~= "" then
       local hf = Theme.labelSmall(9) or Theme.label(9)
-      Draw.textTrackedC(opts.hint, cx, floor(y + h * 0.85 + 0.5), C.ink5, hf, 1.2)
+      local hy = scoreBottom + SEP_AIR
+      -- garde-fou : ne descend pas sous le bord bas (laisse une petite marge).
+      hy = math.min(hy, y + h - fh(hf, 11) - 6)
+      Draw.textTrackedC(opts.hint, cx, floor(hy + 0.5), C.ink5, hf, 1.2)
     end
     Draw.reset()
   end

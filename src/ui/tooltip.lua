@@ -33,40 +33,41 @@ local C = Theme.c
 
 local Tooltip = {}
 
-local floor, max, min = math.floor, math.max, math.min
+local floor, min = math.floor, math.min
 
 local DEFAULT_W = 248 -- §2.14 : « Width: 248px »
 local PAD = 14        -- §2.14 : « padding 13–14px 15px »
 local ARROW = 10      -- §2.14 : « Arrow: 10×10px »
+local GAP = 8         -- interbloc (8pt) : chaque bloc respire de la même quantité
+local STAT_BAR_PADV = 14 -- padding vertical interne de l'encadré de stats
 
 local function g() return love and love.graphics or nil end
+local function fh(font, d) return (font and font.getHeight and font:getHeight()) or d or 12 end
 
--- Mesure la HAUTEUR nécessaire (pour dimensionner avant de dessiner). Reproduit la pile de l'overlay.
+-- Mesure la HAUTEUR nécessaire (pour dimensionner avant de dessiner). Reproduit EXACTEMENT la pile de
+-- l'overlay (mêmes blocs, mêmes gaps 8pt) -> la boîte CONTIENT tout son contenu + marge basse PAD.
 local function measureH(opts, innerW)
   local h = PAD
   -- en-tête (nom Cinzel)
-  local nf = Theme.heading(15) or Theme.subhead(15)
-  h = h + (nf and nf:getHeight() or 16) + 8
-  -- barre de stats (encadré) : 1 ligne de valeurs + padding interne
+  h = h + fh(Theme.heading(15) or Theme.subhead(15), 16) + GAP
+  -- barre de stats (encadré) : 1 ligne de valeurs + padding interne vertical
   if opts.stats and #opts.stats > 0 then
-    local sf = Theme.value(11) or Theme.label(11)
-    h = h + (sf and sf:getHeight() or 12) + 14 + 8
+    h = h + fh(Theme.value(11) or Theme.label(11), 12) + STAT_BAR_PADV + GAP
   end
   -- nom de passif
   if opts.passive and opts.passive ~= "" then
-    local pf = Theme.value(11) or Theme.label(11)
-    h = h + (pf and pf:getHeight() or 12) + 6
+    h = h + fh(Theme.value(11) or Theme.label(11), 12) + GAP
   end
   -- chip d'affliction
   if opts.affKey then
-    h = h + 18 + 4
+    h = h + 18 + GAP
   end
   -- prose (wrap)
   if opts.prose and opts.prose ~= "" then
     local prf = Theme.body(13) or Theme.bodyLight(13)
     if prf then
       local _, lines = prf:getWrap(opts.prose, innerW)
-      h = h + #lines * prf:getHeight() + 4
+      h = h + #lines * prf:getHeight()
     else
       h = h + 16
     end
@@ -125,12 +126,12 @@ function Tooltip.draw(x, y, opts)
       local cw = Chip.width({ label = famName, color = ty.color, font = cf, icon = false })
       Chip.draw(floor(rightX - cw), cursorY, { label = famName, color = ty.color, font = cf, icon = false })
     end
-    cursorY = cursorY + (nf and nf:getHeight() or 16) + 8
+    cursorY = cursorY + fh(nf, 16) + GAP
 
     -- ── barre de STATS (encadré sombre + valeurs Space Mono, labels ink3 / valeurs ink) ──
     if opts.stats and #opts.stats > 0 then
       local sf = Theme.value(11) or Theme.label(11)
-      local barH = (sf and sf:getHeight() or 12) + 14
+      local barH = fh(sf, 12) + STAT_BAR_PADV
       Draw.rect(bodyX, cursorY, innerW, barH, C.stone900, C.iron, 1)
       if sf then
         love.graphics.setFont(sf)
@@ -150,21 +151,21 @@ function Tooltip.draw(x, y, opts)
           Draw.text(val, sx + lw, midY - sf:getHeight() / 2, C.ink, sf)
         end
       end
-      cursorY = cursorY + barH + 8
+      cursorY = cursorY + barH + GAP
     end
 
     -- ── nom de PASSIF (Space Mono OR) ──
     if opts.passive and opts.passive ~= "" then
       local pf = Theme.value(11) or Theme.label(11)
       Draw.text(opts.passive, bodyX, cursorY, C.gold, pf)
-      cursorY = cursorY + (pf and pf:getHeight() or 12) + 6
+      cursorY = cursorY + fh(pf, 12) + GAP
     end
 
     -- ── chip d'AFFLICTION (le passif « se voit » : icône + nom + teinte) ──
     if opts.affKey then
       local cf = Theme.label(10) or Theme.value(10)
       Chip.draw(bodyX, cursorY, { key = opts.affKey, font = cf, h = 18 })
-      cursorY = cursorY + 18 + 4
+      cursorY = cursorY + 18 + GAP
     end
 
     -- ── PROSE (Spectral ink2, wrap dans l'intérieur) ──
