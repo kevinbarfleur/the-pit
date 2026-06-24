@@ -26,6 +26,7 @@ local Units = require("src.data.units")
 local CreatureGen = require("src.gen.creaturegen") -- visuel généré pour les unités sans rig dessiné main
 local Critter = require("src.render.critter") -- rendu VIVANT (cadre natif : taille relative + mouvement par-pixel/famille)
 local Encounters = require("src.data.encounters")
+local OppGen = require("src.data.oppgen") -- A4 : générateur d'adversaire procédural scalé au stade (déterministe)
 local Place = require("src.combat.place")
 local Stats = require("src.effects.stats") -- caps du framework payoff (value bouclier ×3 à la lecture)
 local Snapshot = require("src.net.snapshot")
@@ -701,22 +702,39 @@ end
 function Build:startCombat()
   local left = self:buildLeftComp()
   if #left == 0 then return end -- il faut au moins une unité posée
-  if self.host.run then self.host.run:applyRelics(left) end -- reliques : effet RÉEL sur la compo joueur (build)
-  local enc, bump = self:pickEncounter()
+  local run = self.host.run
+  if run then run:applyRelics(left) end -- reliques : effet RÉEL sur la compo joueur (build)
   self.combatCount = self.combatCount + 1
   -- Seed choisi ICI (couche scène) : il fait partie du snapshot/replay. Tiré du RNG seedé du run
   -- (rejouabilité), avec repli sur le RNG global hors-run (tests). La SIM ne lira que ce seed.
-  local seed = (self.host.run and self.host.run:nextCombatSeed()) or love.math.random(1, 2147483647)
-  -- SNAPSHOT ASYNC (pilier #3) : on SERT un adversaire depuis le pool (ghost d'un AUTRE build figé) ou,
-  -- au cold-start, l'équipe IA (Encounter). Pick SEEDÉ par le seed de combat -> rejouable, sans consommer
-  -- le RNG du run. Puis on fige NOTRE build dans le pool pour les adversaires FUTURS (jamais en direct).
-  local version, tier = "0.7", (self.host.run and self.host.run.wins) or 0
+  local seed = (run and run:nextCombatSeed()) or love.math.random(1, 2147483647)
+  -- ADVERSAIRE COLD-START (A4) : GÉNÉRÉ et scalé au stade (round/tier/slots), DÉTERMINISTE (rng seedé tiré du
+  -- seed de combat). Avec un run -> OppGen ; sans run (sandbox/tests) -> repli sur les encounters pré-construits.
+  local enc
+  if run then
+    enc = OppGen.generate({ round = run.round, tier = run.shopTier, slots = run.slots,
+      rng = love.math.newRandomGenerator(seed), odds = run.ODDS })
+    enc.key = self:encounterKeyFor(#enc.units) -- nom d'affichage (réutilise les noms pré-construits par taille)
+  else
+    enc = (self:pickEncounter())
+  end
+  local aiComp = self:buildRightComp(enc, 0) -- niveaux déjà bakés dans enc.units -> pas de bump
+  -- SNAPSHOT ASYNC (pilier #3) : on SERT un adversaire du pool (ghost d'un AUTRE build figé) ou, au cold-start,
+  -- l'équipe IA GÉNÉRÉE. Pick SEEDÉ (générateur séparé) -> rejouable. Puis on fige NOTRE build pour les futurs.
+  local version, tier = "0.7", (run and run.wins) or 0
   local right, oppMeta = Snapstore.serveComp(version, tier, 1,
-    love.math.newRandomGenerator(seed), self:buildRightComp(enc, bump))
+    love.math.newRandomGenerator(seed), aiComp)
   Snapstore.save(Snapshot.capture(self:snapshotUnits(), Shapes.order[self.shapeIdx], seed,
     { version = version, tier = tier }))
   self.host.goto("combat",
     { left = left, right = right, enemyKey = enc.key, seed = seed, oppSource = oppMeta and oppMeta.source })
+end
+
+-- Nom d'affichage d'un adversaire GÉNÉRÉ : réutilise une clé d'encounter pré-construite par TAILLE (noms déjà
+-- traduits) en attendant des noms dédiés. Petit -> patrouille ; plein -> souverain.
+function Build:encounterKeyFor(size)
+  local idx = math.max(1, math.min(#Encounters, size - 2))
+  return Encounters[idx] and Encounters[idx].key or "fallen_patrol"
 end
 
 -- ── Update ──

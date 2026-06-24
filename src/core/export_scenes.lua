@@ -10,6 +10,7 @@
 
 local Palette  = require("src.core.palette")
 local RunState = require("src.run.state")
+local OppGen   = require("src.data.oppgen") -- A4 : adversaire généré scalé (capture combat)
 
 local Build     = require("src.scenes.build")
 local Combat    = require("src.scenes.combat")
@@ -55,10 +56,13 @@ end
 -- Quelques ticks de warm (gérés par Export.shoot) laissent la bataille s'engager visuellement.
 function Builders.combat(host)
   local b = makeBuild(host)
+  -- mi-partie pour montrer l'adversaire GÉNÉRÉ scalé (A4) : round 7, tier 3, 7 slots.
+  host.run.round, host.run.shopTier, host.run.slots = 7, 3, 7
   local left = b:buildLeftComp()
-  local enc = b:pickEncounter()
+  local enc = OppGen.generate({ round = host.run.round, tier = host.run.shopTier, slots = host.run.slots,
+    rng = love.math.newRandomGenerator(7), odds = host.run.ODDS })
   local right = b:buildRightComp(enc)
-  return Combat.new(Palette, VW, VH, host, { left = left, right = right, enemyKey = enc.key, seed = 7 })
+  return Combat.new(Palette, VW, VH, host, { left = left, right = right, enemyKey = b:encounterKeyFor(#enc.units), seed = 7 })
 end
 
 -- RELICPICK : offre 1-parmi-3 (run seedé -> choix déterministes).
