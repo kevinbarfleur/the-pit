@@ -162,6 +162,10 @@ return {
 
   -- relic pick (1-of-3 acquisition)
   ["relicpick.kicker"] = "the victory loosens something below",
+  -- SOURCE de l'offre (retour user 2026-06) : dire CLAIREMENT pourquoi on a une relique -> marchand (/3 combats)
+  -- vs récompense de LEVEL-UP (une fusion en build, 1×/round). Le level-up est doré (mis en avant).
+  ["relicpick.src_merchant"] = "THE PIT YIELDS  ·  EVERY THIRD DESCENT",
+  ["relicpick.src_levelup"] = "LEVEL-UP REWARD  ·  A CHAMPION ASCENDS",
   ["relicpick.title"] = "A Fragment Surfaces",
   ["relicpick.unknown"] = "EFFECT UNKNOWN  -  REVEALS IN USE",
   ["relicpick.bind"] = "BIND THE FRAGMENT",

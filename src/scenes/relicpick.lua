@@ -71,6 +71,8 @@ function Relicpick.new(palette, vw, vh, host, payload)
     daChrome = true,
     titleKey = "scene.build", hintKey = "ui.empty",
     choices = payload.choices or {},
+    -- SOURCE de l'offre (retour user 2026-06) : level-up (fusion build, midRound) vs marchand (post-combat /3).
+    source = payload.source or (payload.midRound and "levelup") or "merchant",
     sel = nil, hover = nil,
     mx = 0, my = 0, -- souris en ESPACE DESIGN (×4 du virtuel)
     bindHover = false, declineHover = false,
@@ -177,7 +179,10 @@ function Relicpick:drawOverlay(view)
 
   -- ── EN-TÊTE (voix cérémoniale, kit propre) : kicker (Spectral italique, ink-3) + titre Jacquard gravé
   -- (PRÉSERVÉ : Theme.display) + filet laiton orné dessous (Dividers.brass). Hiérarchie par CASSE/COULEUR. ──
-  Draw.textTrackedC(T("relicpick.kicker"), Draw.W / 2, 70, C.ink3, Theme.flavor(15), 1)
+  -- KICKER = SOURCE de l'offre (dit POURQUOI on a la relique) : level-up doré (mis en avant) vs marchand sourd.
+  local lv = (self.source == "levelup")
+  Draw.textTrackedC(T(lv and "relicpick.src_levelup" or "relicpick.src_merchant"),
+    Draw.W / 2, 70, lv and C.gold or C.ink3, Theme.flavor(15), 1)
   Draw.textC(T("relicpick.title"), Draw.W / 2, 96, C.ink, Theme.display(50))
   Dividers.brass(Draw.W / 2, 168, 360)
 

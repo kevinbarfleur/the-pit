@@ -69,7 +69,8 @@ end
 function Builders.relicpick(host)
   host.run = RunState.new(SEED)
   local choices = host.run:rollRelicChoices(3)
-  return Relicpick.new(Palette, VW, VH, host, { choices = choices })
+  -- capture le cas LEVEL-UP (midRound) : kicker doré « LEVEL-UP REWARD » -> montre la source de l'offre.
+  return Relicpick.new(Palette, VW, VH, host, { choices = choices, midRound = true })
 end
 
 -- RUNOVER : écran de fin (ascension). On feed un run seedé + résultat.
