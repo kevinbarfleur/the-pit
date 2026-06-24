@@ -22,7 +22,8 @@
 local Theme = require("src.ui.theme")
 local Draw = require("src.ui.draw")
 local Panel = require("src.ui.panel")      -- surface propre (dégradé + liseré iron + éclat)
-local Button = require("src.ui.button")    -- onglets / tri (secondary) + back (ghost)
+local Button = require("src.ui.button")    -- onglets / tri (secondary)
+local Nav = require("src.ui.nav")          -- bouton retour homogène (règle de navigation)
 local Slot = require("src.ui.slot")        -- cadre de vignette (case propre) pour icône/rig
 local Dividers = require("src.ui.dividers") -- séparateurs laiton/sang/texte propres
 local Badge = require("src.ui.badge")      -- échelle de rareté R1..R5 propre (bestiaire)
@@ -212,10 +213,8 @@ function Screen:drawOverlay(view)
 
   -- En-tête : titre Cinzel (voix gravée) — le « ? ? ? » reste Jacquard (display) pour les inconnus.
   Draw.text(T("grimoire.title"), LIST_X, TITLE_Y, C.ink, Theme.title(34))
-  -- retour = GHOST propre (la convention de l'UI : « [esc] back »).
-  self.backRect = { x = Draw.W - 132, y = 30, w = 116, h = 24 }
-  Button.ghost(self.backRect.x, self.backRect.y, self.backRect.w, self.backRect.h, T("grimoire.back"),
-    { hover = Feel.state("grim.back").hover > 0.5 })
+  -- retour = bouton homogène « ‹ MENU » (règle de nav design-system). [esc]/[g] restent des accélérateurs.
+  self.backRect = Nav.back(view, T("grimoire.back"), { mx = self.mx, my = self.my, id = "grim.back" })
 
   -- Onglets RELIQUES / BESTIAIRE = boutons propres (secondary), l'actif forcé en survol + un éclat doré ;
   -- compteur n/total en Space Mono (gold actif).

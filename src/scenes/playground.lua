@@ -20,6 +20,7 @@ local Theme = require("src.ui.theme")
 local Draw = require("src.ui.draw")
 local Panel = require("src.ui.panel")       -- surface propre (dégradé + liseré iron + éclat) : A/B + scénarios
 local Button = require("src.ui.button")     -- boutons propres : primary (WATCH) / eco (SIM)
+local Nav = require("src.ui.nav")            -- bouton retour homogène (règle de navigation)
 local Dividers = require("src.ui.dividers")  -- séparateurs laiton/sang (en-têtes de blocs)
 local Feel = require("src.ui.feel")          -- JUICE : survol (glow/lift) + press (squash/flash)
 local Ambient = require("src.fx.ambient")
@@ -330,8 +331,9 @@ function Playground:drawOverlay(view)
   self:drawButtons()
   self:drawResult()
 
-  -- Pied.
-  Draw.text(T("ui.hint_playground"), LIST_X, 694, C.ink5, Theme.label(9))
+  -- retour = bouton homogène « ‹ MENU » (règle de nav). Fini la ligne « [up/down]... [esc] menu » en pied :
+  -- up/down/enter/s restent des accélérateurs silencieux (sélection aussi possible à la souris).
+  self.backRect = Nav.back(view, T("pg.back"), { mx = self.mx, my = self.my, id = "pg.back" })
   Draw.finish()
 end
 
@@ -415,6 +417,7 @@ function Playground:mousepressed(vx, vy, button)
   if button ~= 1 then return end
   local dx, dy = vx * 4, vy * 4
   self.mx, self.my = dx, dy
+  if Nav.hit(self.backRect, dx, dy) then Feel.press("pg.back"); self.host.goto("menu"); return end -- bouton retour
   for _, ch in ipairs(self.chipRects) do -- clic sur une chip de filtre
     if ptIn(dx, dy, ch) then self:setFilter(ch.key); return end
   end
