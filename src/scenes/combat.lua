@@ -21,8 +21,10 @@ local Ambient = require("src.fx.ambient")
 local Theme = require("src.ui.theme")
 local Draw = require("src.ui.draw")
 local Button = require("src.ui.button")  -- boutons propres (CHRONICLE secondary / CONTINUE primary)
-local Modal = require("src.ui.modal")    -- modale plein écran OPAQUE (verdict + boutons de choix) : recouvre l'arène
 local Feel = require("src.ui.feel")      -- JUICE : survol (glow/lift) + press (squash/flash)
+local Panel = require("src.ui.panel")    -- surfaces propres (résumé post-combat : ruban, cartes)
+local Units = require("src.data.units")  -- type d'unité (pip de portrait) + noms
+local Run = require("src.run.state")     -- WIN_TARGET (descente) pour le ruban de stats
 local T = require("src.core.i18n").t
 
 local Combat = {}
@@ -76,9 +78,29 @@ function Combat:_track()
   self.killLog = {} -- ordre de tick : { victim, killer, cause, tick }
   self.lastHit = {} -- [victime] = { source, cause } : dernier coup encaissé
   self.summary = nil -- résumé "pourquoi", mémoïsé en fin de combat
+  self.full = nil    -- résumé COMPLET (écran post-combat), mémoïsé en fin de combat
+  -- Stats agrégées pour le résumé post-combat (refonte « Combat Screen » Frame 4). RENDER pur (lecture du
+  -- bus, comme le reste de _track -> golden-safe). amt = PV RÉELLEMENT perdus (`r.hp`).
+  self.dmgByCause = {}   -- [cause] = dégâts infligés par TON équipe (source.team == left)
+  self.dealtByUnit = {}  -- [unité] = dégâts infligés (-> MVP)
+  self.soakedByUnit = {} -- [unité] = dégâts encaissés par tes unités (-> MVP tank)
+  self.dealtTotal, self.takenTotal = 0, 0
   local arena = self.arena
   arena.bus:on("damage", function(r)
     if r.target then self.lastHit[r.target] = { source = r.source, cause = r.cause or "attack" } end
+    local amt = r.hp or 0
+    if amt > 0 then
+      local src, tgt, cause = r.source, r.target, r.cause or "attack"
+      if src and src.team == "left" then
+        self.dmgByCause[cause] = (self.dmgByCause[cause] or 0) + amt
+        self.dealtByUnit[src] = (self.dealtByUnit[src] or 0) + amt
+        self.dealtTotal = self.dealtTotal + amt
+      end
+      if tgt and tgt.team == "left" then
+        self.soakedByUnit[tgt] = (self.soakedByUnit[tgt] or 0) + amt
+        self.takenTotal = self.takenTotal + amt
+      end
+    end
   end)
   arena.bus:on("death", function(u)
     local h = self.lastHit[u]
@@ -132,6 +154,7 @@ function Combat:update(frameDt)
     -- survol des deux boutons de fin (glow/lift lissés) — n'a d'effet visible qu'une fois l'écran affiché.
     Feel.hover("combat.chron", inBtn(self.mx, self.my, self._btnChron))
     Feel.hover("combat.cont", inBtn(self.mx, self.my, self._btnCont))
+    Feel.hover("combat.replay", inBtn(self.mx, self.my, self._btnReplay))
   end
 end
 
@@ -256,42 +279,197 @@ function Combat:_drawControls()
   end
 end
 
--- ── Écran de fin (verdict + post-mortem + 2 boutons) ─────────────────────────────────────────────────
--- Verdict via la MOLÉCULE Banner (mot Jacquard + halo) : subtitle = le « POURQUOI » (cause dominante, déjà
--- localisée — « ton venin a fauché 3 »), score = la 1re perte, hint = raccourcis clavier. Sous le bandeau,
--- DEUX boutons propres : CHRONICLE (secondary) ouvre l'overlay, CONTINUE (primary, CTA + yeux) termine.
--- Les rects _btnChron/_btnCont sont posés ICI (espace design) -> hit-test de mousepressed + asserts du test.
-function Combat:_drawEndScreen(view)
-  local won = self.arena.win
+-- ── Écran de RÉSUMÉ post-combat (refonte « Combat Screen » Frame 4) ──────────────────────────────────
+-- Remplace la modale de verdict par un écran COMPLET : header (verdict Jacquard + flavor) + ruban de stats
+-- (durée/survivants/tués/vies/descente) + DAMAGE BY CAUSE (barres) + THE LEDGER (MVP + 1re perte) + actions
+-- (CLAIM THE SPOILS / [c] CHRONICLE / [r] REPLAY). RENDER pur (lit les stats agrégées de _track). ──
+
+-- Libellé court + couleur d'une cause de dégâts (attack -> BLADE ; afflictions -> nom en caps + teinte).
+local function causeLabel(cause) return (cause == "attack") and T("ui.cause_blade") or cause:upper() end
+local function causeColor(cause)
+  local c = Theme.c
+  if cause == "attack" or cause == "reflect" or cause == "thorns" then return c.bloodL end
+  return c[cause] or c.ink2
+end
+local function unitName(id) return (Units[id] and T("unit." .. id .. ".name")) or id end
+
+-- Tuile de portrait (MVP / 1re perte) : socle laiton hachuré + pip de type (placeholder de sprite, fidèle au
+-- mockup). RENDER pur, headless-safe (love.graphics gardé).
+local function portraitTile(x, y, sz, id, border)
+  local c = Theme.c
+  Panel.vgrad(x, y, sz, sz, { 0x2a / 255, 0x1f / 255, 0x10 / 255, 1 }, { 0x1d / 255, 0x15 / 255, 0x09 / 255, 1 })
+  Draw.rect(x, y, sz, sz, nil, border or c.iron, 1)
+  local U = Units[id]
+  local tcol = (U and Theme.type(U.type).color) or c.bone
+  if love and love.graphics then
+    love.graphics.push(); love.graphics.translate(x + 9, y + 9); love.graphics.rotate(0.785)
+    Draw.setColor(tcol); love.graphics.rectangle("fill", -4, -4, 8, 8); love.graphics.pop(); Draw.reset()
+  end
+end
+
+-- Résumé COMPLET (mémoïsé) : stats + dégâts par cause (triés) + MVP + 1re perte. Déterministe (ipairs ;
+-- pairs seulement pour des sommes commutatives).
+function Combat:_fullSummary()
+  local arena = self.arena
+  local la, lt, ra, rt = self:_counts()
+  local causes = {}
+  for cause, v in pairs(self.dmgByCause) do causes[#causes + 1] = { cause = cause, value = v } end
+  table.sort(causes, function(a, b) if a.value == b.value then return a.cause < b.cause end return a.value > b.value end)
+  local mvp, mvpScore
+  for _, u in ipairs(arena.units) do
+    if u.team == "left" then
+      local sc = (self.dealtByUnit[u] or 0) + (self.soakedByUnit[u] or 0)
+      if not mvpScore or sc > mvpScore then mvp, mvpScore = u, sc end
+    end
+  end
+  local firstLoss
+  for _, k in ipairs(self.killLog) do
+    if k.victim.team == "left" then firstLoss = { id = k.victim.id, time = (k.tick or 0) / 60 }; break end
+  end
+  local run = self.host.run
+  return {
+    win = arena.win, duration = (arena.t or 0) / 60,
+    survN = la, survT = lt, slainN = rt - ra, slainT = rt,
+    livesDelta = run and (arena.win and 0 or -1) or nil,
+    descN = run and math.min(Run.WIN_TARGET, run.wins + (arena.win and 1 or 0)) or nil, descT = Run.WIN_TARGET,
+    causes = causes, dealt = self.dealtTotal, taken = self.takenTotal,
+    mvp = mvp and { id = mvp.id, dealt = self.dealtByUnit[mvp] or 0, soaked = self.soakedByUnit[mvp] or 0 } or nil,
+    firstLoss = firstLoss,
+  }
+end
+
+function Combat:_drawSummary(view)
+  Draw.begin(view)
+  local c = Theme.c
+  if not self.full then self.full = self:_fullSummary() end
   if not self.summary then self.summary = self:_computeSummary() end
-  local s = self.summary
+  local s, why = self.full, self.summary
+  local W, H, won = Draw.W, Draw.H, self.full.win
 
-  -- le POURQUOI (cause dominante) si elle existe -> sous-titre sobre de la modale (déjà résolu i18n).
-  local why = nil
-  if s.cause and s.n > 0 then
-    why = T(won and "combat.why.dealt" or "combat.why.slain",
-      { cause = T("combat.cause." .. s.cause), n = s.n })
+  -- (0) FOND opaque (recouvre l'arène).
+  Panel.vgrad(0, 0, W, H, { 0x16 / 255, 0x11 / 255, 0x1c / 255, 1 }, { 0x06 / 255, 0x04 / 255, 0x09 / 255, 1 })
+
+  -- (1) HEADER : kicker + verdict (Jacquard, casse de titre) + flavor.
+  Draw.textC(T(won and "ui.summary_kicker_win" or "ui.summary_kicker_loss"), W / 2, 36, c.ink3, Theme.label(10))
+  if love and love.graphics and love.graphics.setBlendMode then
+    local g = won and c.gold or c.blood
+    love.graphics.setBlendMode("add")
+    for k = 3, 1, -1 do Draw.setColor({ g[1], g[2], g[3], 0.05 * k }); love.graphics.circle("fill", W / 2, 88, 120 * (k / 3)) end
+    love.graphics.setBlendMode("alpha"); Draw.reset()
+  end
+  Draw.textC(T(won and "ui.verdict_win" or "ui.verdict_loss"), W / 2, 54, won and c.gold or c.bloodL, Theme.display(56))
+  local foe = T("encounter." .. (self.enemyKey or "unknown") .. ".name")
+  local causeWord = (why and why.cause) and (why.cause == "attack" and "blades" or why.cause) or "attrition"
+  Draw.textC(T(won and "ui.summary_flavor_win" or "ui.summary_flavor_loss", { cause = causeWord, foe = foe }),
+    W / 2, 128, c.ink2, Theme.bodyItalic(15))
+
+  -- (2) RUBAN DE STATS centré.
+  local rf, vf = Theme.label(8), Theme.value(20)
+  local cells = {
+    { lab = T("ui.stat_duration"), val = string.format("%.1f", s.duration), suf = "s", vc = c.ink },
+    { lab = T("ui.stat_survivors"), val = tostring(s.survN), suf = "/" .. s.survT, vc = c.ink },
+    { lab = T("ui.stat_slain"), val = tostring(s.slainN), suf = "/" .. s.slainT, vc = c.ink },
+  }
+  if s.livesDelta ~= nil then cells[#cells + 1] = { lab = T("ui.stat_lives"), val = (s.livesDelta >= 0 and "±" or "−") .. math.abs(s.livesDelta), vc = (s.livesDelta >= 0) and c.regen or c.bloodL } end
+  if s.descN ~= nil then cells[#cells + 1] = { lab = T("ui.stat_descent"), val = tostring(s.descN), suf = "/" .. s.descT, vc = c.gold } end
+  local cellW, ribbonW = {}, 0
+  for i, cell in ipairs(cells) do
+    local valW = vf:getWidth(cell.val) + (cell.suf and rf:getWidth(cell.suf) or 0)
+    local w = math.max(rf:getWidth(cell.lab), valW) + 52
+    cellW[i] = w; ribbonW = ribbonW + w
+  end
+  ribbonW = ribbonW + (#cells - 1)
+  local rx, ry, rh = math.floor(W / 2 - ribbonW / 2), 166, 54
+  Panel.vgrad(rx, ry, ribbonW, rh, c.stone800, c.stone900)
+  Draw.rect(rx, ry, ribbonW, rh, nil, c.iron, 1)
+  local cxp = rx
+  for i, cell in ipairs(cells) do
+    local w = cellW[i]
+    Draw.textC(cell.lab, cxp + w / 2, ry + 11, c.ink4, rf)
+    local vw, sw = vf:getWidth(cell.val), (cell.suf and rf:getWidth(cell.suf) or 0)
+    local vx = math.floor(cxp + w / 2 - (vw + sw) / 2)
+    Draw.text(cell.val, vx, ry + 24, cell.vc, vf)
+    if cell.suf then Draw.text(cell.suf, vx + vw, ry + 32, c.ink3, rf) end
+    cxp = cxp + w
+    if i < #cells then Draw.rect(cxp, ry + 8, 1, rh - 16, c.iron); cxp = cxp + 1 end
   end
 
-  -- MODALE plein écran OPAQUE (brique design-system) : recouvre l'arène (fini le voile à 0.62 « qu'on voit à
-  -- travers » + le hint clavier). Titre cérémonial + tag d'issue + cause + flavor + 2 boutons de choix.
-  local res = Modal.draw(view, {
-    title = T("modal.verdict_title"),
-    tag = won and T("result.victory") or T("result.defeat"),
-    tagKind = won and "victory" or "defeat",
-    sub = why,
-    flavor = T(won and "modal.flavor_victory" or "modal.flavor_defeat"),
-    buttons = {
-      { id = "combat.chron", label = T("ui.chronicle"), variant = "secondary" },
-      { id = "combat.cont", label = T("ui.continue"), variant = "primary" },
-    },
-    mx = self.mx, my = self.my, t = self.t / 60,
-  })
-  -- remappe les rects renvoyés -> _btnChron/_btnCont (hit-test de mousepressed + asserts du test headless).
-  for _, r in ipairs(res.buttons) do
-    if r.id == "combat.chron" then self._btnChron = r
-    elseif r.id == "combat.cont" then self._btnCont = r end
+  -- (3) COLONNES : DAMAGE BY CAUSE (gauche) | THE LEDGER (droite).
+  local colTop, colBot, PADX, divX = 246, H - 24, 56, 700
+  local leftX, leftW = PADX, divX - PADX - 16
+  local rightX, rightW = divX + 16, W - PADX - (divX + 16)
+  Draw.rect(divX, colTop, 1, colBot - colTop, c.iron)
+
+  -- (3a) DAMAGE BY CAUSE.
+  local hf = Theme.label(11)
+  Draw.text(T("ui.dmg_by_cause"), leftX, colTop, c.ink, hf)
+  Draw.text(T("ui.dmg_by_cause_sub"), leftX + hf:getWidth(T("ui.dmg_by_cause")) + 10, colTop + 2, c.ink4, Theme.bodyItalic(12))
+  local by, maxV = colTop + 30, (s.causes[1] and s.causes[1].value) or 1
+  for _, cz in ipairs(s.causes) do
+    local col = causeColor(cz.cause)
+    Draw.text(causeLabel(cz.cause), leftX, by + 1, col, Theme.label(9))
+    local bx = leftX + 66
+    local bw = leftW - 66 - 46
+    Draw.rect(bx, by, bw, 13, { 0x0a / 255, 0x08 / 255, 0x10 / 255, 1 }, c.iron, 1)
+    local fw = math.floor((bw - 2) * (cz.value / maxV))
+    if fw > 0 then Draw.rect(bx + 1, by + 1, fw, 11, col) end
+    Draw.textR(tostring(cz.value), leftX + leftW, by + 1, c.ink, Theme.value(13))
+    by = by + 25
   end
+  -- DEALT / TAKEN.
+  local dtY, halfW = colBot - 52, (leftW - 9) / 2
+  local function dtCard(x, lab, val, vc)
+    Draw.rect(x, dtY, halfW, 46, { 0x0b / 255, 0x09 / 255, 0x12 / 255, 1 }, c.iron, 1)
+    Draw.text(lab, x + 12, dtY + 9, c.ink4, Theme.label(8))
+    Draw.text(tostring(val), x + 12, dtY + 22, vc, Theme.value(16))
+    Draw.text(" " .. T("ui.total_suffix"), x + 12 + Theme.value(16):getWidth(tostring(val)) + 2, dtY + 27, c.ink4, Theme.label(9))
+  end
+  dtCard(leftX, T("ui.dealt"), s.dealt, c.ink)
+  dtCard(leftX + halfW + 9, T("ui.taken"), s.taken, c.bloodL)
+
+  -- (3b) THE LEDGER : MVP + 1re perte.
+  Draw.text(T("ui.the_ledger"), rightX, colTop, c.ink, hf)
+  local ly, cardH = colTop + 24, 84
+  if s.mvp then
+    Panel.vgrad(rightX, ly, rightW, cardH, { 0x1a / 255, 0x14 / 255, 0x10 / 255, 1 }, { 0x0e / 255, 0x0b / 255, 0x09 / 255, 1 })
+    Draw.rect(rightX, ly, rightW, cardH, nil, c.brass, 1)
+    portraitTile(rightX + 12, ly + 11, 62, s.mvp.id, c.brassL)
+    local tx = rightX + 87
+    Draw.text(unitName(s.mvp.id), tx, ly + 12, c.ink, Theme.subhead(14))
+    -- badge MVP (droite).
+    local bf = Theme.label(8); local btxt = T("ui.mvp"); local bw2 = bf:getWidth(btxt) + 18
+    Draw.rect(rightX + rightW - bw2 - 12, ly + 11, bw2, 16, nil, c.brass, 1)
+    Draw.text(btxt, rightX + rightW - bw2 - 12 + 13, ly + 14, c.brassS, bf)
+    Draw.textWrap(T("ui.mvp_desc", { dealt = s.mvp.dealt, soaked = s.mvp.soaked }), tx, ly + 36, rightX + rightW - tx - 14, c.ink2, Theme.body(12))
+    ly = ly + cardH + 13
+  end
+  if s.firstLoss then
+    Panel.vgrad(rightX, ly, rightW, cardH, { 0x15 / 255, 0x0f / 255, 0x12 / 255, 1 }, { 0x0c / 255, 0x08 / 255, 0x10 / 255, 1 })
+    Draw.rect(rightX, ly, rightW, cardH, nil, c.iron, 1)
+    portraitTile(rightX + 12, ly + 11, 62, s.firstLoss.id, c.iron)
+    local tx = rightX + 87
+    Draw.text(unitName(s.firstLoss.id), tx, ly + 12, c.ink2, Theme.subhead(14))
+    local bf = Theme.label(8); local btxt = T("ui.first_to_fall") .. " · " .. string.format("%.1f", s.firstLoss.time) .. "s"
+    Draw.textR(btxt, rightX + rightW - 12, ly + 14, c.ink4, bf)
+    Draw.textWrap(T("ui.first_loss_desc", { time = string.format("%.1f", s.firstLoss.time) }), tx, ly + 36, rightX + rightW - tx - 14, c.ink3, Theme.body(12))
+    ly = ly + cardH + 13
+  end
+  Draw.finish()
+
+  -- (4) ACTIONS (bas de colonne droite) : CLAIM (primary) + [c] CHRONICLE + [r] REPLAY (rects -> mousepressed).
+  local byb, bh = colBot - 44, 44
+  local sideW = 132
+  local claimW = rightW - 2 * (sideW + 11)
+  self._btnCont = { x = rightX, y = byb, w = claimW, h = bh }
+  self._btnChron = { x = rightX + claimW + 11, y = byb, w = sideW, h = bh }
+  self._btnReplay = { x = rightX + claimW + 11 + sideW + 11, y = byb, w = sideW, h = bh }
+  Button.draw(self._btnCont.x, byb, claimW, bh, "primary", T("ui.claim_spoils"),
+    { hover = inBtn(self.mx, self.my, self._btnCont), feel = Feel.state("combat.cont"), id = "combat.cont",
+      mouse = { mx = self.mx, my = self.my }, t = self.t / 60 })
+  Button.draw(self._btnChron.x, byb, sideW, bh, "secondary", T("ui.chronicle_btn"),
+    { hover = inBtn(self.mx, self.my, self._btnChron), feel = Feel.state("combat.chron"), id = "combat.chron" })
+  Button.draw(self._btnReplay.x, byb, sideW, bh, "secondary", T("ui.replay_btn"),
+    { hover = inBtn(self.mx, self.my, self._btnReplay), feel = Feel.state("combat.replay"), id = "combat.replay" })
 end
 
 function Combat:drawOverlay(view)
@@ -305,7 +483,7 @@ function Combat:drawOverlay(view)
   -- Verdict + post-mortem + boutons (1.3 / 2A) : l'attribution causale est la précondition du ranked/rétention.
   -- On attend overAge >= 20 (laisse l'anim de mort se poser) avant d'afficher l'écran de fin.
   if self.arena.over and self.arena.overAge >= 20 then
-    self:_drawEndScreen(view)
+    self:_drawSummary(view)
   end
 
   -- Indicateur de PAUSE : glyphe ❚❚ DESSINÉ (pas de texte -> aucune dépendance i18n), haut-centre, hors
@@ -342,6 +520,9 @@ function Combat:mousepressed(vx, vy, button)
   -- 2A — plus de clic-n'importe-où : on hit-teste UNIQUEMENT les deux boutons de l'écran de fin.
   -- Feedback de press IMMÉDIAT (Feel.press sans action -> squash/flash) PUIS action TOUT DE SUITE : le test
   -- headless asserte openChronicle/finishCombat juste après le clic -> on n'utilise PAS l'action différée.
+  if inBtn(self.mx, self.my, self._btnReplay) then
+    Feel.press("combat.replay", function() self:restart() end); return -- rejoue la MÊME bataille (seed identique)
+  end
   if inBtn(self.mx, self.my, self._btnChron) then
     -- ⭐ ACTION DIFFÉRÉE (Feel, bible §4) : press visible AVANT l'ouverture (~160 ms) -> on SENT le clic.
     -- Le test mûrit l'action via Combat:update (-> Feel.update) avant d'asserter openChronicle.

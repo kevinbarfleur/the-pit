@@ -65,6 +65,21 @@ function Builders.combat(host)
   return Combat.new(Palette, VW, VH, host, { left = left, right = right, enemyKey = b:encounterKeyFor(#enc.units), seed = 7 })
 end
 
+-- SUMMARY : combat joué JUSQU'À CONCLUSION (+ overAge dépassé) -> capture l'écran de RÉSUMÉ post-combat
+-- (verdict + ruban de stats + DAMAGE BY CAUSE + THE LEDGER + actions). Réutilise le câblage de Builders.combat.
+function Builders.summary(host)
+  local b = makeBuild(host)
+  host.run.round, host.run.shopTier, host.run.slots = 7, 3, 7
+  local left = b:buildLeftComp()
+  local enc = OppGen.generate({ round = host.run.round, tier = host.run.shopTier, slots = host.run.slots,
+    rng = love.math.newRandomGenerator(7), odds = host.run.ODDS })
+  local right = b:buildRightComp(enc)
+  local cs = Combat.new(Palette, VW, VH, host, { left = left, right = right, enemyKey = b:encounterKeyFor(#enc.units), seed = 7 })
+  for _ = 1, 6000 do cs:update(1.0); if cs.arena.over then break end end
+  for _ = 1, 30 do cs:update(1.0) end -- dépasse overAge (>=20) -> l'écran de résumé s'affiche
+  return cs
+end
+
 -- RELICPICK : offre 1-parmi-3 (run seedé -> choix déterministes).
 function Builders.relicpick(host)
   host.run = RunState.new(SEED)
@@ -103,7 +118,7 @@ end
 local M = {}
 
 -- Liste des noms de scènes capturables (ordre stable, pour --shoot=all et les messages d'erreur).
-M.names = { "menu", "build", "combat", "relicpick", "runover", "grimoire", "gallery", "designsystem" }
+M.names = { "menu", "build", "combat", "summary", "relicpick", "runover", "grimoire", "gallery", "designsystem" }
 
 -- Renvoie la fabrique d'une scène nommée (ou nil si inconnue).
 function M.builder(name)
