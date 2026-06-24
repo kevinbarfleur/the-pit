@@ -98,7 +98,7 @@ function Runover:drawOverlay(view)
   local word = T(won and "runover.win" or "runover.lose")
   local subtitle = T(won and "runover.kicker_win" or "runover.kicker_lose")
   local score = r and T("runover.score", { wins = r.wins, losses = r.losses }) or nil
-  local hint = r and T("runover.progress", { rounds = r.round, level = r.level }) or nil
+  local hint = r and T("runover.progress", { rounds = r.round, level = r.shopTier }) or nil -- shopTier = niveau de progression (le RunState n'a pas de .level)
   Banner.draw(self.bx, self.by, BANNER_W, kind, word,
     { subtitle = subtitle, score = score, hint = hint, t = tt, h = BANNER_H })
 
