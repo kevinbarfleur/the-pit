@@ -385,12 +385,15 @@ function PostFX:_drawMask(view)
         end
       end
     end
-    -- ★ PANNEAUX OPAQUES : on REPEINT en NOIR tout leur rect (par-dessus les anneaux) -> distorsion = 0 sous eux
-    -- (la fiche flottante reste nette ET ne tire aucune bordure de voisin à travers son fond, retour user 2026-06).
+    -- ★ PANNEAUX OPAQUES : on REPEINT en NOIR leur INTÉRIEUR (par-dessus les anneaux) -> distorsion = 0 dessous,
+    -- MAIS on PRÉSERVE la bordure qui ondule en INSETANT par la largeur d'anneau (sinon la fiche perdrait TOUTE
+    -- distorsion -> retour user 2026-06 « il manque la distortion sur la carte au hover »). Net dedans, ondule au bord.
+    local insetD = (s > 0) and ((DISTORT.RING_PX + DISTORT.RING_FEATHER) / s) or (DISTORT.RING_PX + DISTORT.RING_FEATHER)
     love.graphics.setColor(0, 0, 0, 1)
     for i = 1, self.nsolids do
       local sb = self.solids[i]
-      love.graphics.rectangle("fill", sb[1], sb[2], sb[3], sb[4])
+      local iw, ih = sb[3] - 2 * insetD, sb[4] - 2 * insetD
+      if iw > 0 and ih > 0 then love.graphics.rectangle("fill", sb[1] + insetD, sb[2] + insetD, iw, ih) end
     end
     love.graphics.pop()
     love.graphics.setColor(1, 1, 1, 1)

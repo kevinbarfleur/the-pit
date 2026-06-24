@@ -39,9 +39,11 @@ end
 function Panel.draw(x, y, w, h, opts)
   opts = opts or {}
   x, y, w, h = math.floor(x + 0.5), math.floor(y + 0.5), math.floor(w + 0.5), math.floor(h + 0.5)
-  -- opts.solid : panneau OPAQUE flottant (fiche au survol / modal) -> EFFACE le masque sous lui (net, sans bave de
-  -- bordure des cartes derrière). Sinon : anneau de distorsion sur le périmètre (comportement normal des cartes).
-  if opts.solid then PostFX.markSolid(x, y, w, h) else PostFX.markBox(x, y, w, h) end
+  -- Toutes les cartes : anneau de distorsion sur la BORDURE (markBox). En PLUS, un panneau OPAQUE flottant
+  -- (opts.solid : fiche au survol / modal) EFFACE son INTÉRIEUR du masque (markSolid) -> il GARDE sa bordure qui
+  -- ondule mais aucune bave des cartes de derrière dans son fond (retour user 2026-06).
+  PostFX.markBox(x, y, w, h)
+  if opts.solid then PostFX.markSolid(x, y, w, h) end
   if opts.fill then
     Draw.rect(x, y, w, h, opts.fill)
   else
