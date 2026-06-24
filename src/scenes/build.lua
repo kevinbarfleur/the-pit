@@ -61,13 +61,18 @@ Build.__index = Build
 
 local SLOT_HALF = 40 -- demi-côté d'une case en espace DESIGN (80x80 ; centre = self.pos[i] ×4)
 
--- Rangée de RELIQUES possédées (style Slay the Spire) : icônes bakées au-dessus de la boutique, à GAUCHE
--- (bande design x22.. y512 — libre pour tous les sigils : board centré x536+ ou plat) ; survol -> infobulle.
-local RELIC_ICON_SCALE = 2          -- icône 16x16 -> 32x32 design (scale entier -> net)
-local RELIC_ICON_PX = 16 * RELIC_ICON_SCALE
-local RELIC_CELL = 44               -- pas horizontal (icône + cadre forge + gap)
-local RELIC_X0, RELIC_Y = 22, 510   -- ancrage design
-local RELIC_FRAME = 4               -- débord du socle forge autour de l'icône (cadre patiné)
+-- ── TOP CHROME (refonte « Build Screen.dc.html ») : bandeau de run riche (haut) + barre sigil/archétype ──
+-- Hauteurs design : le bandeau (HUD complet) puis la barre sigil ; le board vit sous les deux (TOPCHROME_H).
+local BANNER_H = 54   -- bandeau de run (reliques/or/vies/descente/round/slots/streak/tier)
+local SIGIL_H = 38    -- barre sigil/archétype (nom + flavor + archétype + boutons de forme)
+local TOPCHROME_H = BANNER_H + SIGIL_H
+
+-- RELIQUES possédées : désormais dans le SEGMENT « RELICS » du bandeau (haut-gauche). Socle 24×24 + icône
+-- bakée centrée ; survol -> infobulle (relicAt teste ces rects en espace design). Géométrie déterministe
+-- (pas de cache de layout) -> hit-tests sûrs même hors frame de rendu.
+local RELIC_B_S = 24                  -- côté du socle de relique (design)
+local RELIC_B_CELL = 30               -- pas horizontal (socle + gouttière)
+local RELIC_B_X0, RELIC_B_Y = 16, 23  -- ancrage dans le segment RELICS (sous le label « RELICS »)
 
 -- Famille forge par relique (forme + couleur de la gem d'accent) -> liseré teinté de la fiche/du socle.
 -- Clés ∈ Forge.FAM (flesh/bone/order/abyss/arcane). Aligné sur src/scenes/relicpick.lua.
@@ -375,11 +380,10 @@ function Build:syncEcoRects(granting)
   self.declineBtn = self._toV(self.lay.refuse3)
 end
 
--- Rect (ESPACE DESIGN) de la i-ème relique possédée (rangée au-dessus de la boutique). Inclut le cadre
--- forge (RELIC_FRAME de débord) -> le SOCLE entier est la cible de survol (hit-test = ce qui est dessiné).
+-- Rect (ESPACE DESIGN) du i-ème socle de relique dans le SEGMENT « RELICS » du bandeau de run (haut-gauche).
+-- Le socle entier est la cible de survol (hit-test = ce qui est dessiné en drawRunBanner).
 function Build:relicRowRect(i)
-  local s = RELIC_ICON_PX + RELIC_FRAME * 2
-  return { x = RELIC_X0 + (i - 1) * RELIC_CELL, y = RELIC_Y, w = s, h = s }
+  return { x = RELIC_B_X0 + (i - 1) * RELIC_B_CELL, y = RELIC_B_Y, w = RELIC_B_S, h = RELIC_B_S }
 end
 
 -- Index de la relique survolée (souris en VIRTUEL -> testée ×4 contre les rects design), ou nil.
@@ -636,6 +640,10 @@ function Build:mousepressed(vx, vy, button)
   -- rect REROLL fidèle à l'état du grant (ligne pleine / scindée) AVANT le hit-test (mousepressed peut être
   -- appelé sans update, ex. tests headless).
   self:syncEcoRects(run and run.pendingSlotGrant)
+  -- Boutons de forme (barre sigil, haut-droite) : re-sculpte le plateau (équiv. [s], mais ciblé). Prioritaire
+  -- (haut de l'écran, aucun chevauchement avec le CTA/boutique du bas).
+  local sk = self:shapeBtnAt(vx, vy)
+  if sk then self.shapeIdx = sk; self.board:setShape(Shapes.order[sk]); self:computeLayout(); return end
   -- COMBAT : ⭐ ACTION DIFFÉRÉE (Feel) -> les YEUX du CTA réagissent au clic (squash + flash) AVANT la bascule
   -- de scène (~160 ms), pour qu'on SENTE le clic. Le test e2e mûrit l'action via Build:update avant d'asserter.
   if inRect(vx, vy, self.button) then Feel.press("build.combat", function() self:startCombat() end, { delay = Feel.CTA_DELAY }); return end
@@ -1280,21 +1288,16 @@ function Build:drawOverlay(view)
   local ui = self.uiState or self:computeUi()
   Draw.begin(view)
 
-  -- Chrome debug (haut-gauche) : court pour ne pas chevaucher la bannière centrée.
-  Draw.text(T("ui.title") .. "  -  " .. T("scene.build"):upper(), 16, 14, c.faint, Theme.ui(11))
-  Draw.text(T("ui.controls_build"), 16, 32, c.ghost, Theme.ui(9))
-
-  -- Bannière de run (haut-centre) ou repli sandbox.
-  if run then self:drawBanner(run)
-  else Draw.textC(T("ui.placed_count", { placed = self:placedCount(), active = b.activeCount }), Draw.W / 2, 22, c.faint, Theme.ui(12)) end
-
-  -- Sigil : gothique en CASSE DE TITRE (les capitales blackletter sont illisibles) + archétype.
-  local nm = b.shape.name
-  Draw.textC(T("shape." .. nm .. ".label"), Draw.W / 2, 70, c.title, Theme.display(36))
-  Draw.textC(T("shape." .. nm .. ".archetype"):upper() .. "    " .. T("ui.reshape"), Draw.W / 2, 118, c.faint, Theme.ui(11))
-  -- Prompt de grant d'emplacement (event timé) : pose un slot sur une case libre, ou refuse pour de l'or.
+  -- TOP CHROME (refonte « Build Screen ») : bandeau de run riche + barre sigil/archétype, PLEINE LARGEUR.
+  if run then self:drawRunBanner(run)
+  else
+    Panel.vgrad(0, 0, Draw.W, BANNER_H, { 0x1d / 255, 0x17 / 255, 0x10 / 255, 1 }, { 0x12 / 255, 0x0d / 255, 0x08 / 255, 1 })
+    Draw.textC(T("ui.placed_count", { placed = self:placedCount(), active = b.activeCount }), Draw.W / 2, 20, c.faint, Theme.label(12))
+  end
+  self:drawSigilBar()
+  -- Prompt de grant d'emplacement (event timé), juste sous la barre sigil.
   if run and run.pendingSlotGrant then
-    Draw.textC(T("ui.slot_grant"), Draw.W / 2, 134, c.gold, Theme.ui(12))
+    Draw.textC(T("ui.slot_grant"), Draw.W / 2, TOPCHROME_H + 8, c.gold, Theme.label(12))
   end
 
   -- Décor d'overlay des cases : le SOCKET (atome Slot, 6 états) + pip de type + pips de niveau sont dessinés
@@ -1359,8 +1362,7 @@ function Build:drawOverlay(view)
     { hover = over, disabled = not enabled, feel = Feel.state("build.combat"),
       id = "build.combat", mouse = { mx = self.mx * 4, my = self.my * 4 }, t = self.t / 60 })
 
-  -- Rangée de reliques possédées (au-dessus de la boutique) + infobulles (relique prioritaire sur unité).
-  self:drawRelicRow()
+  -- Reliques rendues dans le bandeau de run (haut) ; ici on ne gère que l'infobulle au survol (prioritaire sur unité).
   local relIdx = run and self:relicAt(self.mx, self.my)
   if relIdx then
     self:drawRelicTooltip(run.relics[relIdx].id)
@@ -1418,57 +1420,235 @@ function Build:drawShopCard(i, rect, o, hot)
   Badge.cost(x + w - 10 - badgeW, fy + math.floor((CARD_FOOT_H - 13) / 2), o.cost, aff)
 end
 
--- Bannière de run (HUD haut) : 4 stats [symbole · LABEL · VALEUR], symbole par stat (pièce/diamant/pip/case),
--- LABEL et VALEUR en Space Mono (Theme.label / Theme.value), distingués par la couleur. Aligné/espacé
--- proprement dans un Panel propre. Symboles dessinés en primitives nettes (Badge.diamond + cercles/carrés).
-local HUD_SYMW = 12 -- largeur réservée au symbole (icône + petit gap)
-function Build:drawBanner(run)
-  local c = Theme.c
-  local fontL = Theme.label(10)  -- LABELS (Space Mono, petites capitales nettes)
-  local fontV = Theme.value(15)  -- VALEURS (Space Mono, prominentes)
-  -- VIES retirées du HUD : elles vivent désormais dans le module de vie (bas-gauche) -> pas de doublon.
-  local seg = {
-    { sym = "coin",    label = T("ui.gold"),  value = tostring(run.gold) },
-    { sym = "diamond", label = T("ui.wins"),  value = run.wins .. "/" .. Run.WIN_TARGET },
-    { sym = "pip",     label = T("ui.round"), value = tostring(run.round) },
-    { sym = "slot",    label = T("ui.slots"), value = run.slots .. "/" .. Run.MAX_SLOTS },
-  }
-  -- mesure : symbole + label + petit gap + valeur, par segment ; gouttière fixe entre segments.
-  local segGap, lblGap = 26, 5
-  local total = 0
-  for _, s in ipairs(seg) do
-    total = total + HUD_SYMW + fontL:getWidth(s.label) + lblGap + fontV:getWidth(s.value)
+-- ── BANDEAU DE RUN (refonte « Build Screen.dc.html ») : HUD haut PLEINE LARGEUR. Cluster GAUCHE packé
+-- [RELICS · GOLD · LIVES · DESCENT] + cluster DROITE aligné à droite [ROUND · SLOTS · STREAK · TIER],
+-- filets iron entre segments. Tout en primitives nettes (Space Mono labels/valeurs ; gouttes/losanges pour
+-- les pips). Données 100% lues du run. PUR-RENDER (golden neutre). ──
+
+-- Goutte de sang (pip de vie du bandeau) : pointe + disque, lueur additive si pleine.
+local function lifeDrop(cx, cy, on)
+  local C = Theme.c
+  if on and love.graphics and love.graphics.setBlendMode then
+    love.graphics.setBlendMode("add"); Draw.setColor({ C.bloodL[1], C.bloodL[2], C.bloodL[3], 0.45 })
+    love.graphics.circle("fill", cx, cy + 1, 5.5); love.graphics.setBlendMode("alpha"); Draw.reset()
   end
-  total = total + segGap * (#seg - 1)
-  local x = Draw.W / 2 - total / 2
-  -- Plaque PROPRE (Panel : dégradé sombre + liseré iron + éclat) intégrant le HUD au lieu d'un texte flottant.
-  Panel.draw(x - 20, 12, total + 40, 32, { fill1 = c.stone800, fill2 = c.stone900 })
-  local midY = 28 -- centre vertical de la plaque
-  local lblY, valY = midY - fontL:getHeight() / 2, midY - fontV:getHeight() / 2
-  for _, s in ipairs(seg) do
-    -- symbole (centré sur midY) en primitives propres (pièce/diamant/pip/case).
-    if s.sym == "coin" then
-      Draw.setColor(c.gold); love.graphics.circle("fill", x + 4, midY, 4)
-      Draw.setColor(c.brassS); love.graphics.circle("fill", x + 3, midY - 1, 1); Draw.reset()
-    elseif s.sym == "diamond" then
-      Badge.diamond(x + 4, midY, 4, c.gold, c.brassD, c.brassS)
-    elseif s.sym == "pip" then
-      Draw.setColor(c.gold); love.graphics.circle("fill", x + 4, midY, 3); Draw.reset()
-    else -- slot : petite case
-      Draw.setColor(c.gold); love.graphics.rectangle("fill", x + 1, midY - 3, 7, 7)
-      Draw.setColor(c.stone900); love.graphics.rectangle("fill", x + 3, midY - 1, 3, 3); Draw.reset()
+  Draw.setColor(on and C.blood or C.stone700)
+  if love.graphics then
+    love.graphics.polygon("fill", cx, cy - 6, cx - 4, cy + 1.5, cx + 4, cy + 1.5)
+    love.graphics.circle("fill", cx, cy + 1.5, 4)
+  end
+  Draw.reset()
+end
+
+function Build:drawRunBanner(run)
+  local C = Theme.c
+  local H = BANNER_H
+  -- fond (dégradé chaud) + éclat haut + bordure bas iron.
+  Panel.vgrad(0, 0, Draw.W, H, { 0x1d / 255, 0x17 / 255, 0x10 / 255, 1 }, { 0x12 / 255, 0x0d / 255, 0x08 / 255, 1 })
+  Draw.setColor(C.brassS, 0.18); if love.graphics then love.graphics.rectangle("fill", 0, 0, Draw.W, 1) end; Draw.reset()
+  Draw.rect(0, H - 1, Draw.W, 1, C.iron)
+
+  local fL = Theme.label(8)    -- labels (Space Mono 8, sourds)
+  local fBig = Theme.value(17) -- grandes valeurs (or/round)
+  local fSm = Theme.value(12)  -- valeurs secondaires (slots /9, streak)
+  local labelY, midY, pad = 8, 33, 16
+
+  -- valeurs lisibles.
+  local goldStr, roundStr, slotsStr = tostring(run.gold), tostring(run.round), tostring(run.slots)
+  local winStr = run.wins .. "/" .. Run.WIN_TARGET
+  local streakWin = (run.winStreak or 0) >= 1
+  local streakLoss = (run.lossStreak or 0) >= 1
+  -- série courante : WIN×n (sang) / LOSS×n (sourd) / « — » si aucune série (départ de run, après reset).
+  local streakStr = streakWin and T("ui.streak_win", { n = run.winStreak })
+    or (streakLoss and T("ui.streak_loss", { n = run.lossStreak }) or "—")
+  local tierStr = run.shopTier .. "/" .. Run.MAX_TIER
+  local relCount = (run.relics and #run.relics) or 0
+  local relRowW = (relCount + 1) * RELIC_B_CELL - (RELIC_B_CELL - RELIC_B_S)
+
+  -- DESSIN d'un segment dans [sx .. sx+w] (closure : capte fontes/valeurs/run).
+  local function drawSeg(s, sx)
+    local function label(str) Draw.text(str, sx + pad, labelY, C.ink4, fL) end
+    if s.k == "relics" then
+      label(T("ui.relics")); self:drawBannerRelics(run)
+    elseif s.k == "gold" then
+      label(T("ui.gold"))
+      Badge.diamond(sx + pad + 6, midY, 6, C.gold, C.iron, C.brassS)
+      Draw.text(goldStr, sx + pad + 16, midY - fBig:getHeight() / 2, C.gold, fBig)
+    elseif s.k == "lives" then
+      Draw.text(T("ui.lives"), sx + pad, labelY, C.ink4, fL)
+      Draw.text("  " .. run.lives .. "/" .. Run.START_LIVES, sx + pad + fL:getWidth(T("ui.lives")), labelY, C.ink3, fL)
+      for k = 1, Run.START_LIVES do lifeDrop(sx + pad + 5 + (k - 1) * 12, midY, k <= run.lives) end
+    elseif s.k == "descent" then
+      Draw.text(T("ui.descent"), sx + pad, labelY, C.ink4, fL)
+      local lw = fL:getWidth(T("ui.descent"))
+      Draw.text(" " .. winStr, sx + pad + lw, labelY, C.gold, fL)
+      Draw.text("  " .. T("ui.to_ascension"), sx + pad + lw + fL:getWidth(" " .. winStr), labelY, C.ink5, fL)
+      local n, gap = Run.WIN_TARGET, 2
+      local barW = s.w - pad * 2
+      local pw = (barW - gap * (n - 1)) / n
+      for k = 1, n do
+        local px = sx + pad + (k - 1) * (pw + gap)
+        if k <= run.wins then
+          Panel.vgrad(px, midY - 4, pw, 8, { 0xca / 255, 0xa6 / 255, 0x4a / 255, 1 }, { 0x7a / 255, 0x5e / 255, 0x24 / 255, 1 })
+        else
+          Draw.rect(px, midY - 4, pw, 8, { 0x0a / 255, 0x08 / 255, 0x10 / 255, 1 }, C.stone700, 1)
+        end
+      end
+    elseif s.k == "round" then
+      label(T("ui.round")); Draw.text(roundStr, sx + pad, midY - fBig:getHeight() / 2, C.ink, fBig)
+    elseif s.k == "slots" then
+      label(T("ui.slots"))
+      Draw.text(slotsStr, sx + pad, midY - fBig:getHeight() / 2, C.ink2, fBig)
+      Draw.text("/" .. Run.MAX_SLOTS, sx + pad + fBig:getWidth(slotsStr), midY - fSm:getHeight() / 2 + 3, C.ink4, fSm)
+    elseif s.k == "streak" then
+      label(T("ui.streak"))
+      Badge.diamond(sx + pad + 4, midY, 4, streakWin and C.blood or C.ink4, C.iron, C.bloodL)
+      Draw.text(streakStr, sx + pad + 12, midY - fSm:getHeight() / 2,
+        streakWin and C.bloodL or (streakLoss and C.ink3 or C.ink4), fSm)
+    elseif s.k == "tier" then
+      Draw.text(T("ui.tier_label") .. " " .. tierStr, sx + pad, labelY, C.ink4, fL)
+      for k = 1, Run.MAX_TIER do
+        local on = k <= run.shopTier
+        Badge.diamond(sx + pad + 5 + (k - 1) * 12, midY, 4.5,
+          on and C.gold or { 0x0a / 255, 0x08 / 255, 0x10 / 255, 1 }, on and C.brassD or C.brass, on and C.brassS or C.brass)
+      end
     end
-    x = x + HUD_SYMW
-    -- LABEL (éteint) puis VALEUR (claire), centrés verticalement sur midY.
-    Draw.text(s.label, x, lblY, c.fainter, fontL)
-    x = x + fontL:getWidth(s.label) + lblGap
-    Draw.text(s.value, x, valY, c.title, fontV)
-    x = x + fontV:getWidth(s.value) + segGap
   end
-  if run.winStreak >= 2 or run.lossStreak >= 2 then
-    local won = run.winStreak >= 2
-    Draw.textC(won and T("ui.win_streak", { n = run.winStreak }) or T("ui.loss_streak", { n = run.lossStreak }),
-      Draw.W / 2, 46, won and c.gold or c.blood, Theme.label(11))
+
+  -- largeurs de segment (mesurées).
+  local left = {
+    { k = "relics",  w = pad + math.max(fL:getWidth(T("ui.relics")), relRowW) + 12 },
+    { k = "gold",    w = pad + math.max(fL:getWidth(T("ui.gold")), 18 + fBig:getWidth(goldStr)) + pad },
+    { k = "lives",   w = pad + math.max(fL:getWidth(T("ui.lives") .. "  9/9"), Run.START_LIVES * 12) + pad },
+    { k = "descent", w = pad + math.max(fL:getWidth(T("ui.descent") .. " " .. winStr .. "  " .. T("ui.to_ascension")), 200) + pad },
+  }
+  local right = {
+    { k = "round",  w = pad + math.max(fL:getWidth(T("ui.round")), fBig:getWidth(roundStr)) + pad },
+    { k = "slots",  w = pad + math.max(fL:getWidth(T("ui.slots")), fBig:getWidth(slotsStr) + fSm:getWidth("/" .. Run.MAX_SLOTS)) + pad },
+    { k = "streak", w = pad + math.max(fL:getWidth(T("ui.streak")), 12 + fSm:getWidth(streakStr)) + pad },
+    { k = "tier",   w = pad + math.max(fL:getWidth(T("ui.tier_label") .. " " .. tierStr), Run.MAX_TIER * 12) + pad },
+  }
+
+  -- cluster GAUCHE packé depuis x=0 (filets iron entre segments, pas après le dernier).
+  local x = 0
+  for i, s in ipairs(left) do
+    drawSeg(s, x); x = x + s.w
+    if i < #left then Draw.rect(x, 6, 1, H - 12, C.iron); x = x + 1 end
+  end
+  -- cluster DROITE aligné à droite (filets internes seulement).
+  local rTot = #right - 1
+  for _, s in ipairs(right) do rTot = rTot + s.w end
+  local rx = Draw.W - rTot
+  for i, s in ipairs(right) do
+    drawSeg(s, rx); rx = rx + s.w
+    if i < #right then Draw.rect(rx, 6, 1, H - 12, C.iron); rx = rx + 1 end
+  end
+end
+
+-- RELIQUES possédées dans le segment « RELICS » du bandeau : socle (dégradé brun + bord laiton, vif au survol)
+-- + icône bakée centrée, aligné sur relicRowRect (= hit-test du survol). Emplacement vide « + » en queue.
+function Build:drawBannerRelics(run)
+  local C = Theme.c
+  local hov = self:relicAt(self.mx, self.my)
+  local n = (run.relics and #run.relics) or 0
+  for i = 1, n do
+    local r = self:relicRowRect(i)
+    Panel.vgrad(r.x, r.y, r.w, r.h, { 0x1c / 255, 0x13 / 255, 0x0b / 255, 1 }, { 0x12 / 255, 0x0c / 255, 0x07 / 255, 1 })
+    Draw.rect(r.x, r.y, r.w, r.h, nil, (hov == i) and C.brassL or C.brass, 1)
+    local baked = RelicGen.cached(run.relics[i].id, self.palette)
+    if baked and baked.image and love.graphics then
+      local iw = baked.image:getWidth()
+      local sc = (r.w - 8) / iw
+      love.graphics.setColor(1, 1, 1, 1)
+      love.graphics.draw(baked.image, r.x + r.w / 2 - iw * sc / 2, r.y + r.h / 2 - iw * sc / 2, 0, sc, sc)
+    end
+  end
+  local e = self:relicRowRect(n + 1)
+  Draw.rect(e.x, e.y, e.w, e.h, { 0x0c / 255, 0x09 / 255, 0x12 / 255, 1 }, C.ink5, 1)
+  Draw.textC("+", e.x + e.w / 2, e.y + e.h / 2 - 6, C.ink5, Theme.label(11))
+  Draw.reset()
+end
+
+-- Glyphe schématique d'un sigil (forme), centré (cx,cy), rayon r, couleur col. Sert à la pastille de la
+-- barre sigil ET aux boutons de forme.
+function Build:drawSigilGlyph(name, cx, cy, r, col)
+  if not love.graphics then return end
+  Draw.setColor(col); love.graphics.setLineWidth(1.5)
+  if name == "anneau" then love.graphics.circle("line", cx, cy, r)
+  elseif name == "carre" then love.graphics.rectangle("line", cx - r, cy - r, r * 2, r * 2)
+  elseif name == "diamant" then love.graphics.polygon("line", cx, cy - r, cx + r, cy, cx, cy + r, cx - r, cy)
+  elseif name == "croix" then
+    love.graphics.rectangle("fill", cx - 1.5, cy - r, 3, r * 2); love.graphics.rectangle("fill", cx - r, cy - 1.5, r * 2, 3)
+  elseif name == "ligne" then love.graphics.rectangle("fill", cx - r, cy - 1.5, r * 2, 3)
+  else love.graphics.circle("line", cx, cy, r) end
+  love.graphics.setLineWidth(1); Draw.reset()
+end
+
+-- Rect (DESIGN) du k-ième bouton de forme (cluster aligné à droite de la barre sigil).
+function Build:shapeBtnRect(k)
+  local n = #Shapes.order
+  local bs, gap = 25, 4
+  local clusterW = n * bs + (n - 1) * gap
+  local x1 = Draw.W - 22 - clusterW
+  local y = BANNER_H + math.floor((SIGIL_H - bs) / 2)
+  return { x = x1 + (k - 1) * (bs + gap), y = y, w = bs, h = bs }
+end
+
+-- Bouton de forme sous le curseur (souris VIRTUELLE -> design ×4), ou nil.
+function Build:shapeBtnAt(vx, vy)
+  local dx, dy = vx * 4, vy * 4
+  for k = 1, #Shapes.order do
+    local r = self:shapeBtnRect(k)
+    if dx >= r.x and dx <= r.x + r.w and dy >= r.y and dy <= r.y + r.h then return k end
+  end
+  return nil
+end
+
+-- ── BARRE SIGIL/ARCHÉTYPE (refonte « Build Screen ») : pastille de forme + nom (Cinzel) + flavor (Spectral
+-- it.) + badge archétype (laiton) à GAUCHE ; « [S] RESHAPE » + boutons de forme cliquables à DROITE. ──
+function Build:drawSigilBar()
+  local C, b = Theme.c, self.board
+  local y0, H = BANNER_H, SIGIL_H
+  Panel.vgrad(0, y0, Draw.W, H, { 0x16 / 255, 0x12 / 255, 0x1d / 255, 1 }, { 0x0b / 255, 0x09 / 255, 0x10 / 255, 1 })
+  Draw.rect(0, y0 + H - 1, Draw.W, 1, C.iron)
+  local nm = b.shape.name
+  local midY = y0 + math.floor(H / 2)
+  local x = 22
+  -- pastille du sigil : lueur sang + glyphe.
+  if love.graphics and love.graphics.setBlendMode then
+    love.graphics.setBlendMode("add"); Draw.setColor({ C.blood[1], C.blood[2], C.blood[3], 0.3 })
+    love.graphics.circle("fill", x + 7, midY, 11); love.graphics.setBlendMode("alpha"); Draw.reset()
+  end
+  self:drawSigilGlyph(nm, x + 7, midY, 7, C.bloodL)
+  x = x + 15 + 11
+  local fName = Theme.heading(16)
+  local nameStr = T("shape." .. nm .. ".label"):upper()
+  Draw.text(nameStr, x, midY - fName:getHeight() / 2, C.ink, fName)
+  x = x + fName:getWidth(nameStr) + 11
+  local fFlav = Theme.flavor(14)
+  local flavStr = "— " .. T("shape." .. nm .. ".flavor")
+  Draw.text(flavStr, x, midY - fFlav:getHeight() / 2, C.ink3, fFlav)
+  x = x + fFlav:getWidth(flavStr) + 14
+  local fA = Theme.label(8)
+  local aStr = T("ui.archetype") .. " · " .. T("shape." .. nm .. ".archetype"):upper()
+  local aw = fA:getWidth(aStr) + 16
+  Draw.rect(x, midY - 9, aw, 18, nil, C.brassD, 1)
+  Draw.text(aStr, x + 8, midY - fA:getHeight() / 2, C.gold, fA)
+  -- DROITE : « [S] RESHAPE » + boutons de forme.
+  local r1 = self:shapeBtnRect(1)
+  local fR = Theme.label(9)
+  Draw.textR(T("ui.reshape_label"), r1.x - 10, midY - fR:getHeight() / 2, C.ink4, fR)
+  local hotK = self:shapeBtnAt(self.mx, self.my)
+  for k, sname in ipairs(Shapes.order) do
+    local r = self:shapeBtnRect(k)
+    local active = (sname == nm)
+    if active then
+      Panel.vgrad(r.x, r.y, r.w, r.h, { 0x1a / 255, 0x0e / 255, 0x10 / 255, 1 }, { 0x12 / 255, 0x0a / 255, 0x0c / 255, 1 })
+      Draw.rect(r.x, r.y, r.w, r.h, nil, C.blood, 1)
+    else
+      Draw.rect(r.x, r.y, r.w, r.h, { 0x10 / 255, 0x0b / 255, 0x16 / 255, 1 }, (hotK == k) and C.brass or C.iron, 1)
+    end
+    self:drawSigilGlyph(sname, r.x + r.w / 2, r.y + r.h / 2, 5.5, active and C.bloodL or ((hotK == k) and C.ink2 or C.ink4))
   end
 end
 
@@ -1629,26 +1809,6 @@ end
 function Build:drawTooltip(id)
   MonsterCard.draw(self.view, self.palette, id, self.mx * 4, self.my * 4, self.t / 60,
     { rig = self.previewRigs[id] })
-end
-
--- Rangée de reliques possédées : SOCLES = atome Slot (« hover » au survol, « empty » au repos) bordant
--- l'artefact baké (RelicGen.cached, qui porte sa propre couleur de famille).
-function Build:drawRelicRow()
-  local run = self.host.run
-  if not run or #run.relics == 0 then return end
-  local hov = self:relicAt(self.mx, self.my)
-  for i, rel in ipairs(run.relics) do
-    local r = self:relicRowRect(i)
-    -- socle = atome Slot (carré) : allumé (« hover ») au survol, sobre (« empty ») sinon. L'artefact baké
-    -- (RelicGen) se pose au centre ; son propre liseré porte déjà la couleur de famille de la relique.
-    Slot.draw(r.x, r.y, r.w, (hov == i) and "hover" or "empty")
-    local baked = RelicGen.cached(rel.id, self.palette)
-    if baked and baked.image then
-      love.graphics.setColor(1, 1, 1, 1)
-      love.graphics.draw(baked.image, r.x + RELIC_FRAME, r.y + RELIC_FRAME, 0, RELIC_ICON_SCALE, RELIC_ICON_SCALE)
-    end
-  end
-  Draw.reset()
 end
 
 -- Infobulle de relique (survol de la rangée) = Panel propre (même langage que src/scenes/relicpick.lua) :

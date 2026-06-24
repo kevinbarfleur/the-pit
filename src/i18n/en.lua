@@ -81,6 +81,15 @@ return {
   ["ui.wins"] = "WINS",
   ["ui.round"] = "ROUND",
   ["ui.slots"] = "SLOTS",
+  -- bandeau de run (refonte build screen) : segments du HUD haut + barre sigil
+  ["ui.relics"] = "RELICS",
+  ["ui.descent"] = "DESCENT",
+  ["ui.to_ascension"] = "to ascension",
+  ["ui.streak"] = "STREAK",
+  ["ui.streak_win"] = "WIN×{n}",
+  ["ui.streak_loss"] = "LOSS×{n}",
+  ["ui.archetype"] = "ARCHETYPE",
+  ["ui.reshape_label"] = "[S] RESHAPE",
 
   -- tooltip
   ["ui.unit_header"] = "{name}  ({type})",
@@ -191,6 +200,12 @@ return {
   ["shape.diamant.archetype"] = "go-wide",
   ["shape.ligne.label"] = "Conduit Sigil",
   ["shape.ligne.archetype"] = "conduit",
+  -- saveur de sigil (barre sigil/archétype, refonte build screen) : une ligne d'ambiance par forme
+  ["shape.carre.flavor"] = "an even cage — every cell equal, none spared",
+  ["shape.croix.flavor"] = "four arms feed the throat at the centre",
+  ["shape.anneau.flavor"] = "the chain that holds the centre",
+  ["shape.diamant.flavor"] = "spread thin, strike from every edge",
+  ["shape.ligne.flavor"] = "a single current, end to end",
 
   -- encounters (IA de seed)
   ["encounter.fallen_patrol.name"] = "FALLEN PATROL",

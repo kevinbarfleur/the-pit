@@ -503,9 +503,11 @@ local ok, err = pcall(function()
     b:drawShopCard(1, srect, b.host.run.shop[1], false)
     b.host.run = nil
 
-    -- HUD (drawBanner) : symboles par stat (pièce/diamant/pip/case) + valeurs READ -> no crash sous le mock.
-    b:drawBanner({ gold = 12, wins = 3, round = 5, slots = 6, winStreak = 3, lossStreak = 0 })
-    b:drawBanner({ gold = 0, wins = 0, round = 1, slots = 3, winStreak = 0, lossStreak = 2 })
+    -- HUD (drawRunBanner) : bandeau de run riche (reliques/or/vies/descente/round/slots/streak/tier) -> no crash.
+    b:drawRunBanner({ gold = 12, wins = 3, round = 5, slots = 6, lives = 4, winStreak = 3, lossStreak = 0, shopTier = 3, relics = {} })
+    b:drawRunBanner({ gold = 0, wins = 0, round = 1, slots = 3, lives = 1, winStreak = 0, lossStreak = 2, shopTier = 1, relics = {} })
+    b:drawSigilBar() -- barre sigil/archétype (lit b.board.shape) -> no crash
+    assert(b:shapeBtnRect(1) and b:shapeBtnRect(#require("src.board.shapes").order), "shapeBtnRect : rects de boutons de forme valides")
 
     -- ── FIT-TO-BOX (anti-débordement des créatures) : rigBounds renvoie une boîte SAINE (repli headless,
     -- pas de canvas réel sous le mock) ; rigFitScale CONTIENT dans la boîte et RESPECTE maxScale (cap). ──
