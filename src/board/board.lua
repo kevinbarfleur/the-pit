@@ -10,6 +10,13 @@ local START_OPEN = 3 -- cases ouvertes au départ (miroir de RunState.START_SLOT
 local Board = {}
 Board.__index = Board
 
+-- ── PAUSE DES SIGILS (retour user 2026 : « trop compliqué à équilibrer, pas fan ») ──────────────────
+-- On ne joue QUE le carré pour l'instant. RÉVERSIBLE : passer à false réactive toutes les formes (le code
+-- des sigils est conservé intact). Quand vrai : `setShape` force "carre" (couvre jeu + inspect + pont du
+-- lab), et `Board.shapeName` résout l'AFFICHAGE direct (aperçu playground, coût) vers "carre".
+Board.SIGILS_PAUSED = true
+function Board.shapeName(requested) return Board.SIGILS_PAUSED and "carre" or (requested or "carre") end
+
 function Board.new(shapeName)
   local self = setmetatable({ slots = {}, activeCount = 0 }, Board)
   for i = 1, 9 do self.slots[i] = { unit = nil, unlocked = false } end
@@ -23,6 +30,7 @@ end
 -- Échange la topologie. Les unités restent attachées à leur slot (index conservé, les 9 slots
 -- sont constants) ; seules la position de rendu et l'adjacence changent.
 function Board:setShape(name)
+  if Board.SIGILS_PAUSED then name = "carre" end -- sigils en pause -> tout plateau est un carré (réversible)
   local shape = Shapes[name]
   assert(shape, "forme inconnue: " .. tostring(name))
   self.shape = shape

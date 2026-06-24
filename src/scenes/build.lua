@@ -65,7 +65,8 @@ local SLOT_HALF = 40 -- demi-côté d'une case en espace DESIGN (80x80 ; centre 
 -- Hauteurs design : le bandeau (HUD complet) puis la barre sigil ; le board vit sous les deux (TOPCHROME_H).
 local BANNER_H = 54   -- bandeau de run (reliques/or/vies/descente/round/slots/streak/tier)
 local SIGIL_H = 38    -- barre sigil/archétype (nom + flavor + archétype + boutons de forme)
-local TOPCHROME_H = BANNER_H + SIGIL_H
+-- Sigils EN PAUSE -> pas de barre sigil : le top chrome se limite au bandeau (l'espace de la barre est rendu).
+local TOPCHROME_H = BANNER_H + (Board.SIGILS_PAUSED and 0 or SIGIL_H)
 
 -- RELIQUES possédées : désormais dans le SEGMENT « RELICS » du bandeau (haut-gauche). Socle 24×24 + icône
 -- bakée centrée ; survol -> infobulle (relicAt teste ces rects en espace design). Géométrie déterministe
@@ -615,7 +616,7 @@ end
 -- ── Entrées ──
 function Build:keypressed(key)
   if self.locked then return end -- inspection figée : pas de reshape clavier
-  if key == "s" then -- swap de sigil (libre pour l'instant ; via reliques plus tard, cf. étape #3)
+  if key == "s" and not Board.SIGILS_PAUSED then -- swap de sigil (EN PAUSE : on ne joue que le carré)
     self.shapeIdx = self.shapeIdx % #Shapes.order + 1
     self.board:setShape(Shapes.order[self.shapeIdx])
     self:computeLayout()
@@ -667,10 +668,11 @@ function Build:mousepressed(vx, vy, button)
   -- rect REROLL fidèle à l'état du grant (ligne pleine / scindée) AVANT le hit-test (mousepressed peut être
   -- appelé sans update, ex. tests headless).
   self:syncEcoRects(run and run.pendingSlotGrant)
-  -- Boutons de forme (barre sigil, haut-droite) : re-sculpte le plateau (équiv. [s], mais ciblé). Prioritaire
-  -- (haut de l'écran, aucun chevauchement avec le CTA/boutique du bas).
-  local sk = self:shapeBtnAt(vx, vy)
-  if sk then self.shapeIdx = sk; self.board:setShape(Shapes.order[sk]); self:computeLayout(); return end
+  -- Boutons de forme (barre sigil) — EN PAUSE (sigils désactivés : on ne joue que le carré).
+  if not Board.SIGILS_PAUSED then
+    local sk = self:shapeBtnAt(vx, vy)
+    if sk then self.shapeIdx = sk; self.board:setShape(Shapes.order[sk]); self:computeLayout(); return end
+  end
   -- COMBAT : ⭐ ACTION DIFFÉRÉE (Feel) -> les YEUX du CTA réagissent au clic (squash + flash) AVANT la bascule
   -- de scène (~160 ms), pour qu'on SENTE le clic. Le test e2e mûrit l'action via Build:update avant d'asserter.
   if inRect(vx, vy, self.button) then Feel.press("build.combat", function() self:startCombat() end, { delay = Feel.CTA_DELAY }); return end
@@ -1412,8 +1414,8 @@ function Build:drawOverlay(view)
     Panel.vgrad(0, 0, Draw.W, BANNER_H, { 0x1d / 255, 0x17 / 255, 0x10 / 255, 1 }, { 0x12 / 255, 0x0d / 255, 0x08 / 255, 1 })
     Draw.textC(T("ui.placed_count", { placed = self:placedCount(), active = b.activeCount }), Draw.W / 2, 20, c.faint, Theme.label(12))
   end
-  self:drawSigilBar()
-  -- Prompt de grant d'emplacement (event timé), juste sous la barre sigil.
+  if not Board.SIGILS_PAUSED then self:drawSigilBar() end -- barre sigil EN PAUSE (on ne joue que le carré)
+  -- Prompt de grant d'emplacement (event timé), juste sous le top chrome.
   if run and run.pendingSlotGrant then
     Draw.textC(T("ui.slot_grant"), Draw.W / 2, TOPCHROME_H + 8, c.gold, Theme.label(12))
   end

@@ -26,6 +26,7 @@ local Feel = require("src.ui.feel")          -- JUICE : survol (glow/lift) + pre
 local Ambient = require("src.fx.ambient")
 local Units = require("src.data.units")
 local Shapes = require("src.board.shapes")
+local Board = require("src.board.board") -- Board.shapeName : résout l'affichage des sigils (en PAUSE -> carré)
 local Compositions = require("src.data.compositions")
 local Compbuild = require("src.lab.compbuild")
 local Compcost = require("src.lab.compcost")
@@ -238,10 +239,10 @@ function Playground:drawComp(comp, resolved, cost, px, py, pw, ph, won)
   -- Titre : archétype — variant (Cinzel gravée, la voix des noms) + sigil (Space Mono, inscrite).
   local titleStr = T("pg.archetype." .. comp.archetype) .. "  -  " .. T("pg.variant." .. comp.variant)
   Draw.textC(titleStr, ix + iw / 2, iy + 12, C.ink, Theme.subhead(16))
-  Draw.textC(T("shape." .. comp.sigil .. ".label"), ix + iw / 2, iy + 34, C.ink4, Theme.label(10))
+  Draw.textC(T("shape." .. Board.shapeName(comp.sigil) .. ".label"), ix + iw / 2, iy + 34, C.ink4, Theme.label(10))
 
-  -- Grille du sigil : cases vides en points ténus, unités en pips colorés par type + nom.
-  local shape = Shapes[comp.sigil]
+  -- Grille du sigil : cases vides en points ténus, unités en pips colorés par type + nom. (Sigils en PAUSE -> carré.)
+  local shape = Shapes[Board.shapeName(comp.sigil)]
   local gx, gy, gw, gh = px + 54, py + 64, pw - 108, ph - 184
   local minX, maxX, minY, maxY = shapeBounds(shape)
   local function cellPx(cell)

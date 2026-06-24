@@ -12,6 +12,7 @@
 
 local Units = require("src.data.units")
 local Shapes = require("src.board.shapes")
+local Board = require("src.board.board") -- Board.shapeName : sigils en PAUSE -> coût calculé sur le carré
 
 local Compcost = {}
 
@@ -31,7 +32,7 @@ local function unitCost(id) local u = Units[id]; return (u and u.cost) or DEFAUL
 -- Part d'unités ayant >=1 voisin de la MÊME compo via le graphe du sigil (0 = un tas non agencé ;
 -- 1 = tout le monde adjacent à un allié = exige un placement). Pure adjacence (zéro Build).
 function Compcost.placementSens(comp)
-  local shape = Shapes[comp.sigil]
+  local shape = Shapes[Board.shapeName(comp.sigil)] -- sigils en PAUSE -> adjacence du carré
   if not shape then return 0 end
   local used = {}
   for _, u in ipairs(comp.units) do used[u.slot] = true end
@@ -64,7 +65,7 @@ function Compcost.of(comp)
   local boardLevel = comp.boardLevel or #comp.units
 
   local relicDep = (comp.relics and #comp.relics > 0) and 1 or 0
-  local sigilDep = (comp.sigil and comp.sigil ~= "carre") and 1 or 0 -- un sigil non-carré = topologie exigée
+  local sigilDep = (Board.shapeName(comp.sigil) ~= "carre") and 1 or 0 -- sigils en PAUSE -> toujours carré (0)
   local placementSens = Compcost.placementSens(comp)
 
   local score =

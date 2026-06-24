@@ -125,6 +125,7 @@ end
 
 -- Reshape le plateau vers un sigil (la topologie/adjacence change ; les unités restent dans leurs slots).
 function Rundriver:reshape(sigil)
+  if require("src.board.board").SIGILS_PAUSED then return false end -- sigils en PAUSE -> action indisponible
   if not Shapes[sigil] then return false end
   self.build.board:setShape(sigil)
   self.build:computeLayout()

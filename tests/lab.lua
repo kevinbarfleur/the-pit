@@ -156,7 +156,12 @@ local ok, err = pcall(function()
     if o and not o.sold and drv.run.gold >= o.cost then boughtId = drv:buy(i); break end
   end
   assert(boughtId and drv.run.gold < before and drv.build:placedCount() >= 1, "buy: or debite + unite posee")
-  assert(drv:reshape("ligne") and drv.build.board.shape.name == "ligne", "reshape applique")
+  if require("src.board.board").SIGILS_PAUSED then
+    -- Sigils EN PAUSE : reshape est indisponible (refus propre) ; le plateau reste un carré.
+    assert(drv:reshape("ligne") == false and drv.build.board.shape.name == "carre", "reshape refuse (sigils en pause)")
+  else
+    assert(drv:reshape("ligne") and drv.build.board.shape.name == "ligne", "reshape applique")
+  end
   assert(drv:reshape("inexistant") == false, "reshape: sigil inconnu refuse")
   assert(Policies.archetypeOf("spore_tick") == "poison", "classifier: spore_tick = poison")
   assert(Policies.archetypeOf("gravewarden") == "tank", "classifier: gravewarden = tank")
