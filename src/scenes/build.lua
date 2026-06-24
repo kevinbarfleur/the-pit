@@ -42,6 +42,7 @@ local Panel = require("src.ui.panel")    -- surface propre (dégradé + liseré 
 local Button = require("src.ui.button")  -- boutons propres : primary (CTA + yeux) / eco (coût) / secondary
 local Slot = require("src.ui.slot")      -- cases du plateau (6 états) : remplace Forge.uiSocket
 local Gauge = require("src.ui.gauge")    -- jauges vies/XP : remplace l'orbe forge baké
+local LifeOrb = require("src.render.lifeorb") -- GLOBE DE VIE nightmare-forge (pixel net + nageur + shader cosmardesque)
 local Badge = require("src.ui.badge")    -- coût (pièce+nombre) / pips de niveau / diamants : remplace Forge.coinAt/diamondAt/label
 local Dividers = require("src.ui.dividers") -- séparateurs laiton/sang propres
 local Feel = require("src.ui.feel")      -- JUICE : survol (glow/lift) + press (squash/flash) + action différée
@@ -1471,8 +1472,10 @@ function Build:drawLifeOrb(run)
   local low = run.lives <= 1
   Draw.textC(T("ui.lives_orb", { n = run.lives, max = maxL }), lab.x + lab.w / 2, lab.y + 1,
     low and c.blood or c.gold, Theme.label(11))
-  -- GLOBE DE VIE : liquide sang (niveau = vies/5) + poisson + anneau de laiton, anim sur self.t (en secondes).
-  Gauge.lifeOrb(box.x, box.y, box.w, box.h, run.lives, maxL, self.t / 60)
+  -- GLOBE DE VIE « nightmare-forge » (= D2 « Resource orb » du handoff designer) : rendu PIXEL NET (canvas
+  -- basse-réso ×4) + liquide sang (niveau = vies/5) + NAGEUR serpent qui traverse + anneau de laiton, le tout
+  -- passé par un SHADER cosmardesque (gauchissement d'UV + dérive chromatique + halo violet qui respire).
+  LifeOrb.draw(box.x, box.y, box.w, box.h, run.lives, maxL, self.t / 60)
 end
 
 -- LONGUE BARRE D'XP DE BOUTIQUE (sous les monstres) : « TIER n/5 » à gauche + barre de progression
