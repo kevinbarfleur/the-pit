@@ -151,28 +151,58 @@ local function activeOf(u)
   return active
 end
 
--- Rangée d'ICÔNES, HAUT aligné sur `top` (design). leftAlign=true -> départ à x ; sinon centré sur x.
--- scale entier -> net.
+-- Nombre de STACKS d'une affliction : poison = nb d'instances empilées, choc = champ `.stacks` ; les
+-- familles mono-instance (saignement/brûlure/pourriture, dont l'intensité passe par le dps, pas le compte)
+-- renvoient 1 -> on n'affiche « ×N » que là où l'empilement est une vraie mécanique (N>1).
+local function stacksOf(u, key)
+  local d = u.dots and u.dots[key]
+  if not d then return 1 end
+  if key == "poison" then return #d end
+  if key == "shock" then return d.stacks or 1 end
+  return 1
+end
+
+local _countFont -- mémoïsé : petite Space Mono (inscrite) pour le compteur « ×N »
+local function countFont() _countFont = _countFont or Theme.value(8); return _countFont end
+local TIMES = "\195\151" -- « × » (U+00D7) en octets UTF-8, sans dépendre de l'encodage du littéral source
+
+-- Rangée d'ICÔNES d'affliction + compteur « ×N » (familles qui EMPILENT, N>1), HAUT aligné sur `top`
+-- (design). leftAlign=true -> départ à x ; sinon centré sur x. scale entier -> net.
 local function drawIconsRow(u, scale, x, top, leftAlign)
   local active = activeOf(u)
   if #active == 0 then return end
-  local gap = scale
-  local baked, totalW = {}, 0
+  local gap = scale + 2
+  local cf = countFont()
+  local baked, counts, totalW = {}, {}, 0
   for i, a in ipairs(active) do
     local b = iconFor(a); baked[i] = b
-    if b then totalW = totalW + b.w * scale + (totalW > 0 and gap or 0) end
+    if b then
+      local n = stacksOf(u, a.key)
+      counts[i] = n
+      local cw = (n > 1 and cf) and (cf:getWidth(TIMES .. n) + 1) or 0
+      totalW = totalW + b.w * scale + cw + (totalW > 0 and gap or 0)
+    end
   end
   if totalW <= 0 then return end
   local ix = leftAlign and math.floor(x) or math.floor(x - totalW / 2)
   local ty = math.floor(top)
-  love.graphics.setColor(1, 1, 1, 1)
   for i = 1, #active do
-    local b = baked[i]
+    local a, b, n = active[i], baked[i], counts[i] or 1
     if b then
+      love.graphics.setColor(1, 1, 1, 1)
       love.graphics.draw(b.image, ix, ty, 0, scale, scale)
-      ix = ix + b.w * scale + gap
+      ix = ix + b.w * scale
+      if n > 1 and cf and love.graphics.setFont and love.graphics.print then
+        local s = TIMES .. n
+        love.graphics.setFont(cf)
+        love.graphics.setColor(a.color[1], a.color[2], a.color[3], 1)
+        love.graphics.print(s, ix + 1, ty - 1)
+        ix = ix + cf:getWidth(s) + 1
+      end
+      ix = ix + gap
     end
   end
+  love.graphics.setColor(1, 1, 1, 1)
 end
 
 -- ── Géométrie de l'ENCADRÉ (en ART px ; rendu en ESPACE DESIGN à `scale` px/art -> grille fine, nette) ──
@@ -267,8 +297,27 @@ function HealthBar.draw(u, scale)
   local midY = math.floor(AH / 2) - 1
   ar(0, midY, 1, 2, FRAME.gold); ar(AW - 1, midY, 1, 2, FRAME.gold)
 
-  -- ICÔNES de statut : petites (×1), EN DESSOUS de l'encadré, alignées à GAUCHE (départ au bord gauche).
-  drawIconsRow(u, 1, ox, oy + AH * scale + 1, true)
+  -- CADENCE : barre FINE dorée juste sous l'encadré = progression du timer d'attaque vers la prochaine
+  -- frappe. effCd = cd modulé (saignement RALLONGE via atkSlow ; WHETSTONE ACCÉLÈRE via haste) ; atkTimer
+  -- décompte vers 0 (=frappe). Près du plein -> dorure VIVE + cap de bord (« va frapper »), faute de box-shadow.
+  local cd = u.cd or 0
+  if cd > 0 then
+    local effCd = cd * (1 + (u.atkSlow or 0)) * (1 - (u.haste or 0))
+    local cadFrac = (effCd > 0) and (1 - (u.atkTimer or 0) / effCd) or 0
+    if cadFrac < 0 then cadFrac = 0 elseif cadFrac > 1 then cadFrac = 1 end
+    local cy0 = AH + 1
+    ar(IX0, cy0, FW, 2, FILL.empty) -- rail recessed
+    local cadW = math.floor(cadFrac * FW + 0.5)
+    if cadW > 0 then
+      local hot = cadFrac >= 0.85
+      ar(IX0, cy0, cadW, 1, hot and FRAME.goldBr or FRAME.gold) -- ligne haute (brillance)
+      ar(IX0, cy0 + 1, cadW, 1, hot and FRAME.gold or FRAME.lit) -- corps
+      if hot then ar(IX0 + cadW - 1, cy0, 1, 2, FRAME.goldBr) end -- cap lumineux du bord d'attaque
+    end
+  end
+
+  -- ICÔNES de statut (+ ×N) : EN DESSOUS de la cadence, alignées à GAUCHE (départ au bord gauche).
+  drawIconsRow(u, 1, ox, oy + (AH + 3) * scale + 1, true)
 
   love.graphics.setColor(1, 1, 1, 1)
 end

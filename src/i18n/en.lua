@@ -137,6 +137,7 @@ return {
   ["ui.inspect_hint"] = "INSPECT · FIGHT to watch · [esc] back",  -- build verrouillé du Proving Ground
   ["ui.aura_grant"] = "GRANT",  -- chip d'aura : l'aura OCTROIE un effet au voisin (vs amplifier une valeur)
   ["ui.taunt"] = "TAUNT",       -- badge de case : l'unité force le ciblage (override d'aggro)
+  ["ui.aggro"] = "AGGRO",       -- badge de combat : l'unité TIRE le focus (aggro haute, sans forcer comme taunt)
   -- fiche au survol (board) : readout des liens d'aura + exposition (refonte build screen, phase 3)
   ["ui.auras_on_cell"] = "AURAS ON THIS CELL",
   ["ui.links_count"] = "{n} LINKS",

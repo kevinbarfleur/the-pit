@@ -33,6 +33,20 @@ local FLASH_DUR = 3       -- durée du flash blanc sur le rig touché (frames)
 local DEATH_CELL_DUR = 30 -- durée du flash rouge de la case de mort (frames)
 local PHI = 0.6180339887  -- suite de Weyl (dispersion cosmétique déterministe, comme affliction_fx)
 
+-- BADGE DE RÔLE (overlay) : signale d'un coup d'œil les unités qui pèsent sur le CIBLAGE. `taunt` (override
+-- dur) prime ; sinon une aggro NETTEMENT au-dessus du standard (>= 2× AGGRO_STD=10 -> tanks à 40 qui tirent
+-- le focus sans le forcer). Les bruisers (15) / carries (5) ne badgent pas -> zéro bruit sur le champ.
+local AGGRO_BADGE = 20
+local function roleOf(u)
+  local C = Theme.c
+  if u.taunt then
+    return { label = T("ui.taunt"), col = C.brassS, border = C.brass, fill = { 0.07, 0.05, 0.02, 0.9 } }
+  elseif (u.aggro or 0) >= AGGRO_BADGE then
+    return { label = T("ui.aggro"), col = C.bloodL, border = C.bloodDeep, fill = { 0.09, 0.04, 0.05, 0.9 } }
+  end
+  return nil
+end
+
 local ArenaDraw = {}
 ArenaDraw.__index = ArenaDraw
 
@@ -456,13 +470,26 @@ function ArenaDraw:drawOverlay(view)
   local c = Theme.c
   Draw.begin(view)
 
-  -- Nom de l'unité : juste AU-DESSUS de l'encadré de vie (et non plus sous l'unité).
+  -- Nom de l'unité (+ BADGE DE RÔLE optionnel) : juste AU-DESSUS de l'encadré de vie. Avec un rôle, on dessine
+  -- la pile « [RÔLE] Nom » groupée et CENTRÉE sur l'unité -> le danger de ciblage se lit avant le nom.
   local nameFont = Theme.ui(9)
   local nameH = nameFont and nameFont:getHeight() or 9
+  local roleFont = Theme.value(8)
   for _, u in ipairs(self.arena.units) do
     if u.alive then
       local ny = (u.y + (HealthBar.BAR_DY or -34)) * 4 - nameH - 1
-      Draw.textC((Units[u.id] and T("unit." .. u.id .. ".name")) or u.id, u.x * 4, ny, c.faint, nameFont)
+      local name = (Units[u.id] and T("unit." .. u.id .. ".name")) or u.id
+      local role = roleOf(u)
+      if role and roleFont then
+        local pw = roleFont:getWidth(role.label) + 8
+        local nw = nameFont:getWidth(name)
+        local startX = u.x * 4 - (pw + 5 + nw) / 2
+        Draw.rect(startX, ny - 1, pw, nameH + 2, role.fill, role.border, 1)
+        Draw.textC(role.label, startX + pw / 2, ny - 1 + (nameH + 2 - roleFont:getHeight()) / 2, role.col, roleFont)
+        Draw.text(name, startX + pw + 5, ny, c.faint, nameFont)
+      else
+        Draw.textC(name, u.x * 4, ny, c.faint, nameFont)
+      end
     end
   end
 
