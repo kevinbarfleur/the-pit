@@ -36,4 +36,17 @@ R.clamp = clamp
 function R.get(rank) return LEVELS[clamp(rank)] end
 function R.frame(rank) return FRAME[clamp(rank)] end
 
+-- ── TIER (rareté lisible par l'UI) : SOURCE UNIQUE couleur + nom. La couleur EST le cadre (FRAME) ; le nom
+-- vit en i18n (Pit-caste, choix user 2026-06) -> R.tierNameKey donne la clé, le render fait T(key). Variantes
+-- de couleur DÉRIVÉES (pures, floats 0..1) pour tag/pastille/glow, afin que tout l'UI parle la même rareté.
+function R.tierNameKey(rank) return "tier." .. clamp(rank) .. ".name" end
+function R.tierColor(rank) return FRAME[clamp(rank)] end
+-- teinte assombrie (fond de tag / pastille discrète) : ~moitié de la couleur de cadre.
+function R.tierDim(rank) local f = FRAME[clamp(rank)]; return { f[1] * 0.42, f[2] * 0.42, f[3] * 0.42 } end
+-- teinte avivée (texte de tag / liseré de focus) : remonte la luminance sans cramer (clamp à 1).
+function R.tierBright(rank)
+  local f = FRAME[clamp(rank)]
+  return { math.min(1, f[1] * 1.30 + 0.10), math.min(1, f[2] * 1.30 + 0.10), math.min(1, f[3] * 1.30 + 0.10) }
+end
+
 return R

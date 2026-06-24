@@ -249,11 +249,13 @@ end
 
 function love.update(dt)
   if host.overlay then return end -- Chronique ouverte : le jeu derrière est FIGÉ (combat/anims gelés)
+  if not host.scene then return end -- mode export/--shoot : la scène GLOBALE n'est pas montée (Export.shoot a son propre host)
   host.scene:update(dt * FRAME) -- ~1.0 par tick au pas fixe 1/60
 end
 
 function love.draw()
   local scene = host.scene
+  if not scene then return end -- mode export/--shoot : la scène GLOBALE n'est pas montée (Export.shoot a son propre host)
 
   -- 0. Vue (scale FRACTIONNAIRE = REMPLIT la fenêtre, plus de letterbox entier) calculée d'abord : tout
   -- (monde pixel, UI, atmosphère, post-fx) en dépend, tout reste aligné. On garde l'ASPECT 16:9 du design ->
@@ -365,7 +367,7 @@ function love.keypressed(key)
   if key == "r" and (host.name == "build" or host.name == "gallery" or host.name == "relicons") then
     host.goto(host.name == "relicons" and "build" or "relicons"); return
   end
-  if host.scene.keypressed then host.scene:keypressed(key) end
+  if host.scene and host.scene.keypressed then host.scene:keypressed(key) end
 end
 
 function love.mousepressed(x, y, button)
@@ -375,13 +377,13 @@ function love.mousepressed(x, y, button)
     if host.overlay:mousepressed(vx, vy, button) == "close" then host.overlay = nil end
     return
   end
-  if not host.scene.mousepressed then return end
+  if not (host.scene and host.scene.mousepressed) then return end
   host.scene:mousepressed(vx, vy, button)
 end
 
 function love.mousereleased(x, y, button)
   if host.overlay then return end
-  if not host.scene.mousereleased then return end
+  if not (host.scene and host.scene.mousereleased) then return end
   local vx, vy = toVirtual(x, y)
   host.scene:mousereleased(vx, vy, button)
 end
@@ -392,14 +394,14 @@ function love.mousemoved(x, y)
     if host.overlay.mousemoved then host.overlay:mousemoved(vx, vy) end -- survol des boutons forge de l'overlay
     return -- la scène derrière est figée
   end
-  if not host.scene.mousemoved then return end
+  if not (host.scene and host.scene.mousemoved) then return end
   host.scene:mousemoved(vx, vy)
 end
 
 -- Molette : défilement des listes scrollables (la scène décide). dx,dy en crans.
 function love.wheelmoved(dx, dy)
   if host.overlay then host.overlay:wheelmoved(dx, dy); return end -- scroll du journal
-  if host.scene.wheelmoved then host.scene:wheelmoved(dx, dy) end
+  if host.scene and host.scene.wheelmoved then host.scene:wheelmoved(dx, dy) end
 end
 
 -- ───────────────────────── Boucle à pas de temps fixe ─────────────────────────

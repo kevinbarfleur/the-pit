@@ -28,6 +28,10 @@ local Slot = {}
 local C = Theme.c
 local floor, max = math.floor, math.max
 
+-- Rampe de couleur du NIVEAU de fusion (1->3) affiché en TEXTE : gris (base) -> jade (renforcé) -> or (max).
+-- Lisible d'un coup d'œil ; remplace les pips losanges (trop encombrants sur une petite case, retour user 2026-06).
+local LEVEL_INK = { { 0.62, 0.60, 0.56 }, { 0.55, 0.80, 0.62 }, { 0.88, 0.72, 0.34 } }
+
 local function g() return love and love.graphics or nil end
 
 -- Descripteur d'état : { border, glow?, hatch? } — couleurs canoniques de §2.10 (palette tokenisée).
@@ -96,16 +100,27 @@ function Slot.draw(x, y, size, state, opts)
     gr.setColor(1, 1, 1, 1)
   end
 
-  -- 6) PIP DE TYPE en haut-gauche (Draw.pip : forme par famille, couleur de type).
-  if opts.typePip then
-    local pr = max(3, floor(size * 0.10))
-    Draw.pip(opts.typePip, x + 5 + pr, y + 5 + pr, pr)
+  -- 6) PASTILLE DE TIER en haut-gauche : petit disque de la couleur de RARETÉ (remplace le pip de famille — la
+  -- famille n'a aucune incidence mécanique, retour user 2026-06). opts.tierCol = {r,g,b} (= rarity.tierColor).
+  if opts.tierCol and gr and gr.circle then
+    local tc = opts.tierCol
+    local pr = max(2, floor(size * 0.085))
+    local cx, cy = x + 6 + pr, y + 6 + pr
+    gr.setColor(tc[1], tc[2], tc[3], 1); gr.circle("fill", cx, cy, pr)
+    gr.setColor(0, 0, 0, 0.5); gr.circle("line", cx, cy, pr + 0.5)
+    gr.setColor(1, 1, 1, 1)
   end
-  -- 7) PIPS DE NIVEAU en haut-droite (Badge.levelPips : losanges dorés). On les pose à droite, alignés.
+  -- 7) NIVEAU EN TEXTE en haut-droite ("LVn", rampe gris->jade->or) au lieu des pips losanges (trop encombrants,
+  -- retour user 2026-06). Petit fond sombre derrière -> lisible par-dessus le rig.
   if opts.level and opts.level > 0 then
     local n = math.min(opts.level, 3)
-    local pipsW = 3 * 9 -- largeur de Badge.levelPips (3 logements × pas 9)
-    Badge.levelPips(x + size - pipsW - 4, y + 4, n, 3)
+    local ink = LEVEL_INK[n] or LEVEL_INK[1]
+    local f = Theme.ui(8)
+    local txt = "LV" .. n
+    local tw = (f and f:getWidth(txt)) or (#txt * 5)
+    local tx, ty = x + size - tw - 4, y + 4
+    if gr then gr.setColor(0, 0, 0, 0.55); gr.rectangle("fill", tx - 2, ty - 1, tw + 4, 10); gr.setColor(1, 1, 1, 1) end
+    Draw.text(txt, tx, ty, ink, f)
   end
   -- 8) MARQUES D'AFFLICTION en bas (petites pastilles de couleur de famille, lisibles d'un coup d'œil).
   if opts.affkeys and #opts.affkeys > 0 and gr then

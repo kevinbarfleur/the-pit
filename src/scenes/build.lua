@@ -33,6 +33,7 @@ local Snapshot = require("src.net.snapshot")
 local Snapstore = require("src.net.snapstore")
 local Run = require("src.run.state")
 local RelicGen = require("src.gen.relicgen") -- icones de reliques (rangee type Slay the Spire + hover)
+local Rarity = require("src.gen.rarity") -- TIER (rang 1..5) -> couleur + nom de caste (source unique de rareté UI)
 local Bestiary = require("src.core.bestiary") -- marque les créatures vues en boutique (codex)
 local Theme = require("src.ui.theme")
 local Draw = require("src.ui.draw")
@@ -918,7 +919,7 @@ function Build:drawBack(view)
     elseif ui.nbset[i] then state = "neighbor"
     elseif sr then state = "selected"
     else state = "empty" end
-    Slot.draw(x, y, S, state, sr and { typePip = Units[sr.id].type, level = sr.level or 1 } or nil)
+    Slot.draw(x, y, S, state, sr and { tierCol = Rarity.tierColor(Units[sr.id].rank), level = sr.level or 1 } or nil)
     -- carte de risque : voile de sang d'autant plus dense que la case est avancée (front exposé au ciblage).
     local cell = b.shape.cells[i]
     if slot.unlocked and cell then
@@ -937,7 +938,7 @@ function Build:drawBack(view)
     local sr = self.bench[i]
     local hovering = (ui.benchHover == i)
     local bstate = (self.drag and hovering and "drop") or (hovering and "hover") or (sr and "selected") or "empty"
-    Slot.draw(bx, by, bw, bstate, sr and { typePip = Units[sr.id].type, level = sr.level or 1 } or nil)
+    Slot.draw(bx, by, bw, bstate, sr and { tierCol = Rarity.tierColor(Units[sr.id].rank), level = sr.level or 1 } or nil)
   end
 
   -- Bandeau boutique (bas) + FOND de chaque carte = PANNEAUX propres (dégradé sombre + liseré teinté), dessinés
@@ -955,12 +956,24 @@ function Build:drawBack(view)
         else
           local aff = run.gold >= o.cost
           local hot = (ui.shopHover == i)
-          local utype = Units[o.id] and Units[o.id].type
+          -- CADRE = RARETÉ (rang 1..5), pas type : la couleur de carte lit le TIER (gris->vert->bleu->violet->or).
+          -- Au survol on RENFORCE la teinte (jamais de doré générique qui écrase la rareté) + un halo additif
+          -- même hue -> « ça glow, ça renforce la couleur principale » (retour user 2026-06).
+          local rank = (Units[o.id] and Units[o.id].rank) or 1
+          local tcol = Rarity.tierColor(rank)
           local border
           if not aff then border = c.iron
-          elseif hot then border = c.gold
-          else border = (utype and Theme.type(utype).color) or c.iron end
+          elseif hot then border = Rarity.tierBright(rank)
+          else border = tcol end
           Panel.draw(x, y, w, h, { fill1 = hot and c.stone700 or c.stone800, fill2 = c.stone900, border = border, hi = aff })
+          if hot and aff and love.graphics and love.graphics.setBlendMode then
+            local b2 = Rarity.tierBright(rank)
+            love.graphics.setBlendMode("add")
+            love.graphics.setColor(b2[1], b2[2], b2[3], 0.20)
+            love.graphics.rectangle("line", x, y, w, h)
+            love.graphics.rectangle("line", x - 1, y - 1, w + 2, h + 2)
+            love.graphics.setBlendMode("alpha"); love.graphics.setColor(1, 1, 1, 1)
+          end
         end
       end
     end
@@ -1069,6 +1082,23 @@ function Build:drawWorld()
   love.graphics.setColor(1, 1, 1, 1)
 end
 
+-- Ajuste un libellé à une largeur max : descend la taille de police (base..floorSz) tant que ça déborde ; si
+-- toujours trop long au plancher, tronque avec une ellipse. Évite que les noms longs (4 mots) mordent sur le
+-- voisin (board) ou débordent de la carte (shop). fontFn = Theme.label / Theme.subhead.
+local function fitText(text, maxW, fontFn, base, floorSz)
+  floorSz = floorSz or 7
+  for sz = base, floorSz, -1 do
+    local f = fontFn(sz)
+    if not f or f:getWidth(text) <= maxW then return text, f end
+  end
+  local f = fontFn(floorSz)
+  if f and f:getWidth(text) > maxW then
+    while #text > 1 and f:getWidth(text .. "…") > maxW do text = text:sub(1, #text - 1) end
+    text = text .. "…"
+  end
+  return text, f
+end
+
 -- ── Overlay (espace design, texte net) : chrome + bordures de case + boutique + boutons + infobulle ──
 function Build:drawOverlay(view)
   local b, run, c = self.board, self.host.run, Theme.c
@@ -1105,7 +1135,9 @@ function Build:drawOverlay(view)
     else
       local sr = self.slotRigs[i]
       if sr then
-        Draw.textC(T("unit." .. sr.id .. ".name"), p.x * 4, p.y * 4 - SLOT_HALF + S + 3, c.name, Theme.label(9))
+        -- Nom AJUSTÉ : budget = un peu moins que le pas entre cases -> jamais de chevauchement avec le voisin.
+        local nm, nf = fitText(T("unit." .. sr.id .. ".name"), SPACING * 4 - 8, Theme.label, 9, 7)
+        Draw.textC(nm, p.x * 4, p.y * 4 - SLOT_HALF + S + 3, c.name, nf)
       end
     end
   end
@@ -1190,7 +1222,7 @@ function Build:drawShopCard(i, rect, o, hot)
     return
   end
   local aff = (self.host.run.gold >= o.cost)
-  local utype = Units[o.id].type
+  local rank = Units[o.id].rank or 1
 
   -- (le FOND + le LISERÉ de la carte sont dessinés en drawBack, DERRIÈRE le rig d'aperçu ; ici = le CONTENU.)
   -- COLONNE interne : région créature (flex) au-dessus du bloc d'info (nom + coût/chips), avec un padding.
@@ -1198,19 +1230,24 @@ function Build:drawShopCard(i, rect, o, hot)
   local rows = Layout.column(inner, { { flex = 1 }, { size = 16 }, { size = 16 } }, { gap = 3, align = "stretch" })
   local nameBox, costBox = rows[2], rows[3]
 
-  -- PIP DE TYPE (haut-gauche), bien typé (flesh/order/bone/arcane/abyss) + halo additif au survol.
-  local tcol = Theme.type(utype).color
-  Draw.pip(utype, x + 14, y + 14, 6, aff and tcol or c.fainter)
-  if hot and aff and love.graphics.setBlendMode and love.graphics.circle then
-    love.graphics.setBlendMode("add")
-    love.graphics.setColor(tcol[1], tcol[2], tcol[3], 0.32)
-    love.graphics.circle("fill", x + 14, y + 14, 9)
-    love.graphics.setBlendMode("alpha"); love.graphics.setColor(1, 1, 1, 1)
+  -- TAG DE TIER (haut-gauche) : remplace le pip de famille (sans incidence mécanique, retour user 2026-06).
+  -- Petit plat à la couleur de RARETÉ + nom de caste (DREGS..ELDER) -> la rareté EN MOTS (le cadre la donne en
+  -- couleur). Texte/liseré avivés si abordable ; sourds (laiton/gris) hors budget.
+  do
+    local nm = T(Rarity.tierNameKey(rank))
+    local tf = Theme.ui(8)
+    local tw = (tf and tf:getWidth(nm)) or (#nm * 5)
+    local padX, th = 5, 13
+    local fill = aff and Rarity.tierDim(rank) or { 0.12, 0.12, 0.13 }
+    local edge = aff and Rarity.tierBright(rank) or c.iron
+    Draw.rect(x + 8, y + 7, tw + padX * 2, th, { fill[1], fill[2], fill[3], 0.92 }, edge, 1)
+    Draw.text(nm, x + 8 + padX, y + 7 + 3, aff and Rarity.tierBright(rank) or c.faint, tf)
   end
 
   -- NOM (Cinzel = police de NOM du système 4-voix, lisible et centrée dans sa rangée).
   local nameCol = aff and c.name or c.dim
-  Draw.textC(T("unit." .. o.id .. ".name"), nameBox.x + nameBox.w / 2, nameBox.y + 1, nameCol, Theme.subhead(12))
+  local snm, snf = fitText(T("unit." .. o.id .. ".name"), nameBox.w, Theme.subhead, 12, 9)
+  Draw.textC(snm, nameBox.x + nameBox.w / 2, nameBox.y + 1, nameCol, snf)
 
   -- RANGÉE BAS : chips d'affliction (gauche, ce que l'unité APPLIQUE) + coût (droite, Badge propre).
   local font = Theme.label(8)

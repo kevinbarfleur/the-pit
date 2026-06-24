@@ -33,6 +33,15 @@ return {
   ["gallery.generated"] = "procedurally generated",
   ["gallery.handmade"] = "hand-authored sprite",
 
+  -- TIERS de rareté (rang 1..5) : la rareté se LIT par un mot (caste du Puits) ET par une couleur
+  -- (rarity.lua FRAME : gris/vert/bleu/violet/or). Pit-caste (choix user 2026-06). Affiché sur les cartes
+  -- shop (tag) + grimoire ; sur le board on garde une simple pastille de couleur (pas le mot).
+  ["tier.1.name"] = "DREGS",
+  ["tier.2.name"] = "FODDER",
+  ["tier.3.name"] = "REAVER",
+  ["tier.4.name"] = "HORROR",
+  ["tier.5.name"] = "ELDER",
+
   -- menu / title
   ["menu.descend"] = "YOU DESCEND",
   ["menu.title"] = "The Pit",
