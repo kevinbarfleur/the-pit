@@ -254,22 +254,30 @@ end
 -- forme qu'il affronte). Reconstruit depuis la position de l'unité (zéro dépendance au plateau/sigil) : on
 -- n'affiche que les cases OCCUPÉES — les cases VIDES du sigil demanderaient de router la shape jusqu'ici.
 function ArenaDraw:drawGrid()
-  local C = Theme.c
   local W, H = 28, 30 -- ~ pas de la grille (Place CELL=30) -> les cases se jointoient en grille lisible
   love.graphics.setLineStyle("rough")
   love.graphics.setLineWidth(1)
   for _, u in ipairs(self.arena.units) do
     if u.alive then
-      local col = (u.team == "left") and C.shield or C.blood
+      local left = (u.team == "left")
       local x = math.floor(u.x - W / 2)
-      local y = math.floor(u.y + 2 - H) -- la case ENCADRE le monstre (tête en haut, pieds en bas)
-      love.graphics.setColor(col[1], col[2], col[3], 0.08)
-      love.graphics.rectangle("fill", x, y, W, H)
-      love.graphics.setColor(col[1], col[2], col[3], 0.42)
+      local y = math.floor(u.y + 2 - H) -- la carte ENCADRE le monstre (tête en haut, pieds en bas)
+      -- CARTE de slot : panneau SOMBRE légèrement teinté équipe (détache la créature du biome chargé ->
+      -- lisibilité constante, comme les tuiles du design) + liseré MUET. Fini le wireframe vif « debug ».
+      -- Dégradé vertical 3 bandes (haut un peu plus clair = lumière du dessus) -> un panneau « assis », pas un aplat.
+      local r1, g1, b1, r2, g2, b2
+      if left then r1, g1, b1, r2, g2, b2 = 0.06, 0.09, 0.14, 0.03, 0.05, 0.09
+      else r1, g1, b1, r2, g2, b2 = 0.12, 0.06, 0.07, 0.06, 0.03, 0.04 end
+      for i = 0, 2 do
+        local t = i / 2
+        love.graphics.setColor(r1 + (r2 - r1) * t, g1 + (g2 - g1) * t, b1 + (b2 - b1) * t, 0.40)
+        love.graphics.rectangle("fill", x, y + math.floor(i * H / 3), W, math.ceil(H / 3))
+      end
+      -- liseré MUET (fer teinté équipe) ; ligne de base un chouïa plus marquée = pose l'unité au sol.
+      if left then love.graphics.setColor(0.24, 0.29, 0.39, 0.50) else love.graphics.setColor(0.39, 0.23, 0.25, 0.50) end
       love.graphics.rectangle("line", x, y, W, H)
-      love.graphics.setColor(col[1], col[2], col[3], 0.85) -- accents de coin (lecture « slot »)
-      love.graphics.rectangle("fill", x, y, 1, 1); love.graphics.rectangle("fill", x + W - 1, y, 1, 1)
-      love.graphics.rectangle("fill", x, y + H - 1, 1, 1); love.graphics.rectangle("fill", x + W - 1, y + H - 1, 1, 1)
+      if left then love.graphics.setColor(0.30, 0.38, 0.52, 0.55) else love.graphics.setColor(0.52, 0.28, 0.30, 0.55) end
+      love.graphics.line(x, y + H, x + W, y + H)
     end
   end
   love.graphics.setColor(1, 1, 1, 1)
@@ -301,21 +309,17 @@ function ArenaDraw:drawArena()
   -- Clippée à l'ellipse via une 2e ellipse de couleur par moitié (rectangle scissoré aurait un bord dur ;
   -- l'ellipse d'accent garde la forme du plateau). Alpha ~0.05 -> suggestion, jamais un aplat criard.
   local mine, theirs = C.shield, C.blood
-  love.graphics.setColor(mine[1], mine[2], mine[3], 0.05)
+  love.graphics.setColor(mine[1], mine[2], mine[3], 0.035)
   love.graphics.ellipse("fill", CX - 62, 118, 70, 32)
-  love.graphics.setColor(theirs[1], theirs[2], theirs[3], 0.05)
+  love.graphics.setColor(theirs[1], theirs[2], theirs[3], 0.035)
   love.graphics.ellipse("fill", CX + 62, 118, 70, 32)
 
-  -- 3) Couture verticale de ligne de front en x=160 (y≈55..150) : trait de sang + colonne de lueur qui
-  -- RESPIRE (alpha via sin(t)) -> l'œil va à la frontière où les camps s'affrontent.
+  -- 3) Couture de ligne de front en x=160 : SUGGÉRÉE (lueur qui RESPIRE), pas un trait franc -> on évite
+  -- l'artefact « colonne rouge » qui faisait debug. Juste un soupçon de présence au milieu du champ.
   local breathe = 0.5 + 0.5 * math.sin((self.t or 0) * 0.04) -- 0..1
   local bl = C.blood
-  -- Colonne de lueur (large, douce) : pulse de présence au milieu du champ.
-  love.graphics.setColor(bl[1], bl[2], bl[3], 0.06 + 0.05 * breathe)
-  love.graphics.rectangle("fill", CX - 6, 55, 12, 95)
-  -- Trait franc de la couture.
-  love.graphics.setColor(bl[1], bl[2], bl[3], 0.18)
-  love.graphics.rectangle("fill", CX, 55, 1, 95)
+  love.graphics.setColor(bl[1], bl[2], bl[3], 0.022 + 0.018 * breathe)
+  love.graphics.rectangle("fill", CX - 4, 62, 8, 84)
 
   love.graphics.setColor(1, 1, 1, 1)
 end

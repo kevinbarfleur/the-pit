@@ -18,7 +18,13 @@ local Arena = require("src.combat.arena")
 local ArenaDraw = require("src.render.arena_draw")
 local Chronicle = require("src.render.chronicle")
 local Ambient = require("src.fx.ambient")
-local Biome = require("src.fx.biome")    -- décor de biome parallaxe (refonte Combat Frame, phase 4)
+local Biome = require("src.fx.biome")    -- décor de biome parallaxe (refonte Combat Frame, phase 4) — EN PAUSE
+local NightmareBG = require("src.fx.nightmare_bg") -- fond cauchemardesque shader (remplace le biome, retour user)
+
+-- Bascule de fond de combat : le BIOME parallaxe est mis EN PAUSE (retour user « pas satisfait ») au profit
+-- d'un FOND UNI sombre + shader cauchemardesque (distorsion onirique / double vision / yeux). Remettre à true
+-- pour réactiver le biome (le code est conservé intact des deux côtés).
+local USE_BIOME = false
 local Theme = require("src.ui.theme")
 local Draw = require("src.ui.draw")
 local Button = require("src.ui.button")  -- boutons propres (CHRONICLE secondary / CONTINUE primary)
@@ -62,8 +68,9 @@ function Combat.new(palette, vw, vh, host, payload)
     titleKey = "scene.combat",
     hintKey = "ui.hint_combat",
     enemyKey = payload.enemyKey,
-    ambient = Ambient.new(payload.seed or 11), -- atmosphère "combat" (repli si pas de biome)
-    biome = Biome.new(biomeFor(payload), payload.seed or 11), -- décor de biome parallaxe (fond de l'arène)
+    ambient = Ambient.new(payload.seed or 11), -- atmosphère "combat" (repli ultime)
+    biome = USE_BIOME and Biome.new(biomeFor(payload), payload.seed or 11) or nil, -- décor de biome (EN PAUSE)
+    nightmareBg = (not USE_BIOME) and NightmareBG.new(payload.seed or 11) or nil, -- fond cauchemardesque shader
     arena = arena,
     renderer = ArenaDraw.new(arena, palette),
     paused = false, -- PAUSE spectateur (Espace) : gèle entièrement le combat (analyse / screenshots)
@@ -152,9 +159,10 @@ function Combat:update(frameDt)
   Feel.hover("combat.spd2", inBtn(self.mx, self.my, self._btnSpd2))
   Feel.hover("combat.skip", inBtn(self.mx, self.my, self._btnSkip))
   if self.paused then return end -- combat GELÉ (sim + anims) -> reprise identique via Espace
-  -- Biome : parallaxe avancée UNE FOIS/frame (temps réel), JAMAIS multipliée par les pas de SKIP/2× (le décor
-  -- ne doit pas défiler en accéléré). frameDt en unités-frame@60 -> /60 = secondes pour le moteur de biome.
+  -- Fond animé : avancé UNE FOIS/frame (temps réel), JAMAIS multiplié par les pas de SKIP/2× (le décor ne doit
+  -- pas s'accélérer). frameDt en unités-frame@60 -> /60 = secondes. Biome (en pause) OU fond cauchemardesque.
   if self.biome then self.biome:update(frameDt / 60) end
+  if self.nightmareBg then self.nightmareBg:update(frameDt / 60) end
   -- VITESSE : hors conclusion, 1×/2× pas par frame (SKIP -> beaucoup, borné anti-gel). Une fois CONCLU, on
   -- continue à avancer UN pas/frame (overAge + anims de mort -> l'écran de fin apparaît, comportement d'avant).
   local steps = self.arena.over and 1 or (self.skipping and 240 or (self.speed or 1))
@@ -180,12 +188,16 @@ function Combat:mousemoved(vx, vy) self.mx, self.my = vx * 4, vy * 4 end
 -- en arrière et gardent les sprites lisibles sur TOUT biome. Repli sur l'atmosphère "combat" si pas de biome.
 function Combat:drawBack(view)
   Draw.begin(view)
-  if self.biome then
+  if self.nightmareBg then
+    -- FOND CAUCHEMARDESQUE : un seul shader peint tout (base unie sombre + distorsion onirique / double vision
+    -- / yeux). Pas de scrims : la base est déjà sombre et le shader porte sa propre vignette/respiration.
+    self.nightmareBg:draw(0, 0, Draw.W, Draw.H)
+  elseif self.biome then
     local W, H = Draw.W, Draw.H
     self.biome:draw(0, 0, W, H) -- les 6 calques (filtre linéaire = profondeur de champ douce) + particules
     if love.graphics then
       local s1, s2, s3 = 6 / 255, 4 / 255, 10 / 255 -- encre de fond (assombrissement)
-      Draw.setColor({ s1, s2, s3, 0.42 }); love.graphics.rectangle("fill", 0, 0, W, H) -- 1) assombri plat
+      Draw.setColor({ s1, s2, s3, 0.48 }); love.graphics.rectangle("fill", 0, 0, W, H) -- 1) assombri plat
       Panel.vgrad(0, 0, W, H * 0.22, { s1, s2, s3, 0.6 }, { s1, s2, s3, 0 })             -- 2) fondu HAUT
       Panel.vgrad(0, H * 0.6, W, H * 0.4, { s1, s2, s3, 0 }, { 4 / 255, 2 / 255, 7 / 255, 0.82 }) -- bas
       Draw.setColor({ 0, 0, 0, 0.10 })                                                  -- 3) scanlines (2px/4px)
@@ -381,26 +393,28 @@ function Combat:_drawSummary(view)
   local s, why = self.full, self.summary
   local W, H, won = Draw.W, Draw.H, self.full.win
 
-  -- (0) FOND opaque (recouvre l'arène) + atmosphère du design : halo de verdict (haut-centre) + BRAISE du
-  -- Puits (bas-centre) -> le bas de l'écran « respire » au lieu de paraître vide/inachevé.
-  Panel.vgrad(0, 0, W, H, { 0x14 / 255, 0x10 / 255, 0x1a / 255, 1 }, { 0x06 / 255, 0x04 / 255, 0x09 / 255, 1 })
-  if love and love.graphics and love.graphics.setBlendMode then
-    local em = c.ember
-    love.graphics.setBlendMode("add")
-    for k = 3, 1, -1 do Draw.setColor({ 0x3a / 255, 0x20 / 255, 0x44 / 255, 0.04 * k }); love.graphics.circle("fill", W / 2, 90, 360 * (k / 3)) end
-    -- braise SUBTILE : centre bien sous l'écran -> seule la frange chaude lèche le bas (pas un disque qui domine).
-    for k = 3, 1, -1 do Draw.setColor({ em[1], em[2], em[3], 0.014 * k }); love.graphics.circle("fill", W / 2, H + 150, 230 * (k / 3)) end
-    love.graphics.setBlendMode("alpha"); Draw.reset()
-  end
+  -- (0) FOND = le MÊME fond que le combat (cauchemardesque champ + yeux, ou biome si réactivé), plein écran
+  -- et VIVANT -> cohérence avec l'arène (retour user : plus de halos/cercles d'ambiance hétéroclites). Il
+  -- recouvre l'arène finie ; un voile sombre par-dessus garde le ruban/cartes de bilan parfaitement lisibles.
+  -- verdictT = secondes écoulées depuis l'apparition du bilan (overAge >= 20) -> pilote la VICTOIRE (montée de
+  -- lumière + fermeture progressive des yeux). Défaite : yeux ouverts/tremblants/sanglants (cf. nightmare_bg).
+  local vT = math.max(0, ((self.arena.overAge or 20) - 20) / 60)
+  local verdict = won and "win" or "loss"
+  local vopts = { verdict = verdict, verdictT = vT }
+  -- (0a) CHAMP du fond (assombrissable) — cauchemardesque (champ + brillance de victoire) ou biome si réactivé.
+  if self.nightmareBg then self.nightmareBg:drawField(0, 0, W, H, vopts)
+  elseif self.biome then self.biome:draw(0, 0, W, H)
+  else Panel.vgrad(0, 0, W, H, { 0x10 / 255, 0x0c / 255, 0x16 / 255, 1 }, { 0x05 / 255, 0x03 / 255, 0x08 / 255, 1 }) end
+  -- (0b) VOILE de lisibilité : un peu plus CLAIR en VICTOIRE (laisse respirer la lumière) sans nuire au texte.
+  Draw.setColor({ 0x05 / 255, 0x03 / 255, 0x09 / 255, won and 0.40 or 0.52 })
+  love.graphics.rectangle("fill", 0, 0, W, H)
+  Draw.reset()
+  -- (0c) YEUX par-dessus le voile (PROMINENTS) : défaite = plusieurs ouverts/tremblants/sanglants ; victoire = se ferment.
+  if self.nightmareBg then self.nightmareBg:drawEyes(0, 0, W, H, vopts) end
 
-  -- (1) HEADER : kicker + verdict (Jacquard, casse de titre) + flavor.
+  -- (1) HEADER : kicker + verdict (Jacquard, casse de titre) + flavor. PAS de cercle/halo derrière le mot
+  -- (retour user : « j'aime pas le cercle ») -> le verdict tient seul sur le fond cauchemardesque + voile.
   Draw.textC(T(won and "ui.summary_kicker_win" or "ui.summary_kicker_loss"), W / 2, 36, c.ink3, Theme.label(10))
-  if love and love.graphics and love.graphics.setBlendMode then
-    local g = won and c.gold or c.blood
-    love.graphics.setBlendMode("add")
-    for k = 3, 1, -1 do Draw.setColor({ g[1], g[2], g[3], 0.05 * k }); love.graphics.circle("fill", W / 2, 88, 120 * (k / 3)) end
-    love.graphics.setBlendMode("alpha"); Draw.reset()
-  end
   Draw.textC(T(won and "ui.verdict_win" or "ui.verdict_loss"), W / 2, 54, won and c.gold or c.bloodL, Theme.display(56))
   local foe = T("encounter." .. (self.enemyKey or "unknown") .. ".name")
   local causeWord = (why and why.cause) and (why.cause == "attack" and "blades" or why.cause) or "attrition"
@@ -499,24 +513,27 @@ function Combat:_drawSummary(view)
     ly = ly + cardH + 12
   end
 
-  -- ACTIONS (sous les cartes du ledger) : CLAIM (primary) + [c] CHRONICLE + [r] REPLAY. Rects -> mousepressed.
-  -- ⚠ DESSINÉES ICI, AVANT Draw.finish (DANS le transform design) -> jamais hors-écran/désalignées.
+  -- ACTIONS (sous les cartes du ledger) : CLAIM (primary) PLEINE LARGEUR sur sa propre rangée -> l'action
+  -- principale est mise en avant ET ses gouttières restent GÉNÉREUSES pour les yeux du CTA (sur une rangée
+  -- partagée, le label long « CLAIM THE SPOILS » écrasait les yeux dans des gouttières étroites -> retour user).
+  -- [c] CHRONICLE + [r] REPLAY passent dessous. ⚠ DESSINÉES AVANT Draw.finish (transform design) -> jamais désalignées.
   local byb, bh = ly + 4, 44
-  local sideW = 132
-  local claimW = rightW - 2 * (sideW + 11)
-  self._btnCont = { x = rightX, y = byb, w = claimW, h = bh }
-  self._btnChron = { x = rightX + claimW + 11, y = byb, w = sideW, h = bh }
-  self._btnReplay = { x = rightX + claimW + 11 + sideW + 11, y = byb, w = sideW, h = bh }
-  Button.draw(self._btnCont.x, byb, claimW, bh, "primary", T("ui.claim_spoils"),
+  self._btnCont = { x = rightX, y = byb, w = rightW, h = bh }
+  Button.draw(self._btnCont.x, byb, rightW, bh, "primary", T("ui.claim_spoils"),
     { hover = inBtn(self.mx, self.my, self._btnCont), feel = Feel.state("combat.cont"), id = "combat.cont",
       mouse = { mx = self.mx, my = self.my }, t = self.t / 60 })
-  Button.draw(self._btnChron.x, byb, sideW, bh, "secondary", T("ui.chronicle_btn"),
+  local by2, bh2 = byb + bh + 10, 38
+  local halfW = math.floor((rightW - 11) / 2)
+  self._btnChron = { x = rightX, y = by2, w = halfW, h = bh2 }
+  self._btnReplay = { x = rightX + halfW + 11, y = by2, w = rightW - halfW - 11, h = bh2 }
+  Button.draw(self._btnChron.x, by2, halfW, bh2, "secondary", T("ui.chronicle_btn"),
     { hover = inBtn(self.mx, self.my, self._btnChron), feel = Feel.state("combat.chron"), id = "combat.chron" })
-  Button.draw(self._btnReplay.x, byb, sideW, bh, "secondary", T("ui.replay_btn"),
+  Button.draw(self._btnReplay.x, by2, self._btnReplay.w, bh2, "secondary", T("ui.replay_btn"),
     { hover = inBtn(self.mx, self.my, self._btnReplay), feel = Feel.state("combat.replay"), id = "combat.replay" })
+  local actionsBottom = by2 + bh2
 
   -- séparateur entre colonnes : hauteur = celle du contenu réel (jamais un trait qui pend dans le vide).
-  Draw.rect(divX, colTop, 1, math.max(leftBottom, byb + bh) - colTop, c.iron)
+  Draw.rect(divX, colTop, 1, math.max(leftBottom, actionsBottom) - colTop, c.iron)
   Draw.finish()
 end
 
