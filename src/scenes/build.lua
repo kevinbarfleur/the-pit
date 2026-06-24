@@ -257,10 +257,36 @@ end
 -- Petit système d'effets transitoires : data { kind, x, y, t, dur, ... } en ESPACE DESIGN, avancés par
 -- update, dessinés en overlay PAR-DESSUS tout. Le SPAWN est PUR (data) -> sans danger headless ; le DRAW
 -- vit en overlay (love.graphics). Render-only -> golden inchangé.
+local MERGE_FLY_DUR = 0.33 -- durée du vol des « âmes » vers le survivant avant le burst + le sautillement (C3)
+
 function Build:spawnFx(kind, x, y, opts)
   opts = opts or {}
   self.fx[#self.fx + 1] = { kind = kind, x = x, y = y, t = 0, dur = opts.dur or 0.55,
-    gold = opts.gold, level = opts.level }
+    gold = opts.gold, level = opts.level, fromX = opts.fromX, fromY = opts.fromY, delay = opts.delay or 0 }
+end
+
+-- Centre (espace DESIGN) d'une position de jeu {kind, i} (case board ou slot banc) -> ancre des FX de fusion.
+function Build:fxCenterOf(kind, i)
+  if kind == "board" then return self.pos[i].x * 4, self.pos[i].y * 4 end
+  local br = self.benchSlots[i]; return br.x * 4 + br.w * 2, br.y * 4 + br.h * 2
+end
+
+-- ANIM DE FUSION (retour user 2026-06, « clean & polish ») : les ÂMES des copies consommées FILENT vers le
+-- survivant (froms = liste {x,y} en design), puis un BURST éclate (levelup différé) et le rig SAUTILLE (bounce
+-- posé sur le rig promu par le caller). Séquence : ~0,33s de convergence -> impact -> ~0,5s de rebond/burst.
+function Build:spawnMergeFx(sx, sy, froms, lvl)
+  for _, f in ipairs(froms) do self:spawnFx("merge_fly", sx, sy, { fromX = f[1], fromY = f[2], dur = MERGE_FLY_DUR }) end
+  self:spawnFx("levelup", sx, sy, { level = lvl, delay = MERGE_FLY_DUR, dur = MERGE_FLY_DUR + 0.55 })
+end
+
+-- Décalage vertical (px VIRTUELS, vers le HAUT) du SAUTILLEMENT de fusion (C3) : une bosse amortie déclenchée à
+-- l'IMPACT (bounce.t devient positif une fois les âmes arrivées). Lu dans drawWorld (canvas 320×180 -> px virtuels,
+-- ~3px = un vrai petit saut sur un sprite ~18px). 0 si pas de bounce ou encore en délai (âmes en vol).
+local function bounceLift(sr)
+  local b = sr.bounce
+  if not b or b.t < 0 then return 0 end
+  local bp = math.min(1, b.t / b.dur)
+  return math.sin(bp * math.pi) * 3 * (1 - bp * 0.4)
 end
 
 function Build:updateFx(frameDt)
@@ -288,14 +314,35 @@ function Build:drawFx()
     elseif f.kind == "sell" then
       -- VENTE : « +N » d'or qui monte et s'estompe.
       Draw.textC("+" .. tostring(f.gold or 0), f.x, f.y - p * 26, { c.gold[1], c.gold[2], c.gold[3], a }, Theme.value(16))
-    elseif f.kind == "levelup" then
-      -- LEVEL-UP : LE moment juteux. Flash + anneau de laiton brillant expansif + « LVL n » qui pop.
-      Draw.setColor({ c.brassS[1], c.brassS[2], c.brassS[3], 0.5 * a })
-      love.graphics.circle("fill", f.x, f.y, 5 + p * 12)
-      Draw.setColor({ c.brassS[1], c.brassS[2], c.brassS[3], 0.75 * a })
-      love.graphics.setLineWidth(3 * a + 1); love.graphics.circle("line", f.x, f.y, 10 + p * 42); love.graphics.setLineWidth(1)
+    elseif f.kind == "merge_fly" then
+      -- ÂME qui FILE de la copie consommée vers le survivant (ease-in : accélère en arrivant) + traînée + étincelle.
+      local fx0, fy0 = f.fromX or f.x, f.fromY or f.y
+      local e = p * p
+      local mx = fx0 + (f.x - fx0) * e
+      local my = fy0 + (f.y - fy0) * e
+      local r = 4.5 * (1 - p) + 1.5
+      Draw.setColor({ c.brassS[1], c.brassS[2], c.brassS[3], 0.22 * (1 - p) }) -- traînée (un cran en arrière)
+      love.graphics.circle("fill", fx0 + (f.x - fx0) * (e * 0.82), fy0 + (f.y - fy0) * (e * 0.82), r * 0.8)
+      Draw.setColor({ c.gold[1], c.gold[2], c.gold[3], 0.9 - 0.3 * p }) -- coeur d'or
+      love.graphics.circle("fill", mx, my, r)
+      Draw.setColor({ 1, 1, 1, 0.55 * (1 - p) }) -- étincelle blanche
+      love.graphics.circle("fill", mx, my, r * 0.45)
       Draw.reset()
-      Draw.textC("LVL " .. tostring(f.level or 2), f.x, f.y - 30 - p * 10, { c.gold[1], c.gold[2], c.gold[3], a }, Theme.value(15))
+    elseif f.kind == "levelup" then
+      -- LEVEL-UP : burst DIFFÉRÉ (joué quand les âmes ont convergé, cf. spawnMergeFx). Éclair + double anneau
+      -- laiton expansif + « LVL n » qui pop. Le rig, lui, SAUTILLE (bounce) au même instant (cf. drawWorld).
+      if f.t >= f.delay then
+        local lp = math.min(1, (f.t - f.delay) / math.max(0.01, f.dur - f.delay))
+        local la = 1 - lp
+        Draw.setColor({ 1, 1, 1, 0.55 * (1 - math.min(1, lp * 4)) }) -- éclair blanc bref à l'impact
+        love.graphics.circle("fill", f.x, f.y, 6 + lp * 10)
+        Draw.setColor({ c.brassS[1], c.brassS[2], c.brassS[3], 0.5 * la })
+        love.graphics.circle("fill", f.x, f.y, 5 + lp * 14)
+        Draw.setColor({ c.brassS[1], c.brassS[2], c.brassS[3], 0.75 * la })
+        love.graphics.setLineWidth(3 * la + 1); love.graphics.circle("line", f.x, f.y, 10 + lp * 46); love.graphics.setLineWidth(1)
+        Draw.reset()
+        Draw.textC("LVL " .. tostring(f.level or 2), f.x, f.y - 30 - lp * 12, { c.gold[1], c.gold[2], c.gold[3], la }, Theme.value(15))
+      end
     end
   end
 end
@@ -425,19 +472,20 @@ function Build:checkMerges()
         local keep = g[1]
         local kr = (keep.kind == "board") and self.slotRigs[keep.i] or self.bench[keep.i]
         local id, lvl = kr.id, (kr.level or 1) + 1
+        -- positions (design) AVANT mutation : survivant + 2 copies consommées (anim C3 : âmes qui filent vers lui).
+        local sx, sy = self:fxCenterOf(keep.kind, keep.i)
+        local froms = {}
+        for k = 2, 3 do local p = g[k]; local fxx, fyy = self:fxCenterOf(p.kind, p.i); froms[#froms + 1] = { fxx, fyy } end
         for k = 2, 3 do -- consomme 2 copies (plateau ou banc)
           local p = g[k]
           if p.kind == "board" then self.slotRigs[p.i] = nil; self.board.slots[p.i].unit = nil
           else self.bench[p.i] = nil end
         end
-        local promoted = { id = id, level = lvl, char = self:newRig(id) } -- promeut la 1re copie
-        if keep.kind == "board" then
-          self.slotRigs[keep.i] = promoted; self.board.slots[keep.i].unit = id
-          self:spawnFx("levelup", self.pos[keep.i].x * 4, self.pos[keep.i].y * 4, { level = lvl })
-        else
-          self.bench[keep.i] = promoted
-          local br = self.benchSlots[keep.i]; self:spawnFx("levelup", br.x * 4 + br.w * 2, br.y * 4 + br.h * 2, { level = lvl })
-        end
+        -- promeut la 1re copie + lui pose un `bounce` (sautillement déclenché à l'IMPACT, après le vol des âmes).
+        local promoted = { id = id, level = lvl, char = self:newRig(id), bounce = { t = -MERGE_FLY_DUR, dur = 0.5 } }
+        if keep.kind == "board" then self.slotRigs[keep.i] = promoted; self.board.slots[keep.i].unit = id
+        else self.bench[keep.i] = promoted end
+        self:spawnMergeFx(sx, sy, froms, lvl) -- âmes -> burst -> sautillement (« clean & polish », retour user)
         merged = true
         anyMerge = true
         break -- re-scan (une promotion peut déclencher une cascade)
@@ -525,14 +573,14 @@ function Build:buyMergeWhenFull(offerIndex)
   local id = run:buy(offerIndex)
   if not id then return false end
   local keep, drop = copies[1], copies[2]
-  local kx, ky
-  if keep.kind == "board" then kx, ky = self.pos[keep.i].x * 4, self.pos[keep.i].y * 4
-  else local br = self.benchSlots[keep.i]; kx, ky = br.x * 4 + br.w * 2, br.y * 4 + br.h * 2 end
+  local sx, sy = self:fxCenterOf(keep.kind, keep.i)        -- survivant
+  local dxp, dyp = self:fxCenterOf(drop.kind, drop.i)      -- copie retirée (âme qui file)
   if drop.kind == "board" then self.slotRigs[drop.i] = nil; self.board.slots[drop.i].unit = nil else self.bench[drop.i] = nil end
-  local promoted = { id = id, level = 2, char = self:newRig(id) }
+  local promoted = { id = id, level = 2, char = self:newRig(id), bounce = { t = -MERGE_FLY_DUR, dur = 0.5 } }
   if keep.kind == "board" then self.slotRigs[keep.i] = promoted; self.board.slots[keep.i].unit = id
   else self.bench[keep.i] = promoted end
-  self:spawnFx("levelup", kx, ky, { level = 2 })
+  -- 1 âme de la copie retirée + 1 « achetée » qui tombe d'en haut sur le survivant (le catalyseur, jamais posé).
+  self:spawnMergeFx(sx, sy, { { dxp, dyp }, { sx, sy - 34 } }, 2)
   self:checkMerges()
   if not run.relicFromLevelThisRound then run.relicFromLevelThisRound = true; self.pendingLevelRelic = true end
   self:flushLevelRelic()
@@ -919,10 +967,14 @@ function Build:update(frameDt)
     local p = self.pos[i]
     sr.char.x, sr.char.y = p.x, p.y + 9
     Rig.update(sr.char, self.t, frameDt)
+    if sr.bounce then sr.bounce.t = sr.bounce.t + frameDt / 60; if sr.bounce.t > sr.bounce.dur then sr.bounce = nil end end
   end
   for i = 1, BENCH_SIZE do -- anime les rigs du BANC (réserve)
     local sr = self.bench[i]
-    if sr then Rig.update(sr.char, self.t, frameDt) end
+    if sr then
+      Rig.update(sr.char, self.t, frameDt)
+      if sr.bounce then sr.bounce.t = sr.bounce.t + frameDt / 60; if sr.bounce.t > sr.bounce.dur then sr.bounce = nil end end
+    end
   end
   for _, c in pairs(self.previewRigs) do Rig.update(c, self.t, frameDt) end
   self:updateFx(frameDt)
@@ -1083,7 +1135,7 @@ function Build:drawWorld()
       local c = sr.char
       -- on cale les pieds au SOL de la case : char.y = p.y+9 ; le sol visé est ~le bas de la case (p.y + ~9).
       local groundX = math.floor(c.x + 0.5)
-      local groundY = math.floor(c.y + 0.5) + 1
+      local groundY = math.floor(c.y + 0.5) + 1 - math.floor(bounceLift(sr) + 0.5) -- C3 : sautillement de fusion
       if Critter.has(sr.id) then
         -- RENDU VIVANT : cadre natif (taille relative + mouvement par famille), pieds calés au sol.
         Critter.drawAt(nil, sr.id, groundX, groundY, SLOT_SCALE, self.t / 60, c.facing or 1)
@@ -1112,7 +1164,7 @@ function Build:drawWorld()
       -- ⚠ drawWorld dessine sur le canvas VIRTUEL (320×180) : les coords sont en VIRTUEL (comme le board p.x et
       -- l'aperçu shop rect.x), PAS en design. (bug corrigé : r.x*4 dessinait les rigs hors-canvas = invisibles.)
       local gx = math.floor(r.x + r.w / 2 + 0.5)         -- centre X du slot (virtuel)
-      local gy = math.floor(r.y + r.h - 1 + 0.5)         -- pieds vers le bas du slot (virtuel)
+      local gy = math.floor(r.y + r.h - 1 + 0.5) - math.floor(bounceLift(sr) + 0.5) -- pieds (virtuel) ; -bounce de fusion (C3)
       if Critter.has(sr.id) then
         Critter.drawAt(nil, sr.id, gx, gy, BENCH_SCALE, self.t / 60, 1)
       else
