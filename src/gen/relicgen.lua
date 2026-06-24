@@ -422,6 +422,165 @@ local ICONS = {
     "      KK        ",
     "                ",
   },
+
+  -- ═══════════════ VAGUE 5 — reliques d'ÉCONOMIE / BOUTIQUE (append-only) ═══════════════
+  -- Foyer commun : l'OR terni (Y/y/T) = la monnaie du Puits (indice « ça touche au butin/à l'éco »),
+  -- sur des supports grimdark (cuir p/d, os S/s, fer A/a/I). Chacune garde UN point de focus luisant.
+
+  -- USURER'S LEDGER — report d'or + intérêt (introduit la banque). « Every debt is collected. »
+  -- Grimoire-comptable FERMÉ posé sur tranche : couverture de cuir (p/d), tranches de pages dorées
+  -- (Y/y), FERMOIR de fer en travers (A/a) à boucle luisante (I = focus), nervures du dos à gauche.
+  usurers_ledger = {
+    "                ",
+    "   KKKKKKKKKK   ",
+    "  KdppppppppdK  ",
+    "  KdpKIIIIKpdK  ",
+    "  KppKaAAaKppK  ",
+    "  KdpKaAIaKpdK  ",
+    "  KppKaAAaKppK  ",
+    "  KdpKKKKKKpdK  ",
+    "  KppppppppppK  ",
+    "  KdYYYYYYYYdK  ",
+    "  KpyYyYyYyYpK  ",
+    "  KdYyYyYyYYdK  ",
+    "  KpyYyYyYyYpK  ",
+    "  KKdYyYyYydKK  ",
+    "    KKKKKKKK    ",
+    "                ",
+  },
+
+  -- TITHE BOWL — or sur victoire (l'offrande au Puits, rendue au mort). « Pay, and you may pass. »
+  -- Coupe d'offrande LARGE et BASSE (alms-dish, ≠ le calice haut de kings_bowl) en or terni, emplie
+  -- de PIÈCES (y/Y/T), une qui dépasse la lèvre. Anses latérales. Éclat de pièce 'T' au centre = focus.
+  tithe_bowl = {
+    "                ",
+    "                ",
+    "        T       ",
+    "      KyYYK     ",
+    "   K KYYyYK K   ",
+    "  KAK KYyYK KAK ",
+    "  KaKKKKKKKKKaK ",
+    "  KKYyYTYyYyYKK ",
+    "   KYyYyYyYyYK  ",
+    "   KYTyYyYTyYK  ",
+    "    KYyYyYyYK   ",
+    "    KKYyYyYKK   ",
+    "     KKYYYKK    ",
+    "      KKKK      ",
+    "                ",
+    "                ",
+  },
+
+  -- PAUPER'S BOON — petit revenu plat chaque round. « A coin a day, against the dark. »
+  -- Bourse de cuir à cordon : col cinché (p/d) noué d'une ficelle (s), panse rebondie de cuir (p)
+  -- frappée d'une pièce d'or (Y/T = focus), une pièce qui s'échappe en bas. Couture latérale (d).
+  paupers_boon = {
+    "                ",
+    "      Kss K     ",
+    "     KsKKsK     ",
+    "    KpKssKpK    ",
+    "   KdpKssKpdK   ",
+    "   KppKKKKppK   ",
+    "  KdppppppppdK  ",
+    "  KppKYYYYK pK  ",
+    "  KdpKYTTYKpdK  ",
+    "  KppKYTTYKppK  ",
+    "  KdppKYYKppdK  ",
+    "   KdpppppdK    ",
+    "    KKdppKK  KyK",
+    "      KKK   KYYK",
+    "            KyYK",
+    "             KK ",
+  },
+
+  -- GRAVE-ROBBER'S CUT — la vente rembourse le coût plein (on déterre la valeur). « Dig deeper. »
+  -- Bêche de fossoyeur : lame de fer triangulaire (A/a) au TRANCHANT luisant (I = focus), motte de
+  -- terre de tombe (d/N) + un éclat d'os (S) collés au fer, manche de bois (p) à poignée-T en haut.
+  grave_robbers_cut = {
+    "     KKKK       ",
+    "     KppK       ",
+    "   KKKppKKK     ",
+    "   KppppppK     ",
+    "    KKppKK      ",
+    "     KppK       ",
+    "     KppK       ",
+    "    NKppKd      ",
+    "   KSKppKNK     ",
+    "  KIAaIIaAIK    ",
+    "  KIAaaaaAIK    ",
+    "   KIAaaAIK     ",
+    "    KIAAIK      ",
+    "     KIIK       ",
+    "      KK        ",
+    "                ",
+  },
+
+  -- BEGGAR'S LANTERN — décale les cotes de boutique d'un cran (la lampe qui cherche en bas). « It seeks the low. »
+  -- Lanterne encapuchonnée : capot de fer (A/a) en cône, anneau de suspension (I) au sommet, corps de
+  -- verre (b/B) abritant une flamme basse et vacillante (r/Q/T = focus), socle de fer. Cerclages (a).
+  beggars_lantern = {
+    "       II       ",
+    "      KIIK      ",
+    "      KaaK      ",
+    "     KaAAaK     ",
+    "    KaAAAAaK    ",
+    "   KaAAAAAAaK   ",
+    "   KKaaaaaaKK   ",
+    "   KbBbbbbBbK   ",
+    "   KBbbrrbbBK   ",
+    "   KbBbrQrBbK   ",
+    "   KBbrQTQrBK   ",
+    "   KbBbrQrBbK   ",
+    "   KKaaaaaaKK   ",
+    "   KaAAAAAAaK   ",
+    "    KKKKKKKK    ",
+    "                ",
+  },
+
+  -- BLACK SUMMONS — fait monter la boutique d'un tier (la convocation scellée du Puits). « Answer the call. »
+  -- Parchemin ROULÉ (os/ivoire S/s) lié en son centre par un SCEAU de cire sang (R/q) frappé d'un sigil
+  -- sombre (K), liens de ficelle (d) aux deux bouts. Volutes des rouleaux. Éclat de cire 'q' = focus.
+  black_summons = {
+    "                ",
+    "                ",
+    "   KK      KK   ",
+    "  KsSKKKKKKSsK  ",
+    " KsSssssssssSsK ",
+    " KSsssssssssSSK ",
+    " KsdSsssssSsdsK ",
+    " KSsdKRqRKdsSK  ",
+    " KsSdRqqqRdSsK  ",
+    " KSsdRqKqRdsSK  ",
+    " KsSdKRqRKdSsK  ",
+    " KSsssssssssSK  ",
+    " KsSssssssssSsK ",
+    "  KsSKKKKKKSsK  ",
+    "   KK      KK   ",
+    "                ",
+  },
+
+  -- CARRION LEDGER — bond d'XP de boutique immédiat (le décompte des morts). « Count the fallen. »
+  -- BÂTON DE COMPTE en os : long fémur dressé, têtes bombées (S/s) en haut et en bas, fût d'ivoire (S/W)
+  -- ENTAILLÉ d'encoches de comptage (K en travers, tirets nets) — chaque cran = un mort. Boucle de cordon
+  -- (d) suspendue à la tête haute. La lueur d'ivoire 'W' sur la tête supérieure = focus « os qui luit ».
+  carrion_ledger = {
+    "      KK        ",
+    "     KdddK      ",
+    "    KdKKdK      ",
+    "    KSWSSK      ",
+    "    KSSWSK      ",
+    "    KKSSKK      ",
+    "    KKSSWK      ",
+    "    KSKKSK      ",
+    "    KSSWSK      ",
+    "    KKSSKK      ",
+    "    KSKWSK      ",
+    "    KSSSKK      ",
+    "    KKSWSK      ",
+    "    KSWSSK      ",
+    "    KKSSKK      ",
+    "     KKKK       ",
+  },
 }
 
 -- ─────────────────────────── API ───────────────────────────
@@ -435,6 +594,9 @@ RelicGen.order = {
   -- vagues 3-4 (append-only)
   "second_breath", "thornguard", "forked_tongue", "everburn",
   "plague_communion", "open_wounds",
+  -- vague 5 : reliques d'économie / boutique (append-only)
+  "usurers_ledger", "tithe_bowl", "paupers_boon", "grave_robbers_cut",
+  "beggars_lantern", "black_summons", "carrion_ledger",
 }
 
 -- Grille brute d'une relique (ou nil si id inconnu). DATA pure (aucun love.*).

@@ -72,6 +72,10 @@ local RELIC_FRAME = 4               -- débord du socle forge autour de l'icône
 local RELIC_TYPE = {
   bloodstone = "flesh", carapace = "bone", aegis = "order",
   kings_bowl = "abyss", ember_heart = "arcane", weeping_nail = "flesh", grave_cap = "abyss",
+  -- vague 5 : reliques d'économie / boutique (teinte = nature du foyer ; or=order, mort=bone, Puits=abyss)
+  usurers_ledger = "order", tithe_bowl = "order", paupers_boon = "order",
+  grave_robbers_cut = "bone", carrion_ledger = "bone",
+  black_summons = "abyss", beggars_lantern = "order",
 }
 
 local SPACING = 26
