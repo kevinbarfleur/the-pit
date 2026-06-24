@@ -32,8 +32,9 @@ build (boutique + plateau + **BANC** sous le plateau) → COMBAT → relique tou
 7. **Refonte combat P0** — sol d'arène + ligne de front + brume centrale + vignette (fini « 2 clusters dans le noir »).
 8. **Reliques d'économie** (ton levier intérêts/or) — Usurer's Ledger (report+intérêt) · Tithe-Bowl (or/victoire) · Pauper's Boon (income/round) · Grave-Robber's Cut (vente pleine). Testées.
 9. **Bug runover `[level]`** corrigé · **équilibre CONFIRMÉ** (sim N=3000 : σ 0.051, entropie 0.999, **zéro outlier**).
+10. **Refonte combat P1/P2** — profondeur (gorge du puits + piliers silhouettés + brouillard + braises) + **feel** des coups (shake render-local + flash blanc + mort = flash de case + particules de sang). Render-only, golden inchangé, prouvé SIM-neutre (sonde headless).
 
-**EN COURS** : refonte combat P1/P2 (profondeur + feel des coups — agent).
+**Tout est committé et poussé sur `origin/feat/base-game`. Rien en cours.**
 
 **RESTANT / DIFFÉRÉ (à décider ensemble)** :
 - **Re-mécanique des effets** vers le visuel (« adapte tous les effets ») — **DIFFÉRÉE** : sim-gated + risque d'équilibre ; les **noms** règlent déjà la plainte #1. À faire ensemble, chaque batch sim-validé.
