@@ -15,6 +15,33 @@ level-up/tiers), créatures dont **nom + lore + effets matchent le visuel**, le 
 par milliers de simulations** et **poli**. Pas de multijoueur cette nuit (local only). **Autonomie
 totale** : je ne m'arrête pas pour demander ; je décide / délègue / cherche / simule.
 
+## ÉTAT AU RÉVEIL (handoff 2026-06-24) — branche `feat/base-game` (poussée sur `origin`)
+
+**Tester** : `git checkout feat/base-game && love .` (ou pull sur PC). Boucle : menu → ENTER THE PIT →
+build (boutique + plateau + **BANC** sous le plateau) → COMBAT → relique tous les 3 combats → … →
+10 victoires / 5 défaites → runover. Captures de TOUS les écrans : `love . --shoot=all` →
+`~/Library/Application Support/LOVE/the-pit/shots/`.
+
+**LIVRÉ cette nuit** (tout committé · `check.sh` vert · golden **970156547** stable · vérifié au screenshot) :
+1. **Harnais de capture PNG** (bestiaire + écrans) sous vrai `love` — pour s'auto-vérifier sans toi.
+2. **PIN des 65 familles** — sprites procéduraux **verrouillés** (canon).
+3. **BANC** (réserve hors-combat) — achat→banc/plateau, **fusion croisée** banc↔plateau, drag complet.
+4. **55 créatures RENOMMÉES** vers leur visuel + lore ; bloc choc/bouclier comblé (descriptions « condenser » corrigées vs `en_ext` périmé).
+5. **Adversaires PROCÉDURAUX scalés** au stade (taille/rangs/niveaux selon round/tier/slots ; déterministe ; testé).
+6. **Game feel** — bursts achat (anneau) / vente (+N or) / level-up (flash + « LVL n »).
+7. **Refonte combat P0** — sol d'arène + ligne de front + brume centrale + vignette (fini « 2 clusters dans le noir »).
+8. **Reliques d'économie** (ton levier intérêts/or) — Usurer's Ledger (report+intérêt) · Tithe-Bowl (or/victoire) · Pauper's Boon (income/round) · Grave-Robber's Cut (vente pleine). Testées.
+9. **Bug runover `[level]`** corrigé · **équilibre CONFIRMÉ** (sim N=3000 : σ 0.051, entropie 0.999, **zéro outlier**).
+
+**EN COURS** : refonte combat P1/P2 (profondeur + feel des coups — agent).
+
+**RESTANT / DIFFÉRÉ (à décider ensemble)** :
+- **Re-mécanique des effets** vers le visuel (« adapte tous les effets ») — **DIFFÉRÉE** : sim-gated + risque d'équilibre ; les **noms** règlent déjà la plainte #1. À faire ensemble, chaque batch sim-validé.
+- Icônes dédiées des reliques boutique/éco (génériques) · noms longs serrés sous les cases · doublons morts d'`en_ext.lua` · synergies de **TYPE** (M4) · combat P2.1/P2.4 (télégraphe / beat victoire).
+- Collisions d'archetype créatures (3 herons…) — familles assumées, à arbitrer si gênant (`creature-renames.md`).
+
+---
+
 ## 1. Décisions verrouillées (créateur, 2026-06-24)
 
 1. **Économie = hybride mesuré, ZÉRO intérêt de base.** Or fixe/round + reroll + streaks + **banc**
