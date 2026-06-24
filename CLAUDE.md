@@ -10,7 +10,9 @@ recherches détaillées vivent dans `docs/research/`, les conventions visuelles 
 
 ---
 
-## 1. Règle d'or (NON négociable)
+## 1. Règles d'or (NON négociables)
+
+### 1.a — Vérifier les API (jamais de mémoire supposée)
 
 **Ne jamais coder/affirmer une API depuis la mémoire supposée. Toujours vérifier sur les
 sources primaires** avant d'écrire :
@@ -19,6 +21,35 @@ sources primaires** avant d'écrire :
 - Pour le code/API : préférer `get_code_context_exa` (Exa MCP). Citer ses sources.
 
 Ce réflexe vaut pour moi **et tous les sous-agents**. Une API non vérifiée = un bug latent.
+
+### 1.b — Le TOP du top, jamais le minimum
+
+Quand l'user demande une feature, il veut **la meilleure version réalisable** avec nos technos —
+**pas** la première qui « compile / tourne ». « Ça marche » n'est PAS le standard ; « c'est le
+meilleur qu'on puisse faire ici, et c'est vérifié » l'est. **Mieux vaut NE RIEN livrer qu'un truc
+bâclé.**
+
+**La qualité est MULTI-DIMENSIONNELLE** — pas seulement technique (perf, robustesse, API vérifiées),
+mais aussi **design + visuel + FEELING (game feel)**. The Pit doit être **JUICY** — réf explicites de
+l'user : ***Balatro***, ***Tiny Rogue***. Donc, par défaut, penser systématiquement : **impact &
+feedback au clic ET au survol** des boutons/cartes (squash/flash/glow/lift — réutiliser le système
+`Feel` / juice existant : `src/ui/feel.lua`, `Forge.uiTick`), micro-animations, transitions, punch,
+sons/secousses si pertinent. Une feature « correcte » mais **sans jus n'est pas finie**. Avant d'écrire
+une feature, dans l'ordre :
+
+1. **Chercher l'existant** (réflexe systématique) : le projet a-t-il déjà un module/asset/convention
+   qui fait ça ou s'en approche ? **Réutiliser, s'en inspirer, s'aligner sur la DA établie** —
+   ne JAMAIS recréer une version au rabais d'un truc qui existe (ex. un œil = `src/ui/eye.lua` :
+   sclère + veines de sang + iris OR à pupille en fente + paupières métal + clignement ; **PAS** un
+   blob générique). S'inspirer **du meilleur** de ce qui est déjà là.
+2. **Vérifier l'intégration** : est-ce que ça s'imbrique proprement dans ce qui est en cours ? Le
+   rendu sera-t-il **à la hauteur du reste** du jeu ? Penser cohérence DA + couplage avant de coder.
+3. **Tester au screenshot** : capturer (`--shoot`) **ET juger à l'œil** — propre ? fini ? acceptable ?
+   Sinon **itérer AVANT de rendre la main**. Le PC de l'user fait foi (l'export masque les bugs de
+   transform). Ne jamais présenter un écran qu'on n'a pas regardé.
+
+Ce réflexe vaut pour moi **et tous les sous-agents** (donner les références de l'existant dans
+chaque brief d'agent). Voir aussi [[feedback-top-quality-never-minimum]].
 
 ---
 
