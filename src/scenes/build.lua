@@ -1314,9 +1314,26 @@ function Build:drawWorld()
   love.graphics.setColor(1, 1, 1, 1)
 end
 
+-- Retire le DERNIER CODEPOINT UTF-8 (pas le dernier octet) : recule sur les octets de continuation (0x80..0xBF)
+-- jusqu'au début de la séquence, puis coupe. Tronquer octet-par-octet casse un caractère multi-octets (le
+-- « · » U+00B7, « … », un accent) -> UTF-8 invalide -> love `font:getWidth` lève « Invalid UTF-8 » (crash
+-- réel : survol d'une fiche dont le readout d'aura « gives A · B · C » dépasse, retour user 2026-06).
+local function dropLastCodepoint(s)
+  local i = #s
+  while i > 1 do
+    local b = s:byte(i)
+    if b and b >= 0x80 and b < 0xC0 then i = i - 1 else break end
+  end
+  return s:sub(1, i - 1)
+end
+
+-- MAJUSCULES SÛRES : n'affecte que [a-z] ASCII. string.upper (Lua 5.1/LuaJIT) mappe octet par octet et peut
+-- corrompre une séquence UTF-8 multi-octets (nom accentué) -> on protège les noms d'unité passés en capitales.
+local function upperAscii(s) return (s:gsub("[a-z]", string.upper)) end
+
 -- Ajuste un libellé à une largeur max : descend la taille de police (base..floorSz) tant que ça déborde ; si
--- toujours trop long au plancher, tronque avec une ellipse. Évite que les noms longs (4 mots) mordent sur le
--- voisin (board) ou débordent de la carte (shop). fontFn = Theme.label / Theme.subhead.
+-- toujours trop long au plancher, tronque avec une ellipse (par CODEPOINT). Évite que les noms longs (4 mots)
+-- mordent sur le voisin (board) ou débordent de la carte (shop). fontFn = Theme.label / Theme.subhead.
 local function fitText(text, maxW, fontFn, base, floorSz)
   floorSz = floorSz or 7
   for sz = base, floorSz, -1 do
@@ -1325,7 +1342,7 @@ local function fitText(text, maxW, fontFn, base, floorSz)
   end
   local f = fontFn(floorSz)
   if f and f:getWidth(text) > maxW then
-    while #text > 1 and f:getWidth(text .. "…") > maxW do text = text:sub(1, #text - 1) end
+    while #text > 1 and f:getWidth(text .. "…") > maxW do text = dropLastCodepoint(text) end
     text = text .. "…"
   end
   return text, f
@@ -1957,7 +1974,7 @@ function Build:drawBoardInspectorExtra(cardBox, slot)
       local names = {}
       for _, l2 in ipairs(links) do
         if l2.from == slot and l2.kind == lk.kind and self.slotRigs[l2.to] then
-          names[#names + 1] = T("unit." .. self.slotRigs[l2.to].id .. ".name"):upper()
+          names[#names + 1] = upperAscii(T("unit." .. self.slotRigs[l2.to].id .. ".name"))
         end
       end
       rows[#rows + 1] = { kind = lk.kind, text = T("ui.aura_gives", { names = table.concat(names, " · ") }), value = lk.label }
@@ -1965,7 +1982,7 @@ function Build:drawBoardInspectorExtra(cardBox, slot)
   end
   for _, lk in ipairs(links) do
     if lk.to == slot and self.slotRigs[lk.from] then
-      rows[#rows + 1] = { kind = lk.kind, text = T("ui.aura_takes", { name = T("unit." .. self.slotRigs[lk.from].id .. ".name"):upper() }), value = lk.label }
+      rows[#rows + 1] = { kind = lk.kind, text = T("ui.aura_takes", { name = upperAscii(T("unit." .. self.slotRigs[lk.from].id .. ".name")) }), value = lk.label }
     end
   end
   -- (2) exposition : front-ness dérivée de la colonne (depth = maxCol - cell.x) sur les cases OCCUPÉES.

@@ -522,6 +522,11 @@ local ok, err = pcall(function()
     b:drawAuraChip(120, 120, "poison", "+50%") -- icône d'affliction (Keywords)
     b:drawBoardInspectorExtra({ x = 10, y = 10, w = 248, h = 200 }, 5)  -- templar : GIVES + exposure
     b:drawBoardInspectorExtra({ x = 10, y = 380, w = 248, h = 200 }, 4) -- marauder : TAKES + exposure
+    -- RÉGRESSION crash UTF-8 (retour user 2026-06) : « gives A · B · C · D » long + box étroite -> fitText
+    -- tronque DANS le « · » (multi-octets) ; la troncature par CODEPOINT ne doit jamais casser l'UTF-8.
+    b:placeId(2, "miasma_acolyte"); b:placeId(8, "decay_tender") -- templar(5) a maintenant 4 voisins occupés
+    b:computeUi()
+    b:drawBoardInspectorExtra({ x = 10, y = 10, w = 110, h = 240 }, 5) -- W étroit -> chemin de troncature (no crash)
 
     -- ── FIT-TO-BOX (anti-débordement des créatures) : rigBounds renvoie une boîte SAINE (repli headless,
     -- pas de canvas réel sous le mock) ; rigFitScale CONTIENT dans la boîte et RESPECTE maxScale (cap). ──
