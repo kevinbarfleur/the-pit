@@ -342,11 +342,13 @@ end)
 -- GRANT_VULN (pose la vulnérabilité, K2 côté pose) : on_hit -> marque la cible (target.vulnInc), EDGE-TRIGGERED
 -- (refresh : prend le max, ne cumule pas par frame), DURÉE BORNÉE -> expire au tick (vulnRemaining décrémenté
 -- dans tickDots). cap appliqué à la LECTURE dans damage() (VULN_INC_CAP). value/dur = placeholders.
+-- `dur` est en FRAMES (convention de tous les DoT du roster : `remaining = p.dur`), PAS en secondes : le tick
+-- décrémente `vulnRemaining` de `frameDt` comme les `remaining` des dots (arena:tickDots). Défaut 120 (~2 s).
 Effects.register("grant_vuln", function(ctx, p)
   local v = ctx.victim
   local val = p.value or 0.15
   v.vulnInc = max(v.vulnInc or 0, val) -- refresh (pas de cumul/frame)
-  v.vulnRemaining = max(v.vulnRemaining or 0, (p.dur or 2) * 60) -- secondes -> frames ; expire au tick
+  v.vulnRemaining = max(v.vulnRemaining or 0, p.dur or 120) -- frames (cohérent avec les remaining des dots)
 end)
 
 -- INOCULATION (grant conditionnel) : pose l'affliction `family` SEULEMENT SI absente (ouvre un 2e DoT faible).
@@ -433,15 +435,25 @@ end)
 
 -- PURGE / Cleanse : retire SES PROPRES afflictions (nouvel axe de contre anti-DoT). 1× (combat_start) ou au
 -- franchissement de seuil (on_low_hp). Pur. Nettoie les effets de bord (slow du bleed, weaken du poison).
+-- BORNES OPTIONNELLES (la purge doit INCLINER le matchup DoT, pas l'EFFACER — décision v2, plan §5 Q-purge-borne) :
+--   p.family    = ne purge QUE cette famille ("poison"/"burn"/"bleed"/"rot"/"shock") ; nil = toutes.
+--   p.maxStacks = cap de stacks de poison retirés (les plus ANCIENS d'abord) ; nil = tous.
+-- Sans bornes (combat_start gated/tests) = comportement plein historique. Bornée (plague_doctor on_low_hp) = soft-counter.
 Effects.register("purge", function(ctx, p)
   local u = ctx.source
   local d = u.dots
-  d.burn = nil
-  if d.bleed then u.atkSlow = max(0, u.atkSlow - (d.bleed.slowPct or 0) - (d.bleed.dynBonus or 0)); d.bleed = nil end
-  for i = #d.poison, 1, -1 do d.poison[i] = nil end
-  u.weaken = 0
-  d.rot = nil
-  d.shock = nil
+  local fam = p.family
+  if (not fam or fam == "burn") then d.burn = nil end
+  if (not fam or fam == "bleed") and d.bleed then
+    u.atkSlow = max(0, u.atkSlow - (d.bleed.slowPct or 0) - (d.bleed.dynBonus or 0)); d.bleed = nil
+  end
+  if (not fam or fam == "poison") then
+    local rm = p.maxStacks or #d.poison -- borne le nombre retiré : les plus anciens (index bas) d'abord
+    for _ = 1, min(rm, #d.poison) do table.remove(d.poison, 1) end
+    if #d.poison == 0 then u.weaken = 0 end -- weaken dérive des stacks restants ; il sera recomputé au tick sinon
+  end
+  if (not fam or fam == "rot") then d.rot = nil end
+  if (not fam or fam == "shock") then d.shock = nil end
 end)
 
 return Effects

@@ -14,7 +14,12 @@ local Encounters = require("src.data.encounters")
 local EventLog = require("tools.eventlog")
 
 local SEED = 424242
-local EXPECTED = 970156547 -- empreinte de référence (regénérer si changement VOULU ; maj 2026-06-21 : bouton global Arena.HP_MULT=2 -> PV ×2, combats plus longs ; conclut toujours avant la Fatigue)
+local EXPECTED = 1176281181 -- empreinte de référence (regénérer si changement VOULU ; maj 2026-06-25 : VAGUE 9c/9c′)
+-- Changements LÉGITIMES (greffes data) sur le scénario golden (templar/marauder/demon touchés) :
+--   • 9c templar : `shield_aura {14}` -> `aura_stat {dmgReduce 0.12}` (armure-aura, le voisin reçoit -12% dégâts d'attaque).
+--   • 9c′ marauder : +`on_attack execute {threshold=0.25, bonus=0.60}` (achève la cible sous 25% PV) -> déroulé différent.
+--   • 9c demon aggro 15->25 : INERTE dans ce scénario (n'altère pas la trace).
+-- Antérieurs : 970156547 (HP_MULT=2, 2026-06-21) puis 645982380 (9c templar seul).
 
 local ok, err = pcall(function()
   -- Scénario canonique : carré 9 slots, 5 unités placées, encounter #2.

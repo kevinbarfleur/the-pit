@@ -515,8 +515,17 @@ local ok, err = pcall(function()
     b.board:setShape("carre"); b.board:unlock(9); b:computeLayout()
     b:placeId(5, "templar"); b:placeId(4, "marauder"); b:placeId(6, "skeleton")
     local links = b:resolveAuraLinks()
-    assert(#links >= 2, "resolveAuraLinks : templar(shield_aura) -> 2 voisins occupés = >=2 liens")
-    assert(links[1].kind == "shield" and links[1].label:match("^%+%d"), "resolveAuraLinks : lien shield +N lisible")
+    -- templar (9c) = ARMURE-aura (aura_stat dmgReduce) -> 2 voisins occupés (4/6) = >=2 liens "armor".
+    assert(#links >= 2, "resolveAuraLinks : templar(armure-aura) -> 2 voisins occupés = >=2 liens")
+    assert(links[1].kind == "armor" and links[1].label:match("^%-%d+%%$"), "resolveAuraLinks : lien armure -N% lisible")
+    -- couvre aussi un porteur de bouclier-aura (axe shield conservé) : shieldbearer voisin de marauder.
+    do
+      b:placeId(7, "shieldbearer")
+      local l2 = b:resolveAuraLinks()
+      local hasShield = false
+      for _, lk in ipairs(l2) do if lk.kind == "shield" then hasShield = true end end
+      assert(hasShield, "resolveAuraLinks : un porteur de bouclier-aura produit un lien shield +N")
+    end
     b:computeUi() -- peuple uiState.auraLinks (lus par les chips ET l'inspecteur)
     b:drawAuraChips(b.uiState)         -- chips shield (écusson primitif)
     b:drawAuraChip(120, 120, "poison", "+50%") -- icône d'affliction (Keywords)

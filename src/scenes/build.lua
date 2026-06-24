@@ -933,7 +933,7 @@ function Build:buildComp(side)
     local best
     for _, p in ipairs(placed) do
       local d = b.maxC - p.col
-      if not best then best = p; best._d = d
+      if not best then best = p
       else
         local bd = b.maxC - best.col
         if (wantMin and d < bd) or (not wantMin and d > bd)
@@ -1180,7 +1180,17 @@ function Build:resolveAuraLinks()
           elseif e.op == "aura_poison_dps" then kind = "poison"; inc = (pa.inc or 0.5) * sm
           elseif e.op == "aura_burn_dps" then kind = "burn"; inc = (pa.inc or 0.5) * sm
           elseif e.op == "aura_rot_growth" then kind = "rot"; fixed = "+" .. math.floor((pa.bonus or 0) * sm + 0.5)
-          elseif e.op == "aura_grant_bleed" then kind = "bleed"; fixed = "+" .. math.floor((pa.dps or 1) * sm + 0.5) end
+          elseif e.op == "aura_grant_bleed" then kind = "bleed"; fixed = "+" .. math.floor((pa.dps or 1) * sm + 0.5)
+          -- K1 aura_stat (9c) : amplificateurs agnostiques (modifient un % du voisin -> label en % faute de
+          -- valeur plate au niveau du chip). multicast = entier NON scalé (cap dur en combat) -> "x N coups".
+          elseif e.op == "aura_stat" then
+            local st, v = pa.stat, (pa.value or 0)
+            if st == "dmgReduce" then kind = "armor"; fixed = "-" .. math.floor(v * 100 + 0.5) .. "%"
+            elseif st == "atkInc" then kind = "empower"; fixed = "+" .. math.floor(v * sm * 100 + 0.5) .. "%"
+            elseif st == "haste" then kind = "haste"; fixed = "+" .. math.floor(v * sm * 100 + 0.5) .. "%"
+            elseif st == "multicast" then kind = "echo"; fixed = "x" .. (1 + math.floor(v))
+            end
+          end
           if kind then
             for _, nb in ipairs(self.board:neighbors(i)) do
               local nbr = self.slotRigs[nb]

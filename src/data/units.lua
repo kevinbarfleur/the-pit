@@ -30,11 +30,18 @@
 local U = {
   marauder = {
     id = "marauder", type = "flesh", family = "crustace", rank = 1, cost = 1, hp = 60, dmg = 9, cd = 60, aggro = 15, -- MARAUDER / Brutality (bruiser)
-    effects = { { trigger = "on_attack", op = "bonus_first", params = { value = 8 } } },
+    -- GREFFE 9c′ (A6 burst d'exécution) : la pince ACHÈVE le blessé. execute = état PUR (zéro RNG, déterministe) :
+    -- sous 25% PV de la cible, +60% dégâts. Remplace l'ancien crit RNG du roster (verbe non-multiplicatif, borné).
+    effects = {
+      { trigger = "on_attack", op = "bonus_first", params = { value = 8 } },
+      { trigger = "on_attack", op = "execute", params = { threshold = 0.25, bonus = 0.60 } },
+    },
   },
   templar = {
     id = "templar", type = "order", family = "seraphin", rank = 3, cost = 3, hp = 95, dmg = 12, cd = 82, aggro = 40, -- TEMPLAR / Bulwark (tank)
-    effects = { { trigger = "combat_start", op = "shield_aura", target = "neighbors", params = { value = 14 } } },
+    -- GREFFE 9c (Armure/T6) : ARMURE-AURA en REMPLACEMENT du shield_aura (7+ porteurs couvrent A9). dmgReduce=0.12
+    -- aux voisins -> -12% dégâts d'ATTAQUE subis (lecture damage() cause="attack"). Donne à T6 son ampli agnostique.
+    effects = { { trigger = "combat_start", op = "aura_stat", target = "neighbors", params = { stat = "dmgReduce", value = 0.12 } } },
   },
   skeleton = {
     id = "skeleton", type = "bone", family = "mortvivant", rank = 1, cost = 1, hp = 40, dmg = 6, cd = 44, -- SKELETON / Broken Bones
@@ -49,7 +56,9 @@ local U = {
     effects = { { trigger = "on_hit", op = "poison", params = { dps = 2, dur = 180 } } },
   },
   demon = {
-    id = "demon", type = "abyss", family = "abyssal", rank = 1, cost = 1, hp = 64, dmg = 9, cd = 56, aggro = 15, -- DEMON / Leech (bruiser)
+    -- GREFFE 9c (Leurre/T7) : aggro 25 (soft-leurre — le fanal ATTIRE le focus). 25 < tank 40 (les tanks gardent
+    -- la priorité) mais > standard 10 -> le démon tire un peu le focus. Inerte tant que les plateaux se remplissent.
+    id = "demon", type = "abyss", family = "abyssal", rank = 1, cost = 1, hp = 64, dmg = 9, cd = 56, aggro = 25, -- DEMON / Leech (bruiser-leurre)
     effects = { { trigger = "on_hit", op = "lifesteal", params = { frac = 0.4 } } },
   },
 
@@ -59,9 +68,14 @@ local U = {
     id = "spore_tick", bodyplan = "blob", rank = 1, type = "arcane", family = "spore", cost = 1, hp = 30, dmg = 3, cd = 30, aggro = 5,
     effects = { { trigger = "on_hit", op = "poison", params = { dps = 1, dur = 180 } } },
   },
-  corruptor = { -- POISON + malus de valeur (anti-stat)
+  corruptor = { -- POISON + malus de valeur (anti-stat) + AMPLI MARQUE (vuln-on-hit : la plaie trop fétide)
     id = "corruptor", bodyplan = "cephalopod", rank = 3, type = "abyss", family = "kraken", cost = 3, hp = 46, dmg = 6, cd = 62,
-    effects = { { trigger = "on_hit", op = "poison", params = { dps = 2, dur = 180, weaken = 0.06 } } },
+    -- GREFFE 9c (Marque/A2) : grant_vuln pose vulnInc=0.15 (refresh max, NON cumulable), dur=120 FRAMES (~2 s).
+    -- Lecture cappée VULN_INC_CAP=0.5 dans damage() -> 2 marques (corruptor+stormcaller) ne snowballent pas.
+    effects = {
+      { trigger = "on_hit", op = "poison", params = { dps = 2, dur = 180, weaken = 0.06 } },
+      { trigger = "on_hit", op = "grant_vuln", params = { value = 0.15, dur = 120 } },
+    },
   },
   emberling = { -- BRÛLURE : burst qui décroît, lèche le bouclier
     id = "emberling", bodyplan = "blob", rank = 2, type = "abyss", family = "demon", cost = 2, hp = 40, dmg = 5, cd = 50,
@@ -75,13 +89,22 @@ local U = {
     id = "rot_hound", bodyplan = "quadruped", rank = 2, type = "bone", family = "larve", cost = 2, hp = 54, dmg = 5, cd = 56,
     effects = { { trigger = "on_hit", op = "rot", params = { base = 1, growth = 1, dur = 240, capDps = 10, maxHpFrac = 0.15 } } },
   },
-  stormcaller = { -- CHOC : charge un condensateur ; la décharge (stacks × volt) part au prochain coup
+  stormcaller = { -- CHOC : charge un condensateur (décharge stacks × volt) + AMPLI MARQUE (là où il regarde, ça frappe)
     id = "stormcaller", bodyplan = "robe", rank = 2, type = "arcane", family = "oeil", cost = 2, hp = 38, dmg = 6, cd = 58, aggro = 5,
-    effects = { { trigger = "on_hit", op = "shock", params = { add = 1, cap = 6, dur = 150 } } },
+    -- GREFFE 9c (Marque/A2) : 2e accès vuln. value=0.12, dur=90 FRAMES (~1.5 s). max() non-cumulable, cappé 0.5.
+    effects = {
+      { trigger = "on_hit", op = "shock", params = { add = 1, cap = 6, dur = 150 } },
+      { trigger = "on_hit", op = "grant_vuln", params = { value = 0.12, dur = 90 } },
+    },
   },
-  plague_doctor = { -- CONTRE-DoT : régénération (le contre livré avec les familles)
+  plague_doctor = { -- CONTRE-DoT : régénération + PURGE BORNÉE (incline le matchup poison, n'efface pas)
     id = "plague_doctor", bodyplan = "robe", rank = 3, type = "order", family = "essaim", cost = 3, hp = 80, dmg = 6, cd = 66, aggro = 40,
-    effects = { { trigger = "combat_start", op = "regen", params = { value = 3 } } },
+    -- GREFFE 9c′ : purge déplacée sur on_low_hp (<50% PV, edge-trigger 1×) et BORNÉE — retire au plus 4 stacks de
+    -- POISON (la famille DoT dominante), JAMAIS un reset total. Soft-counter du méta poison, pas un hard-counter binaire.
+    effects = {
+      { trigger = "combat_start", op = "regen", params = { value = 3 } },
+      { trigger = "on_low_hp", op = "purge", params = { threshold = 0.5, family = "poison", maxStacks = 4 } },
+    },
   },
 
   -- ══ VAGUE 1 : T1 « enablers » supplémentaires (cf. effects-dot-families.md §H). Ops EXISTANTS, params
@@ -106,9 +129,14 @@ local U = {
     id = "gash_fiend", bodyplan = "humanoid", rank = 2, type = "flesh", family = "echassier", cost = 2, hp = 50, dmg = 5, cd = 48,
     effects = { { trigger = "on_hit", op = "bleed", params = { dps = 3, dur = 240, slowPct = 0.20 } } },
   },
-  hookjaw = { -- gros slow, dégâts minimes (pur contrôle de tempo)
+  hookjaw = { -- bleed léger + AMPLI ÉCHO : multicast-aura sur le frappeur de la ligne avant (l'exemple-fondateur)
     id = "hookjaw", bodyplan = "quadruped", rank = 2, type = "flesh", family = "bete", cost = 2, hp = 58, dmg = 3, cd = 54,
-    effects = { { trigger = "on_hit", op = "bleed", params = { dps = 1, dur = 300, slowPct = 0.30 } } },
+    -- GREFFE 9c (Écho/A4) : +1 sous-coup au carry de la ligne avant (role:front). multicast NON scalé par niveau
+    -- (entier, cap dur MULTICAST_MAX=3 ; ne couvre QUE la frappe, pas le DoT déjà posé). Aura build-résolue (K1).
+    effects = {
+      { trigger = "on_hit", op = "bleed", params = { dps = 1, dur = 300, slowPct = 0.30 } },
+      { trigger = "combat_start", op = "aura_stat", target = "role:front", params = { stat = "multicast", value = 1 } },
+    },
   },
   leech_thorn = { -- bleed bas + ÉPINES (punit qui le frappe) : DEUX effets via ops existants
     id = "leech_thorn", bodyplan = "arachnid", rank = 3, type = "bone", family = "wendigo", cost = 3, hp = 46, dmg = 4, cd = 50,
@@ -129,13 +157,22 @@ local U = {
   },
 
   -- POURRITURE (enfle, ampute les PV max) : cadence / long terme / amputation forte
-  carrion_pecker = { -- cadence rapide -> enfle vite (mais cap bas)
+  carrion_pecker = { -- rot rapide (cap bas) + SOIN-SUR-KILL : le charognard se repaît du cadavre qu'il a fait
     id = "carrion_pecker", bodyplan = "swarm", rank = 1, type = "flesh", family = "colosse", cost = 1, hp = 38, dmg = 4, cd = 38,
-    effects = { { trigger = "on_hit", op = "rot", params = { base = 1, growth = 1, dur = 180, capDps = 6, maxHpFrac = 0.10 } } },
+    -- GREFFE 9c′ (A10 sustain) : heal_on_kill +4 PV au tueur (broadcast on_kill, borné maxHp). Verbe non-multiplicatif.
+    effects = {
+      { trigger = "on_hit", op = "rot", params = { base = 1, growth = 1, dur = 180, capDps = 6, maxHpFrac = 0.10 } },
+      { trigger = "on_kill", op = "heal_on_kill", params = { value = 4 } },
+    },
   },
-  maggot_king = { -- démarrage lent, cap HAUT (récompense le long terme)
+  maggot_king = { -- rot (cap HAUT) + AMPLI FORGE : empower-aura (le pantin-tyran ORDONNE aux voisins-frappeurs)
     id = "maggot_king", bodyplan = "swarm", rank = 3, type = "bone", family = "pendu", cost = 3, hp = 70, dmg = 5, cd = 64,
-    effects = { { trigger = "on_hit", op = "rot", params = { base = 1, growth = 1, dur = 300, capDps = 12, maxHpFrac = 0.15 } } },
+    -- GREFFE 9c (Forge/A3) : atkInc=0.20 aux VOISINS qui FRAPPENT (boost le dégât d'ATTAQUE, PAS le rot du thème).
+    -- À placer au centre (4 voisins) entouré de carries d'attaque. Cumul cappé ATK_INC_CAP=1.5 à la lecture.
+    effects = {
+      { trigger = "on_hit", op = "rot", params = { base = 1, growth = 1, dur = 300, capDps = 12, maxHpFrac = 0.15 } },
+      { trigger = "combat_start", op = "aura_stat", target = "neighbors", params = { stat = "atkInc", value = 0.20 } },
+    },
   },
   necro_leech = { -- pourriture + amputation RENFORCÉE des PV max
     id = "necro_leech", bodyplan = "serpent", rank = 3, type = "abyss", family = "ombre", cost = 3, hp = 50, dmg = 5, cd = 56,
@@ -166,9 +203,14 @@ local U = {
   -- bornés/gated (comportement de base inchangé -> golden stable). corruptor est DÉJÀ le T2 poison-weaken. ══
 
   -- BRÛLURE T2
-  bellows_priest = { -- anti-décroissance : la brûlure décroît bien moins (maintien facilité)
+  bellows_priest = { -- anti-décroissance (brûlure tenace) + AMPLI HÂTE : le soufflet attise (les voisins frappent + vite)
     id = "bellows_priest", bodyplan = "robe", rank = 3, type = "abyss", family = "culte", cost = 3, hp = 44, dmg = 5, cd = 58,
-    effects = { { trigger = "on_hit", op = "burn", params = { dps = 6, dur = 180, decayPct = 0.15 } } },
+    -- GREFFE 9c (Hâte) : haste=0.12 aux voisins -> cadence d'attaque accélérée (atkTimer × (1-haste)). Cumulatif
+    -- additif dans le baker K1, mais le timer reste positif (haste raisonnable) -> pas de boucle de swing.
+    effects = {
+      { trigger = "on_hit", op = "burn", params = { dps = 6, dur = 180, decayPct = 0.15 } },
+      { trigger = "combat_start", op = "aura_stat", target = "neighbors", params = { stat = "haste", value = 0.12 } },
+    },
   },
   wildfire_hound = { -- à la mort d'un ennemi en feu, propage la brûlure à ses voisins (proximité champ)
     id = "wildfire_hound", bodyplan = "quadruped", rank = 4, type = "abyss", family = "demon", cost = 4, hp = 48, dmg = 5, cd = 54,
@@ -375,9 +417,14 @@ local U = {
     id = "surge_warden", bodyplan = "robe", rank = 4, type = "order", family = "griffon", cost = 4, hp = 48, dmg = 4, cd = 60, aggro = 15,
     effects = { { trigger = "combat_start", op = "aura_shield", target = "neighbors", params = { overcharge = true, valueInc = 0.5 } } },
   },
-  siege_breaker = { -- COUNTER : la frappe DISSOUT la moitié du bouclier (perce les murs) + gros dégâts
+  siege_breaker = { -- COUNTER strip-shield + CLEAVE (SEUL hôte cleave v1) : déchire la ligne en travers (profondeur 1)
     id = "siege_breaker", bodyplan = "deformed", rank = 3, type = "flesh", family = "canide", cost = 3, hp = 60, dmg = 8, cd = 52, aggro = 15,
-    effects = { { trigger = "on_hit", op = "strip_shield", params = { frac = 0.5 } } },
+    -- GREFFE 9c′ (A7 cleave de ligne) : la frappe éclabousse 50% sur les VOISINS-champ de la cible (profondeur 1,
+    -- AUCUN on_hit secondaire, respecte les boucliers). SEUL porteur de cleave en v1 (arc_warden/kiln_warden différés).
+    effects = {
+      { trigger = "on_hit", op = "strip_shield", params = { frac = 0.5 } },
+      { trigger = "on_hit", op = "cleave", params = { frac = 0.5 } },
+    },
   },
 
   -- ── ROSTER v7 vague 1 : peuple les familles visuelles restées « visuel-only » (champ `family` explicite,
@@ -402,13 +449,24 @@ local U = {
     id = "byakhee", type = "abyss", family = "aile", rank = 2, cost = 2, hp = 46, dmg = 8, cd = 50,
     effects = { { trigger = "on_hit", op = "bleed", params = { dps = 3, dur = 180, slowPct = 0.10 } } },
   },
-  zeal_inquisitor = { -- INQUISITEUR / feu sacré
+  zeal_inquisitor = { -- INQUISITEUR / feu sacré + AMPLI FORGE (2e accès empower, early rk-2 : le prêtre exhorte)
     id = "zeal_inquisitor", type = "order", family = "inquisiteur", rank = 2, cost = 2, hp = 64, dmg = 8, cd = 68, aggro = 15,
-    effects = { { trigger = "on_hit", op = "burn", params = { dps = 5, dur = 180 } } },
+    -- GREFFE 9c (Forge/A3) : 2e point d'accès empower (rang distinct de maggot_king rk 3). atkInc=0.12 aux
+    -- voisins-frappeurs. Cumul cappé ATK_INC_CAP=1.5 à la lecture (deux empowers ne snowballent pas).
+    effects = {
+      { trigger = "on_hit", op = "burn", params = { dps = 5, dur = 180 } },
+      { trigger = "combat_start", op = "aura_stat", target = "neighbors", params = { stat = "atkInc", value = 0.12 } },
+    },
   },
-  coil_viper = { -- REPTILE / venin de cobra
+  coil_viper = { -- REPTILE / venin de cobra + 2e PLAIE SI ABSENTE (le cobra ouvre une 2e plaie là où la chair est saine)
     id = "coil_viper", type = "flesh", family = "reptile", rank = 2, cost = 2, hp = 46, dmg = 7, cd = 48,
-    effects = { { trigger = "on_hit", op = "poison", params = { dps = 3, dur = 160 } } },
+    -- GREFFE 9c′ : grant_affliction_if_absent (ÉVALUÉ AVANT le poison principal) pose un poison faible (1 dps / 120
+    -- frames) SI la cible n'en a AUCUN -> sur une cible saine = 2 plaies (faible + principale) ; sur une cible déjà
+    -- empoisonnée = inerte (pas de double-stack ; verbe borné, pur état). « Le cobra frappe deux fois la chair saine. »
+    effects = {
+      { trigger = "on_hit", op = "grant_affliction_if_absent", params = { family = "poison", dps = 1, dur = 120 } },
+      { trigger = "on_hit", op = "poison", params = { dps = 3, dur = 160 } },
+    },
   },
   web_recluse = { -- ARACHNIDE / morsure recluse
     id = "web_recluse", type = "flesh", family = "arachnide", rank = 2, cost = 2, hp = 40, dmg = 4, cd = 44,
@@ -418,9 +476,13 @@ local U = {
     id = "siphon_jelly", type = "abyss", family = "meduse", rank = 2, cost = 2, hp = 42, dmg = 5, cd = 50,
     effects = { { trigger = "on_hit", op = "shock", params = { add = 1, cap = 5, dur = 150 } } },
   },
-  skull_colossus = { -- CRÂNE COLOSSAL / vestige titanesque, orbites ardentes (tank légendaire)
+  skull_colossus = { -- CRÂNE COLOSSAL / vestige titanesque + SOIN-SUR-KILL (payoff de combat non-multiplicatif, A11)
     id = "skull_colossus", type = "bone", family = "crane", rank = 5, cost = 5, hp = 92, dmg = 11, cd = 84, aggro = 40,
-    effects = { { trigger = "on_hit", op = "burn", params = { dps = 4, dur = 200 } } },
+    -- GREFFE 9c′ (A11 constructs) : heal_on_kill +8 PV au tueur (chaque âme broyée ranime sa braise). Borné maxHp.
+    effects = {
+      { trigger = "on_hit", op = "burn", params = { dps = 4, dur = 200 } },
+      { trigger = "on_kill", op = "heal_on_kill", params = { value = 8 } },
+    },
   },
   rust_sentinel = { -- AUTOMATE / noyau électrique (bruiser-tank)
     id = "rust_sentinel", type = "order", family = "automate", rank = 4, cost = 4, hp = 78, dmg = 9, cd = 72, aggro = 20,

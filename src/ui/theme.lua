@@ -79,6 +79,7 @@ Theme.c = {
   ctaText   = H(0xf0d9a8), -- texte chaud sur bouton sang
   drop      = H(0x6bc766), -- cible de drop valide
   slotEdge  = H(0x524759), -- bord de case par défaut
+  steel     = H(0x8fa6b5), -- acier froid (armure-aura dmgReduce : défense d'attaque, distinct du bouclier bleu)
   ecoBg     = H(0x1c130b), -- fond bouton REROLL/LEVEL
   ecoBgHot  = H(0x2a1c0e), -- survol éco
 }
@@ -95,6 +96,9 @@ c.bloodBright = c.bloodL; c.bloodDeep = c.bloodD; c.dmg = c.bloodL
 c.goldBright = c.brassS; c.heal = c.regen
 c.slotEdgeLck = c.stone700; c.edgeIdle = c.stone600; c.edgeActive = c.blood
 c.hair = c.brassD; c.line = c.stone700
+-- Auras agnostiques (K1 aura_stat) — teintes de chip distinctes : armure (acier froid), empower (braise),
+-- hâte (or), écho/multicast (sang clair). Réutilisent les tokens canoniques (discipline de palette).
+c.armor = c.steel or c.ink3; c.empower = c.ember; c.haste = c.gold; c.echo = c.bloodL
 c.ecoBorder = c.brass; c.cardHover = c.stone700
 
 -- ─────────────────── Couleurs de type d'unité (TYPES du design system) ───────────────────

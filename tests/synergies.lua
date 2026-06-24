@@ -293,14 +293,14 @@ local ok, err = pcall(function()
 
   -- OP grant_vuln — pose vulnInc (on_hit), refresh (max), EXPIRE au tick (vulnRemaining -> vulnInc nil).
   do
-    local gvEff = { { trigger = "on_hit", op = "grant_vuln", params = { value = 0.3, dur = 1 } } }
+    local gvEff = { { trigger = "on_hit", op = "grant_vuln", params = { value = 0.3, dur = 60 } } } -- dur en FRAMES
     local a = Arena.new({ left = { U("bandit", gvEff) }, right = { U("marauder", {}, { hp = 99999 }) }, autoReset = false, seed = 43 })
     local atk, tgt = a.units[1], a.units[2]
     a:hit(atk, tgt)
     assert(tgt.vulnInc and tgt.vulnInc > 0, "op grant_vuln: la cible est marquée (vulnInc posé)")
     assert(tgt.vulnRemaining and tgt.vulnRemaining > 0, "op grant_vuln: durée bornée armée")
     atk.alive = false -- l'attaquant ne re-pose plus la marque -> on observe l'EXPIRATION pure
-    for i = 1, 70 do a:update(1.0, i) end -- > 60 frames -> expire
+    for i = 1, 70 do a:update(1.0, i) end -- > 60 frames -> expire (dur posé en frames)
     assert(tgt.vulnInc == nil, "op grant_vuln: la marque EXPIRE au tick (vulnInc effacé)")
   end
 
@@ -343,6 +343,21 @@ local ok, err = pcall(function()
     u.hp = 40 -- sous 50% -> on_low_hp edge-trigger
     a:update(1.0, 1)
     assert(#u.dots.poison == 0 and u.dots.burn == nil, "op purge: afflictions retirées au franchissement du seuil")
+  end
+
+  -- OP purge BORNÉE (9c′ plague_doctor) : ne retire QUE la famille `family` et au plus `maxStacks` (les plus anciens).
+  -- La purge INCLINE le matchup DoT, ne l'EFFACE pas (le burn reste, et le poison résiduel survit > maxStacks).
+  do
+    local pgB = { { trigger = "on_low_hp", op = "purge", params = { threshold = 0.5, family = "poison", maxStacks = 4 } } }
+    local a = Arena.new({ left = { U("marauder", pgB, { hp = 100, maxHp = 100 }) }, right = {}, autoReset = false, seed = 67 })
+    local u = a.units[1]
+    u.maxHp = 100; u.hp = 100
+    for i = 1, 7 do u.dots.poison[i] = { dps = 2, remaining = 600, acc = 0, weaken = 0, source = u } end -- 7 stacks
+    u.dots.burn = { dps = 3, remaining = 600, acc = 0, decayEvery = 60, decayAcc = 0, decayPct = 0.3, source = u }
+    u.hp = 40 -- < 50% -> edge-trigger
+    a:update(1.0, 1)
+    assert(#u.dots.poison == 3, ("op purge bornée: retire au plus 4 stacks de poison (reste %d, attendu 3)"):format(#u.dots.poison))
+    assert(u.dots.burn ~= nil, "op purge bornée: le burn (hors family=poison) est ÉPARGNÉ (incline, n'efface pas)")
   end
 
   -- OP convert_dot — généralise convert_to_rot : {from=bleed, to=rot} consomme le bleed, pose la pourriture.
@@ -389,6 +404,111 @@ local ok, err = pcall(function()
     assert(tCombo >= 30, ("pire combo: PAS un one-shot instantané (%d ticks >= 30, TTK p10 ne s'effondre pas)"):format(tCombo))
     assert(ttk(true) == tCombo, "pire combo: déterministe (même seed -> même TTK)")
   end
+
+  -- ════════ SURVEILLANCE GRAVÉE (plan §4/§5/§6.4) — hookjaw multicast × Couronne d'Échos × poison + miasma-aura :
+  -- le combo le PLUS explosif (Écho empile sur Saturation/Marque). Prouve que les CAPS tiennent même quand le
+  -- frappeur re-frappe ×3 ET pose poison(weaken)+vuln : WEAKEN_CAP(0.40), POISON_STACK_CAP(8), VULN_INC_CAP(0.5),
+  -- et que le TTK p10 ne s'effondre PAS (pas de one-shot). Le multicast est baké comme le ferait K1 (hookjaw +1 +
+  -- Couronne +1 = 2, cap MULTICAST_MAX=3). Déterministe (même seed -> même résultat). ════════
+  do
+    -- carry = corruptor (poison weaken=0.06 + grant_vuln) sous multicast=2 (hookjaw +1 + Couronne +1, plafonné).
+    -- miasma-aura simulée par poisonInc=0.5 baké sur le frappeur (comme le bake build de miasma_acolyte).
+    local function loadOn(cap)
+      local a = Arena.new({ left = { U("corruptor") },
+        right = { U("templar", {}, { hp = 99999, maxHp = 99999 }) }, autoReset = false, seed = 64 })
+      local cor, tgt = a.units[1], a.units[2]
+      cor.multicast = 2          -- Écho baké (hookjaw role:front +1 + Couronne d'Échos +1) ; cap MULTICAST_MAX=3
+      cor.poisonInc = 0.5        -- miasma-aura bakée (aura_poison_dps inc 0.5) -> stacks renforcés, cappés ×3
+      -- on frappe BEAUCOUP : chaque hit = corruptor pose 1 stack (poison) + (grant_vuln quand greffé). On
+      -- veut saturer pour PROUVER que les caps bornent (et pas que le combo ne proc jamais).
+      for _ = 1, cap or 30 do a:hit(cor, tgt) end
+      a:update(1.0, 1) -- recompute weaken (tickDots agrège le weaken des stacks)
+      return cor, tgt, a
+    end
+    local cor, tgt = loadOn(30)
+    -- CAP weaken : 30 stacks × 0.06 = 1.8 sans cap -> doit être borné à WEAKEN_CAP (0.40).
+    assert(tgt.weaken <= 0.40 + 1e-9, ("SURVEILLANCE weaken cappé (%.3f <= 0.40)"):format(tgt.weaken))
+    -- CAP stacks poison : jamais plus que 8 (le plus ancien est retiré).
+    assert(#tgt.dots.poison <= 8, ("SURVEILLANCE poison cap (%d <= 8 stacks)"):format(#tgt.dots.poison))
+    -- CAP vuln (si la marque est greffée sur corruptor) : la LECTURE dans damage est cappée VULN_INC_CAP=0.5.
+    -- On vérifie qu'une vuln absurde reste bornée à l'application (frappe nue d'un voisin).
+    do
+      local _, t2, a2 = loadOn(8)
+      t2.vulnInc = 99 -- marque absurde -> doit être clampée VULN_INC_CAP à la lecture
+      local atkr = a2.units[1]
+      local h0 = t2.hp; a2:hit(atkr, t2); local d = h0 - t2.hp
+      assert(d <= math.floor(atkr.dmg * (1 + Arena.VULN_INC_CAP)) + 4 + 8,
+        ("SURVEILLANCE vuln clampé VULN_INC_CAP (degats %d bornés)"):format(d)) -- +marge décharge/weaken arrondi
+    end
+    -- ANTI ONE-SHOT (TTK p10 ne s'effondre pas) : le carry multicast=2 + poison + miasma met PLUSIEURS swings à
+    -- tuer un mur (le multicast ne re-frappe que la FRAPPE, bornée par MULTICAST_MAX et HIT_DMG_CAP_MULT).
+    local function ttkCombo()
+      local a = Arena.new({ left = { U("corruptor") },
+        right = { U("templar", {}, { hp = 400, maxHp = 400 }) }, autoReset = false, seed = 65 })
+      local cor, tgt = a.units[1], a.units[2]
+      cor.multicast = 2; cor.poisonInc = 0.5
+      tgt.maxHp = 400; tgt.hp = 400
+      local n = 0
+      for i = 1, 8000 do a:update(1.0, i); n = i; if not tgt.alive then break end end
+      return n, tgt.alive
+    end
+    local tc, aliveAfter = ttkCombo()
+    assert(not aliveAfter, "SURVEILLANCE: le combo conclut (la cible meurt)")
+    assert(tc >= 30, ("SURVEILLANCE anti one-shot: TTK p10 ne s'effondre pas (%d ticks >= 30)"):format(tc))
+    assert(select(1, ttkCombo()) == tc, "SURVEILLANCE: déterministe (même seed -> même TTK)")
+  end
+
+  print("  surveillance: hookjaw-multicast × Couronne × poison+miasma -> WEAKEN/POISON/VULN caps + anti one-shot OK")
+
+  -- ════════ SURVEILLANCE 9c′ — TRIPLE SUSTAIN (heal_on_kill ×2 + lifesteal) : prouve l'absence de sur-sustain.
+  -- Même un porteur empilant deux soins-sur-kill ET du lifesteal ne dépasse JAMAIS maxHp (cap gravé dans les ops).
+  -- C'est le pire empilement de soin du roster (carrion_pecker + skull_colossus + demon sur la même unité). ════════
+  do
+    local sustainEff = {
+      { trigger = "on_kill", op = "heal_on_kill", params = { value = 4 } },  -- carrion_pecker
+      { trigger = "on_kill", op = "heal_on_kill", params = { value = 8 } },  -- skull_colossus
+      { trigger = "on_hit", op = "lifesteal", params = { frac = 0.4 } },     -- demon
+    }
+    local a = Arena.new({ left = { U("marauder", sustainEff, { hp = 100, maxHp = 100 }) },
+      right = { U("marauder", {}, { hp = 1 }), U("marauder", {}, { hp = 1 }) }, autoReset = false, seed = 66 })
+    local hero, v1, v2 = a.units[1], a.units[2], a.units[3]
+    hero.maxHp = 100; hero.hp = 95 -- presque plein -> le sustain doit PLAFONNER, pas overflow
+    a:hit(hero, v1) -- lifesteal + tue v1 -> on_kill (les deux heal_on_kill)
+    a:damage(v2, 999, { source = hero, cause = "attack" }) -- tue v2 -> on_kill encore
+    a:update(1.0, 1) -- draine la file des morts -> broadcast on_kill (heal ×2 ×2 morts)
+    assert(hero.hp <= hero.maxHp, ("SURVEILLANCE triple-sustain: PV bornés à maxHp (%d <= %d)"):format(hero.hp, hero.maxHp))
+    assert(hero.hp >= 95, "SURVEILLANCE triple-sustain: le soin agit bien (PV >= base)") -- le sustain proc (mais plafonne)
+  end
+
+  print("  surveillance+: triple-sustain (heal_on_kill×2 + lifesteal) -> jamais > maxHp (pas de sur-sustain) OK")
+
+  -- ════════ SURVEILLANCE 9c′ — CLEAVE × MULTICAST (plan §4 (e), gating de siege_breaker) : un frappeur cleave SOUS
+  -- multicast=3 contre une ligne de cibles fragiles -> morts SIMULTANÉES. Prouve : (1) PAS de boucle (cleave est
+  -- profondeur 1, ne re-déclenche aucun on_hit/dischargeShock secondaire) ; (2) l'ordre de broadcast on_death suit
+  -- §2.4.1 (file self.deaths, drainée en fin de frame) ; (3) déterministe (même seed -> même résultat). ════════
+  do
+    local clEff = { { trigger = "on_hit", op = "cleave", params = { frac = 0.5 } } }
+    local function run(seed)
+      -- bandit cleave (dmg 7) × multicast=3 contre 3 cibles 1-PV alignées : chaque sous-coup tue la principale + éclabousse.
+      local a = Arena.new({ left = { U("bandit", clEff, { hp = 9999 }) },
+        right = { U("marauder", {}, { row = 0, hp = 1 }), U("marauder", {}, { row = 1, hp = 1 }),
+                  U("marauder", {}, { row = 2, hp = 1 }) }, autoReset = false, seed = seed })
+      local atk = a.units[1]; atk.multicast = 3
+      atk.atkTimer = 0
+      local deaths = 0
+      a.bus:on("death", function() deaths = deaths + 1 end)
+      local guard = 0
+      for i = 1, 200 do a:update(1.0, i); guard = i; if a.over then break end end
+      return deaths, guard, atk.alive
+    end
+    local d1, g1 = run(50)
+    assert(g1 < 200, "SURVEILLANCE cleave×multicast: le combat CONCLUT (pas de boucle infinie, profondeur 1)")
+    assert(d1 >= 1, "SURVEILLANCE cleave×multicast: au moins une mort par éclaboussure/frappe")
+    local d2 = run(50)
+    assert(d2 == d1, "SURVEILLANCE cleave×multicast: déterministe (même seed -> même nb de morts)")
+  end
+
+  print("  surveillance#: cleave × multicast -> conclut (profondeur 1, pas de boucle) + déterministe OK")
 
   print("  synergies : choc-decharge-allie / poison-multi-sources / weaken-reduit-output / bleed-ralentit-cadence / regen-contre-DoT")
   print("  synergies+: contagion / propagation-a-la-mort / aggravate / shieldEat (T2)")

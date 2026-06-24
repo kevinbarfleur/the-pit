@@ -60,18 +60,23 @@ local ok, err = pcall(function()
     end
   end
 
-  -- Phase BUILD : placement + assemblage de compo + bouclier d'AURA (dépend de l'adjacence).
+  -- Phase BUILD : placement + assemblage de compo + AURAS d'adjacence (armure ET bouclier, dépendent du graphe).
   local Build = require("src.scenes.build")
   local build = Build.new(Palette, 320, 180, { goto = function() end })
   build.board:setShape("carre"); build:computeLayout(); build.board:unlock(9)
-  build:placeId(5, "templar")   -- Rempart au centre -> buffe ses voisins
-  build:placeId(4, "marauder")
+  -- templar (9c) = ARMURE-aura (dmgReduce) ; shieldbearer = porteur de bouclier-aura (couvre l'axe shield_aura).
+  build:placeId(5, "templar")       -- Armure-aura au centre -> -dégâts d'attaque à ses voisins (slots 2/4/6/8)
+  build:placeId(4, "marauder")      -- voisin de 5 (templar) ET de 7 (shieldbearer) -> reçoit dmgReduce + bouclier
   build:placeId(6, "skeleton")
+  build:placeId(7, "shieldbearer")  -- voisin de 4 (marauder) -> bouclier-aura (axe shield_aura conservé)
   local left = build:buildLeftComp()
-  assert(#left == 3, "compo gauche = 3 unités")
+  assert(#left == 4, "compo gauche = 4 unités")
   local function findById(comp, id) for _, u in ipairs(comp) do if u.id == id then return u end end end
-  assert(findById(left, "marauder").shield >= 14, "Rempart: un voisin du templier doit avoir du bouclier")
-  assert(findById(left, "templar").shield == 0, "le templier ne se buffe pas lui-même")
+  -- Armure-aura (templar/9c) : un voisin du templier reçoit dmgReduce (-12% dégâts d'attaque), pas de bouclier propre.
+  assert((findById(left, "marauder").dmgReduce or 0) > 0, "Armure-aura: un voisin du templier doit avoir du dmgReduce")
+  assert(not findById(left, "templar").dmgReduce, "le templier ne se buffe pas lui-même (dmgReduce)")
+  -- Bouclier-aura (shieldbearer) : couvre toujours l'axe shield_aura via le graphe (un voisin a du bouclier).
+  assert(findById(left, "marauder").shield >= 6, "Bouclier-aura: un voisin du porteur de bouclier doit avoir du shield")
   local enc = build:pickEncounter()
   local right = build:buildRightComp(enc)
   assert(#right >= 1, "compo IA non vide")
