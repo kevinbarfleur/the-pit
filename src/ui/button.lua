@@ -103,6 +103,14 @@ function Button.draw(x, y, w, h, variant, text, opts)
     love.graphics.rectangle("fill", x + 1, yy + 1, w - 2, hh - 2)
     Draw.reset()
   end
+  -- ⭐ DISCRET (secondary) : « le métal terni accroche la lumière de la forge » au survol — le liseré se
+  -- réchauffe vers le laiton (rim-light) et la pression l'avive (flash). Piloté par GLOW + FLASH (lisse, sans
+  -- horloge) -> BEAUCOUP plus sobre que les yeux du CTA, juste un éclat de métal. Repos (glow~0) -> rien.
+  if variant == "secondary" and st ~= "disabled" and (glow > 0.02 or flash > 0.01) and love and love.graphics then
+    Draw.setColor(C.brassL, math.min(0.34, 0.10 + 0.20 * glow + 0.30 * flash)) -- laiton, jamais blanc pur
+    love.graphics.rectangle("line", x, yy, w, hh)
+    Draw.reset()
+  end
 
   -- ⭐ YEUX CAUCHEMARDESQUES (CTA primary uniquement) : au SURVOL des yeux s'ouvrent à des positions seedées
   -- (jamais sur le texte : keep-out du label), pilotés par le glow ; au CLIC ils RÉAGISSENT (s'écarquillent +

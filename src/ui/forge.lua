@@ -1528,7 +1528,19 @@ function Forge.uiCtaEyes(id, x, y, w, h, label, opts)
       local ey = e.eyes[i]
       -- au clic, le squash remonte (œil plus ROND = « écarquillé ») ; au repos hover il garde son squash semé.
       local sq = ey.squash + (0.92 - ey.squash) * react
-      drawEye(b, floor(ey.ex + 0.5), floor(slabY + ey.ey + 0.5), ey.r, openEff, glow, tt, seed + ey.phase,
+      -- ⭐ FLINCH : si le curseur s'approche de CET œil, il se MI-FERME (paupière qui descend) tout en
+      -- continuant de FIXER la souris (gaze inchangé) -> « peur qu'on lui crève l'œil ». Distance en art-local.
+      local eOpen = openEff
+      if gz then
+        local ddx, ddy = gz[1] - ey.ex, gz[2] - (slabY + ey.ey)
+        local near = ey.r * 2.4 -- rayon de « menace » autour de l'œil (en art-px)
+        local d2 = ddx * ddx + ddy * ddy
+        if d2 < near * near then
+          local fear = 1 - math.sqrt(d2) / near -- 0 au bord du rayon, 1 pile sur l'œil
+          eOpen = openEff * (1 - 0.72 * fear)   -- se referme jusqu'à ~28 % d'ouverture (jamais clos -> il guette)
+        end
+      end
+      drawEye(b, floor(ey.ex + 0.5), floor(slabY + ey.ey + 0.5), ey.r, eOpen, glow, tt, seed + ey.phase,
         { squash = sq, pupil = ey.pupil, blood = ey.blood, gaze = gz })
     end
   end, t)
