@@ -229,7 +229,7 @@ function Relicpick:mousepressed(vx, vy, button)
   end
   -- BIND : confirme la sélection. ⭐ DIFFÉRÉE : press visible AVANT que l'écran change (test mûrit via update).
   if self.sel and ptIn(dx, dy, self.bind) then
-    Feel.press("relicpick.bind", function() self:confirm() end)
+    Feel.press("relicpick.bind", function() self:confirm() end, { delay = Feel.CTA_DELAY })
   end
 end
 

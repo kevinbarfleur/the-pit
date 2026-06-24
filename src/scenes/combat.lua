@@ -250,7 +250,7 @@ function Combat:mousepressed(vx, vy, button)
       if self.payload.onFinish then self.payload.onFinish(self.arena.win, self.arena)
       elseif self.host.finishCombat then self.host.finishCombat(self.arena.win)
       else self.host.goto("build") end
-    end)
+    end, { delay = Feel.CTA_DELAY })
     return
   end
 end

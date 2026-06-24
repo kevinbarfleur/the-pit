@@ -46,6 +46,11 @@ local GLOW_MAX    = 1.0    -- plafond du canal de survol (le bouton lit glow*int
 local DELAY_DEF   = 0.16   -- délai par défaut de l'action différée (~160 ms : « optimum confortable »)
 local BUFFER_MAX  = 0.5    -- au-delà, on ne garde plus une action mûre en file (filet anti-fuite)
 
+-- ⭐ DÉLAI des CTA « cligne et pars » (retour user 2026-06) : sur les boutons-héros à YEUX, le clic doit se
+-- SENTIR — les yeux réagissent, on leur laisse LE TEMPS DE SE REFERMER, PUIS l'action part. ~0,7 s (≈42 frames).
+-- Les scènes passent { delay = Feel.CTA_DELAY } aux CTA primary ; les autres actions gardent DELAY_DEF (rapide).
+Feel.CTA_DELAY = 0.80
+
 -- ── État interne ────────────────────────────────────────────────────────────────────────────────────────
 -- byId[id] = { glow, lift, squash, flash, hover(cible 0/1), pressV(impulsion vers le bas), wasOver }
 local byId = {}
@@ -90,6 +95,13 @@ function Feel.update(dtFrames)
     -- FLASH : décroît vers 0 (bref).
     s.flash = approach(s.flash, 0, dt, FLASH_TAU)
     if s.flash < 0.003 then s.flash = 0 end
+    -- CHARGE : rampe 0->1 le temps de l'action différée (le CTA lit ça pour faire SE REFERMER les yeux avant de
+    -- lancer l'action). ×1.2 -> clos un peu AVANT le fire (les yeux restent fermés un court instant, puis ça part).
+    if s.chargeT then
+      s.chargeT = s.chargeT - dt
+      if s.chargeT <= 0 then s.charge, s.chargeT, s.chargeDur = 0, nil, nil
+      else s.charge = math.min(1, (1 - s.chargeT / s.chargeDur) * 1.2) end
+    end
   end
 
   -- ACTIONS DIFFÉRÉES : décrémente, fire les mûres (FIFO). On itère sur une copie d'indices pour retirer sûr.
@@ -139,7 +151,9 @@ function Feel.press(id, action, opts)
   if s.pendingDepth and s.pendingDepth > 0 then return false end -- déjà armé -> verrou, on ne re-file pas
   if action then
     s.pendingDepth = (s.pendingDepth or 0) + 1
-    queue[#queue + 1] = { id = id, action = action, t = opts.delay or DELAY_DEF, opts = opts }
+    local delay = opts.delay or DELAY_DEF
+    s.chargeDur, s.chargeT, s.charge = delay, delay, 0 -- ⭐ rampe 0->1 pendant le différé (yeux qui se referment)
+    queue[#queue + 1] = { id = id, action = action, t = delay, opts = opts }
   end
   return true
 end
@@ -151,7 +165,9 @@ function Feel.fire(id, action, opts)
   impulse(id)
   if action then
     local s = st(id); s.pendingDepth = (s.pendingDepth or 0) + 1
-    queue[#queue + 1] = { id = id, action = action, t = opts.delay or DELAY_DEF, opts = opts }
+    local delay = opts.delay or DELAY_DEF
+    s.chargeDur, s.chargeT, s.charge = delay, delay, 0
+    queue[#queue + 1] = { id = id, action = action, t = delay, opts = opts }
   end
   return true
 end

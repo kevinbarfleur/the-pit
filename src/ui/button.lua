@@ -75,7 +75,10 @@ function Button.draw(x, y, w, h, variant, text, opts)
   -- du sink discret d'état). On planche pour rester pixel-net (positions entières) et borné (jamais > 4px).
   local lift = feel and math.floor((feel.lift or 0) + 0.5) or 0
   local squash = feel and math.floor((feel.squash or 0) + 0.5) or 0
-  local press = ((st == "pressed") and 1 or 0) + squash -- translateY au press (état) + squash (feel)
+  -- CHARGE (0..1) : durée de l'action différée. Le CTA fait RÉAGIR puis SE REFERMER les yeux PUIS lance l'action
+  -- (retour user 2026-06). Tant qu'elle court, le bouton RESTE enfoncé (+2px) -> on SENT l'appui, pas un flash.
+  local charge = feel and (feel.charge or 0) or 0
+  local press = ((st == "pressed") and 1 or 0) + squash + (charge > 0 and 2 or 0)
   if press > 4 then press = 4 end
   local yy = y - lift + press           -- repos relevé par le survol, enfoncé par le press
   local hh = h - press
@@ -90,9 +93,10 @@ function Button.draw(x, y, w, h, variant, text, opts)
   Draw.rect(x, yy, w, hh, nil, s[4] or C.iron, 1)
   -- HALO de survol/feel : sur le CTA, un liseré sang dont l'alpha enfle avec le glow (braise, pas blanc).
   local glow = feel and (feel.glow or 0) or 0
-  if variant == "primary" and (st == "hover" or glow > 0.02) then
-    local a = 0.22 + 0.30 * glow
-    Draw.setColor(C.blood, math.min(0.6, a))
+  local glowH = math.max(glow, charge) -- pendant la charge le halo sang RESTE allumé (même si la souris sort)
+  if variant == "primary" and (st == "hover" or glowH > 0.02) then
+    local a = 0.22 + 0.34 * glowH
+    Draw.setColor(C.blood, math.min(0.7, a))
     if love and love.graphics then love.graphics.rectangle("line", x - 1, yy - 1, w + 2, hh + 2) end
     Draw.reset()
   end
@@ -117,7 +121,7 @@ function Button.draw(x, y, w, h, variant, text, opts)
   -- iris vif + regard) via le flash. Repos -> open≈0 -> no-op (bouton propre). Le label étant dessiné APRÈS,
   -- il reste TOUJOURS au-dessus des yeux. On passe l'EMPREINTE RÉELLE du label (Space Mono, en art-px) pour
   -- que le keep-out colle au texte AFFICHÉ. opts.id = clé de cache stable (sinon dérivée du texte+position).
-  if variant == "primary" and st ~= "disabled" and (glow > 0.02 or flash > 0.01) then
+  if variant == "primary" and st ~= "disabled" and (glow > 0.02 or flash > 0.01 or charge > 0.001) then
     local epx = Forge.PX or 2 -- densité du blit des yeux (art-px -> px design)
     local lf = Theme.label(PX[variant] or 13)
     local lw = lf and Draw.textWidth(text, lf) or 0
@@ -125,8 +129,11 @@ function Button.draw(x, y, w, h, variant, text, opts)
     local labelW = (lw + ntrack) / epx                       -- largeur du label vivant en ART-px
     local labelH = ((lf and lf.getHeight and lf:getHeight()) or 13) / epx -- hauteur en ART-px
     local eid = "btn.eyes." .. (opts.id or tostring(text) .. ":" .. x .. "," .. y)
+    -- CLIC -> les yeux RÉAGISSENT (flash) puis SE REFERMENT pendant la charge (open : 1 -> 0). L'action part
+    -- quand ils sont CLOS (Feel fire l'action à charge≈1). Hors charge : ouverture pilotée par le survol (glow).
+    local eOpen = (charge > 0) and math.max(0, 1 - charge) or glow
     Forge.uiCtaEyes(eid, x, yy, w, hh, text, {
-      open = glow, react = flash, mouse = opts.mouse, t = opts.t,
+      open = eOpen, react = flash, mouse = opts.mouse, t = opts.t,
       labelW = labelW, labelH = labelH, eyeR = math.max(4, math.floor(hh / epx / 4)), pad = 3, frameTh = 2,
     })
   end

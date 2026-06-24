@@ -569,7 +569,7 @@ function Build:mousepressed(vx, vy, button)
   self:syncEcoRects(run and run.pendingSlotGrant)
   -- COMBAT : ⭐ ACTION DIFFÉRÉE (Feel) -> les YEUX du CTA réagissent au clic (squash + flash) AVANT la bascule
   -- de scène (~160 ms), pour qu'on SENTE le clic. Le test e2e mûrit l'action via Build:update avant d'asserter.
-  if inRect(vx, vy, self.button) then Feel.press("build.combat", function() self:startCombat() end); return end
+  if inRect(vx, vy, self.button) then Feel.press("build.combat", function() self:startCombat() end, { delay = Feel.CTA_DELAY }); return end
   if run then
     -- Grant en attente : REFUSER prioritaire (son rect cohabite avec la moitié REROLL) ; sinon ACCEPTER
     -- (clic sur une case verrouillée). Puis REROLL.
@@ -1317,19 +1317,10 @@ function Build:drawShopCard(i, rect, o, hot)
   local rows = Layout.column(inner, { { flex = 1 }, { size = 16 }, { size = 16 } }, { gap = 3, align = "stretch" })
   local nameBox, costBox = rows[2], rows[3]
 
-  -- TAG DE TIER (haut-gauche) : remplace le pip de famille (sans incidence mécanique, retour user 2026-06).
-  -- Petit plat à la couleur de RARETÉ + nom de caste (DREGS..ELDER) -> la rareté EN MOTS (le cadre la donne en
-  -- couleur). Texte/liseré avivés si abordable ; sourds (laiton/gris) hors budget.
-  do
-    local nm = T(Rarity.tierNameKey(rank))
-    local tf = Theme.ui(8)
-    local tw = (tf and tf:getWidth(nm)) or (#nm * 5)
-    local padX, th = 5, 13
-    local fill = playable and Rarity.tierDim(rank) or { 0.12, 0.12, 0.13 }
-    local edge = playable and Rarity.tierBright(rank) or c.iron
-    Draw.rect(x + 8, y + 7, tw + padX * 2, th, { fill[1], fill[2], fill[3], 0.92 }, edge, 1)
-    Draw.text(nm, x + 8 + padX, y + 7 + 3, playable and Rarity.tierBright(rank) or c.faint, tf)
-  end
+  -- TAG DE TIER (haut-gauche) = juste le NOM DE CASTE (DREGS..ELDER) dans la couleur de RARETÉ, SANS encadré
+  -- (l'encadré était mal cadré / moins joli -> retour user 2026-06 : « mets juste le nom avec la couleur »).
+  -- Le cadre de la carte porte déjà la couleur de tier. Avivé si jouable, sourd sinon.
+  Draw.text(T(Rarity.tierNameKey(rank)), x + 9, y + 9, playable and Rarity.tierBright(rank) or c.faint, Theme.ui(8))
 
   -- NOM (Cinzel = police de NOM du système 4-voix, lisible et centrée dans sa rangée).
   local nameCol = playable and c.name or c.dim

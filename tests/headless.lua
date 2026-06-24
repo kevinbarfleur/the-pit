@@ -255,7 +255,7 @@ local ok, err = pcall(function()
     for _ = 1, 12 do rc:update(1.0) end -- ⭐ mûrit l'action différée (Feel) : le press est visible AVANT l'ouverture
     assert(opened, "clic CHRONICLE -> host.openChronicle (apres differe)")
     rc:mousepressed((rc._btnCont.x + rc._btnCont.w / 2) / 4, (rc._btnCont.y + rc._btnCont.h / 2) / 4, 1)
-    for _ = 1, 12 do rc:update(1.0) end -- mûrit l'action différée avant d'asserter la transition
+    for _ = 1, 60 do rc:update(1.0) end -- mûrit le CTA « cligne et pars » (~0,8s) avant d'asserter la transition CONTINUE
     assert(called and finished ~= nil, "clic CONTINUE -> host.finishCombat appele avec l'issue (apres differe)")
     print("  routing : ecran de fin (CHRONICLE/CONTINUE) -> openChronicle / finishCombat OK")
   end
@@ -413,7 +413,7 @@ local ok, err = pcall(function()
     assert(run.gold > g2 and eb:placedCount() == 1, "e2e vente: remboursement + unite retiree")
     -- COMBAT -> transition.
     eb:mousepressed(eb.button.x + 1, eb.button.y + 1, 1)
-    for _ = 1, 12 do eb:update(1.0) end -- ⭐ mûrit l'action différée (Feel) : le press du CTA est visible avant la transition
+    for _ = 1, 60 do eb:update(1.0) end -- ⭐ mûrit l'action différée (Feel) : CTA « cligne et pars » ~0,8s (yeux se referment) avant la transition
     assert(gotoName == "combat", "e2e: COMBAT -> transition vers la scene combat (apres differe)")
     print("  e2e : boutique (achat/case-verrou) + reroll + grant(accept/refuse) + vente + COMBAT OK")
   end

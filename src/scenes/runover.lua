@@ -128,7 +128,7 @@ function Runover:mousepressed(vx, vy, button)
   local dx, dy = vx * 4, vy * 4
   self.mx, self.my = dx, dy
   if ptIn(dx, dy, self.cta) then
-    Feel.press("runover.again", function() self.host.newRun() end)
+    Feel.press("runover.again", function() self.host.newRun() end, { delay = Feel.CTA_DELAY })
   end
 end
 
