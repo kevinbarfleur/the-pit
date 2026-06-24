@@ -1075,7 +1075,7 @@ function Build:resolveAuraLinks()
           elseif e.op == "aura_poison_dps" then kind = "poison"; inc = (pa.inc or 0.5) * sm
           elseif e.op == "aura_burn_dps" then kind = "burn"; inc = (pa.inc or 0.5) * sm
           elseif e.op == "aura_rot_growth" then kind = "rot"; fixed = "+" .. math.floor((pa.bonus or 0) * sm + 0.5)
-          elseif e.op == "aura_grant_bleed" then kind = "bleed"; fixed = T("ui.aura_grant") end
+          elseif e.op == "aura_grant_bleed" then kind = "bleed"; fixed = "+" .. math.floor((pa.dps or 1) * sm + 0.5) end
           if kind then
             for _, nb in ipairs(self.board:neighbors(i)) do
               local nbr = self.slotRigs[nb]
@@ -1946,40 +1946,42 @@ end
 -- ── CHIPS D'AURA (refonte « Build Screen ») : pastille chiffrée posée sur une arête d'aura. Icône d'affliction
 -- (Keywords) + valeur ; bord = couleur du type d'aura + lueur additive. Le bouclier (hors registre afflictions)
 -- -> petit écusson primitif. PUR-RENDER (golden neutre). ──
+-- Chip d'aura sur le BOARD : pastille COMPACTE (valeur seule, texte centré, bord coloré par type) -> tient
+-- dans le gap entre deux cases avec la ligne visible de chaque côté. L'ICÔNE d'affliction n'y est PAS (le type
+-- est déjà porté par la COULEUR de l'arête + du bord + de la lueur) ; elle vit dans le readout de la fiche.
 function Build:drawAuraChip(cx, cy, kind, label)
   local c = Theme.c
   local col = c[kind] or c.gold
   local f = Theme.value(10)
-  local icon = (kind ~= "shield") and Keywords.icon(kind) or nil
-  local iw = icon and icon.w or ((kind == "shield") and 8 or 0)
   local tw = (f and f:getWidth(label)) or (#label * 6)
-  local w = 7 + ((iw > 0) and (iw + 3) or 0) + tw + 7
-  local h = 17
+  local padX, h = 5, 15
+  local w = padX * 2 + tw
   local x, y = math.floor(cx - w / 2), math.floor(cy - h / 2)
   if love.graphics and love.graphics.setBlendMode then
-    love.graphics.setBlendMode("add"); Draw.setColor({ col[1], col[2], col[3], 0.16 })
+    love.graphics.setBlendMode("add"); Draw.setColor({ col[1], col[2], col[3], 0.18 })
     love.graphics.rectangle("fill", x - 1, y - 1, w + 2, h + 2); love.graphics.setBlendMode("alpha"); Draw.reset()
   end
   Draw.rect(x, y, w, h, { 0x0c / 255, 0x09 / 255, 0x12 / 255, 0.96 }, col, 1)
-  local ix = x + 7
-  if icon and icon.image and love.graphics then
-    love.graphics.setColor(1, 1, 1, 1); love.graphics.draw(icon.image, ix, math.floor(cy - icon.h / 2)); ix = ix + iw + 3
-  elseif kind == "shield" and love.graphics then
-    Draw.setColor(col); love.graphics.polygon("fill", ix, cy - 4, ix + 7, cy - 4, ix + 7, cy + 1, ix + 3.5, cy + 5, ix, cy + 1)
-    ix = ix + 10; Draw.reset()
-  end
   local bright = { math.min(1, col[1] * 1.25 + 0.25), math.min(1, col[2] * 1.25 + 0.25), math.min(1, col[3] * 1.25 + 0.25), 1 }
-  Draw.text(label, ix, cy - (f and f:getHeight() / 2 or 5), bright, f)
+  Draw.textC(label, math.floor(cx), cy - (f and f:getHeight() / 2 or 5), bright, f)
   Draw.reset()
 end
 
--- Pose un chip sur CHAQUE lien d'aura, au point biaisé vers la SOURCE (sépare deux liens bidirectionnels).
+-- Pose un chip sur CHAQUE lien d'aura, CENTRÉ au MILIEU EXACT de l'arête (équidistant des deux cases, en H
+-- comme en V) -> jamais plus sur une case que l'autre, la ligne reste visible de part et d'autre. Cas
+-- BIDIRECTIONNEL (2 liens sur la même arête, ex. bouclier<->bouclier) : chacun légèrement vers SA source.
 function Build:drawAuraChips(ui)
   if not (ui and ui.auraLinks) then return end
+  local count = {}
+  for _, lk in ipairs(ui.auraLinks) do
+    local a, b = lk.from, lk.to
+    count[(a < b) and (a * 16 + b) or (b * 16 + a)] = (count[(a < b) and (a * 16 + b) or (b * 16 + a)] or 0) + 1
+  end
   for _, lk in ipairs(ui.auraLinks) do
     local pf, pt = self.pos[lk.from], self.pos[lk.to]
     if pf and pt then
-      local t = 0.42
+      local a, b = lk.from, lk.to
+      local t = (count[(a < b) and (a * 16 + b) or (b * 16 + a)] >= 2) and 0.37 or 0.5
       self:drawAuraChip((pf.x + (pt.x - pf.x) * t) * 4, (pf.y + (pt.y - pf.y) * t) * 4, lk.kind, lk.label)
     end
   end
