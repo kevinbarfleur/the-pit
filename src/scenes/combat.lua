@@ -18,6 +18,7 @@ local Arena = require("src.combat.arena")
 local ArenaDraw = require("src.render.arena_draw")
 local Chronicle = require("src.render.chronicle")
 local Ambient = require("src.fx.ambient")
+local Biome = require("src.fx.biome")    -- décor de biome parallaxe (refonte Combat Frame, phase 4)
 local Theme = require("src.ui.theme")
 local Draw = require("src.ui.draw")
 local Button = require("src.ui.button")  -- boutons propres (CHRONICLE secondary / CONTINUE primary)
@@ -43,6 +44,14 @@ local function inBtn(mx, my, r)
   return r and mx >= r.x and mx <= r.x + r.w and my >= r.y and my <= r.y + r.h
 end
 
+-- Choix de BIOME déterministe par combat : le seed du combat -> une clé stable parmi les 4 décors (replays
+-- identiques, snapshot async cohérent). v1 = rotation seedée ; mapping THÉMATIQUE (par type d'adversaire
+-- dominant) à venir. Robuste si Biome.KEYS manque.
+local function biomeFor(payload)
+  local keys = Biome.KEYS or { "abysses" }
+  return keys[1 + ((payload.seed or 11) % #keys)]
+end
+
 function Combat.new(palette, vw, vh, host, payload)
   payload = payload or {}
   local arena = Arena.new({ left = payload.left, right = payload.right, autoReset = false, seed = payload.seed })
@@ -53,7 +62,8 @@ function Combat.new(palette, vw, vh, host, payload)
     titleKey = "scene.combat",
     hintKey = "ui.hint_combat",
     enemyKey = payload.enemyKey,
-    ambient = Ambient.new(payload.seed or 11), -- atmosphère "combat" (gueule du puits + braises)
+    ambient = Ambient.new(payload.seed or 11), -- atmosphère "combat" (repli si pas de biome)
+    biome = Biome.new(biomeFor(payload), payload.seed or 11), -- décor de biome parallaxe (fond de l'arène)
     arena = arena,
     renderer = ArenaDraw.new(arena, palette),
     paused = false, -- PAUSE spectateur (Espace) : gèle entièrement le combat (analyse / screenshots)
@@ -142,6 +152,9 @@ function Combat:update(frameDt)
   Feel.hover("combat.spd2", inBtn(self.mx, self.my, self._btnSpd2))
   Feel.hover("combat.skip", inBtn(self.mx, self.my, self._btnSkip))
   if self.paused then return end -- combat GELÉ (sim + anims) -> reprise identique via Espace
+  -- Biome : parallaxe avancée UNE FOIS/frame (temps réel), JAMAIS multipliée par les pas de SKIP/2× (le décor
+  -- ne doit pas défiler en accéléré). frameDt en unités-frame@60 -> /60 = secondes pour le moteur de biome.
+  if self.biome then self.biome:update(frameDt / 60) end
   -- VITESSE : hors conclusion, 1×/2× pas par frame (SKIP -> beaucoup, borné anti-gel). Une fois CONCLU, on
   -- continue à avancer UN pas/frame (overAge + anims de mort -> l'écran de fin apparaît, comportement d'avant).
   local steps = self.arena.over and 1 or (self.skipping and 240 or (self.speed or 1))
@@ -163,10 +176,25 @@ end
 -- espace DESIGN -> on convertit ×4 ICI (comme relicpick/runover). self.mx/self.my sont donc en DESIGN.
 function Combat:mousemoved(vx, vy) self.mx, self.my = vx * 4, vy * 4 end
 
--- Atmosphère "combat" native (gueule du puits + braises), derrière les combattants pixel.
+-- Décor de BIOME parallaxe (refonte Combat Frame) derrière les combattants pixel, + SCRIMS qui le poussent
+-- en arrière et gardent les sprites lisibles sur TOUT biome. Repli sur l'atmosphère "combat" si pas de biome.
 function Combat:drawBack(view)
   Draw.begin(view)
-  self.ambient:draw("combat")
+  if self.biome then
+    local W, H = Draw.W, Draw.H
+    self.biome:draw(0, 0, W, H) -- les 6 calques (filtre linéaire = profondeur de champ douce) + particules
+    if love.graphics then
+      local s1, s2, s3 = 6 / 255, 4 / 255, 10 / 255 -- encre de fond (assombrissement)
+      Draw.setColor({ s1, s2, s3, 0.42 }); love.graphics.rectangle("fill", 0, 0, W, H) -- 1) assombri plat
+      Panel.vgrad(0, 0, W, H * 0.22, { s1, s2, s3, 0.6 }, { s1, s2, s3, 0 })             -- 2) fondu HAUT
+      Panel.vgrad(0, H * 0.6, W, H * 0.4, { s1, s2, s3, 0 }, { 4 / 255, 2 / 255, 7 / 255, 0.82 }) -- bas
+      Draw.setColor({ 0, 0, 0, 0.10 })                                                  -- 3) scanlines (2px/4px)
+      for y = 0, H - 1, 4 do love.graphics.rectangle("fill", 0, y, W, 2) end
+      Draw.reset()
+    end
+  else
+    self.ambient:draw("combat")
+  end
   Draw.finish()
 end
 

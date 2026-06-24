@@ -89,6 +89,9 @@ luajit tests/molecules.lua
 echo "== payoff (renforcements forts mais bornes : spread + boucliers + caps) =="
 luajit tests/payoff.lua
 
+echo "== biome (decors en couches : 4 biomes no-crash + update/draw + fallback + determinisme + wrap) =="
+luajit tests/biome.lua
+
 echo "== props (invariants + fuzz) =="
 luajit tests/props.lua
 
