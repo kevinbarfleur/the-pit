@@ -99,6 +99,7 @@ function Build.new(palette, vw, vh, host)
     board = Board.new("carre"),
     slotRigs = {},     -- [slot] = { id, char } : unités posées (PLATEAU = combat)
     bench = {},        -- [i] = { id, level, char } : RÉSERVE hors-combat (stock/fusion ; n'entre PAS en combat)
+    fx = {},           -- GAME FEEL : effets ÉPHÉMÈRES (achat/vente/level-up) — { kind, x, y, t, dur, ... } (design)
     previewRigs = {},  -- [id] = char idle (aperçu boutique)
     drag = nil,        -- { id, char, fromSlot? | fromShop? }
     mx = -100, my = -100,
@@ -247,6 +248,53 @@ function Build:computeBench()
   end
 end
 
+-- ── GAME FEEL : effets ÉPHÉMÈRES (achat / vente / level-up) ─────────────────────────────────────────
+-- Petit système d'effets transitoires : data { kind, x, y, t, dur, ... } en ESPACE DESIGN, avancés par
+-- update, dessinés en overlay PAR-DESSUS tout. Le SPAWN est PUR (data) -> sans danger headless ; le DRAW
+-- vit en overlay (love.graphics). Render-only -> golden inchangé.
+function Build:spawnFx(kind, x, y, opts)
+  opts = opts or {}
+  self.fx[#self.fx + 1] = { kind = kind, x = x, y = y, t = 0, dur = opts.dur or 0.55,
+    gold = opts.gold, level = opts.level }
+end
+
+function Build:updateFx(frameDt)
+  local dt = frameDt / 60 -- frames -> secondes
+  local n, w = #self.fx, 0
+  for i = 1, n do
+    local f = self.fx[i]
+    f.t = f.t + dt
+    if f.t < f.dur then w = w + 1; self.fx[w] = f end
+  end
+  for i = w + 1, n do self.fx[i] = nil end
+end
+
+function Build:drawFx()
+  if #self.fx == 0 then return end
+  local c = Theme.c
+  for _, f in ipairs(self.fx) do
+    local p = math.min(1, f.t / f.dur) -- 0..1
+    local a = 1 - p
+    if f.kind == "buy" then
+      -- ACHAT : anneau d'or qui s'ouvre et s'estompe (l'unité « atterrit » sur la case).
+      Draw.setColor({ c.gold[1], c.gold[2], c.gold[3], 0.55 * a })
+      love.graphics.setLineWidth(2); love.graphics.circle("line", f.x, f.y, 8 + p * 28); love.graphics.setLineWidth(1)
+      Draw.reset()
+    elseif f.kind == "sell" then
+      -- VENTE : « +N » d'or qui monte et s'estompe.
+      Draw.textC("+" .. tostring(f.gold or 0), f.x, f.y - p * 26, { c.gold[1], c.gold[2], c.gold[3], a }, Theme.value(16))
+    elseif f.kind == "levelup" then
+      -- LEVEL-UP : LE moment juteux. Flash + anneau de laiton brillant expansif + « LVL n » qui pop.
+      Draw.setColor({ c.brassS[1], c.brassS[2], c.brassS[3], 0.5 * a })
+      love.graphics.circle("fill", f.x, f.y, 5 + p * 12)
+      Draw.setColor({ c.brassS[1], c.brassS[2], c.brassS[3], 0.75 * a })
+      love.graphics.setLineWidth(3 * a + 1); love.graphics.circle("line", f.x, f.y, 10 + p * 42); love.graphics.setLineWidth(1)
+      Draw.reset()
+      Draw.textC("LVL " .. tostring(f.level or 2), f.x, f.y - 30 - p * 10, { c.gold[1], c.gold[2], c.gold[3], a }, Theme.value(15))
+    end
+  end
+end
+
 -- Synchronise le rect de hit-test REROLL selon qu'un grant attend (ligne scindée) ou non (ligne pleine).
 -- Appelé chaque frame avant les clics/le rendu -> le hit-test colle TOUJOURS à ce qui est dessiné.
 function Build:syncEcoRects(granting)
@@ -378,8 +426,13 @@ function Build:checkMerges()
           else self.bench[p.i] = nil end
         end
         local promoted = { id = id, level = lvl, char = self:newRig(id) } -- promeut la 1re copie
-        if keep.kind == "board" then self.slotRigs[keep.i] = promoted; self.board.slots[keep.i].unit = id
-        else self.bench[keep.i] = promoted end
+        if keep.kind == "board" then
+          self.slotRigs[keep.i] = promoted; self.board.slots[keep.i].unit = id
+          self:spawnFx("levelup", self.pos[keep.i].x * 4, self.pos[keep.i].y * 4, { level = lvl })
+        else
+          self.bench[keep.i] = promoted
+          local br = self.benchSlots[keep.i]; self:spawnFx("levelup", br.x * 4 + br.w * 2, br.y * 4 + br.h * 2, { level = lvl })
+        end
         merged = true
         anyMerge = true
         break -- re-scan (une promotion peut déclencher une cascade)
@@ -473,8 +526,13 @@ function Build:mousereleased(vx, vy, button)
     if toBoard or toBench then
       local id = run and run:buy(d.fromShop)
       if id then
-        if toBoard then self.slotRigs[si] = { id = id, level = 1, char = d.char }; self.board.slots[si].unit = id
-        else self.bench[bi] = { id = id, level = 1, char = d.char } end
+        if toBoard then
+          self.slotRigs[si] = { id = id, level = 1, char = d.char }; self.board.slots[si].unit = id
+          self:spawnFx("buy", self.pos[si].x * 4, self.pos[si].y * 4)
+        else
+          self.bench[bi] = { id = id, level = 1, char = d.char }
+          local br = self.benchSlots[bi]; self:spawnFx("buy", br.x * 4 + br.w * 2, br.y * 4 + br.h * 2)
+        end
         self:checkMerges() -- 3 copies (même id+niveau, plateau OU banc) -> fusion niveau+1 (arme pendingLevelRelic 1×/round)
         -- Lot 5 (§5.2) : une fusion a armé la récompense de level-up -> offre 1-parmi-3 MID-ROUND (round préservé).
         if self.pendingLevelRelic then
@@ -500,7 +558,11 @@ function Build:mousereleased(vx, vy, button)
     self.bench[bi] = { id = d.id, level = d.level or 1, char = d.char }
   else
     -- Lâché HORS plateau ET banc : VENTE (remboursement) si run ; sinon l'unité disparaît (sandbox).
-    if run and (d.fromSlot or d.fromBench) then run:sell(d.id) end
+    if run and (d.fromSlot or d.fromBench) then
+      local before = run.gold
+      run:sell(d.id)
+      self:spawnFx("sell", self.mx * 4, self.my * 4, { gold = run.gold - before })
+    end
   end
 end
 
@@ -764,6 +826,7 @@ function Build:update(frameDt)
     if sr then Rig.update(sr.char, self.t, frameDt) end
   end
   for _, c in pairs(self.previewRigs) do Rig.update(c, self.t, frameDt) end
+  self:updateFx(frameDt)
   if self.drag then
     self.drag.char.x, self.drag.char.y = self.mx, self.my + 9
     Rig.update(self.drag.char, self.t, frameDt)
@@ -1094,6 +1157,7 @@ function Build:drawOverlay(view)
     if id then self:drawTooltip(id) end
   end
 
+  self:drawFx() -- GAME FEEL : bursts achat/vente/level-up PAR-DESSUS tout (transitoires)
   Draw.finish()
 end
 
