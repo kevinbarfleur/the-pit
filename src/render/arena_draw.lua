@@ -179,10 +179,56 @@ function ArenaDraw:drawGrid()
   love.graphics.setColor(1, 1, 1, 1)
 end
 
+-- SCÈNE PARTAGÉE : sol de fosse + ligne de front, dessinés en ESPACE MONDE/VIRTUEL avec raw love.graphics
+-- (MÊME convention que drawGrid : PAS sous Draw.begin) -> s'aligne sous les pieds des sprites (u.y). But :
+-- les deux camps lisent comme une CONFRONTATION sur une scène commune, pas « 2 clusters dans le noir » :
+--   · plateau elliptique sombre sous les deux équipes (centré ~160,118) + liseré laiton terni ;
+--   · teinte de demi-sol gauche=bleu(bouclier)/droite=rouge(sang) très faible -> « mon côté / leur côté » ;
+--   · couture verticale de ligne de front en x=160 (sang + colonne de lueur, alpha respirant via sin(t)).
+-- RENDER PUR : ne lit que self.t (horloge cosmétique) ; ne touche jamais la SIM. RNG cosmétique = love.math.
+function ArenaDraw:drawArena()
+  local C = Theme.c
+  local CX = 160 -- centre du plateau (canvas virtuel 320×180) = milieu des deux camps
+  love.graphics.setLineStyle("rough")
+  love.graphics.setLineWidth(1)
+
+  -- 1) Plateau elliptique : disque de pierre sombre sous les deux équipes (les sort du vide noir).
+  local floor = C.stone850
+  love.graphics.setColor(floor[1], floor[2], floor[3], 0.6)
+  love.graphics.ellipse("fill", CX, 118, 130, 34)
+  -- Liseré laiton terni : ourle le plateau sans le faire briller.
+  local rim = C.brassD
+  love.graphics.setColor(rim[1], rim[2], rim[3], 0.4)
+  love.graphics.ellipse("line", CX, 118, 130, 34)
+
+  -- 2) Teinte de demi-sol (très faible) : moitié gauche bleu / moitié droite rouge -> « mon côté / leur côté ».
+  -- Clippée à l'ellipse via une 2e ellipse de couleur par moitié (rectangle scissoré aurait un bord dur ;
+  -- l'ellipse d'accent garde la forme du plateau). Alpha ~0.05 -> suggestion, jamais un aplat criard.
+  local mine, theirs = C.shield, C.blood
+  love.graphics.setColor(mine[1], mine[2], mine[3], 0.05)
+  love.graphics.ellipse("fill", CX - 62, 118, 70, 32)
+  love.graphics.setColor(theirs[1], theirs[2], theirs[3], 0.05)
+  love.graphics.ellipse("fill", CX + 62, 118, 70, 32)
+
+  -- 3) Couture verticale de ligne de front en x=160 (y≈55..150) : trait de sang + colonne de lueur qui
+  -- RESPIRE (alpha via sin(t)) -> l'œil va à la frontière où les camps s'affrontent.
+  local breathe = 0.5 + 0.5 * math.sin((self.t or 0) * 0.04) -- 0..1
+  local bl = C.blood
+  -- Colonne de lueur (large, douce) : pulse de présence au milieu du champ.
+  love.graphics.setColor(bl[1], bl[2], bl[3], 0.06 + 0.05 * breathe)
+  love.graphics.rectangle("fill", CX - 6, 55, 12, 95)
+  -- Trait franc de la couture.
+  love.graphics.setColor(bl[1], bl[2], bl[3], 0.18)
+  love.graphics.rectangle("fill", CX, 55, 1, 95)
+
+  love.graphics.setColor(1, 1, 1, 1)
+end
+
 -- ───────────────────────── Rendu monde (canvas virtuel) ─────────────────────────
 function ArenaDraw:draw(showBones)
   local units = self.arena.units
 
+  self:drawArena() -- scène partagée (sol de fosse + ligne de front), tout au fond
   self:drawGrid() -- repères de slots (derrière ombres + unités)
 
   for _, u in ipairs(units) do

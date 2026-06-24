@@ -123,6 +123,14 @@ function Ambient:draw(mode)
       love.graphics.setColor(c.ember[1], c.ember[2], c.ember[3], a)
       love.graphics.rectangle("fill", e.x, y, 3, 3)
     end
+
+    -- Brume CENTRALE (mi-hauteur = niveau des YEUX du combat) : un grand halo chaud diffus remplit le « noir
+    -- mort » du milieu, là où les deux camps s'affrontent (le sol de fosse vit à design y~470). Gardé par
+    -- `full` -> n'apparaît qu'en menu/combat (le mode calme build/grimoire reste focalisé sur le plateau).
+    drawGlow(W * 0.5, 380, 520, 300, c.bgEmber, 0.22)
+    -- Voile de sang plus sombre, plus serré : ancre la brume vers la gueule sans laver les sprites ni
+    -- sur-saturer le bas du cadre (calé sur la retenue chaude du menu = la réf de DA).
+    drawGlow(W * 0.5, 455, 360, 210, c.blood, 0.08)
   end
 
   -- Poussière (toujours présente, discrète).
@@ -138,6 +146,14 @@ function Ambient:draw(mode)
   if vignImg then
     love.graphics.setColor(1, 1, 1, full and 0.9 or 0.7)
     love.graphics.draw(vignImg, 0, 0, 0, W / 64, H / 64)
+    -- 2e passe INTÉRIEURE (échelle plus serrée, recentrée) : la même texture agrandie mord plus loin dans
+    -- les coins -> ils virent au noir total et l'œil est canalisé vers la ligne de front centrale (comme le
+    -- menu). Réutilise vignImg ; origine au centre (32,32) pour rester centrée en agrandissant.
+    if full then
+      local s = 1.45 -- > 1 : l'anneau sombre de la vignette intrude davantage (coins plus noirs)
+      love.graphics.setColor(1, 1, 1, 0.55)
+      love.graphics.draw(vignImg, W / 2, H / 2, 0, (W / 64) * s, (H / 64) * s, 32, 32)
+    end
   end
 
   love.graphics.setColor(1, 1, 1, 1)
