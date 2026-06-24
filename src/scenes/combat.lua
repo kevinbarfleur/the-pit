@@ -346,8 +346,17 @@ function Combat:_drawSummary(view)
   local s, why = self.full, self.summary
   local W, H, won = Draw.W, Draw.H, self.full.win
 
-  -- (0) FOND opaque (recouvre l'arène).
-  Panel.vgrad(0, 0, W, H, { 0x16 / 255, 0x11 / 255, 0x1c / 255, 1 }, { 0x06 / 255, 0x04 / 255, 0x09 / 255, 1 })
+  -- (0) FOND opaque (recouvre l'arène) + atmosphère du design : halo de verdict (haut-centre) + BRAISE du
+  -- Puits (bas-centre) -> le bas de l'écran « respire » au lieu de paraître vide/inachevé.
+  Panel.vgrad(0, 0, W, H, { 0x14 / 255, 0x10 / 255, 0x1a / 255, 1 }, { 0x06 / 255, 0x04 / 255, 0x09 / 255, 1 })
+  if love and love.graphics and love.graphics.setBlendMode then
+    local em = c.ember
+    love.graphics.setBlendMode("add")
+    for k = 3, 1, -1 do Draw.setColor({ 0x3a / 255, 0x20 / 255, 0x44 / 255, 0.04 * k }); love.graphics.circle("fill", W / 2, 90, 360 * (k / 3)) end
+    -- braise SUBTILE : centre bien sous l'écran -> seule la frange chaude lèche le bas (pas un disque qui domine).
+    for k = 3, 1, -1 do Draw.setColor({ em[1], em[2], em[3], 0.014 * k }); love.graphics.circle("fill", W / 2, H + 150, 230 * (k / 3)) end
+    love.graphics.setBlendMode("alpha"); Draw.reset()
+  end
 
   -- (1) HEADER : kicker + verdict (Jacquard, casse de titre) + flavor.
   Draw.textC(T(won and "ui.summary_kicker_win" or "ui.summary_kicker_loss"), W / 2, 36, c.ink3, Theme.label(10))
@@ -394,14 +403,14 @@ function Combat:_drawSummary(view)
     if i < #cells then Draw.rect(cxp, ry + 8, 1, rh - 16, c.iron); cxp = cxp + 1 end
   end
 
-  -- (3) COLONNES : DAMAGE BY CAUSE (gauche) | THE LEDGER (droite).
-  local colTop, colBot, PADX, divX = 246, H - 24, 56, 700
+  -- (3) COLONNES : DAMAGE BY CAUSE (gauche) | THE LEDGER (droite). Le contenu FLUE (compact, pas d'ancrage
+  -- en bas) -> avec peu de barres il n'y a JAMAIS de grand vide ; tout reste dans la moitié haute, soudé.
+  local colTop, PADX, divX = 234, 56, 700
   local leftX, leftW = PADX, divX - PADX - 16
   local rightX, rightW = divX + 16, W - PADX - (divX + 16)
-  Draw.rect(divX, colTop, 1, colBot - colTop, c.iron)
-
-  -- (3a) DAMAGE BY CAUSE.
   local hf = Theme.label(11)
+
+  -- (3a) DAMAGE BY CAUSE : en-tête + barres + cartes DEALT/TAKEN, qui s'enchaînent.
   Draw.text(T("ui.dmg_by_cause"), leftX, colTop, c.ink, hf)
   Draw.text(T("ui.dmg_by_cause_sub"), leftX + hf:getWidth(T("ui.dmg_by_cause")) + 10, colTop + 2, c.ink4, Theme.bodyItalic(12))
   local by, maxV = colTop + 30, (s.causes[1] and s.causes[1].value) or 1
@@ -414,10 +423,10 @@ function Combat:_drawSummary(view)
     local fw = math.floor((bw - 2) * (cz.value / maxV))
     if fw > 0 then Draw.rect(bx + 1, by + 1, fw, 11, col) end
     Draw.textR(tostring(cz.value), leftX + leftW, by + 1, c.ink, Theme.value(13))
-    by = by + 25
+    by = by + 26
   end
-  -- DEALT / TAKEN.
-  local dtY, halfW = colBot - 52, (leftW - 9) / 2
+  -- DEALT / TAKEN (juste SOUS les barres, pas tout en bas).
+  local dtY, halfW = by + 12, (leftW - 9) / 2
   local function dtCard(x, lab, val, vc)
     Draw.rect(x, dtY, halfW, 46, { 0x0b / 255, 0x09 / 255, 0x12 / 255, 1 }, c.iron, 1)
     Draw.text(lab, x + 12, dtY + 9, c.ink4, Theme.label(8))
@@ -426,22 +435,22 @@ function Combat:_drawSummary(view)
   end
   dtCard(leftX, T("ui.dealt"), s.dealt, c.ink)
   dtCard(leftX + halfW + 9, T("ui.taken"), s.taken, c.bloodL)
+  local leftBottom = dtY + 46
 
-  -- (3b) THE LEDGER : MVP + 1re perte.
+  -- (3b) THE LEDGER : MVP + 1re perte + ACTIONS, qui s'enchaînent (pas d'ancrage bas).
   Draw.text(T("ui.the_ledger"), rightX, colTop, c.ink, hf)
-  local ly, cardH = colTop + 24, 84
+  local ly, cardH = colTop + 22, 84
   if s.mvp then
     Panel.vgrad(rightX, ly, rightW, cardH, { 0x1a / 255, 0x14 / 255, 0x10 / 255, 1 }, { 0x0e / 255, 0x0b / 255, 0x09 / 255, 1 })
     Draw.rect(rightX, ly, rightW, cardH, nil, c.brass, 1)
     portraitTile(rightX + 12, ly + 11, 62, s.mvp.id, c.brassL)
     local tx = rightX + 87
     Draw.text(unitName(s.mvp.id), tx, ly + 12, c.ink, Theme.subhead(14))
-    -- badge MVP (droite).
     local bf = Theme.label(8); local btxt = T("ui.mvp"); local bw2 = bf:getWidth(btxt) + 18
     Draw.rect(rightX + rightW - bw2 - 12, ly + 11, bw2, 16, nil, c.brass, 1)
     Draw.text(btxt, rightX + rightW - bw2 - 12 + 13, ly + 14, c.brassS, bf)
     Draw.textWrap(T("ui.mvp_desc", { dealt = s.mvp.dealt, soaked = s.mvp.soaked }), tx, ly + 36, rightX + rightW - tx - 14, c.ink2, Theme.body(12))
-    ly = ly + cardH + 13
+    ly = ly + cardH + 12
   end
   if s.firstLoss then
     Panel.vgrad(rightX, ly, rightW, cardH, { 0x15 / 255, 0x0f / 255, 0x12 / 255, 1 }, { 0x0c / 255, 0x08 / 255, 0x10 / 255, 1 })
@@ -452,12 +461,12 @@ function Combat:_drawSummary(view)
     local bf = Theme.label(8); local btxt = T("ui.first_to_fall") .. " · " .. string.format("%.1f", s.firstLoss.time) .. "s"
     Draw.textR(btxt, rightX + rightW - 12, ly + 14, c.ink4, bf)
     Draw.textWrap(T("ui.first_loss_desc", { time = string.format("%.1f", s.firstLoss.time) }), tx, ly + 36, rightX + rightW - tx - 14, c.ink3, Theme.body(12))
-    ly = ly + cardH + 13
+    ly = ly + cardH + 12
   end
-  Draw.finish()
 
-  -- (4) ACTIONS (bas de colonne droite) : CLAIM (primary) + [c] CHRONICLE + [r] REPLAY (rects -> mousepressed).
-  local byb, bh = colBot - 44, 44
+  -- ACTIONS (sous les cartes du ledger) : CLAIM (primary) + [c] CHRONICLE + [r] REPLAY. Rects -> mousepressed.
+  -- ⚠ DESSINÉES ICI, AVANT Draw.finish (DANS le transform design) -> jamais hors-écran/désalignées.
+  local byb, bh = ly + 4, 44
   local sideW = 132
   local claimW = rightW - 2 * (sideW + 11)
   self._btnCont = { x = rightX, y = byb, w = claimW, h = bh }
@@ -470,6 +479,10 @@ function Combat:_drawSummary(view)
     { hover = inBtn(self.mx, self.my, self._btnChron), feel = Feel.state("combat.chron"), id = "combat.chron" })
   Button.draw(self._btnReplay.x, byb, sideW, bh, "secondary", T("ui.replay_btn"),
     { hover = inBtn(self.mx, self.my, self._btnReplay), feel = Feel.state("combat.replay"), id = "combat.replay" })
+
+  -- séparateur entre colonnes : hauteur = celle du contenu réel (jamais un trait qui pend dans le vide).
+  Draw.rect(divX, colTop, 1, math.max(leftBottom, byb + bh) - colTop, c.iron)
+  Draw.finish()
 end
 
 function Combat:drawOverlay(view)
