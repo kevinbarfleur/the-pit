@@ -24,6 +24,7 @@ local Button = require("src.ui.button")  -- boutons propres (CHRONICLE secondary
 local Feel = require("src.ui.feel")      -- JUICE : survol (glow/lift) + press (squash/flash)
 local Panel = require("src.ui.panel")    -- surfaces propres (résumé post-combat : ruban, cartes)
 local Units = require("src.data.units")  -- type d'unité (pip de portrait) + noms
+local MiniRig = require("src.render.minirig") -- frimousse de créature (portraits MVP / 1re perte du résumé)
 local Run = require("src.run.state")     -- WIN_TARGET (descente) pour le ruban de stats
 local T = require("src.core.i18n").t
 
@@ -293,17 +294,23 @@ local function causeColor(cause)
 end
 local function unitName(id) return (Units[id] and T("unit." .. id .. ".name")) or id end
 
--- Tuile de portrait (MVP / 1re perte) : socle laiton hachuré + pip de type (placeholder de sprite, fidèle au
--- mockup). RENDER pur, headless-safe (love.graphics gardé).
-local function portraitTile(x, y, sz, id, border)
+-- Tuile de portrait (MVP / 1re perte) : socle laiton hachuré + VRAIE frimousse de la créature (MiniRig,
+-- centrée/clippée, déterministe par id) + petit pip de type en coin. `fallen` voile la tuile (1re perte =
+-- tombée). RENDER pur, headless-safe (MiniRig retombe sur une boîte de repli sous mock LÖVE).
+local function portraitTile(view, x, y, sz, id, border, fallen)
   local c = Theme.c
   Panel.vgrad(x, y, sz, sz, { 0x2a / 255, 0x1f / 255, 0x10 / 255, 1 }, { 0x1d / 255, 0x15 / 255, 0x09 / 255, 1 })
-  Draw.rect(x, y, sz, sz, nil, border or c.iron, 1)
   local U = Units[id]
+  if U and MiniRig and MiniRig.draw then
+    MiniRig.draw(view, id, nil, x + 3, y + 3, sz - 6, sz - 6, 1)
+  end
+  if fallen then Draw.rect(x, y, sz, sz, { 0x05 / 255, 0x03 / 255, 0x06 / 255, 0.5 }) end -- voile de mort
+  Draw.rect(x, y, sz, sz, nil, border or c.iron, 1)
+  -- pip de type (coin haut-gauche) : lecture rapide de la famille même quand la silhouette est sombre.
   local tcol = (U and Theme.type(U.type).color) or c.bone
   if love and love.graphics then
     love.graphics.push(); love.graphics.translate(x + 9, y + 9); love.graphics.rotate(0.785)
-    Draw.setColor(tcol); love.graphics.rectangle("fill", -4, -4, 8, 8); love.graphics.pop(); Draw.reset()
+    Draw.setColor(tcol); love.graphics.rectangle("fill", -3, -3, 6, 6); love.graphics.pop(); Draw.reset()
   end
 end
 
@@ -443,7 +450,7 @@ function Combat:_drawSummary(view)
   if s.mvp then
     Panel.vgrad(rightX, ly, rightW, cardH, { 0x1a / 255, 0x14 / 255, 0x10 / 255, 1 }, { 0x0e / 255, 0x0b / 255, 0x09 / 255, 1 })
     Draw.rect(rightX, ly, rightW, cardH, nil, c.brass, 1)
-    portraitTile(rightX + 12, ly + 11, 62, s.mvp.id, c.brassL)
+    portraitTile(view, rightX + 12, ly + 11, 62, s.mvp.id, c.brassL)
     local tx = rightX + 87
     Draw.text(unitName(s.mvp.id), tx, ly + 12, c.ink, Theme.subhead(14))
     local bf = Theme.label(8); local btxt = T("ui.mvp"); local bw2 = bf:getWidth(btxt) + 18
@@ -455,7 +462,7 @@ function Combat:_drawSummary(view)
   if s.firstLoss then
     Panel.vgrad(rightX, ly, rightW, cardH, { 0x15 / 255, 0x0f / 255, 0x12 / 255, 1 }, { 0x0c / 255, 0x08 / 255, 0x10 / 255, 1 })
     Draw.rect(rightX, ly, rightW, cardH, nil, c.iron, 1)
-    portraitTile(rightX + 12, ly + 11, 62, s.firstLoss.id, c.iron)
+    portraitTile(view, rightX + 12, ly + 11, 62, s.firstLoss.id, c.iron, true)
     local tx = rightX + 87
     Draw.text(unitName(s.firstLoss.id), tx, ly + 12, c.ink2, Theme.subhead(14))
     local bf = Theme.label(8); local btxt = T("ui.first_to_fall") .. " · " .. string.format("%.1f", s.firstLoss.time) .. "s"
