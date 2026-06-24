@@ -21,6 +21,18 @@ local DMG_MERGE = 20   -- fenêtre de regroupement (frames) : un tic récent de 
 local DMG_VY0 = -1.35  -- vitesse verticale initiale (négatif = vers le haut)
 local DMG_G = 0.05     -- gravité (le nombre retombe -> arc)
 
+-- P2.2 — POIDS DU COUP (RENDER-only) : un gros coup secoue brièvement le TRANSFORM MONDE + flashe la cible
+-- en blanc ~2 frames. RIEN ne touche la SIM (jamais u.x/u.y/hp) : un offset render-local décroît dans update,
+-- appliqué/retiré DANS draw ; le flash est un re-tracé additif blanc du rig touché (tint render-local restauré).
+local SHAKE_MAX = 3.2     -- amplitude max du tremblement (px virtuels) — clampé petit (sprites restent nets)
+local SHAKE_DECAY = 0.55  -- décroissance par frame (retour au repos en ~quelques frames)
+local SHAKE_PER_HP = 0.16 -- conversion dégât->amplitude (un coup de ~20 PV ≈ amplitude max)
+local FLASH_DUR = 3       -- durée du flash blanc sur le rig touché (frames)
+-- P2.3 — MOMENT DE MORT (RENDER-only) : un mort doit « compter ». À l'event death -> burst de particules
+-- sombres/sang + flash ROUGE de la case (slot) qui s'éteint. Réutilise le pattern particule de affliction_fx.
+local DEATH_CELL_DUR = 30 -- durée du flash rouge de la case de mort (frames)
+local PHI = 0.6180339887  -- suite de Weyl (dispersion cosmétique déterministe, comme affliction_fx)
+
 local ArenaDraw = {}
 ArenaDraw.__index = ArenaDraw
 
@@ -31,6 +43,11 @@ function ArenaDraw.new(arena, palette)
     dead = {},       -- [unit] = age (fondu de mort, géré côté render)
     dmgNumbers = {}, -- nombres flottants
     impacts = {},    -- étincelles d'impact
+    shake = { x = 0, y = 0, mag = 0 }, -- P2.2 : offset render-local du transform monde (décroît dans update)
+    flash = {},      -- P2.2 : [unit] = age (flash blanc bref du rig touché)
+    deathFx = {},    -- P2.3 : { x, y, age } flashs de case de mort (rouge -> fondu)
+    dparts = {},     -- P2.3 : particules de mort (sang/débris sombres) {x,y,vx,vy,ay,age,life,col,size}
+    fxN = 0,         -- compteur Weyl (dispersion cosmétique déterministe)
     t = 0,           -- horloge de combat (mémorisée en update -> lue en draw pour les anims VFX)
   }, ArenaDraw)
   self.fx = AfflictionFx.new() -- couche d'afflictions (créée avant rebuild, qui peut la reset)
@@ -48,6 +65,13 @@ function ArenaDraw.new(arena, palette)
     -- on n'affiche un nombre que pour les dégâts qui touchent les PV (le pur-absorbé reste discret).
     local n = rec.hp
     if not (n and n > 0) then return end
+    -- P2.2 — POIDS DU COUP : un coup qui mord les PV secoue le monde (∝ dégât, clampé) + flashe la cible en
+    -- blanc. Seuls les coups un peu lourds (>=3 PV) déclenchent le shake -> les tics de DoT ne font pas trembler.
+    if n >= 3 then
+      local mag = math.min(SHAKE_MAX, n * SHAKE_PER_HP)
+      if mag > self.shake.mag then self.shake.mag = mag end -- garde le plus gros choc en cours
+    end
+    if rec.target then self.flash[rec.target] = 0 end -- (re)arme le flash blanc sur la cible
     local tgt, src, cause = rec.target, rec.source, rec.cause or "attack"
     -- REGROUPEMENT : additionne dans un nombre RÉCENT de même (cible, auteur, cause) plutôt que d'empiler
     -- un nouveau « 1 » par tic. Résout le flot de petits nombres des DoT (chaque stack tick séparément).
@@ -67,6 +91,27 @@ function ArenaDraw.new(arena, palette)
       x = tgt.x, y = tgt.y - 26, vx = vx, vy = DMG_VY0, age = 0,
     })
   end)
+  -- P2.3 — MOMENT DE MORT : la SIM émet "death" {unit} quand une entité tombe. Le RENDER pose un flash ROUGE
+  -- de la case + un petit burst de particules sombres/sang -> un mort « compte » visuellement (la disparition
+  -- du rig est sinon gérée par le fondu `dead`, trop discret seul). 100% RENDER, ne mute jamais la SIM.
+  arena.bus:on("death", function(u)
+    if not u then return end
+    self.deathFx[#self.deathFx + 1] = { x = u.x, y = u.y, age = 0 }
+    -- éclat de sang : ~10 fragments éjectés du torse (gravité), couleur sang/sang-séché, dispersion Weyl.
+    local cx, cy = u.x, u.y - 12
+    for i = 1, 10 do
+      self.fxN = self.fxN + 1
+      local ang = (i / 10) * 6.2832 + ((self.fxN * PHI) % 1 - 0.5) * 0.9
+      local spd = 0.9 + ((self.fxN * 0.7548776662) % 1) * 1.6
+      local dark = (i % 3 == 0)
+      self.dparts[#self.dparts + 1] = {
+        x = cx, y = cy, vx = math.cos(ang) * spd, vy = math.sin(ang) * spd - 0.4, ay = 0.09,
+        age = 0, life = 16 + ((self.fxN * 0.5698402909) % 1) * 12,
+        col = dark and Theme.c.bloodDeep or Theme.c.blood, size = dark and 1 or 2,
+      }
+    end
+  end)
+
   -- TRANSMISSION (Partie 2) : une affliction saute d'une unité à une autre (contagion / propagation à la
   -- mort). La SIM émet "spread" {from,to,family} ; le RENDER lance un projectile en arc + impact.
   arena.bus:on("spread", function(ev)
@@ -107,6 +152,7 @@ end
 -- (Re)construit les rigs à partir des unités courantes (initial + respawn de la démo).
 function ArenaDraw:rebuild()
   self.rigs = {}; self.dead = {}; self.dmgNumbers = {}; self.impacts = {}
+  self.shake = { x = 0, y = 0, mag = 0 }; self.flash = {}; self.deathFx = {}; self.dparts = {}
   if self.fx then self.fx:reset() end
   for _, u in ipairs(self.arena.units) do self:rigFor(u) end
 end
@@ -148,6 +194,42 @@ function ArenaDraw:update(frameDt, t)
   for i = #self.impacts, 1, -1 do
     local im = self.impacts[i]; im.age = im.age + frameDt
     if im.age >= 12 then table.remove(self.impacts, i) end
+  end
+
+  -- P2.2 — POIDS DU COUP : décroissance de l'amplitude de shake + recalcul d'un offset jitter (cosmétique,
+  -- love.math) APPLIQUÉ dans draw. L'amplitude se résorbe en quelques frames -> secousse sèche, pas un roulis.
+  local sk = self.shake
+  if sk.mag > 0.05 then
+    sk.mag = sk.mag - SHAKE_DECAY * frameDt
+    if sk.mag < 0 then sk.mag = 0 end
+    -- direction aléatoire par frame (love.math = cosmétique, hors SIM) -> tremblement, pas glissement.
+    local ang = (love and love.math and love.math.random() or 0.5) * 6.2832
+    sk.x = math.cos(ang) * sk.mag
+    sk.y = math.sin(ang) * sk.mag * 0.7 -- un peu plus discret en vertical (le sol « tient »)
+  else
+    sk.mag, sk.x, sk.y = 0, 0, 0
+  end
+
+  -- P2.2 — flash blanc sur les rigs touchés (âge ; expiré -> retiré). Pairs OK : transient RENDER (pas la SIM).
+  for u, age in pairs(self.flash) do
+    local na = age + frameDt
+    if na >= FLASH_DUR then self.flash[u] = nil else self.flash[u] = na end
+  end
+
+  -- P2.3 — flashs de case de mort (âge ; expiré -> retiré, backward swap-remove).
+  for i = #self.deathFx, 1, -1 do
+    local d = self.deathFx[i]; d.age = d.age + frameDt
+    if d.age >= DEATH_CELL_DUR then table.remove(self.deathFx, i) end
+  end
+  -- P2.3 — particules de mort (intégration Euler + gravité), backward swap-remove (comme affliction_fx).
+  local dp = self.dparts
+  for i = #dp, 1, -1 do
+    local p = dp[i]
+    p.age = p.age + frameDt
+    p.x = p.x + p.vx * frameDt
+    p.vy = p.vy + p.ay * frameDt
+    p.y = p.y + p.vy * frameDt
+    if p.age >= p.life then dp[i] = dp[#dp]; dp[#dp] = nil end
   end
 
   self.fx:update(self.arena.units, frameDt, t) -- émission + intégration des particules d'affliction
@@ -224,12 +306,73 @@ function ArenaDraw:drawArena()
   love.graphics.setColor(1, 1, 1, 1)
 end
 
+-- P2.2 — FLASH BLANC du rig touché : on RE-TRACE le rig en additif blanc, intensité = `k` (1 au coup -> 0).
+-- `Rig.draw` impose SA couleur ; on passe donc par son canal `anim.tint` (forcé blanc) + `anim.alpha`
+-- (porte l'intensité du flash). On SAUVE/RESTAURE ces deux champs : ils sont recalculés à chaque update,
+-- mais on reste propre dans la frame courante (aucune fuite). Blend additif -> « surbrillance », pas un aplat.
+function ArenaDraw:drawRigFlash(rig, k)
+  if k <= 0 or not rig.anim then return end
+  local blend = love.graphics.setBlendMode
+  local savedTint, savedAlpha = rig.anim.tint, rig.anim.alpha
+  rig.anim.tint = { 1, 1, 1 }
+  rig.anim.alpha = math.min(1, k) * 0.8 -- plafonné : un éclair, pas un blanchiment total du sprite
+  if blend then blend("add") end
+  Rig.draw(rig)
+  if blend then blend("alpha") end
+  rig.anim.tint, rig.anim.alpha = savedTint, savedAlpha
+end
+
+-- P2.3 — FLASH de CASE de mort : la case de l'unité tombée vire au ROUGE puis s'éteint (fondu) -> on VOIT
+-- où un monstre vient de mourir. Même boîte que drawGrid (W,H/pas de Place) pour rester aligné aux slots.
+function ArenaDraw:drawDeathFx()
+  local C = Theme.c
+  local W, H = 28, 30
+  love.graphics.setLineStyle("rough")
+  for _, d in ipairs(self.deathFx) do
+    local p = d.age / DEATH_CELL_DUR
+    local a = 1 - p
+    local x = math.floor(d.x - W / 2)
+    local y = math.floor(d.y + 2 - H)
+    local bl = C.blood
+    love.graphics.setColor(bl[1], bl[2], bl[3], a * 0.5)
+    love.graphics.rectangle("fill", x, y, W, H)
+    love.graphics.setColor(bl[1], bl[2], bl[3], a * 0.9)
+    love.graphics.rectangle("line", x, y, W, H)
+  end
+  love.graphics.setColor(1, 1, 1, 1)
+end
+
+-- P2.3 — ÉCLAT de mort (particules) : fragments sombres/sang éjectés du corps (additif léger -> chaud sans
+-- laver). Rendu APRÈS les rigs pour rester au-dessus. Carrés 1-2px qui retombent (gravité intégrée en update).
+function ArenaDraw:drawDeathParts()
+  local blend = love.graphics.setBlendMode
+  if blend then blend("add") end
+  for _, p in ipairs(self.dparts) do
+    local life = 1 - p.age / p.life
+    local col = p.col or Theme.c.blood
+    love.graphics.setColor(col[1], col[2], col[3], life)
+    love.graphics.rectangle("fill", math.floor(p.x), math.floor(p.y), p.size, p.size)
+  end
+  if blend then blend("alpha") end
+  love.graphics.setColor(1, 1, 1, 1)
+end
+
 -- ───────────────────────── Rendu monde (canvas virtuel) ─────────────────────────
 function ArenaDraw:draw(showBones)
   local units = self.arena.units
 
-  self:drawArena() -- scène partagée (sol de fosse + ligne de front), tout au fond
+  -- P2.2 — POIDS DU COUP : tout le monde rendu sous un OFFSET de shake render-local (push/translate/pop).
+  -- Offset purement cosmétique (calculé en update depuis les events damage), JAMAIS écrit dans la SIM ;
+  -- appliqué ici et retiré en fin de draw -> aucune dérive d'état. La scène de fond (drawArena) reste FIXE
+  -- pour ancrer l'œil (seuls les combattants + leurs fx tremblent).
+  self:drawArena() -- scène partagée (sol de fosse + ligne de front), tout au fond — NON secouée
+
+  local sk = self.shake
+  love.graphics.push()
+  love.graphics.translate(sk.x or 0, sk.y or 0)
+
   self:drawGrid() -- repères de slots (derrière ombres + unités)
+  self:drawDeathFx() -- P2.3 : flashs de case de mort, sur le sol, sous les rigs survivants
 
   for _, u in ipairs(units) do
     local c = self.rigs[u]
@@ -239,11 +382,20 @@ function ArenaDraw:draw(showBones)
   end
   love.graphics.setColor(1, 1, 1, 1)
 
-  for _, u in ipairs(units) do Rig.draw(self:rigFor(u)) end
+  for _, u in ipairs(units) do
+    local rig = self:rigFor(u)
+    Rig.draw(rig)
+    -- P2.2 — flash blanc bref : on RE-TRACE le rig en blanc additif (tint render-local restauré juste après).
+    -- `Rig.draw` impose sa propre couleur -> on passe par son canal `anim.tint`/`char.alpha` (recalculés à
+    -- chaque update, donc cette mutation transitoire DANS draw est sans incidence sur la frame suivante).
+    local fa = self.flash[u]
+    if fa then self:drawRigFlash(rig, 1 - fa / FLASH_DUR) end
+  end
 
   -- Afflictions : matière (sang/spores/bulles/mouches) sur les rigs, puis glow additif (flammes/chaleur).
   self.fx:drawBody(units, self.t)
   self.fx:drawGlow(units, self.t)
+  self:drawDeathParts() -- P2.3 : éclat de sang/débris de mort (additif léger), au-dessus des rigs
 
   love.graphics.setLineStyle("rough")
   for _, u in ipairs(units) do
@@ -272,6 +424,8 @@ function ArenaDraw:draw(showBones)
 
   -- Contour de bouclier (shader) : en dernier, sur la silhouette complète (lit self.rigs aplatis en canvas).
   self.fx:drawOutlines(units, self.rigs, self.t)
+
+  love.graphics.pop() -- P2.2 : fin de l'offset de shake render-local (le transform revient à l'identique)
 
   if showBones then self:drawBones() end
 end

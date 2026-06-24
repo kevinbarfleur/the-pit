@@ -78,6 +78,37 @@ function Ambient.new(seed)
   for i = 1, 16 do
     self.embers[i] = { x = r() * W, base = 420 + r() * 220, ph = r() * 6.28, sp = 0.4 + r() * 0.5, rise = 180 + r() * 120 }
   end
+
+  -- ── P1 — PROFONDEUR (combat) : remplir le noir de SENS, le tout DÉTERMINISTE (même `r()` seedé) ──
+  -- P1.1 — Architecture du PUITS derrière le camp ennemi : quelques piliers/trapèzes near-black qui montent
+  -- du coin bas-droite et se fondent dans la vignette (« on devine des structures dans la fosse »). Stockés
+  -- en data (sommets dérivés du seed) -> draw plat, aucun coût de génération par frame.
+  self.pillars = {}
+  for i = 1, 5 do
+    local bx = W * (0.58 + r() * 0.36)              -- ancrés à droite (camp ennemi), jusqu'au bord
+    local bw = (54 + r() * 64)                       -- largeur de base (assez large pour lire la masse)
+    local h  = (260 + r() * 230)                     -- hauteur (montent dans la pénombre)
+    local taper = 0.30 + r() * 0.28                  -- rétrécissement vers le haut (trapèze)
+    self.pillars[i] = { bx = bx, bw = bw, h = h, taper = taper, lean = (r() - 0.5) * 26 }
+  end
+
+  -- P1.3 — Braises DENSES de la zone de combat : 2e banc concentré autour du centre (design x~640), plus
+  -- chaud et plus serré que les braises de fond -> la confrontation « chauffe » au milieu du champ.
+  self.cembers = {}
+  for i = 1, 28 do
+    self.cembers[i] = {
+      x = W * 0.5 + (r() - 0.5) * 380,               -- resserrées sur le centre du champ
+      base = 460 + r() * 150, ph = r() * 6.28,
+      sp = 0.5 + r() * 0.6, rise = 130 + r() * 120, size = (r() > 0.55) and 2 or 1,
+    }
+  end
+
+  -- P1.2 — Bande de BROUILLARD qui dérive en travers de la ligne de front (mi-hauteur = niveau des yeux,
+  -- design y≈430..560). 3 nappes très basse-alpha qui glissent horizontalement (sin lent, déphasées).
+  self.fog = {}
+  for i = 1, 3 do
+    self.fog[i] = { y = 440 + i * 38, rx = 340 + r() * 160, ry = 70 + r() * 40, ph = r() * 6.28, sp = 0.4 + r() * 0.5 }
+  end
   return self
 end
 
@@ -109,6 +140,39 @@ function Ambient:draw(mode)
     drawGlow(W * 0.5, H - 6, 380, 260, c.blood, pulse)
     drawGlow(W * 0.5, H + 24, 210, 160, c.bloodBright, pulse * 0.7)
 
+    -- ── P1.1 — ARCHITECTURE DU PUITS (derrière le camp ennemi, à droite) : une « gorge » lointaine (halo +
+    -- anneaux) DERRIÈRE laquelle se SILHOUETTENT des piliers near-black qui montent du bas-droite. L'ordre est
+    -- la clé de la profondeur : on pose D'ABORD la lueur, PUIS les structures sombres par-dessus -> elles se
+    -- découpent en contre-jour (sinon : du noir sur du noir = invisible). Tout calé côté ENNEMI (x ~0.70 W).
+    local throatX, throatY = W * 0.70, 350
+    -- Lueur de gouffre : nappe chaude diffuse (HAUTE -> rétro-éclaire les piliers) + anneaux de pierre
+    -- concentriques (la structure du puits lointain) + cœur de braise. Plusieurs passes empilées = un vrai
+    -- creux lumineux derrière l'ennemi (et non un simple disque plat).
+    drawGlow(throatX, throatY, 320, 320, c.bgEmber, 0.55)
+    drawGlow(throatX, throatY + 20, 200, 200, c.blood, 0.13)
+    for ring = 4, 1, -1 do
+      local rad = 60 + ring * 52
+      drawGlow(throatX, throatY, rad, rad * 0.82, c.stone600, 0.05 + (4 - ring) * 0.025)
+    end
+    drawGlow(throatX, throatY, 56, 48, c.ember, 0.18) -- braise au fond de la gorge (cœur chaud)
+    -- Piliers : trapèzes pleins near-black, SILHOUETTÉS sur la lueur ci-dessus (la base au sol, sommet rétréci,
+    -- légère inclinaison). `stone900` (et non `void` pur) -> juste assez au-dessus du fond pour lire l'arête.
+    love.graphics.setColor(c.stone900[1], c.stone900[2], c.stone900[3], 1)
+    for _, p in ipairs(self.pillars) do
+      local topY = H - p.h
+      local halfB, halfT = p.bw * 0.5, p.bw * 0.5 * p.taper
+      local cxB, cxT = p.bx, p.bx + p.lean
+      love.graphics.polygon("fill",
+        cxB - halfB, H, cxB + halfB, H, cxT + halfT, topY, cxT - halfT, topY)
+    end
+    -- Arête éclairée (à peine) : un fin liseré `stone600` sur le flanc gauche des piliers les détache du noir.
+    love.graphics.setColor(c.stone600[1], c.stone600[2], c.stone600[3], 0.16)
+    love.graphics.setLineWidth(1)
+    for _, p in ipairs(self.pillars) do
+      local topY = H - p.h
+      love.graphics.line(p.bx - p.bw * 0.5, H, p.bx + p.lean - p.bw * 0.5 * p.taper, topY)
+    end
+
     -- Stalactites.
     love.graphics.setColor(c.void[1], c.void[2], c.void[3], 1)
     for _, s in ipairs(self.stals) do
@@ -124,6 +188,20 @@ function Ambient:draw(mode)
       love.graphics.rectangle("fill", e.x, y, 3, 3)
     end
 
+    -- P1.3 — Braises DENSES de la zone de combat (2e banc, resserré sur le centre) : plus chaudes/vives ->
+    -- la confrontation chauffe au milieu. Même intégration que les braises de fond, alpha un peu plus haut.
+    for _, e in ipairs(self.cembers) do
+      local prog = ((t * e.sp * 0.022) + e.ph) % 1
+      local y = e.base - prog * e.rise
+      local a = math.sin(prog * 3.14159) * 0.85
+      love.graphics.setColor(c.ember[1], c.ember[2], c.ember[3], a)
+      love.graphics.rectangle("fill", e.x, y, e.size, e.size)
+      if a > 0.5 then -- cœur chaud sur les plus vives
+        love.graphics.setColor(c.bloodBright[1], c.bloodBright[2], c.bloodBright[3], (a - 0.5) * 0.6)
+        love.graphics.rectangle("fill", e.x, y, 1, 1)
+      end
+    end
+
     -- Brume CENTRALE (mi-hauteur = niveau des YEUX du combat) : un grand halo chaud diffus remplit le « noir
     -- mort » du milieu, là où les deux camps s'affrontent (le sol de fosse vit à design y~470). Gardé par
     -- `full` -> n'apparaît qu'en menu/combat (le mode calme build/grimoire reste focalisé sur le plateau).
@@ -131,6 +209,15 @@ function Ambient:draw(mode)
     -- Voile de sang plus sombre, plus serré : ancre la brume vers la gueule sans laver les sprites ni
     -- sur-saturer le bas du cadre (calé sur la retenue chaude du menu = la réf de DA).
     drawGlow(W * 0.5, 455, 360, 210, c.blood, 0.08)
+
+    -- P1.2 — Bande de BROUILLARD qui DÉRIVE en travers de la ligne de front (mi-hauteur, y≈430..560). Nappes
+    -- très basse-alpha (`bgWarm`/`stone700`) qui glissent horizontalement (sin lent, déphasées) -> de
+    -- l'atmosphère AU NIVEAU DES YEUX du combat, sans laver les sprites (alpha plafonné ~0.06).
+    for i, f in ipairs(self.fog) do
+      local drift = math.sin(t * 0.01 * f.sp + f.ph) * 140 -- va-et-vient horizontal lent
+      local col = (i % 2 == 0) and c.bgWarm or c.stone700
+      drawGlow(W * 0.5 + drift, f.y, f.rx, f.ry, col, 0.07)
+    end
   end
 
   -- Poussière (toujours présente, discrète).
