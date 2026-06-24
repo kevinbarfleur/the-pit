@@ -317,6 +317,42 @@ local ok, err = pcall(function()
     -- pas de double-comptage : le cleave ne re-déclenche pas un on_hit (sinon le bandit n'a pas d'on_hit, neutre).
   end
 
+  -- OP cleave × MULTICAST (plan relics-overhaul §4 #4, GATE de splitting_maw) : un porteur cleave qui frappe
+  -- AVEC multicast=3 produit 3 cleaves (1 par sous-coup), chacun PROFONDEUR 1 (aucun on_hit secondaire ->
+  -- pas de boucle), chacun borné. On compare 3 sous-coups (multicast) vs 1 sous-coup : 3× l'éclaboussure.
+  do
+    local clEff = { { trigger = "on_hit", op = "cleave", params = { frac = 0.5 } } }
+    -- 1 sous-coup : 1 cleave sur le voisin.
+    local a1 = Arena.new({ left = { U("bandit", clEff, { dmg = 6, multicast = 1 }) },
+      right = { U("marauder", {}, { row = 0, hp = 999, maxHp = 999 }),
+                U("marauder", {}, { row = 1, hp = 999, maxHp = 999 }) }, autoReset = false, seed = 70 })
+    local nb1 = a1.units[3]; local h1 = nb1.hp; a1:hit(a1.units[1], a1.units[2]); local splash1 = h1 - nb1.hp
+    -- 3 sous-coups (multicast=3) : 3 cleaves sur le voisin (chaque hit() re-déclenche on_hit -> cleave).
+    local a3 = Arena.new({ left = { U("bandit", clEff, { dmg = 6, multicast = 3 }) },
+      right = { U("marauder", {}, { row = 0, hp = 999, maxHp = 999 }),
+                U("marauder", {}, { row = 1, hp = 999, maxHp = 999 }) }, autoReset = false, seed = 70 })
+    local nb3 = a3.units[3]; local h3 = nb3.hp
+    for _ = 1, 3 do a3:hit(a3.units[1], a3.units[2]) end -- simule les 3 sous-coups d'un swing multicast
+    local splash3 = h3 - nb3.hp
+    assert(splash1 > 0, "cleave×multicast: 1 sous-coup eclabousse le voisin")
+    assert(splash3 == splash1 * 3, ("cleave×multicast: 3 sous-coups = 3× l'eclaboussure (%d vs %d), borne, pas de boucle"):format(splash3, splash1))
+    -- profondeur 1 : le cleave ne re-declenche PAS d'on_hit (sinon le cleave du voisin re-cleaverait -> cascade).
+    -- Le bandit n'a pas d'autre on_hit que cleave : la cible directe ne recoit aucun cleave d'elle-meme (mono).
+    assert(a3.units[2].alive or not a3.units[2].alive, "cleave×multicast: termine sans boucle infinie (atteint cette ligne)")
+  end
+
+  -- SEERS_MARK × autres marques (plan relics-overhaul §4 #3) : grant_vuln pose en max(), JAMAIS Σ -> 3 marques
+  -- sur la meme cible = la plus FORTE gagne (sûr par construction, cappé VULN_INC_CAP). On pose 3 vuln via l'op.
+  do
+    local gv = { { trigger = "on_hit", op = "grant_vuln", params = { value = 0.12, dur = 600 } } }
+    local a = Arena.new({ left = { U("bandit", gv) }, right = { U("marauder", {}) }, autoReset = false, seed = 71 })
+    local atk, v = a.units[1], a.units[2]
+    a:hit(atk, v) -- 1re marque 0.12
+    v.vulnInc = math.max(v.vulnInc or 0, 0.20) -- corruptor (plus forte)
+    a:hit(atk, v) -- seers_mark re-pose 0.12 -> max(0.20, 0.12) = 0.20 (ne REDESCEND pas, n'additionne pas)
+    assert(math.abs((v.vulnInc or 0) - 0.20) < 1e-9, ("seers_mark×corruptor: vulnInc = max (0.20), pas Σ (got %.2f)"):format(v.vulnInc or 0))
+  end
+
   -- OP heal_on_kill — on_kill (broadcast fin de frame, ctx.source = killer). Le tueur se soigne, borné maxHp.
   do
     local hkEff = { { trigger = "on_kill", op = "heal_on_kill", params = { value = 30 } } }

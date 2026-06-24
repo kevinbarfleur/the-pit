@@ -42,6 +42,20 @@ local CASES = {
   { "hollow_choir", "bleed_anneau_perfect", "sustain_carre" },
   { "everburn", "burn_ligne_perfect", "sustain_carre" },
   { "open_wounds", "bleed_anneau_perfect", "sustain_carre" },
+
+  -- ── REFONTE 2026-06 (relics-overhaul §4) — les 8/9 NOUVELLES dans leur matchup-maison. Garde-fous moteur
+  -- testés : empower/multicast/vuln cappés à la lecture ; cleave profondeur 1 ; dmgReduce sur cause=attack. ──
+  -- PRIORITÉ #1 : echo_crown × hookjaw (2 sources multicast role:front) sur le bleed (qui PORTE hookjaw) face
+  -- au tank : le cap MULTICAST_MAX=3 doit tenir (1 crown + 1 hookjaw = 2 ≤ 3), aucun one-shot.
+  { "echo_crown", "bleed_anneau_perfect", "tank_carre" },
+  { "blood_banner", "bruiser_carre", "tank_carre" },            -- empower team + (bruiser sans empower-unité : somme cappée 1.5)
+  { "seers_mark", "bruiser_carre", "tank_carre" },              -- marque (vuln max(), cappé 0.5) -> aide a percer le mur
+  { "carrion_feast", "bruiser_carre", "tank_carre" },           -- heal-on-kill (sustain de bruiser)
+  { "second_plague", "bruiser_carre", "tank_carre" },           -- inocule un venin leger (ouvre un 2e DoT)
+  { "tide_caller", "tank_carre", "bruiser_carre" },             -- dmgReduce team SUR LE TANK vs le bruiser (cas #5 : empilement defensif)
+  { "bait_lantern", "bruiser_carre", "tank_carre" },            -- lifesteal team (sustain offensif)
+  { "gravediggers_due", "bruiser_carre", "tank_carre" },        -- execute (+50% sous 25% PV) : finish
+  { "splitting_maw", "bruiser_carre", "tank_carre" },           -- cleave team (frappe large)
 }
 
 local function comp(id, side) return Compbuild.toComp(Compositions.byId[id], side) end

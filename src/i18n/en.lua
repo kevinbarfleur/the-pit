@@ -716,6 +716,37 @@ return {
   ["relic.grave_robbers_cut.effect"] = "Selling a unit refunds its full cost.",
   ["relic.grave_robbers_cut.flavor"] = "Nothing buried is ever truly lost to one who digs.",
 
+  -- ── Reliques REFONTE 2026-06 (relics-overhaul) — valeurs CONCRÈTES affichées, ton grimdark canon. ──
+  -- MOYEN (Or) — V2.
+  ["relic.blood_banner.name"] = "BLOOD BANNER",
+  ["relic.blood_banner.effect"] = "Your whole pack strikes for +10% more.",
+  ["relic.blood_banner.flavor"] = "A man's hide raised over the pit; beneath it, everyone hits harder.",
+  ["relic.seers_mark.name"] = "THE SEER'S MARK",
+  ["relic.seers_mark.effect"] = "Your hits mark the target: it takes +15% of everything for ~2s.",
+  ["relic.seers_mark.flavor"] = "He saw too far, and now his eyes show you to all that bites.",
+  ["relic.carrion_feast.name"] = "CARRION FEAST",
+  ["relic.carrion_feast.effect"] = "Each enemy slain returns 5 health to the killer.",
+  ["relic.carrion_feast.flavor"] = "The Pit wastes nothing. What falls feeds what still stands.",
+  ["relic.second_plague.name"] = "THE SECOND PLAGUE",
+  ["relic.second_plague.effect"] = "Your hits seed a light venom where none yet festers.",
+  ["relic.second_plague.flavor"] = "One sore calls a second, and the second does not wait for the first.",
+  ["relic.tide_caller.name"] = "TIDE-CALLER",
+  ["relic.tide_caller.effect"] = "Your whole congregation takes 8% less.",
+  ["relic.tide_caller.flavor"] = "The wall remembers being a saint; it endures still, out of habit.",
+  ["relic.bait_lantern.name"] = "BAIT-LANTERN",
+  ["relic.bait_lantern.effect"] = "Every hit your team lands returns 5% of the damage as health.",
+  ["relic.bait_lantern.flavor"] = "Light the lantern and let hunger do the rest. What nears, we drink.",
+  -- HAUT (Prismatique) — V3.
+  ["relic.echo_crown.name"] = "ECHO CROWN",
+  ["relic.echo_crown.effect"] = "Your most forward unit strikes twice per blow.",
+  ["relic.echo_crown.flavor"] = "The crown remembers every blow it was dealt, and gives it back, again, again.",
+  ["relic.gravediggers_due.name"] = "THE GRAVEDIGGER'S DUE",
+  ["relic.gravediggers_due.effect"] = "Your blows finish the work: +50% against any enemy below 25% health.",
+  ["relic.gravediggers_due.flavor"] = "Below the quarter you are no longer prey; you are a debt come due.",
+  ["relic.splitting_maw.name"] = "SPLITTING MAW",
+  ["relic.splitting_maw.effect"] = "Your strikes splash the target's neighbours for 40% of the blow.",
+  ["relic.splitting_maw.flavor"] = "One mouth was never enough. It bites, and the whole row bleeds.",
+
   -- ── Proving Ground (banc d'essai) : UI + archetypes + variants + scenarios + notes de compo (ASCII) ──
   ["pg.title"] = "The Proving Ground",
   ["pg.subtitle"] = "Pick a trial. WATCH to spectate a match, SIM to batch hundreds.",

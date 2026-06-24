@@ -581,6 +581,193 @@ local ICONS = {
     "    KKSSKK      ",
     "     KKKK       ",
   },
+
+  -- ════════════════════════ REFONTE 2026-06 (relics-overhaul §V6) — PLACEHOLDERS ════════════════════════
+  -- ⚠️ Les 9 icônes ci-dessous sont des PLACEHOLDERS FONCTIONNELS (16×16 + palette + contour 'K' + 1 focus
+  --    lumineux) -> elles passent tests/relics_icons.lua, mais ne sont PAS de l'art fini. À UPGRADER par
+  --    asset-forge / pixel-art-master (DA alignée sur les 25 ci-dessus, vrai « objet maudit qui luit »).
+  --    Liste à upgrader : blood_banner, seers_mark, carrion_feast, second_plague, tide_caller, bait_lantern,
+  --    echo_crown, gravediggers_due, splitting_maw.
+
+  -- BLOOD BANNER (empower team) — bannière de peau sur hampe d'os. Étoffe sang (R/q focus q), hampe os (S/K).
+  blood_banner = {
+    "    K           ",
+    "   KSKKKKKK     ",
+    "   KSqRRRRqK    ",
+    "   KSRRRRRRK    ",
+    "   KSRqRRRRK    ",
+    "   KSRRRRqRK    ",
+    "   KSRRRRRRK    ",
+    "   KSqRRRqRK    ",
+    "   KSRRRRRK     ",
+    "   KSRRRqK      ",
+    "   KSKKKK       ",
+    "   KSK          ",
+    "   KSK          ",
+    "   KSK          ",
+    "   KSK          ",
+    "    K           ",
+  },
+
+  -- SEER'S MARK (vuln on_hit) — œil ouvert au creux d'une main, iris fendu (focus z/B = lueur arcane froide).
+  seers_mark = {
+    "                ",
+    "                ",
+    "     KKKKKK     ",
+    "   KKbbbbbbKK   ",
+    "  KbbbbbbbbbbK  ",
+    " KbbBBBBBBBbbK  ",
+    " KbBBzKzKBBbK   ",
+    "KbbBzKBBKzBbbK  ",
+    " KbBBzKzKBBbK   ",
+    " KbbBBBBBBBbbK  ",
+    "  KbbbbbbbbbbK  ",
+    "   KKbbbbbbKK   ",
+    "     KKKKKK     ",
+    "                ",
+    "                ",
+    "                ",
+  },
+
+  -- CARRION FEAST (heal-on-kill) — gueule qui avale un crâne (focus W = ivoire). Mâchoire chair (R/q), crâne os.
+  carrion_feast = {
+    "                ",
+    "  KKKK    KKKK  ",
+    " KRRRRK  KRRRRK ",
+    " KRqRRKKKKRRqRK ",
+    " KRRRSWWSRRRRK  ",
+    "  KRRSWWWWSRRK  ",
+    "  KRRSWKKWSRRK  ",
+    "  KRRSWWWWSRRK  ",
+    "  KRRRSWWSRRRK  ",
+    " KRqRRKKKKRRqRK ",
+    " KRRRRK  KRRRRK ",
+    " KRRRK    KRRRK ",
+    "  KKK      KKK  ",
+    "                ",
+    "                ",
+    "                ",
+  },
+
+  -- SECOND PLAGUE (grant-if-absent poison) — deux plaies suintantes jumelles (focus z = poison clair).
+  second_plague = {
+    "                ",
+    "    KKK   KKK   ",
+    "   KZZZK KZZZK  ",
+    "  KZzzZKKZzzZK  ",
+    "  KZzZZZZZZzZK  ",
+    "  KZZZzZZzZZZK  ",
+    "  KZzZZZZZZzZK  ",
+    "   KZZzZZzZZK   ",
+    "   KZZZZZZZZK   ",
+    "    KZzZZzZK    ",
+    "    KZZZZZK     ",
+    "     KZzZK      ",
+    "     KZZK       ",
+    "      KK        ",
+    "                ",
+    "                ",
+  },
+
+  -- TIDE-CALLER (dmgReduce team) — vitrail brisé en forme d'aile (focus B/W = verre clair froid).
+  tide_caller = {
+    "                ",
+    "      KKKK      ",
+    "    KKbWWbKK    ",
+    "   KbWBBBBWbK   ",
+    "  KbWBbiibBWbK  ",
+    "  KbBbiKKibBbK  ",
+    " KbWBiKaaKiBWbK ",
+    " KbWBiKaaKiBWbK ",
+    "  KbBbiKKibBbK  ",
+    "  KbWBbiibBWbK  ",
+    "   KbWBBBBWbK   ",
+    "    KKbWWbKK    ",
+    "      KKKK      ",
+    "                ",
+    "                ",
+    "                ",
+  },
+
+  -- BAIT-LANTERN (lifesteal team) — lanterne abyssale, fil de chair (focus Q = braise dans le verre).
+  bait_lantern = {
+    "      KK        ",
+    "     KqRK       ",
+    "      KK        ",
+    "     KKKK       ",
+    "    KaiiaK      ",
+    "   KbBQQBbK     ",
+    "   KBQQQQBK     ",
+    "   KBQrrQBK     ",
+    "   KBQrrQBK     ",
+    "   KBQQQQBK     ",
+    "   KbBQQBbK     ",
+    "    KaiiaK      ",
+    "     KKKK       ",
+    "      KK        ",
+    "     KqRK       ",
+    "      K         ",
+  },
+
+  -- ECHO CROWN (multicast role:front) — diadème noir à dents redoublées (focus Y/T = or terni double).
+  echo_crown = {
+    "                ",
+    "                ",
+    "  K  K  K  K K  ",
+    "  KTKTKTKTKTKK  ",
+    " KTYKYKYKYKYKTK ",
+    " KTYYYYYYYYYYTK ",
+    " KTYyYyYyYyYyTK ",
+    " KTYYYYYYYYYYTK ",
+    "  KTYyYyYyYyTK  ",
+    "  KKTYYYYYYTKK  ",
+    "    KKTYYTKK    ",
+    "      KKKK      ",
+    "                ",
+    "                ",
+    "                ",
+    "                ",
+  },
+
+  -- GRAVEDIGGER'S DUE (execute) — faux ébréchée sur un tas d'os (focus I/W = fil d'acier + ivoire).
+  gravediggers_due = {
+    "           K    ",
+    "          KaK   ",
+    "         KaIK   ",
+    "        KaIK    ",
+    "      KKaIK     ",
+    "    KKaIIK      ",
+    "  KKaIIK        ",
+    " KaIIKK         ",
+    " KaIK           ",
+    "  KK   KWSK     ",
+    "  KaK KSWWSK    ",
+    "  KaK KSWSKK    ",
+    "  KaK  KSWSK    ",
+    "  KaK KWSWSWK   ",
+    " KaaaKKSWSWSK   ",
+    "  KKK  KKKKK    ",
+  },
+
+  -- SPLITTING MAW (cleave) — mâchoire éclatée en éventail (focus q = sang vif sur les crocs).
+  splitting_maw = {
+    "                ",
+    "  K  K  K  K K  ",
+    "  KqK KqK KqKK  ",
+    " KRqKKRqKKRqRK  ",
+    " KRRKKRRKKRRRK  ",
+    "  KRRRRRRRRRK   ",
+    "  KRRRRRRRRRK   ",
+    "   KRRRRRRRK    ",
+    "   KRRRRRRRK    ",
+    "  KRRKKRRKKRRK  ",
+    " KRqKKRqKKRqRK  ",
+    "  KqK KqK KqKK  ",
+    "  K  K  K  K K  ",
+    "                ",
+    "                ",
+    "                ",
+  },
 }
 
 -- ─────────────────────────── API ───────────────────────────
@@ -597,6 +784,9 @@ RelicGen.order = {
   -- vague 5 : reliques d'économie / boutique (append-only)
   "usurers_ledger", "tithe_bowl", "paupers_boon", "grave_robbers_cut",
   "beggars_lantern", "black_summons", "carrion_ledger",
+  -- refonte 2026-06 (relics-overhaul) — PLACEHOLDERS (append-only). À upgrader par asset-forge.
+  "blood_banner", "seers_mark", "carrion_feast", "second_plague", "tide_caller", "bait_lantern",
+  "echo_crown", "gravediggers_due", "splitting_maw",
 }
 
 -- Grille brute d'une relique (ou nil si id inconnu). DATA pure (aucun love.*).

@@ -410,6 +410,93 @@ local ok, err = pcall(function()
     print("  reliques : maxRelicTier 2/3/4 / offre tiérée + fallback / determinisme / refus->or OK")
   end
 
+  -- ── CADENCE ~8/run (refonte reliques 2026-06, plan relics-overhaul §3) : 3 canaux. On modélise ICI la
+  -- DÉCISION du host (main.lua:finishCombat) : à chaque combat résolu, quel écran relicpick s'ouvre.
+  --   canal 1 (marchand) : tous les 3 COMBATS (wins+losses % 3 == 0).
+  --   canal 3 (jalon)    : à la 3e ET 6e VICTOIRE, plancher minTier="mid". PRIORITÉ + return -> consomme le
+  --                        créneau marchand (anti double-comptage §3.4). ──
+  do
+    local Relics = require("src.data.relics")
+    -- Réplique de la cascade de décision du host (le `return` = priorité du jalon sur le marchand).
+    local function channelFor(run, win)
+      if win and (run.wins == 3 or run.wins == 6) then
+        local ch = run:rollRelicChoices(3, { minTier = "mid" })
+        if #ch > 0 then return "milestone", ch end
+        return nil
+      end
+      local combats = run.wins + run.losses
+      if combats % 3 == 0 then
+        local ch = run:rollRelicChoices(3)
+        if #ch > 0 then return "merchant", ch end
+      end
+      return nil
+    end
+
+    -- 10 VICTOIRES D'AFFILÉE -> EXACTEMENT 2 jalons (w3, w6) + le bon compte marchand, sans double à w3/w6.
+    do
+      local r = RunState.new(4242)
+      local milestones, merchants = {}, {}
+      for _ = 1, 10 do
+        r:resolve(true) -- victoire : wins++ (l'or n'est crédité qu'au startRound, hors sujet ici)
+        local ch = channelFor(r, true)
+        if ch == "milestone" then milestones[#milestones + 1] = r.wins
+        elseif ch == "merchant" then merchants[#merchants + 1] = r.wins end
+        if r:isOver() then break end -- 10 victoires = ascension (s'arrête)
+      end
+      -- jalons : exactement {3, 6} (la 10e victoire termine le run avant un 3e jalon hypothétique à w9).
+      assert(#milestones == 2, "cadence : exactement 2 jalons sur 10 victoires (got " .. #milestones .. ")")
+      assert(milestones[1] == 3 and milestones[2] == 6, "cadence : jalons aux victoires 3 et 6")
+      -- ANTI DOUBLE-COMPTAGE : à w3 (combats=3, %3==0) le jalon PRIORISE -> AUCUN marchand servi à w3 ni w6.
+      for _, w in ipairs(merchants) do
+        assert(w ~= 3 and w ~= 6, "anti double-comptage : aucun marchand servi en même temps qu'un jalon (w=" .. w .. ")")
+      end
+      -- marchand : combats multiples de 3 HORS w3/w6 -> w9 seul (w3,w6 happés par le jalon). Cadence totale = 2+1.
+      assert(#merchants == 1 and merchants[1] == 9, "cadence : 1 seul marchand (w9), w3/w6 consommés par le jalon")
+    end
+
+    -- PLANCHER minTier="mid" : le jalon ne sert JAMAIS de relique band "low" (sinon cérémonie = stat-sticks).
+    do
+      for _, w in ipairs({ 3, 6 }) do
+        local r = RunState.new(900 + w); r.wins = w
+        local ch = r:rollRelicChoices(3, { minTier = "mid" })
+        assert(#ch == 3, "jalon : 3 choix a w=" .. w)
+        for _, id in ipairs(ch) do
+          assert((Relics[id].band or "low") ~= "low", "jalon minTier=mid : aucune relique band low (w=" .. w .. ", " .. id .. ")")
+        end
+      end
+    end
+
+    -- GARDE DE DIVERSITÉ DE TRIO (plan §3.5) : au plus 1 ampli-famille (op relic_affliction_inc) et 1 éco
+    -- (champ .eco) par trio. On force un état où le pool nominal est riche en amplis/éco et on vérifie la garde.
+    do
+      local function classOf(id)
+        if Relics[id].op == "relic_affliction_inc" then return "ampli" end
+        if Relics[id].eco then return "eco" end
+        return nil
+      end
+      -- Balaye plusieurs seeds : chaque trie respecte la garde (mid plafond -> amplis+éco présents dans le pool).
+      for seed = 1, 40 do
+        local r = RunState.new(seed * 7); r.wins = 3 -- plafond tier 3 -> amplis (tier 2) ET éco (tier 2-3) offrables
+        local ch = r:rollRelicChoices(3)
+        local nAmpli, nEco = 0, 0
+        for _, id in ipairs(ch) do
+          local c = classOf(id)
+          if c == "ampli" then nAmpli = nAmpli + 1 elseif c == "eco" then nEco = nEco + 1 end
+        end
+        assert(nAmpli <= 1, "garde de trio : au plus 1 ampli-famille (seed " .. seed .. ", got " .. nAmpli .. ")")
+        assert(nEco <= 1, "garde de trio : au plus 1 éco (seed " .. seed .. ", got " .. nEco .. ")")
+      end
+    end
+
+    -- DÉTERMINISME du jalon : même seed + mêmes wins -> même offre (rejouable, comme le marchand).
+    do
+      local function pick(seed) local r = RunState.new(seed); r.wins = 6; return table.concat(r:rollRelicChoices(3, { minTier = "mid" }), ",") end
+      assert(pick(55555) == pick(55555), "jalon : offre seedée déterministe (rejouable)")
+    end
+
+    print("  cadence : canal 3 (jalon w3/w6) + minTier plancher + garde de trio + anti double-comptage OK")
+  end
+
   -- ── Invariants sous fuzz d'actions seedées ──
   do
     local gen = love.math.newRandomGenerator(20260620)

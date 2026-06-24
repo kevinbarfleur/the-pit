@@ -23,6 +23,8 @@
 --     fam     = "flesh"|"order"|"bone"|"arcane"|"abyss"   (teinte de la gemme ; défaut "bone")
 --     affKey  = clé d'affliction (poison/bleed/burn/rot/shock) -> chip sous le nom (optionnel, identifiée)
 --     status  = "NEW"|"INKED"|"SEALED"|"CRYPTIC"           (badge d'état ; auto-déduit si absent)
+--     band    = "low"|"mid"|"high"                          (palier de NATURE -> COULEUR du liseré + label ;
+--                                                            nil = aucun palier dessiné, comportement historique)
 --     id, t, mouse = (acceptés pour compat ; ignorés — la carte propre est statique, pas de bake animé)
 --   }
 -- Retourne (ix, iy, iw, ih) = la zone intérieure utile (sous le liseré), pour composer au-dessus si besoin.
@@ -38,6 +40,19 @@ local C = Theme.c
 local RelicCard = {}
 
 local floor, max, abs = math.floor, math.max, math.abs
+
+-- ── PALIER DE NATURE (refonte reliques 2026-06, plan relics-overhaul §1) — la COULEUR du liseré de carte
+-- dit d'un coup d'œil de quel palier est la relique (comme un tier d'unité). DÉCOUPLÉ du `tier` numérique.
+--   low  = Argent terni (steel froid)  : stat plate universelle.
+--   mid  = Or sale (gold)              : transformatif léger (conditionnel / par famille / par position).
+--   high = Prismatique (rot irisé)     : réécrit une RÈGLE (build-definer).
+-- `band = nil` -> RIEN n'est posé (comportement historique : design-system inchangé, golden-neutre).
+local BAND_ACCENT = { low = "steel", high = "rot" } -- mid = gold (déjà la teinte d'accent par défaut "selected")
+function RelicCard.bandAccent(band)
+  if band == "mid" then return C.gold end
+  local key = BAND_ACCENT[band]
+  return key and C[key] or nil
+end
 
 -- ── ÉCHELLE D'ESPACEMENT (8pt) — un seul barème pour faire RESPIRER la carte (jamais un littéral au pif) ──
 local PAD_X = 14       -- marge latérale du corps
@@ -217,11 +232,13 @@ function RelicCard.draw(x, y, w, h, opts)
   local L = layoutCard(w, opts)
 
   -- 1) FOND de carte : Panel propre (dégradé sombre + liseré iron + éclat haut). Cryptique = base un poil
-  --    plus froide (stone850→stone900) ; identifiée/sélectionnée = stone800→stone900. Accent doré si selected.
+  --    plus froide (stone850→stone900) ; identifiée/sélectionnée = stone800→stone900. Accent = PALIER de nature
+  --    (Argent/Or/Prismatique si `band` fourni — la carte dit son tier à la couleur), sinon doré si selected.
   local fill1 = cryptic and C.stone850 or C.stone800
+  local bandAcc = RelicCard.bandAccent(opts.band) -- nil si band absent (golden-neutre)
   Panel.draw(x, y, w, h, {
     fill1 = fill1, fill2 = C.stone900,
-    accent = selected and C.gold or nil,
+    accent = bandAcc or (selected and C.gold or nil),
   })
   local ix, iy = x + 1, y + 1
   local iw, ih = w - 2, h - 2
@@ -261,6 +278,14 @@ function RelicCard.draw(x, y, w, h, opts)
       local stCol = cryptic and C.rot or (status == "NEW" and C.ctaText or C.gold)
       local sw = (sf and Draw.textWidth and Draw.textWidth(status, sf)) or 0
       Draw.textTrackedL(status, x + w - 10 - sw, y + 9, stCol, sf, 1.4)
+    end
+
+    -- ── LABEL DE PALIER (band) : court mot-clé teinté du palier, coin haut-GAUCHE (miroir du badge d'état).
+    -- Dit la NATURE (SILVER/GOLD/PRISMATIC) en clair, doublé de la couleur du liseré. nil = rien (historique).
+    if opts.band and bandAcc then
+      local bf = Theme.label(9) or Theme.value(9)
+      local bandStr = (opts.band == "low" and "SILVER") or (opts.band == "mid" and "GOLD") or "PRISMATIC"
+      Draw.textTrackedL(bandStr, x + 10, y + 9, bandAcc, bf, 1.4)
     end
 
     -- ── NOM (Cinzel 700 ; cryptique = « ? ? ? » sourdine, large interlettrage) ── (ancre mesurée)

@@ -33,6 +33,7 @@ local Dividers = require("src.ui.dividers")  -- filets laiton/sang propres (cass
 local Feel = require("src.ui.feel")          -- JUICE : survol (glow/lift) + press (squash/flash)
 local RelicCard = require("src.ui.relic_card") -- MOLÉCULE carte de relique (fond + gemme + nom + effet + flavor)
 local RelicGen = require("src.gen.relicgen") -- icones bakees des reliques (le vrai artefact, posé en coeur)
+local Relics = require("src.data.relics")    -- pour le PALIER de nature (band -> couleur de carte Argent/Or/Prismatique)
 local RunState = require("src.run.state")    -- pour DECLINE_RELIC_GOLD (or accordé au refus)
 local T = require("src.core.i18n").t
 
@@ -50,6 +51,11 @@ local RELIC_TYPE = {
   usurers_ledger = "order", tithe_bowl = "order", paupers_boon = "order",
   grave_robbers_cut = "bone", carrion_ledger = "bone",
   black_summons = "abyss", beggars_lantern = "order",
+  -- refonte 2026-06 (relics-overhaul) : teinte = foyer mécanique (sang=empower/exécution, abysse=vuln/poison,
+  -- ordre=écho/défense, chair=cleave/lifesteal). La famille de la gemme reste un INDICE visuel (le palier = liseré).
+  blood_banner = "flesh", seers_mark = "abyss", carrion_feast = "bone", second_plague = "abyss",
+  tide_caller = "order", bait_lantern = "flesh",
+  echo_crown = "order", gravediggers_due = "bone", splitting_maw = "flesh",
 }
 
 -- ── Géométrie (espace design 1280×720). Cartes disposées par Layout.row (gouttières égales, bande centrée)
@@ -89,6 +95,7 @@ function Relicpick.new(palette, vw, vh, host, payload)
       effect = T("relic." .. id .. ".effect"),
       flavor = T("relic." .. id .. ".flavor"),
       fam = RELIC_TYPE[id] or "bone",
+      band = Relics[id] and Relics[id].band, -- PALIER de nature -> couleur de carte (Argent/Or/Prismatique)
     }
     self.cardOpts[i] = opts
     cardH = math.max(cardH, RelicCard.measure(CARD_W, opts))
@@ -147,10 +154,12 @@ function Relicpick:drawCard(i)
   local sel = (self.sel == i)
   local opts = self.cardOpts[i]
 
-  -- état de la carte : sélectionnée = "selected" (liseré doré) ; sinon "identified".
+  -- état de la carte : sélectionnée = "selected" (liseré doré) ; sinon "identified". Le PALIER (band) teinte
+  -- le liseré (Argent/Or/Prismatique) ET pose un label de palier -> la nature se lit d'un coup d'œil.
   local state = sel and "selected" or "identified"
   RelicCard.draw(card.x, card.y, card.w, card.h, {
     state = state, name = opts.name, effect = opts.effect, flavor = opts.flavor, fam = opts.fam,
+    band = opts.band,
   })
 
   -- AFFORDANCE de survol (carte non sélectionnée) : fin liseré laiton, pour signaler la cible cliquable

@@ -172,6 +172,118 @@ local ok, err = pcall(function()
     end
   end
 
+  -- 2c) OP relic_aura_stat (refonte 2026-06, plan relics-overhaul §2.0 / V1) : BAKE direct d'un champ
+  -- combat-time sur les specs (post-buildComp). Teste-le avec des reliques SYNTHETIQUES (gated : aucune
+  -- relique du pool ne l'utilise au moment du test V1) -> on appelle Relics.apply directement.
+  do
+    -- target=team : chaque spec recoit +value sur le champ MOTEUR. atkInc = identite, ADDITIF a un atkInc existant.
+    local rTeam = { id = "_syn_banner", op = "relic_aura_stat", params = { stat = "atkInc", target = "team", value = 0.10 } }
+    local ct = { { id = "a", hp = 50, dmg = 10, cd = 36, depth = 0, row = 0, slot = 1, atkInc = 0.20 },
+                 { id = "b", hp = 50, dmg = 10, cd = 36, depth = 1, row = 1, slot = 2 } }
+    Relics.apply(ct, rTeam)
+    assert(math.abs(ct[1].atkInc - 0.30) < 1e-9, "relic_aura_stat team : atkInc ADDITIF (0.20+0.10)")
+    assert(math.abs(ct[2].atkInc - 0.10) < 1e-9, "relic_aura_stat team : atkInc pose sur tous (defaut 0)")
+
+    -- stat=lifesteal -> champ MOTEUR `lifestealAura` (le nom que makeUnit lit, arena.lua:151), PAS `lifesteal`.
+    local rLife = { id = "_syn_lantern", op = "relic_aura_stat", params = { stat = "lifesteal", target = "team", value = 0.05 } }
+    local cl = { { id = "a", hp = 50, dmg = 10, cd = 36, depth = 0, row = 0, slot = 1 } }
+    Relics.apply(cl, rLife)
+    assert(math.abs(cl[1].lifestealAura - 0.05) < 1e-9, "relic_aura_stat lifesteal -> lifestealAura (champ lu par makeUnit)")
+    assert(cl[1].lifesteal == nil, "relic_aura_stat lifesteal : NE pose PAS un champ lifesteal inerte")
+
+    -- target=role:front : UNE seule unite (depth min ; tie-break row asc puis slot asc IDENTIQUE a chooseTarget).
+    -- multicast = ENTIER, additif (cumulera avec hookjaw a la LECTURE, borne MULTICAST_MAX par l'arene).
+    local rEcho = { id = "_syn_crown", op = "relic_aura_stat", params = { stat = "multicast", target = "role:front", value = 1 } }
+    local cf = { { id = "back", hp = 50, dmg = 10, cd = 36, depth = 1, row = 0, slot = 1 },
+                 { id = "frontHi", hp = 50, dmg = 10, cd = 36, depth = 0, row = 1, slot = 5 },   -- front, row 1
+                 { id = "frontLo", hp = 50, dmg = 10, cd = 36, depth = 0, row = 0, slot = 9 } }   -- front, row 0 -> GAGNE (tie-break)
+    Relics.apply(cf, rEcho)
+    assert(cf[3].multicast == 1, "relic_aura_stat role:front : bake sur l'unite avant (tie-break row asc)")
+    assert(cf[1].multicast == nil and cf[2].multicast == nil, "relic_aura_stat role:front : AUCUNE autre unite touchee")
+
+    -- comp VIDE / champ non-mappe : aucun crash, aucune mutation parasite (robustesse).
+    local rNop = { id = "_syn_nop", op = "relic_aura_stat", params = { stat = "unknownStat", target = "team", value = 9 } }
+    local ce = { { id = "a", hp = 50, dmg = 10, cd = 36, depth = 0, row = 0, slot = 1 } }
+    Relics.apply(ce, rNop) -- stat non mappe -> bakeStat no-op
+    assert(ce[1].hp == 50 and ce[1].dmg == 10, "relic_aura_stat stat inconnu : innocuite (rien bake)")
+    Relics.apply({}, rTeam) -- comp vide -> pas de nil-deref
+  end
+
+  -- 2d) NOUVELLES reliques (refonte 2026-06, plan relics-overhaul §2 / V2-V3) : chaque relique pose le bon
+  -- effet/champ sur la compo au build. On verifie aussi le PALIER (band) -> couleur de carte.
+  do
+    -- BLOOD BANNER (relic_aura_stat atkInc team) : +0.10 atkInc sur chaque unite.
+    local bb = RunState.new(200); bb:grantRelic("blood_banner")
+    local cbb = { { id = "a", hp = 50, dmg = 10, cd = 36, depth = 0, row = 0, slot = 1 },
+                  { id = "b", hp = 50, dmg = 10, cd = 36, depth = 1, row = 1, slot = 2 } }
+    bb:applyRelics(cbb)
+    assert(math.abs(cbb[1].atkInc - 0.10) < 1e-9 and math.abs(cbb[2].atkInc - 0.10) < 1e-9, "blood_banner: +0.10 atkInc team")
+    assert(Relics.blood_banner.band == "mid", "blood_banner: band mid")
+
+    -- ECHO CROWN (relic_aura_stat multicast role:front) : +1 multicast sur LA seule unite avant.
+    local ec = RunState.new(201); ec:grantRelic("echo_crown")
+    local cec = { { id = "back", hp = 50, dmg = 10, cd = 36, depth = 1, row = 0, slot = 1 },
+                  { id = "front", hp = 50, dmg = 10, cd = 36, depth = 0, row = 0, slot = 5 } }
+    ec:applyRelics(cec)
+    assert(cec[2].multicast == 1 and cec[1].multicast == nil, "echo_crown: +1 multicast sur role:front uniquement")
+    assert(Relics.echo_crown.band == "high", "echo_crown: band high")
+
+    -- TIDE-CALLER (relic_aura_stat dmgReduce team) + BAIT-LANTERN (relic_aura_stat lifesteal -> lifestealAura).
+    local tc = RunState.new(202); tc:grantRelic("tide_caller"); tc:grantRelic("bait_lantern")
+    local ctc = { { id = "a", hp = 50, dmg = 10, cd = 36, depth = 0, row = 0, slot = 1 } }
+    tc:applyRelics(ctc)
+    assert(math.abs(ctc[1].dmgReduce - 0.04) < 1e-9, "tide_caller: 0.04 dmgReduce team (tuné §4 #5)")
+    assert(math.abs(ctc[1].lifestealAura - 0.05) < 1e-9, "bait_lantern: 0.05 lifestealAura (champ lu par makeUnit)")
+
+    -- relic_add_effect (op on_hit/on_kill/on_attack lu en combat) : l'effet est INJECTE dans spec.effects.
+    local function injects(relic, trig, op)
+      local r = RunState.new(210); r:grantRelic(relic)
+      local cc = { { id = "a", hp = 50, dmg = 10, cd = 36, depth = 0, row = 0, slot = 1 } }
+      r:applyRelics(cc)
+      for _, e in ipairs(cc[1].effects or {}) do if e.trigger == trig and e.op == op then return true end end
+      return false
+    end
+    assert(injects("seers_mark", "on_hit", "grant_vuln"), "seers_mark: on_hit grant_vuln")
+    assert(injects("carrion_feast", "on_kill", "heal_on_kill"), "carrion_feast: on_kill heal_on_kill")
+    assert(injects("second_plague", "on_hit", "grant_affliction_if_absent"), "second_plague: on_hit grant_affliction_if_absent")
+    assert(injects("gravediggers_due", "on_attack", "execute"), "gravediggers_due: on_attack execute")
+    assert(injects("splitting_maw", "on_hit", "cleave"), "splitting_maw: on_hit cleave")
+    -- paliers des nouvelles MOYEN/HAUT (band -> couleur).
+    for _, id in ipairs({ "seers_mark", "carrion_feast", "second_plague", "tide_caller", "bait_lantern" }) do
+      assert(Relics[id].band == "mid", id .. ": band mid")
+    end
+    for _, id in ipairs({ "gravediggers_due", "splitting_maw" }) do
+      assert(Relics[id].band == "high", id .. ": band high")
+    end
+  end
+
+  -- 2e) SURVEILLANCE D'EMPILEMENT (plan relics-overhaul §4) : les empilements dangereux restent BORNÉS au
+  -- BUILD (les caps moteur a la LECTURE sont testés ailleurs : tests/synergies KEYSTONES). Ici on verifie la
+  -- COMPOSITION des champs bakés (somme team + relique), qui DOIT rester sous les caps moteur.
+  do
+    -- #1 echo_crown × hookjaw : 2 sources multicast role:front -> SOMME = 2 (<= MULTICAST_MAX=3). Le carry avant
+    -- porte deja multicast 1 (aura hookjaw) ; echo_crown ajoute 1 -> 2. JAMAIS 4+ (pas de one-shot).
+    do
+      local cc = { { id = "carry", hp = 50, dmg = 10, cd = 36, depth = 0, row = 0, slot = 5, multicast = 1 } } -- aura hookjaw deja bakée
+      Relics.apply(cc, Relics.echo_crown)
+      assert(cc[1].multicast == 2, "stack #1 : echo_crown × hookjaw -> multicast SOMMÉ = 2 (<= MULTICAST_MAX 3)")
+    end
+    -- #2 blood_banner × empower-unite : SOMME d'atkInc cappée à ATK_INC_CAP=1.5 a la lecture. Au build, la somme
+    -- peut depasser 1.5 (1.4 + 0.10) -> exactement 1.5 ici ; l'arene clampe min(1.5, atkInc) (testé en synergies).
+    do
+      local ce = { { id = "a", hp = 50, dmg = 10, cd = 36, depth = 0, row = 0, slot = 1, atkInc = 1.40 } }
+      Relics.apply(ce, Relics.blood_banner)
+      assert(math.abs(ce[1].atkInc - 1.50) < 1e-9, "stack #2 : blood_banner + empower-unite -> atkInc somme = 1.5 (au cap lecture)")
+    end
+    -- #5 tide_caller × aegis : dmgReduce CUMULÉ team (0.15 + 0.04 = 0.19) reste largement sous 0.60 (pas de cap
+    -- cumulé requis ; si une sim future le faisait dériver, capper a 0.60 — plan §4 #5).
+    do
+      local cd = { { id = "a", hp = 50, dmg = 10, cd = 36, depth = 0, row = 0, slot = 1 } }
+      Relics.apply(cd, Relics.aegis); Relics.apply(cd, Relics.tide_caller)
+      assert(math.abs(cd[1].dmgReduce - 0.19) < 1e-9, "stack #5 : tide_caller + aegis -> dmgReduce cumulé = 0.19 (< 0.60)")
+    end
+  end
+
   -- 3) OFFRE 1-parmi-3 SEEDEE (meme seed -> meme offre, rejouable).
   local x = RunState.new(777):rollRelicChoices(3)
   local y = RunState.new(777):rollRelicChoices(3)

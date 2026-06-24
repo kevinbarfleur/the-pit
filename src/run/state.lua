@@ -354,31 +354,76 @@ function RunState:maxRelicTier()
   if self.wins < 2 then return 2 elseif self.wins < 5 then return 3 else return 4 end
 end
 
+-- ── PALIER DE NATURE (band) : plancher d'offre (canal 3, jalon w3/w6). Rang ordinal pour comparer un band
+-- au minTier ("low"<"mid"<"high"). Le band est DÉCOUPLÉ du tier numérique (cf. relics.lua / plan §1.b). ──
+local BAND_RANK = { low = 1, mid = 2, high = 3 }
+local function bandRank(id) return BAND_RANK[Relics[id].band or "low"] or 1 end
+
+-- CLASSE d'une relique pour la GARDE DE DIVERSITÉ DE TRIO (plan §3.5 : « résout toutes pareilles »). Au plus
+-- 1 relique par classe `ampli` (les 4 *_inc, op relic_affliction_inc) et 1 par classe `eco` (champ .eco) PAR
+-- trio. Les autres reliques sont libres (classe nil = aucune contrainte). DÉTERMINISTE (pure data).
+local function trioClass(id)
+  local r = Relics[id]
+  if r.op == "relic_affliction_inc" then return "ampli" end
+  if r.eco then return "eco" end
+  return nil
+end
+
 -- Tire jusqu'à n ids DISTINCTS de reliques NON possédées (seedé) : l'offre 1-parmi-n de l'écran de relique.
--- Tiérée par avancée (maxRelicTier) : on ne propose QUE des reliques de tier ≤ plafond. FALLBACK : si moins
--- de n candidats existent à ce plafond, on élargit à TOUTES les non possédées -> une offre est toujours
--- remplissable (le pool ne s'assèche pas tant qu'il reste des reliques). Fisher-Yates seedé -> rejouable.
-function RunState:rollRelicChoices(n)
+-- Tiérée par avancée (maxRelicTier = PLAFOND de tier). opts.minTier (band "low"/"mid"/"high") = PLANCHER de
+-- palier (canal 3 : le jalon ne sert jamais que du BAS -> minTier="mid" force du transformatif). Garde de
+-- DIVERSITÉ DE TRIO (plan §3.5) : au plus 1 ampli-famille + 1 éco par trio. FALLBACK : si trop peu de
+-- candidats sous les contraintes, on les RELÂCHE par paliers (diversité -> plancher -> plafond -> tout) ->
+-- une offre est toujours remplissable. Fisher-Yates seedé -> rejouable (même seed -> même offre).
+function RunState:rollRelicChoices(n, opts)
   n = n or 3
+  opts = opts or {}
   local cap = self:maxRelicTier()
-  local all = {}   -- toutes les non possédées (pour le fallback)
-  local capped = {} -- celles sous le plafond de tier (le pool nominal)
+  local floorRank = BAND_RANK[opts.minTier] -- nil (aucun plancher) ou 1/2/3
+  local all = {}    -- toutes les non possédées (fallback ultime)
+  local capped = {} -- sous le plafond de tier (pool nominal)
+  local floored = {} -- sous le plafond ET au-dessus du plancher de band (pool du jalon)
   for _, id in ipairs(Relics.order) do
     local owned = false
     for _, r in ipairs(self.relics) do if r.id == id then owned = true; break end end
     if not owned then
       all[#all + 1] = id
-      if (Relics[id].tier or 1) <= cap then capped[#capped + 1] = id end
+      local underCap = (Relics[id].tier or 1) <= cap
+      if underCap then
+        capped[#capped + 1] = id
+        if not floorRank or bandRank(id) >= floorRank then floored[#floored + 1] = id end
+      end
     end
   end
-  -- Pool nominal = celles sous le plafond ; on n'élargit à TOUT que s'il n'y en a pas assez pour n choix.
-  local avail = (#capped >= n) and capped or all
+  -- Pool de base : floored (plancher+plafond) si assez peuplé, sinon capped (plafond seul), sinon TOUT.
+  local avail
+  if #floored >= n then avail = floored
+  elseif #capped >= n then avail = capped
+  else avail = all end
   for i = #avail, 2, -1 do -- Fisher-Yates seedé (RNG du run) -> rejouable
     local j = self.rng:random(1, i)
     avail[i], avail[j] = avail[j], avail[i]
   end
-  local out = {}
-  for i = 1, math.min(n, #avail) do out[i] = avail[i] end
+  -- GARDE DE DIVERSITÉ : on parcourt le pool mélangé et on ne prend qu'1 relique par classe contrainte. Si on
+  -- n'atteint pas n (pool capé petit), on RELÂCHE la contrainte (2e passe : on complète sans la garde). Ordre
+  -- de parcours = mélange seedé -> déterministe.
+  local out, used = {}, { ampli = false, eco = false }
+  for _, id in ipairs(avail) do
+    if #out >= n then break end
+    local cls = trioClass(id)
+    if not cls or not used[cls] then
+      out[#out + 1] = id
+      if cls then used[cls] = true end
+    end
+  end
+  if #out < n then -- FALLBACK : complète en relâchant la garde (un trio reste préférable à un trou).
+    local inOut = {}
+    for _, id in ipairs(out) do inOut[id] = true end
+    for _, id in ipairs(avail) do
+      if #out >= n then break end
+      if not inOut[id] then out[#out + 1] = id; inOut[id] = true end
+    end
+  end
   return out
 end
 

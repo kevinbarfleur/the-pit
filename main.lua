@@ -114,6 +114,15 @@ function host.finishCombat(win)
     host.goto("runover", { result = over, run = host.run })
     return
   end
+  -- CANAL 3 — JALON DE PALIER (refonte reliques 2026-06, plan relics-overhaul §3.3) : une cérémonie GARANTIE
+  -- à la 3e ET 6e victoire, plancher minTier="mid" (le jalon ne sert jamais 3 stat-sticks ; à w6, le plafond
+  -- vaut déjà HAUT -> vrai payoff late). Placé AVANT le test marchand `% 3` AVEC un `return` -> ANTI
+  -- DOUBLE-COMPTAGE (§3.4) : à w3, `combats % 3` peut valoir 0 mais le jalon CONSOMME le créneau (1 seul
+  -- relicpick servi). Routage post-combat (comme le marchand) -> startRound au retour (PAS midRound).
+  if win and (host.run.wins == 3 or host.run.wins == 6) then
+    local choices = host.run:rollRelicChoices(3, { minTier = "mid" })
+    if #choices > 0 then host.goto("relicpick", { choices = choices, milestone = true }); return end
+  end
   -- Acquisition : un MARCHAND passe tous les 3 COMBATS (victoire OU défaite), pas toutes les 3 victoires
   -- (PRD progression-economy §5.1) -> ~5-6 offres/run, densité de choix build-shaping. Écran 1-parmi-3
   -- (« A Fragment Surfaces »). Si le pool est épuisé (#choices == 0), on saute directement au round suivant.
