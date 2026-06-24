@@ -341,9 +341,10 @@ local ok, err = pcall(function()
     -- a TOUTES les non possédées -> une offre de 3 reste remplissable (peut alors contenir un tier > plafond).
     do
       local rf = RunState.new(5)
-      rf.wins = 0 -- plafond 2 ; on possède 8 des 10 reliques tier<=2 -> seulement 2 candidats sous plafond (<3)
+      rf.wins = 0 -- plafond 2 ; on possède 11 des 13 reliques tier<=2 -> seulement 2 candidats sous plafond (<3)
       rf.relics = { { id = "bloodstone" }, { id = "carapace" }, { id = "aegis" }, { id = "whetstone" },
-        { id = "kings_bowl" }, { id = "ember_heart" }, { id = "weeping_nail" }, { id = "beggars_lantern" } }
+        { id = "kings_bowl" }, { id = "ember_heart" }, { id = "weeping_nail" }, { id = "grave_cap" },
+        { id = "thornguard" }, { id = "beggars_lantern" }, { id = "tithe_bowl" } }
       local ch = rf:rollRelicChoices(3)
       assert(#ch == 3, "fallback : l'offre reste remplie a 3 malgre le plafond")
       local sawAbove = false
@@ -357,6 +358,34 @@ local ok, err = pcall(function()
       rn.wins = 0
       local ch = rn:rollRelicChoices(3)
       for _, id in ipairs(ch) do assert(tierOf(id) <= 2, "pas de fallback si assez de candidats tiérés") end
+    end
+
+    -- A3 : RELIQUES D'ÉCONOMIE (income / vente pleine / or-sur-victoire / report+intérêt ; NEUTRE sans relique).
+    do
+      local Units = require("src.data.units")
+      local GR = RunState.GOLD_PER_ROUND
+      -- income plat (paupers_boon) : +3 or au début de chaque round.
+      local rp = RunState.new(7); rp.relics = { { id = "paupers_boon" } }
+      rp:startRound()
+      assert(rp.gold == GR + 3, "paupers_boon : +3 or/round (got " .. rp.gold .. ")")
+      -- vente PLEINE (grave_robbers_cut) : remboursement = coût plein (sellFrac 1.0 ; base = 50%).
+      local rs = RunState.new(7); rs.relics = { { id = "grave_robbers_cut" } }
+      assert(rs:sellRefund("gravewarden") == Units["gravewarden"].cost, "grave_robbers_cut : remboursement plein")
+      -- or SUR VICTOIRE (tithe_bowl) : +2 DIFFÉRÉ au round suivant (pas immédiat).
+      local rt = RunState.new(7); rt.relics = { { id = "tithe_bowl" } }
+      rt:resolve(true); rt:startRound()
+      assert(rt.gold == GR + 2, "tithe_bowl : +2 or au round APRÈS la victoire (got " .. rt.gold .. ")")
+      -- REPORT + INTÉRÊT (usurers_ledger) : l'or de fin de round est gardé + intérêt (+1/5, cappé 5).
+      local ru = RunState.new(7); ru.relics = { { id = "usurers_ledger" } }; ru.gold = 25
+      ru:startRound()
+      assert(ru.gold == GR + 25 + 5, "usurers_ledger : report 25 + intérêt 5 (got " .. ru.gold .. ")")
+      local ru2 = RunState.new(7); ru2.relics = { { id = "usurers_ledger" } }; ru2.gold = 50
+      ru2:startRound()
+      assert(ru2.gold == GR + 50 + 5, "usurers_ledger : intérêt CAPPÉ à 5 (got " .. ru2.gold .. ")")
+      -- SANS relique éco : modèle SAP strict (or frais = GOLD_PER_ROUND, AUCUN report de l'or de fin).
+      local rb = RunState.new(7); rb.gold = 99
+      rb:startRound()
+      assert(rb.gold == GR, "sans relique éco : or frais sans report (got " .. rb.gold .. ")")
     end
 
     -- DÉTERMINISME : même seed + mêmes wins -> mêmes ids d'offre (rejouable, snapshot/replay).

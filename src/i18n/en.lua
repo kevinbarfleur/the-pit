@@ -529,6 +529,19 @@ return {
   ["relic.beggars_lantern.name"] = "BEGGAR'S LANTERN",
   ["relic.beggars_lantern.effect"] = "Your shop rolls one tier lower from now on.",
   ["relic.beggars_lantern.flavor"] = "It draws the low and the desperate, who arrive in great number.",
+  -- G : reliques d'économie (A3) — intérêts / bonus d'or (effet RUN-level ; golden inchangé)
+  ["relic.usurers_ledger.name"] = "THE USURER'S LEDGER",
+  ["relic.usurers_ledger.effect"] = "Your gold now carries between rounds; gain +1 gold for every 5 you hold (up to +5).",
+  ["relic.usurers_ledger.flavor"] = "Every coin owes another. The Pit always collects.",
+  ["relic.tithe_bowl.name"] = "TITHE-BOWL",
+  ["relic.tithe_bowl.effect"] = "Win a combat: gain +2 gold next round.",
+  ["relic.tithe_bowl.flavor"] = "It is never empty, and never quite full.",
+  ["relic.paupers_boon.name"] = "PAUPER'S BOON",
+  ["relic.paupers_boon.effect"] = "Gain +3 gold at the start of each round.",
+  ["relic.paupers_boon.flavor"] = "A dead man's pockets, somehow never bare.",
+  ["relic.grave_robbers_cut.name"] = "GRAVE-ROBBER'S CUT",
+  ["relic.grave_robbers_cut.effect"] = "Selling a unit refunds its full cost.",
+  ["relic.grave_robbers_cut.flavor"] = "Nothing buried is ever truly lost to one who digs.",
 
   -- ── Proving Ground (banc d'essai) : UI + archetypes + variants + scenarios + notes de compo (ASCII) ──
   ["pg.title"] = "The Proving Ground",

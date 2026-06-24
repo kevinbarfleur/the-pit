@@ -64,13 +64,22 @@ local R = {
   carrion_ledger = { id = "carrion_ledger", runOp = "shop_xp",        params = { amount = 6 }, tier = 3 }, -- bond d'XP de boutique immédiat
   black_summons  = { id = "black_summons",  runOp = "shop_tier_up",   params = {},             tier = 4 }, -- +1 tier de boutique (rush ; tier 4 = anti-snowball, hors early)
   beggars_lantern = { id = "beggars_lantern", runOp = "shop_tier_down", params = {},           tier = 2 }, -- décale les cotes 1 tier PLUS BAS (concentre les bas rangs : nourrit le build « max-doubles »)
+
+  -- ── G — reliques d'ÉCONOMIE (A3, le levier « intérêts / bonus d'or » du créateur). Champ `eco` lu par
+  -- RunState:ecoMods (au round / à la résolution / à la vente) ; PAS de champ `op` ni `runOp` -> R.apply ET
+  -- grantRelic les ignorent -> GOLDEN INCHANGÉ. CHIFFRES = placeholders d'équilibrage (à tuner via tools/sim). ──
+  usurers_ledger    = { id = "usurers_ledger",    eco = { carryover = true, interest = 0.20, interestCap = 5 }, tier = 3 }, -- report + intérêt (TFT-ish ; introduit la banque)
+  tithe_bowl        = { id = "tithe_bowl",        eco = { onWin = 2 },    tier = 2 }, -- or sur victoire (crédité au round suivant)
+  paupers_boon      = { id = "paupers_boon",      eco = { perRound = 3 }, tier = 2 }, -- income plat chaque round
+  grave_robbers_cut = { id = "grave_robbers_cut", eco = { sellFrac = 1.0 }, tier = 2 }, -- la vente rembourse le coût PLEIN
 }
 
 R.order = { "bloodstone", "carapace", "aegis", "kings_bowl", "ember_heart", "weeping_nail", "grave_cap",
   "famines_math", "hollow_choir", "feeding_frenzy",
   "whetstone", "thornguard", "sacred_shield", "second_breath",
   "forked_tongue", "everburn", "open_wounds", "plague_communion",
-  "carrion_ledger", "black_summons", "beggars_lantern" }
+  "carrion_ledger", "black_summons", "beggars_lantern",
+  "usurers_ledger", "tithe_bowl", "paupers_boon", "grave_robbers_cut" }
 
 -- Applique l'effet d'une relique à une compo (liste de specs d'unités), au BUILD. Modifie en place.
 -- Les amplis (poisonInc/…/dmgReduce) sont ADDITIFS (cumul avec une aura d'adjacence qui poserait le même champ).

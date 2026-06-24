@@ -126,6 +126,7 @@ function RunState.new(seed)
     shopOddsShift = 0,             -- Lot 6 : décalage PERSISTANT du tier utilisé POUR LES COTES (relique beggars_lantern = -1). 0 = identique au tier réel.
     shop = {},
     relics = {}, -- possédées : { { id } } (modèle LISIBLE : effet affiché ; collection Grimoire inscrite au grant)
+    _pendingGold = 0, -- A3 : or DIFFÉRÉ au prochain round (reliques d'éco : or-sur-victoire). Hors RNG.
     relicFromLevelThisRound = false, -- Lot 5 (§5.2) : une seule récompense de relique par level-up et PAR round
     chronicles = {}, -- HISTORIQUE des journaux de combat (1 par combat) pour le sélecteur de round (UI, hors éco)
   }, RunState)
@@ -192,7 +193,14 @@ function RunState:startRound()
   if self.round == LIFE_BACK_ROUND and self.lives < START_LIVES then
     self.lives = math.min(START_LIVES, self.lives + 1)
   end
-  self.gold = GOLD_PER_ROUND + streakBonus(self)
+  -- A3 : reliques d'éco (report + intérêt + income/round + or-sur-victoire différé). SANS relique éco, `eco`
+  -- est neutre -> self.gold == GOLD_PER_ROUND + streakBonus (modèle SAP STRICTEMENT identique).
+  local eco = self:ecoMods()
+  local held = self.gold -- or de FIN de round (avant reset) : base du report ET de l'intérêt
+  local kept = eco.carryover and held or 0
+  local interest = eco.carryover and math.min(eco.interestCap, math.floor(held * eco.interest)) or 0
+  self.gold = GOLD_PER_ROUND + streakBonus(self) + kept + interest + eco.perRound + (self._pendingGold or 0)
+  self._pendingGold = 0
   self:roll()
   -- Grant d'emplacement timé (façon tier SAP) : à un round prévu, tant qu'il reste des offres, on présente
   -- un slot à placer ou refuser. La capacité ne bouge PAS ici — c'est accept/declineSlotGrant qui tranche.
@@ -290,7 +298,10 @@ function RunState:reroll()
 end
 
 -- Remboursement à la revente d'une unité posée (la scène retire l'unité du plateau).
-function RunState:sellRefund(id) return math.max(1, math.floor(unitCost(id) * SELL_REFUND_FRAC)) end
+function RunState:sellRefund(id)
+  local frac = math.max(SELL_REFUND_FRAC, self:ecoMods().sellFrac) -- A3 : une relique d'éco peut rembourser plus (jusqu'à plein)
+  return math.max(1, math.floor(unitCost(id) * frac))
+end
 
 function RunState:sell(id) self.gold = self.gold + self:sellRefund(id) end
 
@@ -300,6 +311,7 @@ function RunState:resolve(win)
     self.wins = self.wins + 1
     self.winStreak = self.winStreak + 1
     self.lossStreak = 0
+    self._pendingGold = (self._pendingGold or 0) + self:ecoMods().onWin -- A3 : or-sur-victoire (crédité au round suivant)
   else
     self.losses = self.losses + 1
     self.lives = self.lives - 1
@@ -400,6 +412,26 @@ end
 -- Applique l'effet de chaque relique possédée à la compo du joueur (au build, avant combat).
 function RunState:applyRelics(comp)
   for _, r in ipairs(self.relics) do Relics.apply(comp, Relics[r.id]) end
+end
+
+-- ── A3 : RELIQUES D'ÉCONOMIE (intérêts / bonus d'or). Agrège le champ `eco` des reliques possédées —
+-- RUN-level, JAMAIS la compo de combat (les reliques éco n'ont pas de champ `op` -> R.apply les ignore ->
+-- golden inchangé). Retour { carryover, interest, interestCap, perRound, onWin, sellFrac }. Neutre si aucune
+-- relique éco -> startRound/sellRefund retombent EXACTEMENT sur le modèle SAP. Lu par startRound/resolve/sellRefund. ──
+function RunState:ecoMods()
+  local m = { carryover = false, interest = 0, interestCap = 0, perRound = 0, onWin = 0, sellFrac = 0 }
+  for _, r in ipairs(self.relics) do
+    local e = Relics[r.id] and Relics[r.id].eco
+    if e then
+      if e.carryover then m.carryover = true end
+      m.interest = m.interest + (e.interest or 0)
+      m.interestCap = m.interestCap + (e.interestCap or 0)
+      m.perRound = m.perRound + (e.perRound or 0)
+      m.onWin = m.onWin + (e.onWin or 0)
+      if (e.sellFrac or 0) > m.sellFrac then m.sellFrac = e.sellFrac end
+    end
+  end
+  return m
 end
 
 -- Constantes exposées (UI/tests) — lecture seule.

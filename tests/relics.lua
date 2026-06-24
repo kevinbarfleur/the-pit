@@ -192,10 +192,11 @@ local ok, err = pcall(function()
     local cl = l:rollRelicChoices(3)
     for _, id in ipairs(cl) do assert(tierOf(id) <= 4, "late : offre dans le plafond tier 4 (" .. id .. ")") end
     -- FALLBACK : si moins de 3 candidats sous le plafond (on possede presque tout le tier <=2), on elargit a TOUT.
-    -- (10 reliques tier<=2 existent : on en possede 8 -> 2 candidats sous plafond < 3 -> fallback force.)
+    -- (13 reliques tier<=2 existent : on en possede 11 -> 2 candidats sous plafond < 3 -> fallback force.)
     local f = RunState.new(99); f.wins = 0
     f.relics = { { id = "bloodstone" }, { id = "carapace" }, { id = "aegis" }, { id = "whetstone" },
-      { id = "kings_bowl" }, { id = "ember_heart" }, { id = "weeping_nail" }, { id = "beggars_lantern" } }
+      { id = "kings_bowl" }, { id = "ember_heart" }, { id = "weeping_nail" }, { id = "grave_cap" },
+      { id = "thornguard" }, { id = "beggars_lantern" }, { id = "tithe_bowl" } }
     local cf = f:rollRelicChoices(3)
     assert(#cf == 3, "fallback : l'offre reste a 3 choix meme a court de candidats tiérés")
     local sawAbove = false
