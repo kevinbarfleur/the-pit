@@ -528,6 +528,20 @@ local ok, err = pcall(function()
     b:computeUi()
     b:drawBoardInspectorExtra({ x = 10, y = 10, w = 110, h = 240 }, 5) -- W étroit -> chemin de troncature (no crash)
 
+    -- BUILD VERROUILLÉ (inspection Proving Ground) : setupLocked pose une compo figée + interdit les mutations.
+    local Comps = require("src.data.compositions")
+    local lockComp = Comps.byId["poison_diamant_perfect"]
+    if lockComp then
+      for i = 1, 9 do b.slotRigs[i] = nil; b.board.slots[i].unit = nil end
+      b:setupLocked({ composition = lockComp, fight = { left = {}, right = {}, seed = 1 } })
+      assert(b.locked, "setupLocked : flag locked posé")
+      local placed = 0; for i = 1, 9 do if b.slotRigs[i] then placed = placed + 1 end end
+      assert(placed == #lockComp.units, "setupLocked : toutes les unités de la compo posées sur le sigil")
+      b:mousepressed(2, 2, 1) -- clic HORS du bouton FIGHT, en mode verrouillé -> aucune mutation (pas de drag)
+      assert(not b.drag, "locked : aucun drag amorcé (mutation interdite hors FIGHT)")
+      b.locked = nil; b.lockedFight = nil -- restaure (les assertions suivantes du fichier supposent un build libre)
+    end
+
     -- ── FIT-TO-BOX (anti-débordement des créatures) : rigBounds renvoie une boîte SAINE (repli headless,
     -- pas de canvas réel sous le mock) ; rigFitScale CONTIENT dans la boîte et RESPECTE maxScale (cap). ──
     local bnd = b:rigBounds("marauder")

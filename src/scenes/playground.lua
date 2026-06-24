@@ -160,16 +160,21 @@ function Playground:select(i)
   self.result, self.sim = nil, nil
 end
 
+-- INSPECT-then-fight : ouvre le BUILD VERROUILLÉ (compo A posée, hover/auras/fiche actifs) ; son bouton FIGHT
+-- lance le combat A vs B, dont onFinish rend la main ICI (résultat WATCH). cf. main.lua host.goto("inspect").
 function Playground:startWatch()
   if not (self.compA and self.compB) then return end
   local sc = self.scenarios[self.sel]
   local pg = self
-  self.host.goto("combat", {
-    left = self.compA, right = self.compB, seed = sc.seed, enemyKey = "exhibition",
-    onFinish = function(win)
-      pg.result = { kind = "watch", win = win }
-      pg.host.goto("playground")
-    end,
+  self.host.goto("inspect", {
+    composition = self.cA, -- compo BRUTE (sigil + units/slots/levels) à poser pour l'inspection
+    fight = {
+      left = self.compA, right = self.compB, seed = sc.seed, enemyKey = "exhibition",
+      onFinish = function(win)
+        pg.result = { kind = "watch", win = win }
+        pg.host.goto("playground")
+      end,
+    },
   })
 end
 

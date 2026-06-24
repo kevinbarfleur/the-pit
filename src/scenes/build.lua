@@ -614,6 +614,7 @@ end
 
 -- ── Entrées ──
 function Build:keypressed(key)
+  if self.locked then return end -- inspection figée : pas de reshape clavier
   if key == "s" then -- swap de sigil (libre pour l'instant ; via reliques plus tard, cf. étape #3)
     self.shapeIdx = self.shapeIdx % #Shapes.order + 1
     self.board:setShape(Shapes.order[self.shapeIdx])
@@ -629,6 +630,24 @@ function Build:onEnter()
   self.mx, self.my = -1e4, -1e4
 end
 
+-- ── MODE VERROUILLÉ (inspection Proving Ground) ──────────────────────────────────────────────────────
+-- Configure la scène build en INSPECTEUR FIGÉ d'une composition : pose les unités de la compo sur son sigil ;
+-- tout le SURVOL (fiche + AURAS + EXPOSURE) reste actif, mais AUCUNE mutation (boutique/drag/vente/reshape/
+-- grant). FIGHT lance le combat fourni (payload.fight) puis onFinish rend la main au playground. host.run est
+-- nil (host wrapper) -> la scène est déjà en sandbox (ni bannière ni boutique ni orbe).
+function Build:setupLocked(payload)
+  self.locked = true
+  self.lockedFight = payload.fight -- { left, right, seed, enemyKey, onFinish }
+  local comp = payload.composition  -- compo brute { sigil, units = { {id, slot, level?} } }
+  if comp then
+    for k, name in ipairs(Shapes.order) do if name == comp.sigil then self.shapeIdx = k end end
+    self.board:setShape(comp.sigil or "carre")
+    self:computeLayout()
+    self.board:unlock(9) -- toutes les cases ouvertes (lecture ; le placement libre n'est pas requis ici)
+    for _, u in ipairs(comp.units or {}) do self:placeId(u.slot, u.id, u.level or 1) end
+  end
+end
+
 function Build:mousemoved(vx, vy)
   self.mx, self.my = vx, vy
 end
@@ -636,6 +655,14 @@ end
 function Build:mousepressed(vx, vy, button)
   if button ~= 1 then return end
   self.mx, self.my = vx, vy
+  if self.locked then
+    -- INSPECTION FIGÉE : seul FIGHT agit (lance le combat fourni) ; aucune mutation (boutique/drag/reshape/grant).
+    if inRect(vx, vy, self.button) and self.lockedFight then
+      local f = self.lockedFight
+      self.host.goto("combat", { left = f.left, right = f.right, seed = f.seed, enemyKey = f.enemyKey or "exhibition", onFinish = f.onFinish })
+    end
+    return
+  end
   local run = self.host.run
   -- rect REROLL fidèle à l'état du grant (ligne pleine / scindée) AVANT le hit-test (mousepressed peut être
   -- appelé sans update, ex. tests headless).
@@ -1147,14 +1174,17 @@ function Build:drawBack(view)
     end
   end
 
-  -- BANC (réserve, rangée sous le plateau) : même atome Slot (drop/hover/selected/empty) + pip type/niveau si occupé.
-  for i = 1, BENCH_SIZE do
-    local r = self.benchSlots[i]
-    local bx, by, bw = r.x * 4, r.y * 4, r.w * 4
-    local sr = self.bench[i]
-    local hovering = (ui.benchHover == i)
-    local bstate = (self.drag and hovering and "drop") or (hovering and "hover") or (sr and "selected") or "empty"
-    Slot.draw(bx, by, bw, bstate, sr and { tierCol = Rarity.tierColor(Units[sr.id].rank), level = sr.level or 1 } or nil)
+  -- BANC (réserve, rangée sous le plateau) : même atome Slot (drop/hover/selected/empty) + pip type/niveau si
+  -- occupé. MASQUÉ en inspection figée (pas de réserve à manipuler).
+  if not self.locked then
+    for i = 1, BENCH_SIZE do
+      local r = self.benchSlots[i]
+      local bx, by, bw = r.x * 4, r.y * 4, r.w * 4
+      local sr = self.bench[i]
+      local hovering = (ui.benchHover == i)
+      local bstate = (self.drag and hovering and "drop") or (hovering and "hover") or (sr and "selected") or "empty"
+      Slot.draw(bx, by, bw, bstate, sr and { tierCol = Rarity.tierColor(Units[sr.id].rank), level = sr.level or 1 } or nil)
+    end
   end
 
   -- ── BARRE DU BAS (handoff « Bottom Bar ») : panneau ENCADRÉ + filet laiton gravé + filets iron + fonds de carte ──
@@ -1727,21 +1757,27 @@ function Build:drawSigilBar()
   local aw = fA:getWidth(aStr) + 16
   Draw.rect(x, midY - 9, aw, 18, nil, C.brassD, 1)
   Draw.text(aStr, x + 8, midY - fA:getHeight() / 2, C.gold, fA)
-  -- DROITE : « [S] RESHAPE » + boutons de forme.
-  local r1 = self:shapeBtnRect(1)
-  local fR = Theme.label(9)
-  Draw.textR(T("ui.reshape_label"), r1.x - 10, midY - fR:getHeight() / 2, C.ink4, fR)
-  local hotK = self:shapeBtnAt(self.mx, self.my)
-  for k, sname in ipairs(Shapes.order) do
-    local r = self:shapeBtnRect(k)
-    local active = (sname == nm)
-    if active then
-      Panel.vgrad(r.x, r.y, r.w, r.h, { 0x1a / 255, 0x0e / 255, 0x10 / 255, 1 }, { 0x12 / 255, 0x0a / 255, 0x0c / 255, 1 })
-      Draw.rect(r.x, r.y, r.w, r.h, nil, C.blood, 1)
-    else
-      Draw.rect(r.x, r.y, r.w, r.h, { 0x10 / 255, 0x0b / 255, 0x16 / 255, 1 }, (hotK == k) and C.brass or C.iron, 1)
+  -- DROITE : « [S] RESHAPE » + boutons de forme (MASQUÉS en inspection figée : la forme est verrouillée).
+  if not self.locked then
+    local r1 = self:shapeBtnRect(1)
+    local fR = Theme.label(9)
+    Draw.textR(T("ui.reshape_label"), r1.x - 10, midY - fR:getHeight() / 2, C.ink4, fR)
+    local hotK = self:shapeBtnAt(self.mx, self.my)
+    for k, sname in ipairs(Shapes.order) do
+      local r = self:shapeBtnRect(k)
+      local active = (sname == nm)
+      if active then
+        Panel.vgrad(r.x, r.y, r.w, r.h, { 0x1a / 255, 0x0e / 255, 0x10 / 255, 1 }, { 0x12 / 255, 0x0a / 255, 0x0c / 255, 1 })
+        Draw.rect(r.x, r.y, r.w, r.h, nil, C.blood, 1)
+      else
+        Draw.rect(r.x, r.y, r.w, r.h, { 0x10 / 255, 0x0b / 255, 0x16 / 255, 1 }, (hotK == k) and C.brass or C.iron, 1)
+      end
+      self:drawSigilGlyph(sname, r.x + r.w / 2, r.y + r.h / 2, 5.5, active and C.bloodL or ((hotK == k) and C.ink2 or C.ink4))
     end
-    self:drawSigilGlyph(sname, r.x + r.w / 2, r.y + r.h / 2, 5.5, active and C.bloodL or ((hotK == k) and C.ink2 or C.ink4))
+  else
+    -- inspection : on indique juste « FIGHT to watch » à droite de la barre sigil.
+    local fR = Theme.label(9)
+    Draw.textR(T("ui.inspect_hint"), Draw.W - 22, midY - fR:getHeight() / 2, C.ink4, fR)
   end
 end
 

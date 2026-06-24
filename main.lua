@@ -76,6 +76,15 @@ function host.goto(name, payload)
     -- Banc d'essai (Proving Ground) : mémoïsé (indépendant du run ; lit le catalogue de compos).
     host.playground = host.playground or Playground.new(Palette, VW, VH, host)
     host.scene = host.playground
+  elseif name == "inspect" then
+    -- BUILD VERROUILLÉ (depuis le Proving Ground) : inspecte une compo figée (hover/auras/fiche TOUS actifs),
+    -- SANS boutique ni économie ; le bouton FIGHT lance le combat fourni (payload.fight). Host WRAPPER run=nil
+    -- -> la scène build se comporte en sandbox (pas de bannière/boutique/orbe) SANS toucher au run réel.
+    -- Recréé à chaque entrée (compo fraîche, board propre). [esc] -> retour playground.
+    local lockedHost = setmetatable({ run = nil }, { __index = host })
+    local b = Build.new(Palette, VW, VH, lockedHost)
+    b:setupLocked(payload)
+    host.scene = b
   elseif name == "forge_iter" then
     -- Vue d'ITÉRATION (dev) : revue isolée des créatures en cours de refonte. Mémoïsée (rigs bakés une fois).
     host.forgeIter = host.forgeIter or ForgeIter.new(Palette, VW, VH, host)
@@ -351,6 +360,7 @@ function love.keypressed(key)
   end
   if key == "escape" then
     -- Depuis le Grimoire ou le Proving Ground (ouverts via le menu) : retour menu ; sinon quitte.
+    if host.name == "inspect" then host.goto("playground"); return end -- build verrouillé -> retour banc d'essai
     if host.name == "grimoire" or host.name == "playground" or host.name == "designsystem" then host.goto("menu"); return end
     if host.name == "forge_iter" then host.goto("build"); return end -- vue d'itération : retour build
     love.event.quit(); return

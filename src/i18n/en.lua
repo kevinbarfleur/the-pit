@@ -98,6 +98,7 @@ return {
   ["ui.streak_loss"] = "LOSS×{n}",
   ["ui.archetype"] = "ARCHETYPE",
   ["ui.reshape_label"] = "[S] RESHAPE",
+  ["ui.inspect_hint"] = "INSPECT · FIGHT to watch · [esc] back",  -- build verrouillé du Proving Ground
   ["ui.aura_grant"] = "GRANT",  -- chip d'aura : l'aura OCTROIE un effet au voisin (vs amplifier une valeur)
   ["ui.taunt"] = "TAUNT",       -- badge de case : l'unité force le ciblage (override d'aggro)
   -- fiche au survol (board) : readout des liens d'aura + exposition (refonte build screen, phase 3)
