@@ -74,6 +74,14 @@ return {
   ["ui.controls_build"] = "drag to place  -  [s] sigil  -  [g] gallery  -  [esc] quit",
   ["ui.offering"] = "THE OFFERING",
   ["ui.offering_flavor"] = "dregs of the first terrace",
+  ["ui.xp_label"] = "XP",          -- barre XP sous les cartes : progression vers le tier suivant
+  ["ui.to_tier"] = "TIER {n}",     -- cible de la barre XP (tier suivant) ; un triangle ► est dessiné devant (primitive)
+  -- saveur tier-aware de la colonne THE OFFERING (descend = pire ; remplace le flavor statique)
+  ["ui.terrace_1"] = "dregs of the first terrace",
+  ["ui.terrace_2"] = "spoils of the second terrace",
+  ["ui.terrace_3"] = "relics of the third terrace",
+  ["ui.terrace_4"] = "horrors of the fourth terrace",
+  ["ui.terrace_5"] = "the abyssal terrace",
   ["ui.sold"] = "SOLD",
   ["ui.place_unit"] = "PLACE A UNIT",
   ["ui.gold"] = "GOLD",

@@ -213,7 +213,7 @@ function Build:computeShop()
   local inner = Layout.inset(BAR, { l = 4, t = BAR_RULE + 14, r = 4, b = 16 })
   -- 3 colonnes séparées par des filets iron (1px), sans gouttière.
   local cols = Layout.row(inner, {
-    { size = 168 }, { size = 1 }, { flex = 1 }, { size = 1 }, { size = 318 },
+    { size = 150 }, { size = 1 }, { flex = 1 }, { size = 1 }, { size = 290 },
   }, { gap = 0, align = "stretch" })
   self.lay = { lifeCol = cols[1], div1 = cols[2], offerCol = cols[3], div2 = cols[4], actCol = cols[5] }
 
@@ -1747,42 +1747,48 @@ function Build:drawLifeOrb(run)
   LifeOrb.draw(box.x, box.y, box.w, box.h, run.lives, maxL, self.t / 60)
 end
 
--- RAIL DE TIER (handoff « Bottom Bar », au pied de la colonne THE OFFERING) : « TIER n/5 » à gauche + une
--- barre divisée en 5 CRANS (les 5 tiers), remplie à la progression GLOBALE ((tier-1 + xp%)/5) en or. Survol ->
--- infobulle des cotes par rang (drawOddsTooltip, hit-test self.xpBarRect). Render-only -> golden neutre.
+-- BARRE XP (handoff « Build Screen », au pied de la colonne THE OFFERING) : « XP cur/next » à gauche + une
+-- barre de progression DANS le tier courant + « → TIER n » à droite (ou « MAX »). Le TIER courant (n/5) vit
+-- désormais dans le bandeau du haut (5 losanges) -> ici on ne montre QUE la montée vers le tier SUIVANT (plus
+-- de doublon). Survol -> infobulle des cotes par rang (drawOddsTooltip, hit-test self.xpBarRect). Golden neutre.
 function Build:drawShopXpBar(run)
   local c = Theme.c
   local box = self.lay.tierRail
   if not box then return end
   local atMax = run.shopTier >= Run.MAX_TIER
   local hot = self.xpBarRect and inRect(self.mx, self.my, self.xpBarRect)
-  -- « TIER » (sourd) + « n/5 » (or), centré verticalement.
   local capFont = Theme.label(9)
   local cy = box.y + math.floor(box.h / 2)
   local ty = cy - math.floor(capFont:getHeight() / 2)
-  local pre = T("ui.tier_label") .. " "
-  local num = run.shopTier .. "/" .. Run.MAX_TIER
+  -- gauche : « XP cur/next » (XP sourd, valeur or) ; « MAX » au plafond.
+  local toNext = run:xpToNext()
+  local within = atMax and 1 or (toNext and toNext > 0 and math.min(1, run.shopXp / toNext) or 0)
+  local pre = T("ui.xp_label") .. " "
+  local num = atMax and T("ui.tier_max") or (run.shopXp .. "/" .. (toNext or 0))
   Draw.text(pre, box.x, ty, c.fainter, capFont)
   Draw.text(num, box.x + capFont:getWidth(pre), ty, c.gold, capFont)
-  -- barre : de après le libellé jusqu'au bord droit.
-  local barX = box.x + capFont:getWidth(pre .. num) + 12
-  local barW = (box.x + box.w) - barX
-  local barH = 8
-  local barY = cy - math.floor(barH / 2)
+  local leftW = capFont:getWidth(pre .. num)
+  -- droite : « ► TIER n » (triangle en primitive -> indépendant des glyphes de police ; rien au max).
+  local rightStr = atMax and "" or T("ui.to_tier", { n = run.shopTier + 1 })
+  local rightW = 0
+  if rightStr ~= "" then
+    local txw = capFont:getWidth(rightStr)
+    Draw.textR(rightStr, box.x + box.w, ty, c.fainter, capFont)
+    local tcx = box.x + box.w - txw - 8
+    Draw.setColor(c.fainter)
+    if love.graphics and love.graphics.polygon then love.graphics.polygon("fill", tcx, cy - 3, tcx + 5, cy, tcx, cy + 3) end
+    Draw.reset()
+    rightW = txw + 14
+  end
+  -- barre : entre le libellé gauche et le libellé droit.
+  local barX = box.x + leftW + 12
+  local barW = (box.x + box.w) - barX - ((rightW > 0) and (rightW + 12) or 0)
+  local barH, barY = 7, cy - 3
   if barW > 20 then
-    -- piste sombre (#0a0810) + bord iron.
     Draw.rect(barX, barY, barW, barH, { 0x0a / 255, 0x08 / 255, 0x10 / 255, 1 }, c.iron, 1)
-    -- remplissage OR = progression GLOBALE vers le tier max ((tier-1 + xp dans le tier) / 5).
-    local toNext = run:xpToNext()
-    local within = atMax and 1 or (toNext and toNext > 0 and math.min(1, run.shopXp / toNext) or 0)
-    local globalPct = atMax and 1 or math.min(1, ((run.shopTier - 1) + within) / Run.MAX_TIER)
-    local fillW = math.floor((barW - 2) * globalPct)
+    local fillW = math.floor((barW - 2) * within)
     if fillW > 0 then
       Panel.vgrad(barX + 1, barY + 1, fillW, barH - 2, { 0xca / 255, 0xa6 / 255, 0x4a / 255, 1 }, { 0x7a / 255, 0x5e / 255, 0x24 / 255, 1 })
-    end
-    -- 5 CRANS : séparateurs verticaux iron (les 5 tiers).
-    for k = 1, Run.MAX_TIER - 1 do
-      Draw.rect(barX + math.floor(barW * k / Run.MAX_TIER), barY, 1, barH, c.iron)
     end
     if hot then Draw.rect(barX, barY, barW, barH, nil, c.brass, 1) end
   end
@@ -1799,7 +1805,9 @@ function Build:drawOfferingHeader()
   local title = T("ui.offering")
   Draw.text(title, box.x, cy - math.floor(f:getHeight() / 2), c.faint, f)
   local ff = Theme.flavor(11)
-  local flav = T("ui.offering_flavor")
+  -- saveur TIER-AWARE : descendre dans le Puits change la terrasse (1re terrasse -> abysse).
+  local tier = math.max(1, math.min(Run.MAX_TIER, (self.host.run and self.host.run.shopTier) or 1))
+  local flav = T("ui.terrace_" .. tier)
   local fw = ff:getWidth(flav)
   Draw.text(flav, box.x + box.w - fw, cy - math.floor(ff:getHeight() / 2), c.fainter, ff)
   local dx1, dx2 = box.x + f:getWidth(title) + 10, box.x + box.w - fw - 10
