@@ -66,13 +66,13 @@ end
 -- ║   masque). Seul l'ANNEAU autour du périmètre de chaque box ondule + dérive vers le violet/abysse.  ║
 -- ╚═══════════════════════════════════════════════════════════════════════════════════════════════╝
 local DISTORT = {
-  AMP_PX    = 1.6,   -- amplitude RÉDUITE (retour user 2026-06 : la distorsion bavait sur l'intérieur + sur les voisins).
+  AMP_PX    = 2.2,   -- amplitude VISIBLE (~niveau d'origine) : la distorsion avait DISPARU (trop réduite), restaurée.
   SPEED     = 0.85,  -- vitesse d'écoulement des ondes (rad/s) : lent = onirique, organique
   SCALE     = 5.5,   -- échelle SPATIALE des ondes (≈ nb de lobes en travers de l'écran) : bas = larges houles
   CHROMA    = 0.10,  -- force de la dérive chromatique violet/abysse (0 = aucune). FAIBLE + GATÉE par le déplacement.
   -- ── MASQUE DE BANDES-BORDURES (remplace l'ancien masque RADIAL) ──────────────────────────────────
   -- La distorsion ne s'applique QUE dans une bande autour du périmètre de chaque box enregistrée.
-  RING_PX   = 3.5,   -- anneau plus FIN, collé au bord (avant 6 -> mordait l'intérieur des cartes, retour user).
+  RING_PX   = 4.5,   -- anneau FIN collé au bord : assez large pour qu'on VOIE l'onde, sans mordre l'intérieur (avant 6 = trop).
   RING_FEATHER = 2.5,-- fondu réduit (avant 5 : la bande totale ~11px entrait trop loin dans les containers).
 }
 
@@ -160,7 +160,9 @@ vec4 effect(vec4 color, Image tex, vec2 tc, vec2 sc) {
   number bmask = Texel(mask, tc).r * maskOn;
   // Amplitude finale (en PIXELS écran) : le facteur appliqué au champ d'ondes (ox,oy), modulé par le MASQUE de
   // bordure, l'intensité distorsion et la tension (les bords tanguent plus quand ça tourne mal). `strength` global la borne.
-  number ampPx = dAmp * bmask * dStrength * (0.85 + 0.6 * tension) * strength;
+  // ★ La distorsion est DÉCOUPLÉE du `strength` global (= le VHS/grain) : baisser le VHS ne fait PLUS disparaître
+  // la distorsion (retour user 2026-06 : « je ne vois plus mes shaders de distorsion »). Réglée via dAmp/dStrength.
+  number ampPx = dAmp * bmask * dStrength * (0.85 + 0.6 * tension);
   // OFFSET en PIXELS écran (ox,oy ∈ ~[-1.5..1.5] sont le champ d'ondes normalisé). On le garde pour DEUX usages :
   //   (a) le convertir en UV pour l'échantillonnage ; (b) mesurer sa LONGUEUR pour gater le chroma (cf. plus bas).
   vec2 offsetPx = vec2(ox, oy) * ampPx;
@@ -263,7 +265,7 @@ function PostFX.new()
     enabled = true,     -- défaut ON, mais SUBTIL (strength modeste) — la lisibilité prime
     available = false,  -- passe à true si le shader compile (sinon NO-OP partout)
     strength = 0.50,    -- maître d'intensité ATTÉNUÉ (retour user 2026-06 : VHS/grain un peu trop prononcé, confort/accessibilité)
-    distort = 0.50,     -- ★ maître d'intensité de la DISTORSION onirique (displacement), CONFINÉE aux bordures.
+    distort = 0.75,     -- ★ DISTORSION onirique RESTAURÉE (visible), DÉCOUPLÉE du VHS (cf. GLSL : plus de × strength). CONFINÉE aux bordures.
                         --   L'effet DOMINANT mais SUBTIL : « le liseré ondule légèrement », pas « ça gondole ».
                         --   Dose en 1 ligne (0 = off, 1 = AMP_PX nominal). Inclus au [F9].
     t = 0,              -- horloge murale accumulée (s)
