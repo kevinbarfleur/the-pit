@@ -418,6 +418,57 @@ local ok, err = pcall(function()
     print("  e2e : boutique (achat/case-verrou) + reroll + grant(accept/refuse) + vente + COMBAT OK")
   end
 
+  -- E2E ACHAT AU CLIC + ÉTATS DÉSACTIVÉS (retour user 2026-06) : un CLIC (presse+relâche au même point) sur une
+  -- offre l'achète et la place TOUTE SEULE ; la carte est GRISÉE/inerte si pas d'or OU (board+banc pleins ET pas
+  -- de trio à compléter) ; plein + trio -> l'achat FUSIONNE direct (level-up auto). On pilote la VRAIE scène.
+  do
+    local RunState = require("src.run.state")
+    local run = RunState.new(4242)
+    local host = { goto = function() end, run = run, finishCombat = function() end, offerLevelUpRelic = function() end }
+    local eb = Build.new(Palette, 320, 180, host)
+    eb.board:unlock(9)
+    local function clickOffer(i) -- presse+relâche au MÊME point = clic (pas un drag) -> autoBuy
+      local rc = eb.shopSlots[i]
+      eb:mousepressed(rc.x + rc.w / 2, rc.y + rc.h / 2, 1)
+      eb:mousereleased(rc.x + rc.w / 2, rc.y + rc.h / 2, 1)
+    end
+    -- (a) or + place -> JOUABLE : le clic achète + place tout seul, l'or est débité.
+    run.gold = 99
+    run.shop[1] = { id = "marauder", cost = 2, sold = false }
+    local pcA, gA = eb:placedCount(), run.gold
+    assert(eb:offerPlayable(run.shop[1]), "clic(a): offre jouable (or + place libre)")
+    clickOffer(1)
+    assert(eb:placedCount() == pcA + 1 and run.gold == gA - 2, "clic(a): achat au clic place tout seul + debite l'or")
+    -- (b) PAS D'OR -> non jouable -> clic INERTE (rien acheté, rien posé).
+    run.gold = 0
+    run.shop[2] = { id = "skeleton", cost = 2, sold = false }
+    local pcB = eb:placedCount()
+    assert(not eb:offerPlayable(run.shop[2]), "disable(b): pas d'or -> non jouable")
+    clickOffer(2)
+    assert(run.gold == 0 and eb:placedCount() == pcB, "disable(b): clic sans or n'achete/pose rien")
+    -- (c) PLEIN sans trio -> non jouable. On remplit board(9)+banc(4) de skeletons ; l'offre est un id ABSENT.
+    run.gold = 99
+    for i = 1, 9 do eb:placeId(i, "skeleton") end
+    for i = 1, 4 do eb.bench[i] = { id = "skeleton", level = 1, char = eb:newRig("skeleton") } end
+    run.shop[3] = { id = "marauder", cost = 2, sold = false }
+    assert(not eb:offerPlayable(run.shop[3]), "disable(c): plein + aucun trio (id absent) -> non jouable")
+    local gC = run.gold
+    clickOffer(3)
+    assert(run.gold == gC, "disable(c): clic inerte (plein, l'achat ne creerait rien)")
+    -- (d) PLEIN + TRIO -> JOUABLE : on met 2 marauders niveau 1, acheter le 3e complète le trio -> fusion
+    -- (la copie achetée est le catalyseur, jamais posée) -> un marauder niveau 2 apparaît, l'or est débité.
+    eb.slotRigs[1] = { id = "marauder", level = 1, char = eb:newRig("marauder") }; eb.board.slots[1].unit = "marauder"
+    eb.slotRigs[2] = { id = "marauder", level = 1, char = eb:newRig("marauder") }; eb.board.slots[2].unit = "marauder"
+    run.shop[3] = { id = "marauder", cost = 2, sold = false }
+    assert(eb:offerPlayable(run.shop[3]), "enable(d): plein MAIS trio à compléter -> jouable (level-up à l'achat)")
+    local gD = run.gold
+    clickOffer(3)
+    local hasL2 = false
+    for i = 1, 9 do local sr = eb.slotRigs[i]; if sr and sr.id == "marauder" and (sr.level or 1) >= 2 then hasL2 = true end end
+    assert(run.gold == gD - 2 and hasL2, "enable(d): l'achat plein+trio fusionne -> marauder niveau 2 + or debite")
+    print("  e2e clic : achat+place auto / grise sans or / grise plein-sans-trio / fusion plein+trio OK")
+  end
+
   -- E2E LOT 5 (§5.2) : récompense de relique au LEVEL-UP (fusion 3->niveau), bornée 1/round, MID-ROUND (pas
   -- de startRound -> board/boutique/or préservés). On REJOUE le routage exact de main.lua (host.offerLevelUpRelic
   -- + finishRelicPick* branchés mid-round) sur un VRAI RunState + la VRAIE scène build sous la mock.

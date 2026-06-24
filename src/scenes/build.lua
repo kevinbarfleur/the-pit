@@ -455,6 +455,90 @@ function Build:checkMerges()
   return anyMerge
 end
 
+-- Si une fusion en build a armé la récompense de level-up (checkMerges pose pendingLevelRelic), OUVRE l'offre
+-- 1-parmi-3 mid-round (le host gère l'unicité 1/round). Partagé par le drag-drop ET l'achat au clic.
+function Build:flushLevelRelic()
+  if self.pendingLevelRelic then
+    self.pendingLevelRelic = false
+    if self.host.offerLevelUpRelic then self.host.offerLevelUpRelic() end
+  end
+end
+
+-- Une offre est JOUABLE (retour user 2026-06) si l'achat aboutit à QUELQUE CHOSE : assez d'or ET (une case
+-- board/banc libre OU un trio à compléter -> level-up à l'achat). Sinon la carte est GRISÉE/désactivée et le
+-- clic/pickup est inerte (rien à créer). Sert au rendu (dim) ET à la souris (pas de drag sur une offre morte).
+function Build:offerPlayable(o)
+  if not o or o.sold then return false end
+  local run = self.host.run
+  if not run then return true end -- sandbox (sans éco) : la boutique est inerte, on ne grise pas
+  if run.gold < o.cost then return false end -- pas assez d'or
+  for i = 1, 9 do if self.board.slots[i].unlocked and not self.slotRigs[i] then return true end end -- case libre
+  for i = 1, BENCH_SIZE do if not self.bench[i] then return true end end                            -- slot banc libre
+  -- PLEIN : jouable seulement si l'achat complète un trio (>=2 copies du même id au NIVEAU 1 -> fusion).
+  local copies = 0
+  for i = 1, 9 do local sr = self.slotRigs[i]; if sr and sr.id == o.id and (sr.level or 1) == 1 then copies = copies + 1 end end
+  for i = 1, BENCH_SIZE do local sr = self.bench[i]; if sr and sr.id == o.id and (sr.level or 1) == 1 then copies = copies + 1 end end
+  return copies >= 2
+end
+
+-- ACHAT AU CLIC (retour user 2026-06) : un clic sur une offre (ou un lâcher hors d'une case précise) ACHÈTE et
+-- PLACE automatiquement -> 1re case board déverrouillée VIDE, sinon 1er slot de BANC vide ; checkMerges gère un
+-- éventuel trio. Si TOUT est plein mais l'achat complète un trio -> fusion directe (buyMergeWhenFull). Sinon
+-- refus (aucun or dépensé). Renvoie true si l'achat a eu lieu.
+function Build:autoBuy(offerIndex)
+  local run = self.host.run
+  if not run then return false end
+  local o = run.shop[offerIndex]
+  if not o or o.sold or run.gold < o.cost then return false end
+  local bslot
+  for i = 1, 9 do if self.board.slots[i].unlocked and not self.slotRigs[i] then bslot = i; break end end
+  local benchSlot
+  if not bslot then for i = 1, BENCH_SIZE do if not self.bench[i] then benchSlot = i; break end end end
+  if bslot or benchSlot then
+    local id = run:buy(offerIndex)
+    if not id then return false end
+    if bslot then
+      self.slotRigs[bslot] = { id = id, level = 1, char = self:newRig(id) }; self.board.slots[bslot].unit = id
+      self:spawnFx("buy", self.pos[bslot].x * 4, self.pos[bslot].y * 4)
+    else
+      self.bench[benchSlot] = { id = id, level = 1, char = self:newRig(id) }
+      local br = self.benchSlots[benchSlot]; self:spawnFx("buy", br.x * 4 + br.w * 2, br.y * 4 + br.h * 2)
+    end
+    self:checkMerges()
+    self:flushLevelRelic()
+    return true
+  end
+  return self:buyMergeWhenFull(offerIndex)
+end
+
+-- Board ET banc PLEINS, mais l'achat complète un trio (>=2 copies du même id au NIVEAU 1) : la copie achetée
+-- est le CATALYSEUR (jamais posée) -> on retire 1 copie existante et on promeut l'autre sur place (niveau 2),
+-- puis checkMerges gère une cascade éventuelle. Arme aussi la récompense de level-up (1×/round). Renvoie true
+-- si géré (sinon le caller ne dépense pas d'or : pas de trio -> refus).
+function Build:buyMergeWhenFull(offerIndex)
+  local run = self.host.run
+  local o = run.shop[offerIndex]
+  local copies = {}
+  for i = 1, 9 do local sr = self.slotRigs[i]; if sr and sr.id == o.id and (sr.level or 1) == 1 then copies[#copies + 1] = { kind = "board", i = i } end end
+  for i = 1, BENCH_SIZE do local sr = self.bench[i]; if sr and sr.id == o.id and (sr.level or 1) == 1 then copies[#copies + 1] = { kind = "bench", i = i } end end
+  if #copies < 2 then return false end
+  local id = run:buy(offerIndex)
+  if not id then return false end
+  local keep, drop = copies[1], copies[2]
+  local kx, ky
+  if keep.kind == "board" then kx, ky = self.pos[keep.i].x * 4, self.pos[keep.i].y * 4
+  else local br = self.benchSlots[keep.i]; kx, ky = br.x * 4 + br.w * 2, br.y * 4 + br.h * 2 end
+  if drop.kind == "board" then self.slotRigs[drop.i] = nil; self.board.slots[drop.i].unit = nil else self.bench[drop.i] = nil end
+  local promoted = { id = id, level = 2, char = self:newRig(id) }
+  if keep.kind == "board" then self.slotRigs[keep.i] = promoted; self.board.slots[keep.i].unit = id
+  else self.bench[keep.i] = promoted end
+  self:spawnFx("levelup", kx, ky, { level = 2 })
+  self:checkMerges()
+  if not run.relicFromLevelThisRound then run.relicFromLevelThisRound = true; self.pendingLevelRelic = true end
+  self:flushLevelRelic()
+  return true
+end
+
 -- ── Entrées ──
 function Build:keypressed(key)
   if key == "s" then -- swap de sigil (libre pour l'instant ; via reliques plus tard, cf. étape #3)
@@ -501,10 +585,10 @@ function Build:mousepressed(vx, vy, button)
     if inRect(vx, vy, self.raiseBtn) then Feel.press("build.raise"); if run:canBuyXp() then run:buyXp() end; return end
     if inRect(vx, vy, self.rerollBtn) then Feel.press("build.reroll"); run:reroll(); return end
     local oi = self:shopAt(vx, vy)
-    if oi then -- prend une offre achetable (consommée seulement au lâcher sur une case valide)
-      local o = run.shop[oi]
-      if o and not o.sold and run.gold >= o.cost then
-        self.drag = { id = o.id, level = 1, char = self:newRig(o.id), fromShop = oi }
+    if oi then -- prend une offre JOUABLE (achat consommé au lâcher sur une case, ou au CLIC via autoBuy) ; une
+      local o = run.shop[oi] -- carte désactivée (pas d'or / plein sans level-up) est INERTE -> pas de pickup.
+      if o and self:offerPlayable(o) then
+        self.drag = { id = o.id, level = 1, char = self:newRig(o.id), fromShop = oi, pressX = vx, pressY = vy }
       end
       return
     end
@@ -547,12 +631,14 @@ function Build:mousereleased(vx, vy, button)
           local br = self.benchSlots[bi]; self:spawnFx("buy", br.x * 4 + br.w * 2, br.y * 4 + br.h * 2)
         end
         self:checkMerges() -- 3 copies (même id+niveau, plateau OU banc) -> fusion niveau+1 (arme pendingLevelRelic 1×/round)
-        -- Lot 5 (§5.2) : une fusion a armé la récompense de level-up -> offre 1-parmi-3 MID-ROUND (round préservé).
-        if self.pendingLevelRelic then
-          self.pendingLevelRelic = false
-          if self.host.offerLevelUpRelic then self.host.offerLevelUpRelic() end
-        end
+        self:flushLevelRelic() -- Lot 5 (§5.2) : une fusion arme l'offre 1-parmi-3 MID-ROUND (round préservé).
       end
+    else
+      -- CLIC sur l'offre (presse+relâche quasi au même point, PAS un drag) : ACHAT AUTO -> place tout seul, ou
+      -- level-up auto si tout est plein (retour user 2026-06). Un DRAG raté (lâché loin, ex. case verrouillée/
+      -- occupée) ne fait RIEN (comportement historique préservé -> le test « pas d'achat sur case verrouillée »).
+      local moved = d.pressX and ((vx - d.pressX) * (vx - d.pressX) + (vy - d.pressY) * (vy - d.pressY)) or 1e9
+      if moved <= 36 then self:autoBuy(d.fromShop) end
     end
     return
   end
@@ -954,19 +1040,19 @@ function Build:drawBack(view)
         if o.sold then
           Draw.rect(x, y, w, h, c.void, c.iron, 1)
         else
-          local aff = run.gold >= o.cost
-          local hot = (ui.shopHover == i)
-          -- CADRE = RARETÉ (rang 1..5), pas type : la couleur de carte lit le TIER (gris->vert->bleu->violet->or).
-          -- Au survol on RENFORCE la teinte (jamais de doré générique qui écrase la rareté) + un halo additif
-          -- même hue -> « ça glow, ça renforce la couleur principale » (retour user 2026-06).
+          local playable = self:offerPlayable(o)
+          local hot = (ui.shopHover == i) and playable
+          -- CADRE = RARETÉ (rang 1..5), pas type : couleur de carte = TIER (gris->vert->bleu->violet->or). Au
+          -- survol on RENFORCE la teinte (jamais de doré générique) + halo additif. DÉSACTIVÉE (pas d'or, ou
+          -- plein SANS level-up à la clé) -> cadre iron + fond assombri + aucun glow (retour user 2026-06).
           local rank = (Units[o.id] and Units[o.id].rank) or 1
-          local tcol = Rarity.tierColor(rank)
           local border
-          if not aff then border = c.iron
+          if not playable then border = c.iron
           elseif hot then border = Rarity.tierBright(rank)
-          else border = tcol end
-          Panel.draw(x, y, w, h, { fill1 = hot and c.stone700 or c.stone800, fill2 = c.stone900, border = border, hi = aff })
-          if hot and aff and love.graphics and love.graphics.setBlendMode then
+          else border = Rarity.tierColor(rank) end
+          local fill1 = (not playable) and c.stone900 or (hot and c.stone700 or c.stone800)
+          Panel.draw(x, y, w, h, { fill1 = fill1, fill2 = c.stone900, border = border, hi = playable })
+          if hot and love.graphics and love.graphics.setBlendMode then
             local b2 = Rarity.tierBright(rank)
             love.graphics.setBlendMode("add")
             love.graphics.setColor(b2[1], b2[2], b2[3], 0.20)
@@ -1222,6 +1308,7 @@ function Build:drawShopCard(i, rect, o, hot)
     return
   end
   local aff = (self.host.run.gold >= o.cost)
+  local playable = self:offerPlayable(o) -- jouable = or + (place OU trio à compléter). Sinon carte grisée.
   local rank = Units[o.id].rank or 1
 
   -- (le FOND + le LISERÉ de la carte sont dessinés en drawBack, DERRIÈRE le rig d'aperçu ; ici = le CONTENU.)
@@ -1238,14 +1325,14 @@ function Build:drawShopCard(i, rect, o, hot)
     local tf = Theme.ui(8)
     local tw = (tf and tf:getWidth(nm)) or (#nm * 5)
     local padX, th = 5, 13
-    local fill = aff and Rarity.tierDim(rank) or { 0.12, 0.12, 0.13 }
-    local edge = aff and Rarity.tierBright(rank) or c.iron
+    local fill = playable and Rarity.tierDim(rank) or { 0.12, 0.12, 0.13 }
+    local edge = playable and Rarity.tierBright(rank) or c.iron
     Draw.rect(x + 8, y + 7, tw + padX * 2, th, { fill[1], fill[2], fill[3], 0.92 }, edge, 1)
-    Draw.text(nm, x + 8 + padX, y + 7 + 3, aff and Rarity.tierBright(rank) or c.faint, tf)
+    Draw.text(nm, x + 8 + padX, y + 7 + 3, playable and Rarity.tierBright(rank) or c.faint, tf)
   end
 
   -- NOM (Cinzel = police de NOM du système 4-voix, lisible et centrée dans sa rangée).
-  local nameCol = aff and c.name or c.dim
+  local nameCol = playable and c.name or c.dim
   local snm, snf = fitText(T("unit." .. o.id .. ".name"), nameBox.w, Theme.subhead, 12, 9)
   Draw.textC(snm, nameBox.x + nameBox.w / 2, nameBox.y + 1, nameCol, snf)
 
