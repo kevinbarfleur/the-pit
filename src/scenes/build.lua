@@ -193,6 +193,7 @@ end
 -- calcule les rects DESIGN une fois ; les hit-tests souris (en VIRTUEL) sont dérivés (÷4) -> self.shopSlots.
 local STRIP = { x = 16, y = 564, w = 1280 - 32, h = 720 - 564 - 12 } -- bandeau du bas (design), marges propres
 local STRIP_GAP = 18
+local SHOP_XPBAR_H = 34 -- hauteur de la longue BARRE D'XP de boutique, logée SOUS les cartes de monstres (retour user 2026-06)
 
 function Build:computeShop()
   -- 1) découpe principale : orbe (largeur fixe) | offres (flex) | boutons (largeur fixe).
@@ -208,10 +209,15 @@ function Build:computeShop()
   self.lay.lifeLabel = oc[1]
   self.lay.lifeOrbBox = oc[2]
 
-  -- 3) OFFRES : N cartes de MÊME taille avec gouttières ÉGALES qui REMPLISSENT la largeur (flex chacune).
+  -- 3) OFFRES : rangée de N cartes (flex, gouttières égales) AU-DESSUS d'une longue BARRE D'XP de boutique
+  -- (hauteur fixe). La progression de tier vit DIRECTEMENT sous les monstres (retour user 2026-06) : on scinde
+  -- la colonne shop en [ cartes (flex) | barre d'XP (SHOP_XPBAR_H) ]. Les cartes rétrécissent juste ce qu'il
+  -- faut pour loger la barre -> cartes + barre = hauteur de la colonne des boutons (FIGHT + éco), zone alignée.
+  local shopRows = Layout.column(cols[2], { { flex = 1 }, { size = SHOP_XPBAR_H } }, { gap = 8, align = "stretch" })
+  self.lay.shopXpBox = shopRows[2]
   local specs = {}
   for _ = 1, Run.SHOP_SIZE do specs[#specs + 1] = { flex = 1 } end
-  self.lay.cards = Layout.row(cols[2], specs, { gap = 8, align = "stretch" })
+  self.lay.cards = Layout.row(shopRows[1], specs, { gap = 8, align = "stretch" })
 
   -- 4) BOUTONS : COMBAT (gros, en haut) au-dessus d'une LIGNE éco. COMBAT reste DOMINANT (flex 3) ; la
   -- ligne éco (flex 2) tient les petits boutons. BUY XP (achat d'XP de boutique) occupe TOUJOURS la moitié
@@ -237,6 +243,7 @@ function Build:computeShop()
   self.raiseBtn = toV(self.lay.raiseBox)                  -- BUY XP (achat d'XP de boutique)
   self.declineBtn = toV(self.lay.declineBox)
   self:syncEcoRects(false)
+  self.xpBarRect = toV(self.lay.shopXpBox) -- survol de la longue barre d'XP -> infobulle des cotes (drawOddsTooltip)
   self:computeBench()
 end
 
@@ -1288,6 +1295,7 @@ function Build:drawOverlay(view)
       local o = run.shop[i]
       if o then self:drawShopCard(i, rect, o, ui.shopHover == i) end
     end
+    self:drawShopXpBar(run) -- longue BARRE D'XP de boutique, SOUS les monstres (retour user 2026-06)
     self:drawEcoButton("build.reroll", self.rerollBtn, T("ui.reroll_label"), Run.REROLL_COST, run:canReroll())
     -- Bouton REFUSER : visible seulement quand un grant de slot attend (sinon les slots ne s'achètent plus).
     if run.pendingSlotGrant then
@@ -1450,40 +1458,52 @@ function Build:drawBanner(run)
   end
 end
 
--- MODULE DE VIE (extrême gauche de la barre du bas) : [ libellé « LIVES n/5 » | rangée de CŒURS (Gauge.lives,
--- n pleins sur START_LIVES) | « TIER n/5 » + barre d'XP de boutique ]. Tout propre (plus aucun orbe forge baké) ;
--- libellés Space Mono ; remplit la colonne (self.lay.lifeOrbBox / lifeLabel) sans flotter dans le vide.
+-- MODULE DE VIE (extrême gauche de la barre du bas) : [ libellé « LIVES n/5 » | GLOBE DE VIE « à la Diablo » ].
+-- Le globe (Gauge.lifeOrb) = verre + liquide sang dont le niveau = vies/5 + un POISSON qui nage dedans + anneau
+-- de laiton (retour user 2026-06 : retour de l'ancien orbe à nageur). La barre d'XP/tier a quitté ce module pour
+-- une longue barre SOUS les monstres (drawShopXpBar) -> la colonne respire et le globe REMPLIT sa boîte.
 function Build:drawLifeOrb(run)
   local c = Theme.c
   local box = self.lay.lifeOrbBox
   local lab = self.lay.lifeLabel
   local maxL = Run.START_LIVES
-  -- Module de vie (bas-gauche), TOUT PROPRE — plus aucun orbe forge baké :
-  --   [ libellé « LIVES n/5 » | rangée de CŒURS (Gauge.lives) | « TIER n/5 » + barre d'XP de boutique ].
-  -- 1) LIBELLÉ (Space Mono) centré au-dessus. Sang si vies basses.
+  -- LIBELLÉ « LIVES n/5 » (Space Mono) centré au-dessus du globe. Sang si vies basses.
   local low = run.lives <= 1
   Draw.textC(T("ui.lives_orb", { n = run.lives, max = maxL }), lab.x + lab.w / 2, lab.y + 1,
     low and c.blood or c.gold, Theme.label(11))
-  -- 3) NIVEAU + BARRE D'XP (TFT-style), en bas de la colonne : « TIER n/5 » + barre remplie à shopXp/xpToNext()
-  -- (au tier MAX : pleine, libellé MAX). Survol de la barre -> infobulle des cotes par rang (drawOddsTooltip).
-  local capFont = Theme.label(9)
+  -- GLOBE DE VIE : liquide sang (niveau = vies/5) + poisson + anneau de laiton, anim sur self.t (en secondes).
+  Gauge.lifeOrb(box.x, box.y, box.w, box.h, run.lives, maxL, self.t / 60)
+end
+
+-- LONGUE BARRE D'XP DE BOUTIQUE (sous les monstres) : « TIER n/5 » à gauche + barre de progression
+-- (shopXp/xpToNext) qui remplit le reste de la largeur du shop. Survol -> infobulle des cotes par rang
+-- (drawOddsTooltip, via le hit-test self.xpBarRect calculé en computeShop). Au tier MAX : barre pleine dorée
+-- + « MAX » à droite. Le liseré de la barre s'avive au survol. Render-only -> golden neutre.
+function Build:drawShopXpBar(run)
+  local c = Theme.c
+  local box = self.lay.shopXpBox
+  if not box then return end
   local atMax = run.shopTier >= Run.MAX_TIER
+  local hot = self.xpBarRect and inRect(self.mx, self.my, self.xpBarRect)
+  -- libellé TIER (gauche), centré verticalement dans la barre.
+  local capFont = Theme.label(10)
   local tierStr = T("ui.tier_label") .. " " .. run.shopTier .. "/" .. Run.MAX_TIER
-  local labY = box.y + box.h - capFont:getHeight() - 7
-  Draw.textC(tierStr, box.x + box.w / 2, labY, atMax and c.gold or c.faint, capFont)
-  local barW = math.max(60, box.w - 16)
-  local barH, barX = 5, box.x + math.floor((box.w - math.max(60, box.w - 16)) / 2)
-  local barY = box.y + box.h - barH - 2
+  local lx = box.x + 6
+  local ly = box.y + math.floor((box.h - capFont:getHeight()) / 2)
+  Draw.text(tierStr, lx, ly, atMax and c.gold or (hot and c.title or c.faint), capFont)
+  -- barre : de après le libellé jusqu'au bord droit (en réservant la place de « MAX » au tier plafond).
+  local rightPad = atMax and (capFont:getWidth(T("ui.tier_max")) + 12) or 6
+  local barX = lx + capFont:getWidth(tierStr) + 12
+  local barW = (box.x + box.w) - rightPad - barX
+  local barH = math.max(8, math.min(14, box.h - 10))
+  local barY = box.y + math.floor((box.h - barH) / 2)
   local toNext = run:xpToNext()
   local pct = atMax and 1 or (toNext and toNext > 0 and math.min(1, run.shopXp / toNext) or 0)
-  Draw.bar(barX, barY, barW, barH, pct, atMax and c.gold or c.goldBright, c.stone900, c.hair)
-  self.xpBarRect = { x = barX / 4, y = labY / 4, w = barW / 4, h = (barY + barH - labY) / 4 }
-  -- 2) CŒURS (Gauge.lives) centrés horizontalement, verticalement entre le libellé et le bloc TIER.
-  local hscale, hgap = 2, 3
-  local heartsW = maxL * (7 * hscale + hgap) - hgap
-  local hx = box.x + math.floor((box.w - heartsW) / 2)
-  local hy = box.y + math.max(6, math.floor(((labY - box.y) - 6 * hscale) / 2))
-  Gauge.lives(hx, hy, run.lives, maxL, hscale, hgap)
+  if barW > 20 then
+    -- piste un peu plus claire (stone800) que le panneau -> la barre se lit comme un élément défini même vide.
+    Draw.bar(barX, barY, barW, barH, pct, atMax and c.gold or c.goldBright, c.stone800, hot and c.brass or c.hair)
+  end
+  if atMax then Draw.textR(T("ui.tier_max"), box.x + box.w - 6, ly, c.gold, capFont) end
 end
 
 -- INFOBULLE DES COTES (survol de la barre d'XP) : « SHOP ODDS · TIER n/5 » + une ligne par rang NON-NUL

@@ -194,6 +194,127 @@ function Gauge.lives(x, y, n, max_, scale, gap)
   return max_ * (cw + gap) - gap
 end
 
+-- Mélange linéaire de deux couleurs {r,g,b} -> {r,g,b}. k clampé [0,1].
+local function mix(a, b, k)
+  k = k < 0 and 0 or (k > 1 and 1 or k)
+  return { a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k, a[3] + (b[3] - a[3]) * k }
+end
+
+-- ── LIFE ORB — globe de vie « à la Diablo » (retour user 2026-06, retour de l'ancien orbe à nageur) : verre
+-- sombre, LIQUIDE SANG dont le niveau = vies/max, surface ONDULÉE animée, un POISSON pâle qui nage (demi-tour
+-- aux bords + tangage), bulles qui montent, reflet spéculaire et anneau de laiton (vire au sang à 1 vie).
+-- Per-frame en primitives lisses (chrome d'UI nette, comme les barres de combat) ; x,y,w,h = boîte ; t = SECONDES.
+-- HEADLESS-SAFE (g() -> no-op ; setBlendMode/arc gardés -> absents du mock). Render-only -> golden neutre.
+function Gauge.lifeOrb(x, y, w, h, lives, max_, t)
+  local gr = g(); if not gr then return end
+  max_ = max_ or 5
+  lives = lives or 0
+  t = t or 0
+  local frac = clamp01(lives / max_)
+  local cx, cy = x + w / 2, y + h / 2
+  local R = floor(math.min(w, h) / 2) - 1 -- rayon extérieur (laisse la place à l'anneau)
+  local rIn = R - 3                       -- rayon du liquide (sous l'anneau)
+  if rIn < 4 then return end
+  local low = lives <= 1
+  local pulse = low and (0.5 + 0.5 * math.sin(t * 4)) or 0
+
+  -- 1) VERRE : disque sombre + ombrage interne (la lumière vient du haut-gauche).
+  gr.setColor(C.stone900[1], C.stone900[2], C.stone900[3], 1)
+  gr.circle("fill", cx, cy, rIn, 56)
+  gr.setColor(C.void[1], C.void[2], C.void[3], 0.55)
+  gr.circle("fill", cx + rIn * 0.16, cy + rIn * 0.18, rIn * 0.9, 56)
+
+  -- 2) SURFACE du liquide (deux sinus déphasés) à `frac` de hauteur.
+  local surfaceY = (cy + rIn) - frac * (2 * rIn)
+  local function waveAt(px) return surfaceY + math.sin(px * 0.09 + t * 2.0) * 1.6 + math.sin(px * 0.05 - t * 1.3) * 1.0 end
+
+  -- 3) LIQUIDE : scanlines clippées au cercle (remplissage circulaire parfait + dégradé de profondeur).
+  if frac > 0.005 then
+    local yTop = math.max(math.ceil(cy - rIn), math.ceil(surfaceY))
+    for yy = yTop, math.ceil(cy + rIn) do
+      local dyl = yy - cy
+      local hw2 = rIn * rIn - dyl * dyl
+      if hw2 > 0 then
+        local hw = math.sqrt(hw2)
+        local depth = clamp01((yy - surfaceY) / (2 * rIn))
+        local col = mix(C.blood, C.bloodD, 0.12 + depth * 1.05)
+        if low then col = mix(col, C.bloodD, 0.3 * pulse) end
+        gr.setColor(col[1], col[2], col[3], 1)
+        gr.line(cx - hw, yy, cx + hw, yy)
+      end
+    end
+    -- crête de surface (ménisque clair ondulé) sur la largeur du liquide.
+    local hwS2 = rIn * rIn - (surfaceY - cy) * (surfaceY - cy)
+    if hwS2 > 0 then
+      local hwS = math.sqrt(hwS2)
+      local top = mix(C.blood, { 1, 0.55, 0.34 }, 0.35)
+      gr.setLineWidth(2); gr.setColor(top[1], top[2], top[3], 0.8)
+      local px0, py0
+      for px = floor(cx - hwS), math.ceil(cx + hwS), 3 do
+        local wy = waveAt(px)
+        if px0 then gr.line(px0, py0, px, wy) end
+        px0, py0 = px, wy
+      end
+      gr.setLineWidth(1)
+    end
+  end
+
+  -- 4) POISSON pâle qui nage (silhouette ; caché si trop peu d'eau). Corps ellipse + queue triangle + œil ;
+  -- demi-tour aux bords (face = signe de la vitesse) ; reste TOUJOURS sous la surface et dans le cercle.
+  if frac > 0.14 then
+    local ang = t * 0.8
+    local bodyW, bodyH = rIn * 0.32, rIn * 0.19
+    local fy = (surfaceY + (cy + rIn)) / 2 + math.sin(t * 1.6) * (rIn * 0.16)
+    local hwFy2 = rIn * rIn - (fy - cy) * (fy - cy)
+    if hwFy2 > 0 then
+      local maxX = math.sqrt(hwFy2) - bodyW - 2
+      if maxX > 2 then
+        local fx = cx + math.sin(ang) * maxX
+        local face = (math.cos(ang) >= 0) and 1 or -1
+        fy = math.max(fy, waveAt(fx) + bodyH + 1)
+        gr.push(); gr.translate(fx, fy); gr.scale(face, 1)
+        gr.setColor(0.80, 0.72, 0.56, 0.40)
+        gr.polygon("fill", -bodyW * 0.7, 0, -bodyW * 1.6, -bodyH, -bodyW * 1.6, bodyH) -- queue
+        gr.setColor(0.82, 0.74, 0.58, 0.55)
+        gr.ellipse("fill", 0, 0, bodyW, bodyH, 18)                                     -- corps
+        gr.setColor(0, 0, 0, 0.7)
+        gr.circle("fill", bodyW * 0.5, -bodyH * 0.12, math.max(1, bodyH * 0.2))        -- œil
+        gr.pop()
+      end
+    end
+  end
+
+  -- 5) BULLES qui montent du fond vers la surface (toujours dans l'eau).
+  if frac > 0.12 then
+    for i = 1, 3 do
+      local ph = (t * (0.22 + i * 0.05) + i * 0.37) % 1
+      local by = (cy + rIn) - ph * (frac * 2 * rIn)
+      local bx = cx + math.sin(t * 1.1 + i * 2.1) * (rIn * 0.28) + (i - 2) * (rIn * 0.16)
+      if by > waveAt(bx) and (rIn * rIn - (by - cy) * (by - cy)) > 0 then
+        gr.setColor(1, 0.82, 0.72, 0.16 * (1 - ph))
+        gr.circle("fill", bx, by, 1.2)
+      end
+    end
+  end
+
+  -- 6) REFLET spéculaire (additif, gardé) : la bille de verre.
+  if gr.setBlendMode then
+    gr.setBlendMode("add"); gr.setColor(1, 1, 1, 0.12)
+    gr.ellipse("fill", cx - rIn * 0.34, cy - rIn * 0.4, rIn * 0.4, rIn * 0.22, 18)
+    gr.setBlendMode("alpha")
+  end
+
+  -- 7) ANNEAU de laiton + ourlet de fer ; vire au sang à 1 vie (avec un léger pouls).
+  local rim = low and mix(C.brass, C.blood, 0.4 + 0.3 * pulse) or C.brass
+  gr.setLineWidth(3); gr.setColor(rim[1], rim[2], rim[3], 1); gr.circle("line", cx, cy, R, 56)
+  if gr.arc then
+    gr.setLineWidth(2); gr.setColor(C.brassS[1], C.brassS[2], C.brassS[3], 0.5)
+    gr.arc("line", "open", cx, cy, R - 1, math.pi * 1.15, math.pi * 1.7)
+  end
+  gr.setLineWidth(1); gr.setColor(C.iron[1], C.iron[2], C.iron[3], 1); gr.circle("line", cx, cy, rIn + 1, 56)
+  gr.setColor(1, 1, 1, 1)
+end
+
 -- ── DESCENT BAR (10 victoires) — §2.8. `total` segments égaux (def 10) ; les `wins` premiers GAGNÉS (laiton
 -- brass→brass-l) / les restants sombres + liseré pierre. x,y,w,h ; renvoie h. gap = écart inter-segments.
 function Gauge.descent(x, y, w, h, wins, total, gap)
