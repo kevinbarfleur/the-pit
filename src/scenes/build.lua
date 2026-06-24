@@ -1040,12 +1040,27 @@ function Build:update(frameDt)
   end
 end
 
+-- dps de BASE d'une affliction (poison/burn/…) chez une unité = somme des dps de ses effets qui la posent.
+-- Sert à afficher le bonus CONCRET (valeur plate) d'une aura amplificatrice sur un voisin donné, au lieu d'un
+-- pourcentage abstrait (le moteur applique bien un multiplicateur `increased`, mais le JOUEUR lit une valeur
+-- réelle, cohérente avec le texte des cartes « +N dmg/s », retour user 2026-06).
+local function baseAfflDps(id, kind)
+  local U = Units[id]
+  local sum = 0
+  for _, e in ipairs((U and U.effects) or {}) do
+    if e.op == kind then sum = sum + ((e.params and (e.params.dps or e.params.base)) or 0) end
+  end
+  return sum
+end
+
 -- ── LIENS D'AURA pour l'AFFICHAGE (refonte « Build Screen » : « les interactions visibles en temps réel ») ──
 -- Pour chaque case occupée SOURCE d'une aura d'adjacence (combat_start / target=neighbors), un lien
 -- { from, to, kind, label } vers chaque voisin OCCUPÉ. C'est le MIROIR de la logique de bake de buildComp
 -- (auras simples) : ici on RÉCOLTE pour DESSINER (arêtes colorées + chips chiffrés + readout de fiche) au
--- lieu de baker sur la cible. PUR (lecture data), réévalué chaque frame (cheap : ≤9 cases). Le label est la
--- valeur LISIBLE de l'aura (+N bouclier / +X% poison/burn / +N pourriture / GRANT pour l'octroi de saignement).
+-- lieu de baker sur la cible. PUR (lecture data), réévalué chaque frame (cheap : ≤9 cases).
+-- LABEL = VALEUR RÉELLE plate (retour user) : +N bouclier (flat) ; pour les amplificateurs poison/burn, le
+-- bonus CONCRET reçu par CE voisin = sa dps de base × le multiplicateur (pas un % abstrait) -> colle au texte
+-- de la carte ; si le voisin ne pose pas l'affliction (bonus 0), la synergie est inerte -> AUCUN lien dessiné.
 function Build:resolveAuraLinks()
   local links = {}
   for i = 1, 9 do
@@ -1054,16 +1069,23 @@ function Build:resolveAuraLinks()
       local sm = LEVEL_MULT[sr.level or 1] or 1.0 -- l'aura scale avec le niveau de la SOURCE (duplicatas)
       for _, e in ipairs(Units[sr.id].effects or {}) do
         if e.trigger == "combat_start" and e.target == "neighbors" then
-          local pa, kind, label = e.params or {}, nil, nil
-          if e.op == "shield_aura" then kind = "shield"; label = "+" .. math.floor((pa.value or 0) * sm + 0.5)
-          elseif e.op == "aura_poison_dps" then kind = "poison"; label = "+" .. math.floor((pa.inc or 0.5) * sm * 100 + 0.5) .. "%"
-          elseif e.op == "aura_burn_dps" then kind = "burn"; label = "+" .. math.floor((pa.inc or 0.5) * sm * 100 + 0.5) .. "%"
-          elseif e.op == "aura_rot_growth" then kind = "rot"; label = "+" .. math.floor((pa.bonus or 0) * sm + 0.5)
-          elseif e.op == "aura_grant_bleed" then kind = "bleed"; label = T("ui.aura_grant") end
+          local pa = e.params or {}
+          local kind, fixed, inc
+          if e.op == "shield_aura" then kind = "shield"; fixed = "+" .. math.floor((pa.value or 0) * sm + 0.5)
+          elseif e.op == "aura_poison_dps" then kind = "poison"; inc = (pa.inc or 0.5) * sm
+          elseif e.op == "aura_burn_dps" then kind = "burn"; inc = (pa.inc or 0.5) * sm
+          elseif e.op == "aura_rot_growth" then kind = "rot"; fixed = "+" .. math.floor((pa.bonus or 0) * sm + 0.5)
+          elseif e.op == "aura_grant_bleed" then kind = "bleed"; fixed = T("ui.aura_grant") end
           if kind then
             for _, nb in ipairs(self.board:neighbors(i)) do
-              if self.slotRigs[nb] and self.board.slots[nb].unlocked then
-                links[#links + 1] = { from = i, to = nb, kind = kind, label = label }
+              local nbr = self.slotRigs[nb]
+              if nbr and self.board.slots[nb].unlocked then
+                local label = fixed
+                if inc then -- amplificateur : bonus PLAT concret = dps de base du voisin × multiplicateur (0 -> rien)
+                  local add = math.floor(baseAfflDps(nbr.id, kind) * inc + 0.5)
+                  label = (add > 0) and ("+" .. add) or nil
+                end
+                if label then links[#links + 1] = { from = i, to = nb, kind = kind, label = label } end
               end
             end
           end
@@ -2002,18 +2024,12 @@ end
 function Build:drawBoardInspectorExtra(cardBox, slot)
   local c = Theme.c
   local links = (self.uiState and self.uiState.auraLinks) or {}
-  -- (1) lignes AURAS : gives (cette case = SOURCE, groupé par type) puis takes (liens entrants).
-  local rows, seenKind = {}, {}
+  -- (1) lignes AURAS : gives (cette case = SOURCE, une ligne par voisin -> chaque bonus CONCRET est exact)
+  -- puis takes (liens entrants).
+  local rows = {}
   for _, lk in ipairs(links) do
-    if lk.from == slot and not seenKind[lk.kind] then
-      seenKind[lk.kind] = true
-      local names = {}
-      for _, l2 in ipairs(links) do
-        if l2.from == slot and l2.kind == lk.kind and self.slotRigs[l2.to] then
-          names[#names + 1] = upperAscii(T("unit." .. self.slotRigs[l2.to].id .. ".name"))
-        end
-      end
-      rows[#rows + 1] = { kind = lk.kind, text = T("ui.aura_gives", { names = table.concat(names, " · ") }), value = lk.label }
+    if lk.from == slot and self.slotRigs[lk.to] then
+      rows[#rows + 1] = { kind = lk.kind, text = T("ui.aura_gives", { names = upperAscii(T("unit." .. self.slotRigs[lk.to].id .. ".name")) }), value = lk.label }
     end
   end
   for _, lk in ipairs(links) do
