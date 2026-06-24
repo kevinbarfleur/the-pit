@@ -1013,12 +1013,47 @@ function Build:update(frameDt)
   end
 end
 
+-- ── LIENS D'AURA pour l'AFFICHAGE (refonte « Build Screen » : « les interactions visibles en temps réel ») ──
+-- Pour chaque case occupée SOURCE d'une aura d'adjacence (combat_start / target=neighbors), un lien
+-- { from, to, kind, label } vers chaque voisin OCCUPÉ. C'est le MIROIR de la logique de bake de buildComp
+-- (auras simples) : ici on RÉCOLTE pour DESSINER (arêtes colorées + chips chiffrés + readout de fiche) au
+-- lieu de baker sur la cible. PUR (lecture data), réévalué chaque frame (cheap : ≤9 cases). Le label est la
+-- valeur LISIBLE de l'aura (+N bouclier / +X% poison/burn / +N pourriture / GRANT pour l'octroi de saignement).
+function Build:resolveAuraLinks()
+  local links = {}
+  for i = 1, 9 do
+    local sr = self.slotRigs[i]
+    if sr and self.board.slots[i].unlocked then
+      local sm = LEVEL_MULT[sr.level or 1] or 1.0 -- l'aura scale avec le niveau de la SOURCE (duplicatas)
+      for _, e in ipairs(Units[sr.id].effects or {}) do
+        if e.trigger == "combat_start" and e.target == "neighbors" then
+          local pa, kind, label = e.params or {}, nil, nil
+          if e.op == "shield_aura" then kind = "shield"; label = "+" .. math.floor((pa.value or 0) * sm + 0.5)
+          elseif e.op == "aura_poison_dps" then kind = "poison"; label = "+" .. math.floor((pa.inc or 0.5) * sm * 100 + 0.5) .. "%"
+          elseif e.op == "aura_burn_dps" then kind = "burn"; label = "+" .. math.floor((pa.inc or 0.5) * sm * 100 + 0.5) .. "%"
+          elseif e.op == "aura_rot_growth" then kind = "rot"; label = "+" .. math.floor((pa.bonus or 0) * sm + 0.5)
+          elseif e.op == "aura_grant_bleed" then kind = "bleed"; label = T("ui.aura_grant") end
+          if kind then
+            for _, nb in ipairs(self.board:neighbors(i)) do
+              if self.slotRigs[nb] and self.board.slots[nb].unlocked then
+                links[#links + 1] = { from = i, to = nb, kind = kind, label = label }
+              end
+            end
+          end
+        end
+      end
+    end
+  end
+  return links
+end
+
 -- État d'interaction (survol/voisins/cible de drop/survol boutique), calculé une fois par frame et
 -- partagé entre drawBack (fonds) et drawOverlay (bordures/texte). Coords souris en espace virtuel.
 function Build:computeUi()
   local hover = self:slotAt(self.mx, self.my)
   local ui = { hover = hover, dropTarget = self.drag and hover or nil, nbset = {}, shopHover = self:shopAt(self.mx, self.my), benchHover = self:benchAt(self.mx, self.my) }
   if hover then for _, j in ipairs(self.board:neighbors(hover)) do ui.nbset[j] = true end end
+  ui.auraLinks = self:resolveAuraLinks() -- « qui buffe qui » : arêtes colorées (drawBack) + chips (drawOverlay)
   self.uiState = ui -- champ distinct de la méthode (sinon self.uiState renverrait la méthode quand vide)
   return ui
 end
@@ -1058,7 +1093,21 @@ function Build:drawBack(view)
       end
     end
   end
-  love.graphics.setLineWidth(1)
+  -- ARÊTES D'AURA (refonte « Build Screen ») : « qui buffe qui » EN PERMANENCE, colorées par TYPE d'aura
+  -- (poison/burn/bleed/rot/shield) + lueur additive. Couche d'info posée PAR-DESSUS les arêtes du graphe ->
+  -- la synergie positionnelle se lit d'un coup d'œil sans survoler. Les chips chiffrés se posent en overlay.
+  for _, lk in ipairs(ui.auraLinks or {}) do
+    local pf, pt = self.pos[lk.from], self.pos[lk.to]
+    local col = c[lk.kind] or c.gold
+    if love.graphics.setBlendMode then
+      love.graphics.setBlendMode("add"); Draw.setColor({ col[1], col[2], col[3], 0.32 })
+      love.graphics.setLineWidth(6); love.graphics.line(pf.x * 4, pf.y * 4, pt.x * 4, pt.y * 4)
+      love.graphics.setBlendMode("alpha")
+    end
+    Draw.setColor(col); love.graphics.setLineWidth(2.5)
+    love.graphics.line(pf.x * 4, pf.y * 4, pt.x * 4, pt.y * 4)
+  end
+  love.graphics.setLineWidth(1); Draw.reset()
 
   -- Fonds des cases + CARTE DE RISQUE (1.2). depth = maxCol - cell.x (0 = front = exposé au ciblage
   -- de colonne). Voile de sang d'autant plus dense que la case est avancée -> rend visible le coût de
@@ -1313,12 +1362,39 @@ function Build:drawOverlay(view)
     else
       local sr = self.slotRigs[i]
       if sr then
-        -- Nom AJUSTÉ : budget = un peu moins que le pas entre cases -> jamais de chevauchement avec le voisin.
-        local nm, nf = fitText(T("unit." .. sr.id .. ".name"), SPACING * 4 - 8, Theme.label, 9, 7)
-        Draw.textC(nm, p.x * 4, p.y * 4 - SLOT_HALF + S + 3, c.name, nf)
+        local cx, top = p.x * 4, p.y * 4 - SLOT_HALF
+        local bottom = top + S
+        -- Bandeau sombre en bas de case (dégradé transparent->void) : lisibilité du NOM + barre de vie posés
+        -- PAR-DESSUS la créature (refonte « Build Screen » : nom DANS la case, comme le mockup).
+        if love.graphics and love.graphics.setColor then
+          for k = 1, 6 do
+            love.graphics.setColor(c.void[1], c.void[2], c.void[3], 0.13 * k)
+            love.graphics.rectangle("fill", cx - SLOT_HALF + 2, bottom - 4 - k * 3, S - 4, 3)
+          end
+          love.graphics.setColor(1, 1, 1, 1)
+        end
+        -- NOM : DANS la case (bas-centre, au-dessus de la barre de vie), ajusté/ellipsé au budget de case.
+        local nm, nf = fitText(T("unit." .. sr.id .. ".name"), S - 8, Theme.label, 8, 7)
+        Draw.textC(nm, cx, bottom - 19, c.ink2, nf)
+        -- BARRE DE VIE (fiole de sang : dégradé + ménisque vif) : unité « vivante » prête au combat. Pleine en build.
+        local hbw, hbh = S - 16, 5
+        local hbx, hby = math.floor(cx - hbw / 2), bottom - 8
+        Draw.rect(hbx - 1, hby - 1, hbw + 2, hbh + 2, nil, c.bloodD, 1)
+        Panel.vgrad(hbx, hby, hbw, hbh, { 0x7a / 255, 0x14 / 255, 0x10 / 255, 1 }, { 0x3a / 255, 0x0a / 255, 0x08 / 255, 1 })
+        Draw.rect(hbx, hby, hbw, 1, c.bloodL)
+        -- BADGE TAUNT (unités à `taunt`, ex. gravewarden) : plaque laiton sur le buste -> override de ciblage lisible.
+        if Units[sr.id] and Units[sr.id].taunt then
+          local tf = Theme.label(7)
+          local txt = T("ui.taunt")
+          local bw = tf:getWidth(txt) + 12
+          local bx, by = math.floor(cx - bw / 2), top + math.floor(S * 0.40)
+          Draw.rect(bx, by, bw, 13, { 0x0c / 255, 0x09 / 255, 0x12 / 255, 0.92 }, c.brass, 1)
+          Draw.text(txt, bx + 6, by + math.floor((13 - tf:getHeight()) / 2), c.brassS, tf)
+        end
       end
     end
   end
+  if run or self.uiState then self:drawAuraChips(ui) end -- chips chiffrés sur les arêtes d'aura (par-dessus rigs)
 
   -- THE OFFERING (handoff « Bottom Bar ») : en-tête + 5 cartes ÉPURÉES (drawShopCard pose le contenu : tag de
   -- tier + nom + coût ; fond/zone d'art en drawBack, créature en drawWorld) + rail de tier à 5 crans au pied.
@@ -1782,6 +1858,48 @@ function Build:drawEcoButton(id, rect, label, cost, enabled)
   local hot = inRect(self.mx, self.my, rect)
   Button.draw(rect.x * 4, rect.y * 4, rect.w * 4, rect.h * 4, "eco", label,
     { cost = cost, hover = hot, disabled = not enabled, feel = Feel.state(id), id = id })
+end
+
+-- ── CHIPS D'AURA (refonte « Build Screen ») : pastille chiffrée posée sur une arête d'aura. Icône d'affliction
+-- (Keywords) + valeur ; bord = couleur du type d'aura + lueur additive. Le bouclier (hors registre afflictions)
+-- -> petit écusson primitif. PUR-RENDER (golden neutre). ──
+function Build:drawAuraChip(cx, cy, kind, label)
+  local c = Theme.c
+  local col = c[kind] or c.gold
+  local f = Theme.value(10)
+  local icon = (kind ~= "shield") and Keywords.icon(kind) or nil
+  local iw = icon and icon.w or ((kind == "shield") and 8 or 0)
+  local tw = (f and f:getWidth(label)) or (#label * 6)
+  local w = 7 + ((iw > 0) and (iw + 3) or 0) + tw + 7
+  local h = 17
+  local x, y = math.floor(cx - w / 2), math.floor(cy - h / 2)
+  if love.graphics and love.graphics.setBlendMode then
+    love.graphics.setBlendMode("add"); Draw.setColor({ col[1], col[2], col[3], 0.16 })
+    love.graphics.rectangle("fill", x - 1, y - 1, w + 2, h + 2); love.graphics.setBlendMode("alpha"); Draw.reset()
+  end
+  Draw.rect(x, y, w, h, { 0x0c / 255, 0x09 / 255, 0x12 / 255, 0.96 }, col, 1)
+  local ix = x + 7
+  if icon and icon.image and love.graphics then
+    love.graphics.setColor(1, 1, 1, 1); love.graphics.draw(icon.image, ix, math.floor(cy - icon.h / 2)); ix = ix + iw + 3
+  elseif kind == "shield" and love.graphics then
+    Draw.setColor(col); love.graphics.polygon("fill", ix, cy - 4, ix + 7, cy - 4, ix + 7, cy + 1, ix + 3.5, cy + 5, ix, cy + 1)
+    ix = ix + 10; Draw.reset()
+  end
+  local bright = { math.min(1, col[1] * 1.25 + 0.25), math.min(1, col[2] * 1.25 + 0.25), math.min(1, col[3] * 1.25 + 0.25), 1 }
+  Draw.text(label, ix, cy - (f and f:getHeight() / 2 or 5), bright, f)
+  Draw.reset()
+end
+
+-- Pose un chip sur CHAQUE lien d'aura, au point biaisé vers la SOURCE (sépare deux liens bidirectionnels).
+function Build:drawAuraChips(ui)
+  if not (ui and ui.auraLinks) then return end
+  for _, lk in ipairs(ui.auraLinks) do
+    local pf, pt = self.pos[lk.from], self.pos[lk.to]
+    if pf and pt then
+      local t = 0.42
+      self:drawAuraChip((pf.x + (pt.x - pf.x) * t) * 4, (pf.y + (pt.y - pf.y) * t) * 4, lk.kind, lk.label)
+    end
+  end
 end
 
 -- ── Fiche monstre (carte propre, au survol) ────────────────────────────────────────────────────────

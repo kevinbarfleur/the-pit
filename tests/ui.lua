@@ -509,6 +509,18 @@ local ok, err = pcall(function()
     b:drawSigilBar() -- barre sigil/archétype (lit b.board.shape) -> no crash
     assert(b:shapeBtnRect(1) and b:shapeBtnRect(#require("src.board.shapes").order), "shapeBtnRect : rects de boutons de forme valides")
 
+    -- AURAS (refonte build screen, phase 2) : resolveAuraLinks récolte les liens d'adjacence pour l'affichage ;
+    -- drawAuraChips/drawAuraChip (icône Keywords + écusson shield) ne crashent pas headless.
+    b.host.run = nil
+    b.board:setShape("carre"); b.board:unlock(9); b:computeLayout()
+    b:placeId(5, "templar"); b:placeId(4, "marauder"); b:placeId(6, "skeleton")
+    local links = b:resolveAuraLinks()
+    assert(#links >= 2, "resolveAuraLinks : templar(shield_aura) -> 2 voisins occupés = >=2 liens")
+    assert(links[1].kind == "shield" and links[1].label:match("^%+%d"), "resolveAuraLinks : lien shield +N lisible")
+    b:drawAuraChips({ auraLinks = links }) -- shield (écusson primitif)
+    b:drawAuraChip(120, 120, "poison", "+50%") -- icône d'affliction (Keywords)
+    b.slotRigs[5] = nil; b.board.slots[5].unit = nil; b:placeId(5, "gravewarden") -- taunt -> chemin badge TAUNT
+
     -- ── FIT-TO-BOX (anti-débordement des créatures) : rigBounds renvoie une boîte SAINE (repli headless,
     -- pas de canvas réel sous le mock) ; rigFitScale CONTIENT dans la boîte et RESPECTE maxScale (cap). ──
     local bnd = b:rigBounds("marauder")

@@ -28,7 +28,7 @@ local function makeBuild(host)
   host.run = RunState.new(SEED)
   local b = Build.new(Palette, VW, VH, host)
   b.board:setShape("carre"); b:computeLayout(); b.board:unlock(9)
-  b:placeId(5, "templar") -- rempart central (buffe ses voisins) -> aura visible
+  b:placeId(5, "templar") -- rempart central (shield_aura -> buffe ses voisins) : arêtes/chips d'aura visibles
   b:placeId(4, "marauder")
   b:placeId(6, "skeleton")
   -- BANC (réserve, 4 slots) peuplé pour la capture : une PAIRE (witch×2, pré-fusion lisible) + 2 variés.
