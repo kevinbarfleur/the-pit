@@ -179,7 +179,57 @@ local function toVirtual(x, y)
   return (x - view.ox) / view.scale, (y - view.oy) / view.scale
 end
 
-function love.load()
+-- HARNAIS D'EXPORT (DEV / RENDER pur) : capté AVANT tout démarrage normal du jeu si un flag CLI est présent.
+-- `args` = arguments de jeu déjà parsés par love.run (love.arg.parseGameArguments) -> liste 1-indexée des
+-- flags utilisateur (`args[1] == "--export-bestiary"`, `"--shoot=menu"`, ...). Le harnais fait son travail puis
+-- love.event.quit() : la branche n'EST JAMAIS atteinte sans flag explicite (démarrage normal byte-for-byte intact).
+-- Ce code est RENDER-only, hors SIM, ignoré de check.sh/golden -> aucune empreinte sur le déterminisme.
+local function tryExport(args)
+  if not args then return false end
+  local doBestiary, shoot = false, nil
+  for _, a in ipairs(args) do
+    if a == "--export-bestiary" then doBestiary = true
+    else
+      local name = type(a) == "string" and a:match("^%-%-shoot=(.+)$")
+      if name then shoot = name end
+    end
+  end
+  if not doBestiary and not shoot then return false end
+
+  -- L'export rasterise dans des Canvas réels : on s'assure du filtre nearest (cohérent avec le jeu) et on
+  -- charge la DA (polices) pour que les captures de scènes affichent le texte. Aucun host/scène de jeu monté ici.
+  love.graphics.setDefaultFilter("nearest", "nearest")
+  if Theme.load then Theme.load() end
+  if Grimoire.load then Grimoire.load() end
+  if Bestiary.load then Bestiary.load() end
+
+  local Export = require("src.core.export")
+  if doBestiary then
+    local n, dir = Export.bestiary()
+    print(string.format("[export] bestiary: %d PNG -> %s/ (save dir: %s)", n, dir, love.filesystem.getSaveDirectory()))
+  end
+  if shoot then
+    local Scenes = require("src.core.export_scenes")
+    local function one(name)
+      local builder = Scenes.builder(name)
+      if not builder then
+        print("[export] shoot: UNKNOWN scene '" .. tostring(name) .. "' (known: " .. table.concat(Scenes.names, ", ") .. ")")
+        return
+      end
+      local ok, res = pcall(Export.shoot, name, builder)
+      if ok then print(string.format("[export] shoot %s -> %s (save dir: %s)", name, res, love.filesystem.getSaveDirectory()))
+      else print("[export] shoot " .. name .. " FAILED: " .. tostring(res)) end
+    end
+    if shoot == "all" then for _, nm in ipairs(Scenes.names) do one(nm) end else one(shoot) end
+  end
+
+  love.event.quit()
+  return true
+end
+
+function love.load(args)
+  if tryExport(args) then return end -- DEV : export PNG demandé -> on a tout fait + quit, on n'amorce pas le jeu
+
   love.graphics.setDefaultFilter("nearest", "nearest") -- AVANT toute création d'Image/Canvas
   love.graphics.setLineStyle("rough")
   love.graphics.setBackgroundColor(0.024, 0.016, 0.039)
