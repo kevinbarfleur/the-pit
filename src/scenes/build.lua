@@ -366,12 +366,13 @@ function Build:syncEcoRects(granting)
   if granting then
     self.raiseBtn = self._toV(self.lay.buyXp3)
     self.rerollBtn = self._toV(self.lay.reroll3)
-    self.declineBtn = self._toV(self.lay.refuse3)
   else
     self.raiseBtn = self._toV(self.lay.buyXp2)
     self.rerollBtn = self._toV(self.lay.reroll2)
-    self.declineBtn = nil
   end
+  -- declineBtn TOUJOURS valide (jamais nil) : dessiné/hit-testé uniquement pendant un grant, mais on évite
+  -- toute course (grant qui s'allume entre deux syncs) -> plus de crash inRect(nil) (retour user 2026-06).
+  self.declineBtn = self._toV(self.lay.refuse3)
 end
 
 -- Rect (ESPACE DESIGN) de la i-ème relique possédée (rangée au-dessus de la boutique). Inclut le cadre
@@ -1314,6 +1315,9 @@ function Build:drawOverlay(view)
   -- THE OFFERING (handoff « Bottom Bar ») : en-tête + 5 cartes ÉPURÉES (drawShopCard pose le contenu : tag de
   -- tier + nom + coût ; fond/zone d'art en drawBack, créature en drawWorld) + rail de tier à 5 crans au pied.
   if run then
+    -- rects éco fidèles à l'état du grant AVANT le dessin (le grant peut s'allumer au frame de transition,
+    -- AVANT que update n'ait re-synchronisé -> sinon declineBtn périmé/nil -> crash inRect, retour user 2026-06).
+    self:syncEcoRects(run.pendingSlotGrant)
     self:drawOfferingHeader()
     for i, rect in ipairs(self.shopSlots) do
       local o = run.shop[i]
