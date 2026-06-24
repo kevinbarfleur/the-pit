@@ -82,7 +82,7 @@ local SPACING = 26
 local BOARD_OY = 76 -- centre du plateau (virtuel) : ×4 = 304 design, REMONTÉ pour dégager le BANC sous le plateau
 local BOARD_HALF_W = 128 -- demi-étendue MAX (virtuelle) des CENTRES de cases -> board centré, jamais hors zone
 local BOARD_HALF_H = 30  -- (idem vertical) : RESSERRÉ pour qu'un sigil étalé ne morde pas sur le banc
-local BENCH_SIZE = 7 -- BANC (réserve hors-combat) : rangée de slots sous le plateau pour STOCKER/FUSIONNER (n'entre jamais en combat)
+local BENCH_SIZE = 4 -- BANC (réserve hors-combat) : rangée de slots sous le plateau pour STOCKER/FUSIONNER (n'entre jamais en combat). 4 max -> garde un vrai arbitrage de placement (retour user 2026-06).
 local MAX_LEVEL = 3
 local LEVEL_MULT = { 1.0, 1.8, 3.0 } -- stats par niveau : 3 copies (même id+niveau) -> 1 unité niveau+1 (façon TFT)
 
@@ -461,6 +461,14 @@ function Build:keypressed(key)
     self.board:setShape(Shapes.order[self.shapeIdx])
     self:computeLayout()
   end
+end
+
+-- ENTRÉE de scène (appelé par host.goto quand on (re)vient sur build) : repointe le curseur HORS écran pour
+-- repartir au repos. Sinon, après un combat, self.mx/self.my gardent la position du clic COMBAT -> le bouton
+-- reste « survolé » tant que la souris ne bouge pas (bug de hover collé, retour user 2026-06). Le 1er mousemoved
+-- réel restaure la position. Pas de Feel.reset global (évite d'effacer la respiration des autres ids).
+function Build:onEnter()
+  self.mx, self.my = -1e4, -1e4
 end
 
 function Build:mousemoved(vx, vy)
@@ -1002,8 +1010,10 @@ function Build:drawWorld()
     local sr = self.bench[i]
     if sr then
       local r = self.benchSlots[i]
-      local gx = math.floor(r.x * 4 + r.w * 2 + 0.5)     -- centre X du slot (r.w*4/2 = r.w*2)
-      local gy = math.floor(r.y * 4 + r.h * 4 - 4 + 0.5) -- pieds vers le bas du slot
+      -- ⚠ drawWorld dessine sur le canvas VIRTUEL (320×180) : les coords sont en VIRTUEL (comme le board p.x et
+      -- l'aperçu shop rect.x), PAS en design. (bug corrigé : r.x*4 dessinait les rigs hors-canvas = invisibles.)
+      local gx = math.floor(r.x + r.w / 2 + 0.5)         -- centre X du slot (virtuel)
+      local gy = math.floor(r.y + r.h - 1 + 0.5)         -- pieds vers le bas du slot (virtuel)
       if Critter.has(sr.id) then
         Critter.drawAt(nil, sr.id, gx, gy, BENCH_SCALE, self.t / 60, 1)
       else

@@ -86,6 +86,7 @@ function host.goto(name, payload)
     host.scene = host.designsystem
   else
     host.scene = host.build
+    if host.build and host.build.onEnter then host.build:onEnter() end -- repart au repos (anti hover collé post-combat)
   end
   host.name = name
 end
