@@ -1446,18 +1446,18 @@ function Build:drawOverlay(view)
     -- Survol de la barre d'XP -> cotes par rang du tier courant (enseigne « à quoi sert monter »).
     self:drawOddsTooltip(run)
   else
-    local id
+    local id, boardSlot
     local oi = self:shopAt(self.mx, self.my)
     if oi then id = run.shop[oi].id
     else
       local si = self:slotAt(self.mx, self.my)
-      if si and self.slotRigs[si] then id = self.slotRigs[si].id
+      if si and self.slotRigs[si] then id = self.slotRigs[si].id; boardSlot = si
       else
         local bi = self:benchAt(self.mx, self.my)
         if bi and self.bench[bi] then id = self.bench[bi].id end
       end
     end
-    if id then self:drawTooltip(id) end
+    if id then self:drawTooltip(id, boardSlot) end
   end
 
   self:drawFx() -- GAME FEEL : bursts achat/vente/level-up PAR-DESSUS tout (transitoires)
@@ -1924,9 +1924,98 @@ end
 
 -- Infobulle d'unité (survol plateau / boutique) : la FICHE de monstre, ancrée au curseur. On passe le rig
 -- d'APERÇU (animé) pour que le portrait respire à l'identique de l'ancienne carte ; bake/bounds via MiniRig.
-function Build:drawTooltip(id)
-  MonsterCard.draw(self.view, self.palette, id, self.mx * 4, self.my * 4, self.t / 60,
+-- boardSlot (optionnel) : si l'unité est POSÉE, on attache sous la fiche l'inspecteur d'adjacence (AURAS +
+-- EXPOSURE) — l'inspecteur du design, mais ANCRÉ AU CURSEUR (décision user : pas de panneau fixe à droite).
+function Build:drawTooltip(id, boardSlot)
+  local box = MonsterCard.draw(self.view, self.palette, id, self.mx * 4, self.my * 4, self.t / 60,
     { rig = self.previewRigs[id] })
+  if box and boardSlot and self.slotRigs[boardSlot] then
+    self:drawBoardInspectorExtra(box, boardSlot)
+  end
+end
+
+-- ── INSPECTEUR DE BOARD (refonte « Build Screen ») : sous la fiche d'une unité POSÉE, un panneau
+-- AURAS (« qui je buffe / qui me buffe », chiffré + icône, lu des liens d'aura) + EXPOSURE (rang
+-- d'exposition au ciblage de colonne, dérivé de la forme). Ancré à la fiche (cardBox) : dessous si la
+-- place le permet, sinon dessus. PUR-RENDER (golden neutre). ──
+function Build:drawBoardInspectorExtra(cardBox, slot)
+  local c = Theme.c
+  local links = (self.uiState and self.uiState.auraLinks) or {}
+  -- (1) lignes AURAS : gives (cette case = SOURCE, groupé par type) puis takes (liens entrants).
+  local rows, seenKind = {}, {}
+  for _, lk in ipairs(links) do
+    if lk.from == slot and not seenKind[lk.kind] then
+      seenKind[lk.kind] = true
+      local names = {}
+      for _, l2 in ipairs(links) do
+        if l2.from == slot and l2.kind == lk.kind and self.slotRigs[l2.to] then
+          names[#names + 1] = T("unit." .. self.slotRigs[l2.to].id .. ".name"):upper()
+        end
+      end
+      rows[#rows + 1] = { kind = lk.kind, text = T("ui.aura_gives", { names = table.concat(names, " · ") }), value = lk.label }
+    end
+  end
+  for _, lk in ipairs(links) do
+    if lk.to == slot and self.slotRigs[lk.from] then
+      rows[#rows + 1] = { kind = lk.kind, text = T("ui.aura_takes", { name = T("unit." .. self.slotRigs[lk.from].id .. ".name"):upper() }), value = lk.label }
+    end
+  end
+  -- (2) exposition : front-ness dérivée de la colonne (depth = maxCol - cell.x) sur les cases OCCUPÉES.
+  local cell = self.board.shape.cells[slot]
+  local minC, maxC = math.huge, -math.huge
+  for i = 1, 9 do
+    if self.slotRigs[i] then local cc = self.board.shape.cells[i]; if cc.x < minC then minC = cc.x end; if cc.x > maxC then maxC = cc.x end end
+  end
+  local expoFrac = 1 - (maxC - cell.x) / math.max(1, maxC - minC)
+  local filled = math.max(1, math.min(3, math.floor(expoFrac * 3 + 0.999)))
+  local expoLab = (expoFrac >= 0.66) and T("ui.expo_front") or ((expoFrac >= 0.33) and T("ui.expo_mid") or T("ui.expo_back"))
+
+  -- (3) mesure + position (attachée à la fiche : dessous si possible, sinon dessus).
+  local W, PAD, ROW_H = cardBox.w, 13, 19
+  local headF, valF = Theme.label(8), Theme.value(11)
+  local hasAuras = #rows > 0
+  local h = PAD + 12 + PAD -- exposition (≈12) + marges
+  if hasAuras then h = h + headF:getHeight() + 8 + #rows * ROW_H + 10 end
+  local x = math.floor(cardBox.x)
+  local y = cardBox.y + cardBox.h + 6
+  if y + h > Draw.H then y = cardBox.y - h - 6 end
+  if y < 4 then y = 4 end
+  y = math.floor(y)
+
+  Panel.draw(x, y, W, h, { fill1 = c.stone800, fill2 = c.stone900, border = c.iron })
+  local bx, rightX, cy = x + PAD, x + W - PAD, y + PAD
+
+  if hasAuras then
+    Draw.text(T("ui.auras_on_cell"), bx, cy, c.ink3, headF)
+    Draw.textR(T("ui.links_count", { n = #rows }), rightX, cy, c.ink4, headF)
+    cy = cy + headF:getHeight() + 8
+    for _, r in ipairs(rows) do
+      local col = c[r.kind] or c.gold
+      local icon = (r.kind ~= "shield") and Keywords.icon(r.kind) or nil
+      local ix = bx
+      if icon and icon.image and love.graphics then
+        love.graphics.setColor(1, 1, 1, 1); love.graphics.draw(icon.image, ix, math.floor(cy + ROW_H / 2 - icon.h / 2)); ix = bx + icon.w + 6
+      elseif love.graphics and love.graphics.polygon then
+        Draw.setColor(col); love.graphics.polygon("fill", ix, cy + 5, ix + 7, cy + 5, ix + 7, cy + 10, ix + 3.5, cy + 14, ix, cy + 10); ix = bx + 12; Draw.reset()
+      else ix = bx + 12 end
+      local vw = valF:getWidth(r.value)
+      Draw.text(r.value, rightX - vw, cy + math.floor((ROW_H - valF:getHeight()) / 2), col, valF)
+      local txt, tf = fitText(r.text, (rightX - vw - 6) - ix, Theme.body, 12, 10)
+      Draw.text(txt, ix, cy + math.floor((ROW_H - (tf and tf:getHeight() or 12)) / 2), c.ink2, tf)
+      cy = cy + ROW_H
+    end
+    cy = cy + 10
+  end
+  -- EXPOSURE : label + 3 segments + rang (saveur).
+  Draw.text(T("ui.exposure"), bx, cy + 1, c.ink4, headF)
+  local segX = bx + headF:getWidth(T("ui.exposure")) + 10
+  for k = 1, 3 do
+    local sx = segX + (k - 1) * 15
+    if k <= filled then Panel.vgrad(sx, cy, 12, 9, { 0x7a / 255, 0x14 / 255, 0x10 / 255, 1 }, { 0x3a / 255, 0x0a / 255, 0x08 / 255, 1 })
+    else Draw.rect(sx, cy, 12, 9, c.stone850, c.stone700, 1) end
+  end
+  Draw.textR(expoLab, rightX, cy, c.ink4, Theme.flavor(11))
+  Draw.reset()
 end
 
 -- Infobulle de relique (survol de la rangée) = Panel propre (même langage que src/scenes/relicpick.lua) :

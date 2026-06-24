@@ -92,6 +92,15 @@ return {
   ["ui.reshape_label"] = "[S] RESHAPE",
   ["ui.aura_grant"] = "GRANT",  -- chip d'aura : l'aura OCTROIE un effet au voisin (vs amplifier une valeur)
   ["ui.taunt"] = "TAUNT",       -- badge de case : l'unité force le ciblage (override d'aggro)
+  -- fiche au survol (board) : readout des liens d'aura + exposition (refonte build screen, phase 3)
+  ["ui.auras_on_cell"] = "AURAS ON THIS CELL",
+  ["ui.links_count"] = "{n} LINKS",
+  ["ui.aura_gives"] = "gives {names}",
+  ["ui.aura_takes"] = "takes from {name}",
+  ["ui.exposure"] = "EXPOSURE",
+  ["ui.expo_front"] = "front rank",
+  ["ui.expo_mid"] = "mid rank",
+  ["ui.expo_back"] = "sheltered",
 
   -- tooltip
   ["ui.unit_header"] = "{name}  ({type})",
