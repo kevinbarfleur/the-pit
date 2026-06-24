@@ -274,19 +274,33 @@ function Screen:drawRow(i, row, y)
   local sel, hov = (self.sel == i), (self.hover == i)
 
   -- Fond de ligne : Panel propre. Sélection = éclat haut + accent laiton ; survol = liseré laiton ; sinon plat.
+  -- BESTIAIRE : la ligne lit la RARETÉ (couleur de tier) ; sélection/survol RENFORCENT la teinte (jamais un
+  -- laiton générique qui écrase le rang) + un halo additif -> « ça glow, ça renforce » sans changer de hue
+  -- (retour user 2026-06). Les reliques gardent le laiton.
+  local bestiary = (self.tab == "bestiary")
+  local tierC = (bestiary and e.rank) and Rarity.tierColor(e.rank) or nil
   if sel then
-    Panel.draw(LIST_X, y, LIST_W, ROW_H, { fill1 = C.stone800, fill2 = C.stone900, border = C.brass, accent = C.brassD })
+    Panel.draw(LIST_X, y, LIST_W, ROW_H, { fill1 = C.stone800, fill2 = C.stone900,
+      border = tierC and Rarity.tierBright(e.rank) or C.brass, accent = tierC or C.brassD })
   elseif hov then
-    Panel.draw(LIST_X, y, LIST_W, ROW_H, { fill1 = C.stone850, fill2 = C.stone900, border = C.brassL, hi = false })
+    Panel.draw(LIST_X, y, LIST_W, ROW_H, { fill1 = C.stone850, fill2 = C.stone900,
+      border = tierC and Rarity.tierBright(e.rank) or C.brassL, hi = false })
   else
-    Panel.draw(LIST_X, y, LIST_W, ROW_H, { fill = C.stone850, border = C.iron, hi = false })
+    Panel.draw(LIST_X, y, LIST_W, ROW_H, { fill = C.stone850, border = tierC or C.iron, hi = false })
+  end
+  if tierC and (sel or hov) and love.graphics and love.graphics.setBlendMode then
+    local b2 = Rarity.tierBright(e.rank)
+    love.graphics.setBlendMode("add")
+    love.graphics.setColor(b2[1], b2[2], b2[3], sel and 0.16 or 0.10)
+    love.graphics.rectangle("line", LIST_X, y, LIST_W, ROW_H)
+    love.graphics.setBlendMode("alpha"); love.graphics.setColor(1, 1, 1, 1)
   end
 
   -- Vignette = CASE PROPRE Slot (38px) ; l'icône (relique) / le rig (créature) y est REASSIS, ou « ? » si voilé.
   local TH = ROW_H - 10
   local tx, ty = LIST_X + 5, y + 5
   Slot.draw(tx, ty, TH, on and "selected" or "locked",
-    on and (self.tab == "bestiary" and { typePip = e.type }) or nil)
+    (on and bestiary and e.rank) and { tierCol = Rarity.tierColor(e.rank) } or nil)
   local thumbCx, thumbCy = tx + TH / 2, ty + TH / 2
   if on then
     if self.tab == "relics" then
@@ -303,10 +317,15 @@ function Screen:drawRow(i, row, y)
   local nx = tx + TH + 10
   Draw.text(on and T(nameKey) or T("grimoire.unknown"), nx, y + 9, on and C.ink or C.ink4, Theme.subhead(15))
   if on then
-    local meta
+    -- Méta tier-forward (bestiaire) : NOM DE CASTE + rang, dans la couleur de rareté (le type n'a aucune
+    -- incidence mécanique -> retiré du codex, retour user 2026-06). Les reliques gardent catégorie + tier.
+    local meta, metaCol = "", C.ink4
     if self.tab == "relics" then meta = (CAT_LABEL[e.cat] or "?") .. "   T" .. e.tier
-    else meta = T("type." .. e.type):upper() .. (e.rank and ("   R" .. e.rank) or "") end
-    Draw.text(meta, nx, y + 29, C.ink4, Theme.labelSmall(9))
+    elseif e.rank then
+      meta = T(Rarity.tierNameKey(e.rank)) .. "   R" .. e.rank .. "/5"
+      metaCol = Rarity.tierBright(e.rank)
+    end
+    Draw.text(meta, nx, y + 29, metaCol, Theme.labelSmall(9))
   else
     Draw.text(T(self.tab == "relics" and "grimoire.cryptic" or "grimoire.unseen"), nx, y + 29, C.ink5, Theme.labelSmall(9))
   end
@@ -356,7 +375,7 @@ function Screen:drawDetail()
     -- Portrait : CASE PROPRE (Slot) ; glow de rareté additif puis le rig reseaté ; « ? » si voilé.
     local PS = 116
     local px, py = math.floor(cx - PS / 2), DET_Y + 24
-    Slot.draw(px, py, PS, on and "selected" or "locked", on and { typePip = e.type } or nil)
+    Slot.draw(px, py, PS, on and "selected" or "locked", (on and e.rank) and { tierCol = Rarity.tierColor(e.rank) } or nil)
     if on then
       if e.rank then
         local rar = Rarity.get(e.rank)
@@ -379,8 +398,9 @@ function Screen:drawDetail()
       on and C.ink or C.ink4, Theme.title(24))
     if on then
       local spec = Units[e.id] or {}
-      Draw.textTrackedC(T("type." .. e.type):upper() .. (e.rank and ("   ·   RANK " .. e.rank .. "/5") or ""),
-        cx, py + PS + 44, { col[1], col[2], col[3], 1 }, Theme.label(11), 1.5)
+      local tb = (e.rank and Rarity.tierBright(e.rank)) or col
+      Draw.textTrackedC((e.rank and T(Rarity.tierNameKey(e.rank)) or "") .. (e.rank and ("   ·   RANK " .. e.rank .. "/5") or ""),
+        cx, py + PS + 44, { tb[1], tb[2], tb[3], 1 }, Theme.label(11), 1.5)
       -- Séparateur sang (cassure de section) + stats (Space Mono / valeurs).
       Dividers.blood(DET_X + 150, DET_Y + 200, DET_W - 300)
       Draw.textTrackedC(T("ui.unit_stats", { hp = spec.hp or 0, dmg = spec.dmg or 0, cd = spec.cd or 0 }),

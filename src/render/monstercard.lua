@@ -261,7 +261,7 @@ function MonsterCard.draw(view, palette, id, anchorX, anchorY, t, opts)
   -- ── 3) FOND : Panel propre (dégradé sombre + liseré iron + éclat haut ; accent de rareté pour héros). ──
   Panel.draw(x, y, W, h, {
     fill1 = C.stone800, fill2 = C.stone900,
-    accent = rich and rarCol or nil, -- liseré interne teinté de rang seulement pour les héros (« dorures réservées »)
+    accent = rarCol, -- liseré interne TEINTÉ par le TIER pour TOUTES les raretés (la carte « respecte » la couleur de rang, retour user 2026-06)
   })
 
   -- ── 4) CONTENU : pile à curseur vertical (calque du tooltip), chaque bloc mesuré. ──
@@ -286,18 +286,16 @@ function MonsterCard.draw(view, palette, id, anchorX, anchorY, t, opts)
   drawCardPortrait(view, palette, id, opts.rig, portRegion, rank, rarCol, rich)
   cy = cy + PORTRAIT_H + GAP
 
-  -- (c) IDENTITÉ : [ pip · TYPE · Famille ........ ◆◆ rareté ].
+  -- (c) IDENTITÉ : [ pastille de TIER · NOM DE CASTE (couleur de rang) ........ ◆◆ rareté ]. La famille
+  -- (pip + mot) est RETIRÉE : aucune incidence mécanique (retour user 2026-06) -> la carte se lit par le TIER.
   local midI = math.floor(cy + hIdent / 2)
-  Draw.pip(U.type, bodyX + 5, midI, 5)
-  local ix = bodyX + 14
-  local tcol = Theme.type(U.type).color
-  local typeStr = T("type." .. U.type):upper()
-  Draw.text(typeStr, ix, midI - hIdent / 2, tcol, idFont)
-  ix = ix + (idFont and idFont:getWidth(typeStr) or 0) + 8
-  if U.family then
-    local famStr = (U.family:gsub("^%l", string.upper))
-    Draw.text(famStr, ix, midI - hIdent / 2, C.ink3, idFont)
+  local tierC = Rarity.tierColor(rank)
+  if love.graphics and love.graphics.circle then
+    love.graphics.setColor(tierC[1], tierC[2], tierC[3], 1); love.graphics.circle("fill", bodyX + 5, midI, 4)
+    love.graphics.setColor(0, 0, 0, 0.5); love.graphics.circle("line", bodyX + 5, midI, 4.5)
+    love.graphics.setColor(1, 1, 1, 1)
   end
+  Draw.text(T(Rarity.tierNameKey(rank)), bodyX + 14, midI - hIdent / 2, Rarity.tierBright(rank), idFont)
   -- rangée de losanges de rareté (Badge.diamond), alignée à droite.
   local DSP = 8
   local rx0 = rightX - (rank * DSP) + 4

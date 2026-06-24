@@ -82,6 +82,9 @@ end
 function Builders.grimoire(host)
   local s = GrimoireS.new(Palette, VW, VH, host)
   if s.refresh then s:refresh() end
+  if s.setTab then s:setTab("bestiary") end -- capture l'onglet BESTIAIRE (là où se lit la RARETÉ par couleur de tier)
+  if s.sort and s.sort.bestiary then s.sort.bestiary = "rank"; if s.rebuildRows then s:rebuildRows() end end -- trié par RANG -> dégradé de tier lisible
+  if s.rows and #s.rows > 0 then s.sel = #s.rows; if s.maxScroll then s.scroll = s:maxScroll() end end -- bas de liste = rangs hauts (ELDER/or) -> prouve le haut de l'échelle
   return s
 end
 
