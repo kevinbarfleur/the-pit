@@ -87,16 +87,56 @@ totale** : je ne m'arrête pas pour demander ; je décide / délègue / cherche 
 ## 5. Journaux (append-only)
 
 ### DONE-LOG
-- 2026-06-24 — Branche `feat/base-game` créée sur 54443f6 ; `dev` local réaligné ; Mac maintenu
-  éveillé ; audits état-code + identité-créatures lancés ; NIGHT-PLAN posé.
+- 2026-06-24 — Branche `feat/base-game` sur 54443f6 ; `dev` réaligné ; Mac éveillé ; audits lancés ; NIGHT-PLAN posé (commit 1f70cac).
+- 2026-06-24 — AUDIT état-code livré (harnais VERT, baseline capturée). Réframe majeur ci-dessous.
+- 2026-06-24 — **Harnais PNG** livré+committé (0b545bc) ; **PIN 65 familles** committé (b0ff167) ; UI-audit 6 écrans.
+- 2026-06-24 — **BANC livré** (A2, commit b2b8a27) : `self.bench[1..7]`, achat→banc/plateau, fusion banc↔plateau (ordre déterministe), drag complet, rendu+anim+infobulle ; **golden inchangé** ; screenshot vérifié (3 bandes propres). Reste (Phase C) : scale/spacing/label « RESERVE »/header dev + **test dédié banc**.
+- 2026-06-24 — **34 renommages SEVERE prêts** (2 agents, vus PNG) → `docs/base-game/creature-renames.md` ; mild (~26) en cours (agent). Écriture en.lua = golden-neutre.
+- 2026-06-24 — **Créatures RENOMMÉES** (commit, en.lua) : 38 noms édités + 17 entrées canoniques (bloc choc/bouclier — descriptions **condenser CORRIGÉES** vs `en_ext.lua` périmé qui décrivait l'ancien modèle amplify). i18n 83 OK, golden inchangé, **vérifié écran**. Reste : noms longs serrés sous les cases (Phase C) ; nettoyer doublons morts d'`en_ext.lua`.
+- 2026-06-24 — **A4 ADVERSAIRES SCALÉS** livré (`oppgen.lua` + test ; commits) : équipe cohérente au stade (taille≈slots, rangs via cotes du tier, niveaux tardifs, placement tank-devant) ; déterministe seedé ; **vérifié écran** (r7/t3 → 5 unités variées). Golden inchangé. Reste : noms d'adversaires dédiés (réutilise les clés pré-construites) ; fairness à sim-tuner.
+- 2026-06-24 — **GAME FEEL achat/vente/level-up** livré (build.lua, commit) : bursts éphémères (anneau achat / +N vente / flash+anneau+« LVL n » level-up) ; render-only, golden inchangé, **vérifié écran**.
+- 2026-06-24 — **Design refonte combat** prêt (agent) → `docs/base-game/combat-refonte.md` (P0 sol+front+brume / P1 profondeur / P2 feel ; tout RENDER-only). **À implémenter** (le combat lit « 2 clusters dans le noir »).
 
-### SIM-LOG  *(N · σ win% · entropie · outliers · levier touché)*
-- _baseline à venir (audit : `luajit tools/sim.lua 200`)_
+### AUDIT-SYNTHÈSE (2026-06-24) — l'éco est DÉJÀ faite, CLAUDE.md périmé
+L'économie « hybride mesuré » du créateur est **déjà implémentée** (`docs/research/progression-economy-prd.md`, Lots 0-6, **verrouillé post-playtest 2026-06-23**) :
+- Or fixe **10/round**, reroll **1**, streaks (cap 3, win OU loss), vente 50 %. **Zéro intérêt de base.** ✓
+- **Slots = grants temporisés GRATUITS** (rounds 2-7, accept / décline→+3 or), PAS via leveling. (CLAUDE.md « leveling=slots payant » → PÉRIMÉ.)
+- **« Niveau » = tier de boutique via XP TFT** : passif **+1/round dès r2** + **achetable 4XP/4or** → gate les **COTES** (table ODDS r1-r5), pas les slots.
+- **Boutique rank-tiérée** (plus de pool uniforme). **Doublons 3→niveau** (cascade, LEVEL_MULT 1/1.8/3).
+- **Reliques = modèle LISIBLE** (effet montré, plus de leurres), cadence **/3 combats**, tiérées, décline→+or. (CLAUDE.md/relics.lua header « cryptique » → PÉRIMÉS.)
 
-### GOLDEN-REBASELINE-LOG  *(ancienne → nouvelle empreinte · raison)*
-- Baseline de départ supposée : **970156547 / 199 events** *(à confirmer par l'audit)*.
+⇒ **Je NE RECONSTRUIS PAS l'éco.** Vrais manques pour la vision du créateur :
+  1. **BANC** (n'existe PAS — gap dur : on ne peut pas acheter sans placer ⇒ boucle de merge non « pêchable »). **A2.**
+  2. **Reliques d'éco** (intérêts / bonus d'or — le levier voulu). **A3.**
+  3. **Adversaires scalés au STADE** (`pickEncounter` = f(round) seul ; ignore plateau / niveaux / tier / sigil ; 6 teams, répète `pit_sovereign` après ~r12). **A4.**
+  4. **Cohérence créatures** (renommer + relore + ré-adapter effets vers le visuel canon). **Phase B.**
+  5. **Synergies de TYPE** (M4 : les 5 familles DoT = les types ; contre seuils 2/4 ; 1 twist `more`/famille borné). **A5 — profondeur de build = « jeu complet ».**
+  6. **Feedbacks éco** (achat / vente / level-up / merge = **ZÉRO VFX** aujourd'hui ; tier montré via pip+border). **Phase C.**
+
+### DÉCISION (buyXp) — JE GARDE l'XP achetable
+Malgré le libellé de l'option « hybride » (« pas d'XP-achetable »). Rationale : (1) l'intention réelle = « zéro intérêt de base, intérêt via reliques », pas la buyabilité ; (2) buyXp = **puits d'or qui achète de la puissance** (accélérateur TFT), pas un mécanisme d'intérêt/banque ; (3) design **verrouillé post-playtest** ; (4) le créateur veut de la profondeur. **Réversible** (1 bouton) si rejet au réveil.
+
+### UI-AUDIT (2026-06-24, via harnais screenshot — 6 écrans lus)
+- **MENU** : ✅ **référence DA** (blackletter, braises/noir, typo, vignette). Garder tel quel.
+- **BUILD** : header encombré de **texte dev** (« SEE POOL · GALLERY… ») ; **pas de banc** ; tier/feedback à ajouter ; bug glyphe **W**. Place dispo **sous le plateau** pour le banc.
+- **COMBAT** : **trop vide** (2 clusters sur grand noir) → **refonte** composition + atmosphère.
+- **RELICPICK** : ✅ propre/cohérent (modèle lisible) ; micro-polish labels.
+- **RUNOVER** : **BUG i18n `LEVEL [level]`** non interpolé ; « 1 ROUNDS » (pluriel) ; un peu vide.
+- **GRIMOIRE** : ✅ bien fichu (2 volets, tabs, tri, back) ; bug glyphe **W** (« KNOWN »→« KNOMN ») ; « ??? CRYPTIC » = reliquat du vieux modèle cryptique (terminologie à revoir).
+- **🐛 BUGS (vérifiés)** :
+  - **(A) ❌ FAUSSE ALERTE** — le « W cassé » (WINS→XENS, KNOWN→KNOMN) est un **artefact de downsampling** de ma lecture des PNG ; les chaînes source sont correctes (`ui.wins`=« WINS », `grimoire.effect_known`=« KNOWN EFFECT »). Net en natif. **Aucun fix.**
+  - **(B) ✅ VRAI BUG `[level]` runover** : `runover.lua:101` passe `level = r.level` mais le RunState a **`r.tier`** (migration level→tier) ⇒ var manquante rendue `[level]`. Fix = passer `r.tier`. Idem « 1 ROUNDS » (pluriel).
+- **Cibles refonte** : combat (composition/atmosphère) ; header build (virer le dev) ; densifier (mineur) runover/grimoire.
+
+### SIM-LOG  *(N · σ win% · entropie · outliers · levier)*
+- **Baseline N=200** : σ **0.129**, entropie **0.995**, field_mean 0.653, 1 outlier (`demon` +1.6σ). DoT share **27.6 %**. Top : pyre_tender 90 %, plague_bearer 88.9 %, bellows_priest 87.5 %. Bas : soot_acolyte 33 %, static_swarm 38.5 %, ash_moth 40 %. ⚠️ détecteur de combos **starved @N=200** → **N≥2000** pour les lectures réelles (le créateur veut « par milliers »).
+
+### GOLDEN-REBASELINE-LOG  *(ancienne → nouvelle · raison)*
+- **Baseline confirmée : 970156547 / 199 events** (check.sh vert).
 
 ### DECISIONS-LOG  *(décisions autonomes + rationale)*
-- 2026-06-24 — Une **seule** branche d'intégration (`feat/base-game`), poussée aux jalons, plutôt
-  qu'une série de sous-branches : le créateur doit pouvoir **pull une seule chose** et jouer. Les
-  worktrees d'agents (travail parallèle) sont fusionnés dedans.
+- 2026-06-24 — **Une seule** branche d'intégration (`feat/base-game`), poussée aux jalons (le créateur pull une seule chose). Worktrees d'agents fusionnés dedans.
+- 2026-06-24 — Garder l'économie implémentée (cf. AUDIT-SYNTHÈSE) ; ne builder que les manques. Garder buyXp (cf. ci-dessus).
+- 2026-06-24 — **Différer M5/M6/M8** (ranked / season / async) : multijoueur **hors scope cette nuit** (consigne créateur). Focus local complet.
+- 2026-06-24 — **MANDAT SCREENSHOT (créateur)** : screenshot + vérifier **visuellement** chaque écran travaillé (beauté, cohérence DA, alignement, propreté) ; **refonte complète** autorisée des vieux écrans au design dépassé ; objectif « **100 % final** ». ⇒ je construis un **harnais de capture PNG sous vrai `love`** (keystone P0.5) pour m'auto-vérifier (le créateur dort) et je Read les PNG (vision).
+- 2026-06-24 — **Créatures = PIN-puis-RENOMME** : visuels actuels = **canon**. ⇒ (1) **pin `family=`** sur les ~53 unités à famille **dérivée** (verrouille le sprite ; golden-neutre car la `family` est lue par le GÉNÉRATEUR, pas la SIM) ; (2) **renomme + relore** (i18n, golden-neutre) ; (3) **ré-adapte effets** vers le visuel en gardant la famille mécanique/rôle quand possible (**sim-gated** + rebaseline). Audit : ~32 SEVERE / 23 MILD / 28 none ; collisions (3 herons, 4 cocons, 3 marionnettes, 3 thrones…) **notées au réveil**. Spec complète : `docs/base-game/creature-identity-map.md`.
