@@ -60,6 +60,8 @@ local U = {
     -- la priorité) mais > standard 10 -> le démon tire un peu le focus. Inerte tant que les plateaux se remplissent.
     id = "demon", type = "abyss", family = "abyssal", rank = 1, cost = 1, hp = 64, dmg = 9, cd = 56, aggro = 25, -- DEMON / Leech (bruiser-leurre)
     effects = { { trigger = "on_hit", op = "lifesteal", params = { frac = 0.4 } } },
+    -- COMMANDANT (LE CALICE DE SANG) : au piédestal, l'appât nourrit la meute — vol de vie d'équipe. cf. commanders-plan §2.2.
+    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "team", params = { stat = "lifesteal", value = 0.05 } },
   },
 
   -- ── Unités à EFFETS (familles de statuts, cf. docs/research/effects-dot-families.md). Visuel GÉNÉRÉ
@@ -173,6 +175,9 @@ local U = {
       { trigger = "on_hit", op = "rot", params = { base = 1, growth = 1, dur = 300, capDps = 12, maxHpFrac = 0.15 } },
       { trigger = "combat_start", op = "aura_stat", target = "neighbors", params = { stat = "atkInc", value = 0.20 } },
     },
+    -- COMMANDANT (LA COURONNE D'ÉCHOS) : mono-cible FORT — l'avant-garde (role:front) re-frappe (+1 multicast,
+    -- entier, cappé MULTICAST_MAX=3). Le pantin-tyran rejoue le coup de l'élu. cf. commanders-plan §2.2 (#5).
+    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "role:front", params = { stat = "multicast", value = 1 } },
   },
   necro_leech = { -- pourriture + amputation RENFORCÉE des PV max
     id = "necro_leech", bodyplan = "serpent", rank = 3, type = "abyss", family = "ombre", cost = 3, hp = 50, dmg = 5, cd = 56,
@@ -211,6 +216,8 @@ local U = {
       { trigger = "on_hit", op = "burn", params = { dps = 6, dur = 180, decayPct = 0.15 } },
       { trigger = "combat_start", op = "aura_stat", target = "neighbors", params = { stat = "haste", value = 0.12 } },
     },
+    -- COMMANDANT (LE TAMBOUR DE GUERRE) : équipe-faible — toute la fosse frappe au même souffle (+8% cadence). cf. §2.2 (#1).
+    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "team", params = { stat = "haste", value = 0.08 } },
   },
   wildfire_hound = { -- à la mort d'un ennemi en feu, propage la brûlure à ses voisins (proximité champ)
     id = "wildfire_hound", bodyplan = "quadruped", rank = 4, type = "abyss", family = "demon", cost = 4, hp = 48, dmg = 5, cd = 54,
@@ -356,6 +363,9 @@ local U = {
       { trigger = "on_attack", op = "bonus_first", params = { value = 6 } },
       { trigger = "on_hit", op = "shock", params = { add = 2, cap = 6, dur = 180 } },
     },
+    -- COMMANDANT (LE ROI DES RATS) : conditionnel tier-1 — la piétaille (rank==1) enfle (+50% PV & dmg, baké, cappé
+    -- STAT_INC_CAP). Six gueules, une couronne : la marée du Puits. cf. commanders-plan §2.2 (#4).
+    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "tier:1", params = { stat = "statInc", value = 0.50 } },
   },
   stormlord = { -- T2 : add 2 + volt fort + cap max — marque une proie, les alliés font sauter la charge
     id = "stormlord", bodyplan = "eye", rank = 3, type = "arcane", family = "cristal", cost = 3, hp = 50, dmg = 6, cd = 54, aggro = 5,
@@ -425,6 +435,9 @@ local U = {
       { trigger = "on_hit", op = "strip_shield", params = { frac = 0.5 } },
       { trigger = "on_hit", op = "cleave", params = { frac = 0.5 } },
     },
+    -- COMMANDANT (LA BANNIÈRE DU BRIS-SIÈGE) : anti-méta — au combat_start, les boucliers ennemis ÷2 (grant_team
+    -- {stripEnemyShield}, lu dans arena:spawn, C1). La garde dorée s'écaille avant le premier choc. cf. §2.2 (#6).
+    commandBonus = { trigger = "combat_start", op = "grant_team", params = { stripEnemyShield = 0.5 } },
   },
 
   -- ── ROSTER v7 vague 1 : peuple les familles visuelles restées « visuel-only » (champ `family` explicite,
@@ -499,6 +512,9 @@ local U = {
   deep_kraken = { -- KRAKEN / léviathan, étreinte venimeuse (légendaire)
     id = "deep_kraken", type = "abyss", family = "kraken", rank = 5, cost = 5, hp = 84, dmg = 12, cd = 78,
     effects = { { trigger = "on_hit", op = "poison", params = { dps = 4, dur = 200 } } },
+    -- COMMANDANT (L'AÏEUL) : conditionnel level-1 — ce qui n'a jamais grandi sous sa coupe (level==1, donc tes
+    -- plus GROSSES bêtes non-fusionnées) enfle d'un coup (+40% PV & dmg, baké, cappé STAT_INC_CAP). cf. §2.2 (#3).
+    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "level:1", params = { stat = "statInc", value = 0.40 } },
   },
 
   -- ── PLANCHER RANG-1 (PRD progression-economy §4) : stat-sticks « grok-ables ». Zéro op neuf : 3 brutes

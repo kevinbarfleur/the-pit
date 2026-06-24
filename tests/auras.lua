@@ -159,8 +159,100 @@ local ok, err = pcall(function()
     restore()
   end
 
+  -- ════════ C0 — COMMANDANT `statInc` (baké au build, consommé dans hp/dmg ; plan §1.5) ════════
+  -- `aura_stat {stat=statInc}` n'est PLUS un champ inerte transmis à l'arène : il est ABSORBÉ dans hp/dmg
+  -- au bake du comp (increased additif, cappé STAT_INC_CAP). On vérifie la portée (level:1 / tier:1) +
+  -- le cap, et que `statInc` ne fuit plus vers le comp (golden-safe : aucune unité golden n'en porte).
+
+  -- 10) level:1 : seules les unités NIVEAU 1 voient hp/dmg ×(1+value) ; une unité niveau 2 est INCHANGÉE.
+  do
+    local restore = withAura("soot_acolyte", { stat = "statInc", target = "level:1", value = 0.40 })
+    local b = fresh()
+    b:placeId(1, "soot_acolyte")     -- caster (niveau 1)
+    b:placeId(2, "marauder", 1)      -- cible level 1 -> buffée
+    b:placeId(5, "marauder", 2)      -- même id mais NIVEAU 2 -> hors portée
+    local comp = b:buildComp(-1)
+    local lvl1, lvl2
+    for _, s in ipairs(comp) do
+      if s.id == "marauder" and s.level == 1 then lvl1 = s end
+      if s.id == "marauder" and s.level == 2 then lvl2 = s end
+    end
+    local u = Units.marauder
+    -- LEVEL_MULT (build.lua) : {1.0, 1.8, 3.0}. Niveau 1 = base ; niveau 2 = ×1.8.
+    local exp1Hp  = math.floor(u.hp  * 1.0 * 1.40 + 0.5)
+    local exp1Dmg = math.floor(u.dmg * 1.0 * 1.40 + 0.5)
+    local exp2Hp  = math.floor(u.hp  * 1.8 + 0.5)
+    assert(lvl1 and lvl1.hp == exp1Hp and lvl1.dmg == exp1Dmg,
+      "level:1 statInc : marauder lvl1 a hp/dmg ×1.40 (hp " .. tostring(lvl1 and lvl1.hp) .. " att " .. exp1Hp .. ")")
+    assert(lvl2 and lvl2.hp == exp2Hp, "level:1 statInc : marauder lvl2 INCHANGÉ (hp " .. tostring(lvl2 and lvl2.hp) .. " att " .. exp2Hp .. ")")
+    -- `statInc` ne transite plus vers le comp (absorbé) -> nil partout.
+    assert(lvl1.statInc == nil and lvl2.statInc == nil, "statInc n'est plus un champ du comp (absorbé dans hp/dmg)")
+    restore()
+  end
+
+  -- 11) tier:1 (Roi des Rats) : seules les unités rank-1 sont buffées ; un rank 3 (templar) est intact.
+  do
+    local restore = withAura("soot_acolyte", { stat = "statInc", target = "tier:1", value = 0.50 })
+    local b = fresh()
+    b:placeId(1, "soot_acolyte")
+    b:placeId(2, "marauder")  -- rank 1 -> buffé
+    b:placeId(5, "templar")   -- rank 3 -> intact
+    local comp = b:buildComp(-1)
+    local mar, tem = compById(comp, "marauder"), compById(comp, "templar")
+    local um, ut = Units.marauder, Units.templar
+    assert(mar.hp == math.floor(um.hp * 1.50 + 0.5) and mar.dmg == math.floor(um.dmg * 1.50 + 0.5),
+      "tier:1 statInc : marauder (rank 1) ×1.50")
+    assert(tem.hp == math.floor(ut.hp + 0.5), "tier:1 statInc : templar (rank 3) INCHANGÉ")
+    restore()
+  end
+
+  -- 12) CAP : statInc > STAT_INC_CAP (1.0) est tronqué -> ×2.0 max, pas davantage.
+  do
+    local restore = withAura("soot_acolyte", { stat = "statInc", target = "level:1", value = 3.0 })
+    local b = fresh()
+    b:placeId(1, "soot_acolyte")
+    b:placeId(2, "marauder")
+    local comp = b:buildComp(-1)
+    local mar = compById(comp, "marauder")
+    local um = Units.marauder
+    assert(mar.hp == math.floor(um.hp * 2.0 + 0.5), "statInc cappé à +100% (×2.0), pas ×4.0 (hp " .. mar.hp .. ")")
+    restore()
+  end
+
+  -- ════════ C2 — SMOKE des 6 commandBonus (data, plan §2.2) ════════
+  -- Chaque hôte de commandant porte un descripteur `commandBonus` BIEN FORMÉ (même grammaire qu'`effects`).
+  -- On vérifie la forme + le mapping exact (portée → stat → valeur) ; la RÉSOLUTION live est testée en C3.
+  do
+    local expected = {
+      bellows_priest = { op = "aura_stat", target = "team",       stat = "haste",     value = 0.08 },
+      demon          = { op = "aura_stat", target = "team",       stat = "lifesteal", value = 0.05 },
+      deep_kraken    = { op = "aura_stat", target = "level:1",    stat = "statInc",   value = 0.40 },
+      galvanizer     = { op = "aura_stat", target = "tier:1",     stat = "statInc",   value = 0.50 },
+      maggot_king    = { op = "aura_stat", target = "role:front", stat = "multicast", value = 1 },
+      siege_breaker  = { op = "grant_team", stripEnemyShield = 0.5 },
+    }
+    local n = 0
+    for id, ex in pairs(expected) do
+      local cb = Units[id].commandBonus
+      assert(cb, "commandBonus présent sur " .. id)
+      assert(cb.trigger == "combat_start", id .. " : trigger combat_start")
+      assert(cb.op == ex.op, id .. " : op " .. ex.op)
+      if ex.op == "aura_stat" then
+        assert(cb.target == ex.target, id .. " : portée " .. ex.target)
+        assert(cb.params.stat == ex.stat, id .. " : stat " .. ex.stat)
+        assert(math.abs(cb.params.value - ex.value) < 1e-9, id .. " : valeur " .. ex.value)
+      else -- grant_team : Bris-Siège
+        assert(math.abs((cb.params.stripEnemyShield or 0) - ex.stripEnemyShield) < 1e-9, id .. " : stripEnemyShield 0.5")
+      end
+      n = n + 1
+    end
+    assert(n == 6, "6 commandants définis (obtenu " .. n .. ")")
+  end
+
   print("  auras : ampli increased sur voisin (lu a la pose) / grant d'effet / isolé = base (golden-safe) OK")
   print("  auras K1: role front/back/center sur carré (unique+stable) / team / tier:N (spec §6.2.1) OK")
+  print("  auras C0: commandant statInc baké (level:1 / tier:1 / cap, absorbé dans hp/dmg) OK")
+  print("  auras C2: 6 commandBonus bien formés (haste/lifesteal/statInc×2/multicast/stripShield) OK")
 end)
 
 if ok then

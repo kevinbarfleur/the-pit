@@ -43,6 +43,11 @@ local ok, err = pcall(function()
     need("unit." .. id .. ".passive_name")
     need("unit." .. id .. ".passive_desc")
     need("type." .. Units[id].type)
+    if Units[id].commandBonus then -- COMMANDANTS (C2) : identité de chef + descripteur d'aura + flavor canon
+      need("unit." .. id .. ".command_name")
+      need("unit." .. id .. ".command_desc")
+      need("unit." .. id .. ".command_flavor")
+    end
   end
   for _, name in ipairs(Shapes.order) do
     need("shape." .. name .. ".label")

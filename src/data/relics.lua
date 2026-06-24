@@ -156,6 +156,7 @@ local STAT_FIELD = { atkInc = "atkInc", multicast = "multicast", dmgReduce = "dm
 local function resolveRoleSpec(comp, wantFront)
   local best
   for _, s in ipairs(comp) do
+    if not s.isCommander then -- COMMANDANT (C3) : hors graphe (depth=-1, intouchable) -> JAMAIS cible d'une aura de rôle board.
     local d = s.depth or 0
     if not best then best = s
     else
@@ -164,6 +165,7 @@ local function resolveRoleSpec(comp, wantFront)
       local tie = (d == bd) and ((s.row or 0) < (best.row or 0)
         or ((s.row or 0) == (best.row or 0) and (s.slot or 0) < (best.slot or 0)))
       if better or tie then best = s end
+    end
     end
   end
   return best

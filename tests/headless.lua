@@ -125,6 +125,21 @@ local ok, err = pcall(function()
     assert(u.hp < hp1 and u.shield == 50, "poison: draine les PV en ignorant le bouclier")
   end
 
+  do -- C1 — BRIS-SIÈGE : grant_team {stripEnemyShield} ampute de moitié les boucliers ENNEMIS au spawn.
+    -- Le commandant (gauche) pose le drapeau ; l'unité ennemie (droite) doit perdre la moitié de son bouclier.
+    local function specShield(id, x, eff, sh)
+      local u = Units[id]
+      return { id = id, hp = u.hp, dmg = u.dmg, cd = u.cd, effects = eff, shield = sh or 0, x = x, y = 96, facing = 1 }
+    end
+    local cmd = specShield("marauder", 0, { { trigger = "combat_start", op = "grant_team", params = { stripEnemyShield = 0.5 } } }, 0)
+    local foe = specShield("skeleton", 200, nil, 40)
+    local a = Arena.new({ left = { cmd }, right = { foe }, autoReset = false })
+    local f = a.units[2]
+    assert(f.shield == 20 and f.maxShield == 20, "stripEnemyShield: bouclier ennemi ÷2 (20, obtenu " .. f.shield .. ")")
+    -- Côté ami : le commandant n'a pas de bouclier, et son propre camp n'est PAS touché (le flag vise l'ennemi).
+    -- Gated : sans flag, les boucliers sont intacts (vérifié par l'invariance golden).
+  end
+
   do -- bonus 1re frappe (marauder) + épines (squelette renvoie des dégâts)
     local a = Arena.new({ left = { spec("marauder", 150) }, right = { spec("skeleton", 170) }, autoReset = false })
     local mar, ske = a.units[1], a.units[2]
@@ -421,6 +436,80 @@ local ok, err = pcall(function()
     for _ = 1, 60 do eb:update(1.0) end -- ⭐ mûrit l'action différée (Feel) : CTA « cligne et pars » ~0,8s (yeux se referment) avant la transition
     assert(gotoName == "combat", "e2e: COMBAT -> transition vers la scene combat (apres differe)")
     print("  e2e : boutique (achat/case-verrou) + reroll + grant(accept/refuse) + vente + COMBAT OK")
+  end
+
+  -- ════════ C3 — PIÉDESTAL DU COMMANDANT (grant + drag-drop + aura build-résolue + défaite par le board) ════════
+  do
+    local RunState = require("src.run.state")
+    local run = RunState.new(77)
+    local host = { goto = function() end, run = run, finishCombat = function() end }
+    local eb = Build.new(Palette, 320, 180, host)
+    eb.board:unlock(9)
+
+    -- 1) GRANT : le piédestal est verrouillé tant qu'il n'est pas offert+accepté. Avant : drop inerte.
+    assert(not eb:commanderUnlocked(), "C3: piédestal verrouillé avant le grant")
+    -- avance jusqu'au jalon (COMMANDER_GRANT_ROUND) -> l'offre apparaît.
+    while run.round < RunState.COMMANDER_GRANT_ROUND do run:startRound() end
+    assert(run.pendingCommanderGrant, "C3: offre de piédestal au jalon")
+    eb:update(1.0); eb:drawWorld(); eb:drawOverlay(view) -- rendu de l'offre (prompt piédestal) : ne plante pas
+    -- ACCEPTE via un clic sur la zone du piédestal (chemin in-scène, minimal fonctionnel).
+    local pr0 = eb.commanderRect
+    eb:mousepressed(pr0.x + pr0.w / 2, pr0.y + pr0.h / 2, 1)
+    assert(run.commanderUnlocked and not run.pendingCommanderGrant, "C3: clic sur le piédestal ACCEPTE l'offre")
+    assert(eb:commanderUnlocked(), "C3: la scène voit le piédestal débloqué")
+
+    -- 2) Place une unité NIVEAU 1 sur le board (cible de l'aura de L'Aïeul = statInc level:1).
+    eb:placeId(5, "marauder", 1)
+    local hp0 = Units.marauder.hp -- base (level 1) avant aura
+
+    -- 3) Pose un non-chef au piédestal -> REFUS propre (retourne à l'origine, pas de crash).
+    eb:placeId(1, "skeleton") -- skeleton n'a pas de commandBonus
+    local pr = eb.commanderRect
+    eb:mousepressed(eb.pos[1].x, eb.pos[1].y, 1)               -- ramasse le skeleton (board)
+    eb:mousereleased(pr.x + pr.w / 2, pr.y + pr.h / 2, 1)      -- lâche sur le piédestal -> refus
+    assert(eb.commanderSlot == nil, "C3: non-chef REFUSÉ au piédestal")
+    assert(eb.slotRigs[1] and eb.slotRigs[1].id == "skeleton", "C3: le non-chef retourne à son origine (board)")
+
+    -- 4) Pose un CHEF (deep_kraken = L'Aïeul) au piédestal via drag-drop (depuis le banc).
+    eb.bench[1] = { id = "deep_kraken", level = 1, char = eb:newRig("deep_kraken") }
+    local br = eb.benchSlots[1]
+    eb:mousepressed(br.x + br.w / 2, br.y + br.h / 2, 1)       -- ramasse depuis le banc
+    eb:mousereleased(pr.x + pr.w / 2, pr.y + pr.h / 2, 1)      -- lâche sur le piédestal
+    assert(eb.commanderSlot and eb.commanderSlot.id == "deep_kraken", "C3: le chef est couronné au piédestal")
+    assert(eb.bench[1] == nil, "C3: le chef a quitté le banc")
+
+    -- 5) buildComp : l'aura statInc (level:1, +40%) est APPLIQUÉE au marauder (board), et le commandant est dans
+    -- le comp avec isCommander, SANS slot board.
+    local comp = eb:buildComp(-1)
+    local mar, cmd
+    for _, u in ipairs(comp) do
+      if u.id == "marauder" then mar = u end
+      if u.isCommander then cmd = u end
+    end
+    assert(mar and mar.hp == math.floor(hp0 * 1.40 + 0.5), "C3: marauder (level 1) reçoit +40% PV de L'Aïeul (hp " .. tostring(mar and mar.hp) .. ")")
+    assert(mar.statInc == nil, "C3: statInc absorbé (jamais transmis à l'arène)")
+    assert(cmd and cmd.id == "deep_kraken" and cmd.untargetable and cmd.cdMult and cmd.cdMult > 1,
+      "C3: le commandant est au comp (isCommander + untargetable + cdMult)")
+    assert(cmd.slot == nil, "C3: le commandant n'a pas de slot board (hors graphe)")
+
+    -- 6) COMBAT : le board (marauder seul) est tué, mais le commandant INTOUCHABLE survit -> DÉFAITE côté gauche.
+    -- L'ennemi : une unité solide qui tue le marauder. On force une victoire droite par déséquilibre net.
+    local right = { { id = "templar", hp = 400, dmg = 30, cd = 30, depth = 0, row = 0, x = 200, y = 96, facing = -1 } }
+    local arena = Arena.new({ left = comp, right = right, autoReset = false, seed = 3 })
+    local concluded, win = false, nil
+    for i = 1, 6000 do
+      arena:update(1.0, i)
+      if arena.over then concluded = true; win = arena.win; break end
+    end
+    assert(concluded, "C3: combat conclu (le board meurt + fatigue le garantit)")
+    -- arena.win = booléen ("left" = joueur) : false = défaite gauche. Le board (marauder) est mort, donc défaite,
+    -- ALORS MÊME QUE le commandant intouchable survit (exclu du décompte de victoire, arena.lua:778).
+    assert(win == false, "C3: board mort = DÉFAITE gauche MÊME SI le commandant survit")
+    -- le commandant gauche est toujours vivant (intouchable) à la conclusion.
+    local liveCmd = false
+    for _, u in ipairs(arena.units) do if u.isCommander and u.team == "left" and u.alive then liveCmd = true end end
+    assert(liveCmd, "C3: le commandant intouchable a survécu (mais ne gagne rien)")
+    print("  e2e C3 : piédestal (grant+drag-drop+refus non-chef) + aura level:1 build-résolue + défaite-par-board OK")
   end
 
   -- E2E ACHAT AU CLIC + ÉTATS DÉSACTIVÉS (retour user 2026-06) : un CLIC (presse+relâche au même point) sur une

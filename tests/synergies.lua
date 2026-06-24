@@ -36,6 +36,20 @@ local ok, err = pcall(function()
     assert(target.dots.shock == nil, "choc: condensateur consume apres decharge")
   end
 
+  -- RÉGRESSION (commandant C3) — un commandant hors-graphe (depth=-1, intouchable) ne doit JAMAIS être
+  -- compté comme VOISIN-champ (neighborsOf), sinon shock transfer/chain (qui font break au 1er voisin)
+  -- gaspillent leur charge sur l'intouchable au lieu d'un vrai allié. Déterministe, golden-safe.
+  do
+    local a = Arena.new({ left = { U("marauder", {}, { depth = 0, row = 0 }),
+        U("bandit", {}, { depth = -1, row = 0, isCommander = true, untargetable = true }) },
+      right = { U("skeleton", {}) }, autoReset = false, seed = 77 })
+    local front, cmd = a.units[1], a.units[2]
+    assert(cmd.isCommander, "regression cmd: l'unite 2 est bien le commandant")
+    for _, w in ipairs(a:neighborsOf(front)) do
+      assert(not w.isCommander, "REGRESSION: le commandant (depth=-1) ne doit PAS etre un voisin-champ (neighborsOf)")
+    end
+  end
+
   -- SYNERGIE 2 — POISON multi-sources : DEUX unités empilent sur la MÊME cible (axe « nombre »), et
   -- le weaken des stacks se cumule.
   do

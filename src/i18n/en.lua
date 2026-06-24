@@ -629,6 +629,31 @@ return {
   ["unit.footman.flavor"] = "A riveted shell of a soldier with a furnace where its heart should be; the line never cools.",
   ["unit.mire_thing.flavor"] = "A lump of the Pit's wet violet dark, one dull eye afloat in the muck, too heavy and dumb to be anything but a weight.",
 
+  -- ── COMMANDANTS (C2, cf. docs/research/commanders-plan.md §2.2) : chaque unité-hôte porte une IDENTITÉ de chef
+  --    (command_name = son titre au piédestal) + un descripteur d'aura (command_desc, valeurs CONCRÈTES, ligne
+  --    « At command » de la fiche au survol — feedback concrete-values-over-percentages). flavor grimdark canon. ──
+  ["ui.command_prefix"] = "At command",      -- préfixe de la ligne « bonus de commandement » sur la fiche
+  ["ui.command_none"] = "Cannot command",    -- unité sans commandBonus (sous-set curé, §2.4)
+  ["ui.commander_unlock"] = "CROWN A BEAST", -- appel à l'action du piédestal vide
+  ["unit.bellows_priest.command_name"] = "THE WAR-DRUM",
+  ["unit.bellows_priest.command_desc"] = "Your whole pit strikes 8% faster.",
+  ["unit.bellows_priest.command_flavor"] = "It beats the skin of a drowned man; under that cadence, the whole pit strikes on one breath.",
+  ["unit.demon.command_name"] = "THE BLOOD CHALICE",
+  ["unit.demon.command_desc"] = "Your whole pit heals for 5% of the damage it deals.",
+  ["unit.demon.command_flavor"] = "The lantern promises light; what it gives back is your life, drop by drop, to those who follow.",
+  ["unit.deep_kraken.command_name"] = "THE ELDER",
+  ["unit.deep_kraken.command_desc"] = "Your unfused beasts gain +40% health and damage.",
+  ["unit.deep_kraken.command_flavor"] = "It came down before the names. What never grew under its rule — your largest things — swells all at once.",
+  ["unit.galvanizer.command_name"] = "THE RAT KING",
+  ["unit.galvanizer.command_desc"] = "Your tier-1 units gain +50% health and damage.",
+  ["unit.galvanizer.command_flavor"] = "Six mouths, one crown. The chaff you throw into the pit becomes, under him, a tide.",
+  ["unit.maggot_king.command_name"] = "THE CROWN OF ECHOES",
+  ["unit.maggot_king.command_desc"] = "Your foremost unit strikes twice each swing.",
+  ["unit.maggot_king.command_flavor"] = "The wooden tyrant replays every blow struck. Before it, the chosen one strikes twice — and never knows.",
+  ["unit.siege_breaker.command_name"] = "THE SIEGE-BREAKER'S BANNER",
+  ["unit.siege_breaker.command_desc"] = "Enemy shields are halved before the first blow.",
+  ["unit.siege_breaker.command_flavor"] = "The wall believes it holds. Its banner says no, and the gilded guard flakes away before the first clash.",
+
   -- RELIQUES (chantier 2026-06, modele LISIBLE ; cf. docs/research/relics-design.md) : name + effect (clair,
   -- avec le chiffre) + flavor (ambiance pure, serif romain). Plus de leurres ni d'identification.
   ["relic.unidentified"] = "??? (unknown relic)",

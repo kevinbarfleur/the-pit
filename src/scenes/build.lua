@@ -94,11 +94,21 @@ local BENCH_SIZE = 4 -- BANC (réserve hors-combat) : rangée de slots sous le p
 local MAX_LEVEL = 3
 local LEVEL_MULT = { 1.0, 1.8, 3.0 } -- stats par niveau : 3 copies (même id+niveau) -> 1 unité niveau+1 (façon TFT)
 
+-- ── COMMANDANTS (K4) — placeholders d'équilibrage (cf. docs/research/commanders-plan.md §1.4/§6.1).
+-- STAT_INC_CAP : plafond cumulé du buff `statInc` (commandant : +% PV ET dmg). Plus serré qu'ATK_INC_CAP
+-- car il touche DEUX stats à la fois. COMMANDER_CD_MULT : ralentit la cadence du commandant au piédestal
+-- (voie A : il attaque, mais lentement -> il dirige, il ne combat pas comme un troupier). Bornes [1.0, 2.5].
+local STAT_INC_CAP = 1.0
+local COMMANDER_CD_MULT = 1.5
+
 -- ── Courbe de difficulté (cold-start) — TUNABLES (cf. the-pit-balance-diagnosis). Le board joueur croît de
 -- façon PRÉVISIBLE (grants timés 3->9). L'ennemi suit : l'index d'encounter grimpe avec le round (taille),
 -- puis au-delà de la table le plus gros gagne des NIVEAUX (bump) pour suivre les merges du joueur fin de run. ──
 local ENEMY_LEVEL_START = 11 -- round où l'ennemi cold-start gagne des niveaux (APRÈS la table : pit_sovereign
 local ENEMY_LEVEL_EVERY = 3  -- est déjà leveled ; le bump ne sert qu'aux runs très longues, pour ne pas plateau)
+
+-- Hit-test (espace virtuel), défini en TÊTE de module : utilisé par computeLayout/commanderAt/les hit-tests.
+local function inRect(px, py, r) return px >= r.x and px <= r.x + r.w and py >= r.y and py <= r.y + r.h end
 
 function Build.new(palette, vw, vh, host)
   local self = setmetatable({
@@ -111,6 +121,7 @@ function Build.new(palette, vw, vh, host)
     board = Board.new("carre"),
     slotRigs = {},     -- [slot] = { id, char } : unités posées (PLATEAU = combat)
     bench = {},        -- [i] = { id, level, char } : RÉSERVE hors-combat (stock/fusion ; n'entre PAS en combat)
+    commanderSlot = nil, -- C3 : { id, level, char } au PIÉDESTAL (1 slot logique HORS graphe de sigil, sans voisins)
     fx = {},           -- GAME FEEL : effets ÉPHÉMÈRES (achat/vente/level-up) — { kind, x, y, t, dur, ... } (design)
     previewRigs = {},  -- [id] = char idle (aperçu boutique)
     drag = nil,        -- { id, char, fromSlot? | fromShop? }
@@ -190,6 +201,31 @@ function Build:computeLayout()
       y = math.floor(oy + (c.y - my) * sp + 0.5),
     }
   end
+  -- C3 — PIÉDESTAL : 1 emplacement DISTINCT du graphe 3×3 (lisibilité « pas d'adjacence »). Posé à GAUCHE du
+  -- board, à hauteur de son centre, dans la marge libre (board centré en vw/2, demi-étendue ~BOARD_HALF_W/4).
+  -- Rect VIRTUEL (espace souris), comme benchSlots. RENDU MINIMAL (drop-zone) ; la polish DA est pour ui-artisan.
+  local pedX = math.max(4, math.floor(ox - BOARD_HALF_W / 4 - 26 + 0.5))
+  self.commanderRect = { x = pedX, y = math.floor(oy - 12 + 0.5), w = 24, h = 24 }
+end
+
+-- Le piédestal sous le curseur (espace virtuel) -> true si la drop-zone est touchée. Inerte tant que le
+-- piédestal n'est pas DÉBLOQUÉ (commanderUnlocked) -> aucun pickup/drop possible avant le grant accepté.
+function Build:commanderAt(px, py)
+  if not self:commanderUnlocked() then return false end
+  return self.commanderRect and inRect(px, py, self.commanderRect)
+end
+
+-- Le piédestal est-il débloqué cette run ? (sandbox sans run : toujours débloqué pour les tests/lab.)
+function Build:commanderUnlocked()
+  local run = self.host and self.host.run
+  if not run then return true end
+  return run.commanderUnlocked == true
+end
+
+-- Une unité peut-elle COMMANDER ? (porte un `commandBonus`). Sert au refus visuel (drop d'un non-chef).
+local function canCommand(id)
+  local u = Units[id]
+  return u and u.commandBonus ~= nil
 end
 
 -- ── BARRE DU BAS = une RANGÉE flex (moteur Layout) en ESPACE DESIGN ────────────────────────────────
@@ -407,9 +443,7 @@ function Build:syncSlots()
   if self.host.run then self.board:ensureOpen(self.host.run.slots) end
 end
 
--- ── Hit-tests (espace virtuel) ──
-local function inRect(px, py, r) return px >= r.x and px <= r.x + r.w and py >= r.y and py <= r.y + r.h end
-
+-- ── Hit-tests (espace virtuel) — `inRect` est défini en tête de module (avant les méthodes qui l'utilisent). ──
 function Build:slotAt(px, py)
   local best, bestD
   for i = 1, 9 do
@@ -684,6 +718,12 @@ function Build:mousepressed(vx, vy, button)
       local lc = self:lockedCellAt(vx, vy)
       if lc then if run:acceptSlotGrant() then self.board:openCell(lc) end; return end
     end
+    -- C3 — OFFRE DE PIÉDESTAL (minimal fonctionnel ; polish/prompt dédié = ui-artisan) : pendant l'offre, un
+    -- clic sur la zone du piédestal l'ACCEPTE (le piédestal apparaît) ; un clic sur REFUSER le décline (+or).
+    if run.pendingCommanderGrant then
+      if self.declineBtn and inRect(vx, vy, self.declineBtn) then Feel.press("build.decline"); run:declineCommanderGrant(); return end
+      if self.commanderRect and inRect(vx, vy, self.commanderRect) then run:acceptCommanderGrant(); return end
+    end
     -- BUY XP : achète de l'XP de boutique si abordable (NE re-tire PAS la boutique : les nouvelles cotes
     -- s'appliquent au prochain reroll/round -> préserve l'arbitrage XP-vs-reroll-vs-unités).
     -- BUY XP / REROLL : feedback de press IMMÉDIAT (Feel.press sans action) + action TOUT DE SUITE (l'e2e
@@ -698,6 +738,13 @@ function Build:mousepressed(vx, vy, button)
       end
       return
     end
+  end
+  -- C3 : ramasse le COMMANDANT du piédestal (le rétrograde -> il repartira vers board/banc ou sera vendu).
+  if self:commanderAt(vx, vy) and self.commanderSlot then
+    local c = self.commanderSlot
+    self.drag = { id = c.id, level = c.level or 1, char = c.char, fromCommander = true }
+    self.commanderSlot = nil
+    return
   end
   local si = self:slotAt(vx, vy)
   if si and self.slotRigs[si] then -- ramasse une unité du PLATEAU (réarrangement / vente / vers banc)
@@ -720,6 +767,35 @@ function Build:mousereleased(vx, vy, button)
   local run = self.host.run
   local si = self:slotAt(vx, vy)    -- case PLATEAU sous le curseur
   local bi = self:benchAt(vx, vy)   -- slot BANC sous le curseur
+  local onPed = self:commanderAt(vx, vy) -- C3 : drop sur le PIÉDESTAL (débloqué uniquement)
+
+  -- ── C3 — DROP SUR LE PIÉDESTAL (promotion en commandant) ──────────────────────────────────────────
+  -- Une seule unité au piédestal ; seuls les porteurs de `commandBonus` y sont admis (refus propre sinon).
+  if onPed then
+    if not canCommand(d.id) then -- refus : l'unité non-chef RETOURNE à son origine (jamais de crash/perte).
+      self:returnDrag(d)
+      return
+    end
+    if d.fromShop then -- ACHAT puis promotion directe au piédestal (l'or n'est débité qu'ICI).
+      local id = run and run:buy(d.fromShop)
+      if id then
+        local occ = self.commanderSlot
+        self.commanderSlot = { id = id, level = 1, char = d.char }
+        if occ then -- piédestal occupé : l'ancien commandant repart au banc (sinon disparaît en sandbox).
+          self:stowUnit(occ)
+        end
+        self:spawnFx("buy", self.commanderRect.x * 4 + self.commanderRect.w * 2, self.commanderRect.y * 4 + self.commanderRect.h * 2)
+      else
+        self:returnDrag(d) -- achat refusé (pas d'or) -> retour origine (rien pour fromShop, juste no-op propre)
+      end
+      return
+    end
+    -- Unité EXISTANTE (board/banc/piédestal) -> piédestal. L'occupant repart vers l'ORIGINE du drag (swap propre).
+    local occ = self.commanderSlot
+    if occ then self:returnDragOrigin(d, occ) end
+    self.commanderSlot = { id = d.id, level = d.level or 1, char = d.char }
+    return
+  end
 
   if d.fromShop then
     -- ACHAT : sur une case plateau débloquée et VIDE, OU un slot de banc VIDE. L'or n'est débité qu'ICI
@@ -763,7 +839,7 @@ function Build:mousereleased(vx, vy, button)
     self.bench[bi] = { id = d.id, level = d.level or 1, char = d.char }
   else
     -- Lâché HORS plateau ET banc : VENTE (remboursement) si run ; sinon l'unité disparaît (sandbox).
-    if run and (d.fromSlot or d.fromBench) then
+    if run and (d.fromSlot or d.fromBench or d.fromCommander) then
       local before = run.gold
       run:sell(d.id)
       self:spawnFx("sell", self.mx * 4, self.my * 4, { gold = run.gold - before })
@@ -771,16 +847,45 @@ function Build:mousereleased(vx, vy, button)
   end
 end
 
--- Renvoie l'occupant déplacé (occ) vers l'ORIGINE du drag (case plateau ou slot banc) -> swap propre quel que
--- soit le couple source/destination (plateau<->plateau, plateau<->banc, banc<->banc). Appelé UNIQUEMENT pour
--- des drags d'unités existantes (fromSlot/fromBench) ; fromShop est géré plus haut (return).
+-- Renvoie l'occupant déplacé (occ) vers l'ORIGINE du drag (case plateau / slot banc / PIÉDESTAL) -> swap propre
+-- quel que soit le couple source/destination. Appelé pour des drags d'unités existantes (fromSlot/fromBench/
+-- fromCommander) ; fromShop est géré plus haut (return).
 function Build:returnDragOrigin(d, occ)
   if d.fromSlot then
     self.slotRigs[d.fromSlot] = occ
     self.board.slots[d.fromSlot].unit = occ.id
   elseif d.fromBench then
     self.bench[d.fromBench] = occ
+  elseif d.fromCommander then
+    self.commanderSlot = occ -- swap : l'occupant reprend le piédestal (occ porte forcément un commandBonus)
   end
+end
+
+-- Repose un drag à SON origine SANS swap (refus de drop : non-chef sur le piédestal). Reconstruit l'entrée.
+function Build:returnDrag(d)
+  local u = { id = d.id, level = d.level or 1, char = d.char }
+  if d.fromSlot then
+    self.slotRigs[d.fromSlot] = u; self.board.slots[d.fromSlot].unit = d.id
+  elseif d.fromBench then
+    self.bench[d.fromBench] = u
+  elseif d.fromCommander then
+    self.commanderSlot = u
+  end
+  -- fromShop : rien à reposer (l'or n'a pas été débité), le drag est simplement abandonné.
+end
+
+-- Range une unité (occ) dans le 1er slot de banc libre, sinon la 1re case plateau débloquée vide ; sinon elle
+-- disparaît (sandbox / tout plein). Sert quand un achat-promotion évince l'ancien commandant du piédestal.
+function Build:stowUnit(occ)
+  for i = 1, BENCH_SIZE do
+    if not self.bench[i] then self.bench[i] = occ; return true end
+  end
+  for i = 1, 9 do
+    if self.board.slots[i].unlocked and not self.slotRigs[i] then
+      self.slotRigs[i] = occ; self.board.slots[i].unit = occ.id; return true
+    end
+  end
+  return false
 end
 
 -- ── Lancement du combat ──
@@ -973,38 +1078,62 @@ function Build:buildComp(side)
     local sb = statBuf[slot]; if not sb then sb = {}; statBuf[slot] = sb end
     sb[stat] = (sb[stat] or 0) + value
   end
+  -- Résout les SLOTS-cibles du board selon `target` (neighbors/team/role:*/tier:N/level:N). `srcSlot` = la
+  -- source (pour neighbors) ; un commandant HORS graphe passe srcSlot=nil -> neighbors vide (pas de voisins).
+  local function resolveTargets(target, srcSlot)
+    local targets = {}
+    if target == "neighbors" then
+      if srcSlot then
+        for _, nb in ipairs(self.board:neighbors(srcSlot)) do if byCell[nb] then targets[#targets + 1] = nb end end
+      end
+    elseif target == "team" then
+      for _, q in ipairs(placed) do targets[#targets + 1] = q.slot end
+    elseif target:sub(1, 5) == "role:" then
+      local r = resolveRole(target); if r then targets[1] = r end
+    elseif target:sub(1, 5) == "tier:" then
+      local n = tonumber(target:sub(6))
+      for _, q in ipairs(placed) do if (Units[q.id].rank or 0) == n then targets[#targets + 1] = q.slot end end
+    elseif target:sub(1, 6) == "level:" then
+      local n = tonumber(target:sub(7))
+      for _, q in ipairs(placed) do if (q.level or 1) == n then targets[#targets + 1] = q.slot end end
+    end
+    return targets
+  end
+  -- Bake d'un descripteur aura_stat `e` (porté par une unité du board OU le commandant) dans statBuf/focusWith.
+  -- `target` peut être sur l'EFFET (data réelle units.lua : `e.target`) OU dans les params (auras synthétiques
+  -- des tests : `e.params.target`) ; défaut "neighbors". Cette double-lecture conserve EXACTEMENT l'ancien
+  -- comportement (les auras du roster sont toutes `neighbors`) tout en gérant les portées du commandant.
+  local function bakeAuraStat(e, sm, srcSlot)
+    local pa = e.params or {}
+    local stat, target, value = pa.stat, e.target or pa.target or "neighbors", (pa.value or 0)
+    -- multicast = entier (PAS scalé par le niveau : changer une bascule scalée serait un double-snowball).
+    local scaled = (stat == "multicast") and value or (value * sm)
+    local targets = resolveTargets(target, srcSlot)
+    if stat == "focusWith" then
+      for _, t in ipairs(targets) do if byCell[t] then focusWith[t] = srcSlot end end
+    elseif stat and STAT_FIELDS[stat] then
+      for _, t in ipairs(targets) do addStat(t, stat, scaled) end
+    end
+  end
   for _, p in ipairs(placed) do
     local sm = LEVEL_MULT[p.level] or 1.0 -- l'aura scale avec le NIVEAU de la source (duplicatas)
     for _, e in ipairs(Units[p.id].effects or {}) do
       if e.trigger == "combat_start" and e.op == "aura_stat" then
-        local pa = e.params or {}
-        local stat, target, value = pa.stat, pa.target or "neighbors", (pa.value or 0)
-        -- multicast = entier (PAS scalé par le niveau : changer une bascule scalée serait un double-snowball).
-        local scaled = (stat == "multicast") and value or (value * sm)
-        -- Résout l'ensemble des slots-cibles selon `target`.
-        local targets = {}
-        if target == "neighbors" then
-          for _, nb in ipairs(self.board:neighbors(p.slot)) do
-            if byCell[nb] then targets[#targets + 1] = nb end
-          end
-        elseif target == "team" then
-          for _, q in ipairs(placed) do targets[#targets + 1] = q.slot end
-        elseif target:sub(1, 5) == "role:" then
-          local r = resolveRole(target); if r then targets[1] = r end
-        elseif target:sub(1, 5) == "tier:" then
-          local n = tonumber(target:sub(6))
-          for _, q in ipairs(placed) do if (Units[q.id].rank or 0) == n then targets[#targets + 1] = q.slot end end
-        elseif target:sub(1, 6) == "level:" then
-          local n = tonumber(target:sub(7))
-          for _, q in ipairs(placed) do if (q.level or 1) == n then targets[#targets + 1] = q.slot end end
-        end
-        if stat == "focusWith" then
-          -- Effet FAIBLE (§2.5) : le voisin/rôle vise la même colonne avant que la SOURCE (tie-break only).
-          for _, t in ipairs(targets) do if byCell[t] then focusWith[t] = p.slot end end
-        elseif stat and STAT_FIELDS[stat] then
-          for _, t in ipairs(targets) do addStat(t, stat, scaled) end
-        end
+        bakeAuraStat(e, sm, p.slot)
       end
+    end
+  end
+
+  -- ── C3 — AURA DU COMMANDANT (piédestal) : son `commandBonus` (aura_stat) est BUILD-RÉSOLU sur les cibles du
+  -- BOARD (jamais sur lui-même : il n'est pas dans `placed`/`byCell`). neighbors -> vide (hors graphe). Le
+  -- `grant_team` (Bris-Siège) n'est PAS baké ici : il reste dans les effects du commandant -> exécuté par
+  -- l'arène à combat_start (firewall intact). L'aura est ajoutée AVANT le bake du comp -> statInc absorbé. ──
+  local cmd = self.commanderSlot
+  if cmd and self:commanderUnlocked() then
+    local cb = Units[cmd.id] and Units[cmd.id].commandBonus
+    if cb and cb.op == "aura_stat" then
+      local sm = LEVEL_MULT[cmd.level or 1] or 1.0
+      bakeAuraStat(cb, sm, nil) -- srcSlot=nil : pas de voisins, jamais self-ciblé (hors board)
     end
   end
 
@@ -1015,19 +1144,50 @@ function Build:buildComp(side)
     -- depth (0 = front) + row dérivés de la forme -> exposition portée par le sigil (ciblage déterministe).
     local m = LEVEL_MULT[p.level] or 1.0 -- duplicatas : les stats scalent avec le niveau
     local sb = statBuf[p.slot] -- champs combat-time bakés par K1 (nil = inerte, golden-safe)
+    -- COMMANDANT (C0) : `statInc` (aura `aura_stat`) est CONSOMMÉ ICI, pas transmis inerte à l'arène. C'est un
+    -- `increased` additif sur la base (même couche qu'atkInc), cappé STAT_INC_CAP. Il touche hp ET dmg (les
+    -- stats « globales » au sens du commandant). nil/0 -> hp/dmg inchangés -> golden-safe. Baké au build comme
+    -- les duplicatas (déterministe, zéro couplage arène : le firewall SIM reste intact). cf. plan §1.3.
+    local si = (sb and sb.statInc) or 0
+    local sf = (si > 0) and (1 + math.min(STAT_INC_CAP, si)) or 1
     comp[#comp + 1] = { id = p.id, slot = p.slot, level = p.level,
-      hp = math.floor(u.hp * m + 0.5), dmg = math.floor(u.dmg * m + 0.5), cd = u.cd,
+      hp = math.floor(u.hp * m * sf + 0.5), dmg = math.floor(u.dmg * m * sf + 0.5), cd = u.cd,
       depth = b.maxC - p.col, row = p.row, effects = auraEffects(p.id, p.slot),
       shield = shield[p.slot] or 0, poisonInc = poisonInc[p.slot], burnInc = burnInc[p.slot],
-      -- K1 : auras agnostiques bakées (haste/atkInc/dmgReduce/regen/multicast/lifesteal/statInc) + focusWith.
+      -- K1 : auras agnostiques bakées (haste/atkInc/dmgReduce/regen/multicast/lifesteal) + focusWith.
+      -- `statInc` n'est PLUS transmis (absorbé dans hp/dmg ci-dessus) : il ne sert plus rien en combat.
       haste = sb and sb.haste, atkInc = sb and sb.atkInc, dmgReduce = sb and sb.dmgReduce,
       regenAura = sb and sb.regen, multicast = sb and sb.multicast,
-      lifestealAura = sb and sb.lifesteal, statInc = sb and sb.statInc,
+      lifestealAura = sb and sb.lifesteal,
       focusWith = focusWith[p.slot],
       shieldCaster = casters[p.slot] and { value = casters[p.slot].value, cd = casters[p.slot].cd,
         reflect = casters[p.slot].reflect, overcharge = casters[p.slot].overcharge,
         targetSlots = casters[p.slot].targetSlots } or nil,
       x = x, y = y, facing = facing }
+  end
+
+  -- ── C3 — LE COMMANDANT au comp (K4) : ajouté APRÈS le board, AVEC ses flags d'intouchabilité. L'arène le
+  -- traite comme un spec `isCommander` ordinaire (chooseTarget l'exclut, damage()=0, décompte filtré, cdMult).
+  -- Voie A : il GARDE ses effects de board (kit complet) et attaque, mais LENTEMENT (cdMult). Son aura est déjà
+  -- build-résolue sur le board (ci-dessus) -> son `commandBonus aura_stat` n'est PAS dans ses effects (évite la
+  -- double-pose). Si le commandBonus est un `grant_team` (Bris-Siège), on l'AJOUTE aux effects -> l'arène pose le
+  -- drapeau d'équipe à combat_start. Position de rendu HORS grille (depth/row cosmétiques). ──
+  if cmd and self:commanderUnlocked() then
+    local cu = Units[cmd.id]
+    local cb = cu and cu.commandBonus
+    local m = LEVEL_MULT[cmd.level or 1] or 1.0
+    -- effects du commandant = ses effects de BOARD (copie) + le grant_team éventuel (jamais l'aura_stat, déjà bakée).
+    local cEff = {}
+    for _, e in ipairs(cu.effects or {}) do cEff[#cEff + 1] = e end
+    if cb and cb.op == "grant_team" then cEff[#cEff + 1] = cb end
+    -- depth volontairement HORS de la grille ennemie : le commandant n'a pas de colonne (il est intouchable).
+    -- x/y de rendu = le piédestal ; en combat le render le replace, mais on fournit une position cohérente.
+    comp[#comp + 1] = { id = cmd.id, slot = nil, level = cmd.level or 1,
+      hp = math.floor(cu.hp * m + 0.5), dmg = math.floor(cu.dmg * m + 0.5), cd = cu.cd,
+      depth = -1, row = 0, effects = #cEff > 0 and cEff or nil,
+      isCommander = true, untargetable = true, cdMult = COMMANDER_CD_MULT,
+      x = self.commanderRect and self.commanderRect.x * 4 or 0, y = self.commanderRect and self.commanderRect.y * 4 or 0,
+      facing = facing }
   end
   return comp
 end
@@ -1215,7 +1375,8 @@ end
 -- partagé entre drawBack (fonds) et drawOverlay (bordures/texte). Coords souris en espace virtuel.
 function Build:computeUi()
   local hover = self:slotAt(self.mx, self.my)
-  local ui = { hover = hover, dropTarget = self.drag and hover or nil, nbset = {}, shopHover = self:shopAt(self.mx, self.my), benchHover = self:benchAt(self.mx, self.my) }
+  local ui = { hover = hover, dropTarget = self.drag and hover or nil, nbset = {}, shopHover = self:shopAt(self.mx, self.my), benchHover = self:benchAt(self.mx, self.my),
+    commanderHover = self:commanderAt(self.mx, self.my) }
   if hover then for _, j in ipairs(self.board:neighbors(hover)) do ui.nbset[j] = true end end
   ui.auraLinks = self:resolveAuraLinks() -- « qui buffe qui » : arêtes colorées (drawBack) + chips (drawOverlay)
   self.uiState = ui -- champ distinct de la méthode (sinon self.uiState renverrait la méthode quand vide)
@@ -1321,6 +1482,26 @@ function Build:drawBack(view)
       local hovering = (ui.benchHover == i)
       local bstate = (self.drag and hovering and "drop") or (hovering and "hover") or (sr and "selected") or "empty"
       Slot.draw(bx, by, bw, bstate, sr and { tierCol = Rarity.tierColor(Units[sr.id].rank), level = sr.level or 1 } or nil)
+    end
+  end
+
+  -- C3 — PIÉDESTAL (rendu MINIMAL fonctionnel ; polish DA = ui-artisan, cf. plan §4.1). Drop-zone distincte du
+  -- graphe : un Slot + un liseré DORÉ (marque « commandant », pas une case ordinaire) + un appel à l'action si vide.
+  -- Visible quand débloqué OU pendant l'offre (le joueur doit voir où cliquer pour accepter — minimal).
+  local pedOffer = run and run.pendingCommanderGrant
+  if not self.locked and self.commanderRect and (self:commanderUnlocked() or pedOffer) then
+    local r = self.commanderRect
+    local px, py, pw = r.x * 4, r.y * 4, r.w * 4
+    local sr = self.commanderSlot
+    local hovering = ui.commanderHover or (pedOffer and inRect(self.mx, self.my, r))
+    -- drop valide seulement si on glisse un porteur de commandBonus.
+    local validDrop = self.drag and canCommand(self.drag.id)
+    local pstate = (pedOffer and "drop") or (validDrop and hovering and "drop") or (hovering and "hover") or (sr and "selected") or "empty"
+    Slot.draw(px, py, pw, pstate, sr and { tierCol = Rarity.tierColor(Units[sr.id].rank), level = sr.level or 1 } or nil)
+    -- liseré doré : signe distinctif du piédestal (le commandant). 1px or terni par-dessus le bord du Slot.
+    Draw.rect(px, py, pw, pw, nil, c.brass, 1)
+    if not sr then -- appel à l'action (couronne une bête) sous la zone — court, capitales, Theme.ui (mono).
+      Draw.textC(T("ui.commander_unlock"), px + pw / 2, py + pw + 2, c.brassS, Theme.ui(8))
     end
   end
 
@@ -1436,6 +1617,24 @@ function Build:drawWorld()
         Rig.draw(sr.char)
         love.graphics.pop()
       end
+    end
+  end
+  -- C3 — RIG DU COMMANDANT au piédestal (rendu MINIMAL ; la polish DA — socle/trône, liseré doré, lift —
+  -- est pour ui-artisan). Calé au bas de la drop-zone, comme un slot de banc. Visible seulement si débloqué.
+  if self.commanderSlot and self.commanderRect and self:commanderUnlocked() then
+    local sr = self.commanderSlot
+    local r = self.commanderRect
+    local gx = math.floor(r.x + r.w / 2 + 0.5)
+    local gy = math.floor(r.y + r.h - 1 + 0.5)
+    if Critter.has(sr.id) then
+      Critter.drawAt(nil, sr.id, gx, gy, 0.32, self.t / 60, 1)
+    elseif sr.char then
+      local s = self:rigFitScale(sr.id, 14, 14, 0.9, 1.4)
+      local bnd = self:rigBounds(sr.id)
+      love.graphics.push(); love.graphics.translate(gx, gy); love.graphics.scale(s, s); love.graphics.translate(0, -bnd.bot)
+      sr.char.x, sr.char.y, sr.char.facing = 0, 0, 1
+      Rig.draw(sr.char)
+      love.graphics.pop()
     end
   end
   local run = self.host.run

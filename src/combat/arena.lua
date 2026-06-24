@@ -179,6 +179,20 @@ function Arena:spawn()
     self.ctx.arena, self.ctx.source, self.ctx.victim = self, u, u
     Effects.run(u, "combat_start", self.ctx)
   end
+  -- BRIS-SIÈGE (commandant, C1) : un drapeau d'équipe `stripEnemyShield` (posé par grant_team au combat_start)
+  -- ampute les boucliers INITIAUX de l'équipe ENNEMIE (shield ET maxShield), AVANT le set des boucliers
+  -- périodiques. Gated : teamFlags vide / flag nil -> aucune mutation -> golden inchangé. Déterministe (zéro RNG).
+  for _, team in ipairs({ "left", "right" }) do
+    local frac = self.teamFlags[team] and self.teamFlags[team].stripEnemyShield
+    if frac and frac > 0 then
+      for _, u in ipairs(self.units) do
+        if u.team ~= team and (u.shield or 0) > 0 then
+          u.shield = math.floor(u.shield * (1 - frac) + 0.5)
+          u.maxShield = math.floor((u.maxShield or 0) * (1 - frac) + 0.5)
+        end
+      end
+    end
+  end
   -- BOUCLIERS PÉRIODIQUES : résout les cibles (slots figés au build) en réfs d'unités de la MÊME équipe.
   for _, u in ipairs(self.units) do
     local sc = u.shieldCaster
@@ -240,7 +254,7 @@ end
 function Arena:neighborsOf(u)
   local out = {}
   for _, w in ipairs(self.units) do
-    if w ~= u and w.alive and w.team == u.team then
+    if w ~= u and w.alive and w.team == u.team and not w.isCommander then -- commandant (hors-graphe, intouchable) : jamais voisin-champ (sinon shock transfer/chain le gaspille)
       local dd, dr = w.depth - u.depth, w.row - u.row
       if dd < 0 then dd = -dd end
       if dr < 0 then dr = -dr end

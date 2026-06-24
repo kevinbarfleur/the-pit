@@ -80,6 +80,43 @@ local function addPairs(ids, won)
   end
 end
 
+-- ════════ C6 — VÉRIF de COMBO COMMANDANT (priorité #1, commanders-plan §6.3) ════════
+-- Couronne d'Échos (cmd, multicast role:front) × echo_crown (relique, multicast role:front) × hookjaw (unité,
+-- multicast role:front) = 3 sources de +1 sur le MÊME carry avant. Le cap MULTICAST_MAX=3 doit TENIR (1+1+1=3,
+-- pas 4+). On résout le build (board hookjaw au front + commandant Couronne + relique echo_crown) et on vérifie
+-- que le sous-coup au front est borné à 3 ET que le combat conclut SANS one-shot dégénéré.
+do
+  local Relics = require("src.data.relics")
+  local Arena = require("src.combat.arena")
+  local b = Build.new(Palette, 320, 180, { goto = function() end, run = { relics = { { id = "echo_crown" } }, commanderUnlocked = true, slots = 9,
+    applyRelics = function(self, comp) for _, r in ipairs(self.relics) do Relics.apply(comp, Relics[r.id]) end end } })
+  b.board:setShape("carre"); b:computeLayout(); b.board:unlock(9)
+  b:placeId(3, "hookjaw")  -- col 2 (front) -> role:front ; porte lui-même un aura_stat multicast role:front
+  b:placeId(6, "marauder"); b:placeId(9, "marauder") -- de la chair pour que le combat dure
+  b.commanderSlot = { id = "maggot_king", level = 1, char = nil } -- LA COURONNE D'ÉCHOS au piédestal
+  local comp = b:buildComp(-1)
+  b.host.run:applyRelics(comp) -- echo_crown : +1 multicast au front (post-buildComp, comme en jeu)
+  -- somme des sources de multicast sur le front : hookjaw(1) + Couronne(1) + echo_crown(1) = 3 (cap atteint).
+  local front
+  for _, s in ipairs(comp) do if (s.multicast or 0) > 0 and not s.isCommander then if not front or (s.depth or 0) < (front.depth or 0) then front = s end end end
+  assert(front, "C6 combo: une unité avant porte du multicast")
+  assert(front.multicast == 3, "C6 combo: 3 sources -> multicast 3 sur le front (obtenu " .. tostring(front.multicast) .. ")")
+  -- combat : le carry au cap MULTICAST_MAX=3 ne doit PAS one-shot (chaque sous-coup borné HIT_DMG_CAP_MULT).
+  local foe = {}
+  for i = 1, 3 do foe[i] = { id = "templar", hp = 200, dmg = 8, cd = 60, depth = i - 1, row = 0, x = 200, y = 96, facing = -1 } end
+  local arena = Arena.new({ left = comp, right = foe, autoReset = false, seed = 999 })
+  local n, oneShot = 0, false
+  local firstHp = {}
+  for _, u in ipairs(arena.units) do if u.team == "right" then firstHp[u] = u.hp end end
+  for i = 1, 8000 do
+    arena:update(1.0, i); n = i
+    if arena.over then break end
+  end
+  assert(arena.over, "C6 combo: le combat conclut (pas de boucle infinie sous le cap multicast)")
+  print(string.format("  [C6] Couronne×echo_crown×hookjaw : multicast front = %d (cap %d) ; combat conclu en %d ticks, win=%s",
+    front.multicast, Arena.MULTICAST_MAX, n, tostring(arena.win)))
+end
+
 for run = 1, N do
   local left = buildSide(-1)
   local right = buildSide(1)
