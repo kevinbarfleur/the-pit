@@ -74,9 +74,10 @@ local RELIC_TYPE = {
 }
 
 local SPACING = 26
-local BOARD_OY = 90 -- centre du plateau (virtuel) : ×4 = ~360 design, sous l'en-tête, au-dessus de la boutique
+local BOARD_OY = 76 -- centre du plateau (virtuel) : ×4 = 304 design, REMONTÉ pour dégager le BANC sous le plateau
 local BOARD_HALF_W = 128 -- demi-étendue MAX (virtuelle) des CENTRES de cases -> board centré, jamais hors zone
-local BOARD_HALF_H = 44  -- (idem vertical) : un sigil étalé (croix/anneau/ligne) se resserre pour tenir ici
+local BOARD_HALF_H = 30  -- (idem vertical) : RESSERRÉ pour qu'un sigil étalé ne morde pas sur le banc
+local BENCH_SIZE = 7 -- BANC (réserve hors-combat) : rangée de slots sous le plateau pour STOCKER/FUSIONNER (n'entre jamais en combat)
 local MAX_LEVEL = 3
 local LEVEL_MULT = { 1.0, 1.8, 3.0 } -- stats par niveau : 3 copies (même id+niveau) -> 1 unité niveau+1 (façon TFT)
 
@@ -95,7 +96,8 @@ function Build.new(palette, vw, vh, host)
     hintKey = "ui.hint_build",
     shapeIdx = 1,
     board = Board.new("carre"),
-    slotRigs = {},     -- [slot] = { id, char } : unités posées
+    slotRigs = {},     -- [slot] = { id, char } : unités posées (PLATEAU = combat)
+    bench = {},        -- [i] = { id, level, char } : RÉSERVE hors-combat (stock/fusion ; n'entre PAS en combat)
     previewRigs = {},  -- [id] = char idle (aperçu boutique)
     drag = nil,        -- { id, char, fromSlot? | fromShop? }
     mx = -100, my = -100,
@@ -228,6 +230,20 @@ function Build:computeShop()
   self.raiseBtn = toV(self.lay.raiseBox)                  -- BUY XP (achat d'XP de boutique)
   self.declineBtn = toV(self.lay.declineBox)
   self:syncEcoRects(false)
+  self:computeBench()
+end
+
+-- BANC (réserve) : rangée de BENCH_SIZE slots centrée, juste au-dessus du bandeau boutique. Rects en VIRTUEL
+-- (÷4) comme shopSlots -> hit-tests directs, ×4 au rendu. La réserve sert à STOCKER/FUSIONNER, elle ne combat jamais.
+function Build:computeBench()
+  local SLOT, GAP, Y = 60, 10, 478 -- taille/gouttière/haut de bande (design)
+  local total = BENCH_SIZE * SLOT + (BENCH_SIZE - 1) * GAP
+  local x0 = math.floor(640 - total / 2 + 0.5) -- centré sur la largeur design (1280)
+  self.benchSlots = {}
+  for i = 1, BENCH_SIZE do
+    local dx = x0 + (i - 1) * (SLOT + GAP)
+    self.benchSlots[i] = { x = dx / 4, y = Y / 4, w = SLOT / 4, h = SLOT / 4 } -- VIRTUEL (÷4)
+  end
 end
 
 -- Synchronise le rect de hit-test REROLL selon qu'un grant attend (ligne scindée) ou non (ligne pleine).
@@ -304,6 +320,15 @@ function Build:shopAt(px, py)
   return nil
 end
 
+-- Indice du slot de BANC sous le curseur (espace virtuel), ou nil.
+function Build:benchAt(px, py)
+  if not self.benchSlots then return nil end
+  for i, r in ipairs(self.benchSlots) do
+    if inRect(px, py, r) then return i end
+  end
+  return nil
+end
+
 function Build:placedCount()
   local n = 0
   for i = 1, 9 do if self.slotRigs[i] then n = n + 1 end end
@@ -329,28 +354,34 @@ function Build:checkMerges()
   local merged = true
   while merged do
     merged = false
-    local groups = {} -- [id\0level] = { slots... }, en ordre de slot (1->9) pour un résultat stable
-    for i = 1, 9 do
-      local sr = self.slotRigs[i]
+    -- Positions UNIFIÉES : plateau (1..9) PUIS banc (1..N), ordre stable -> on garde la 1re copie (plateau prioritaire).
+    local order, groups = {}, {} -- groups[key] = liste de { kind="board"|"bench", i } ; order = clés en ordre d'insertion
+    local function scan(kind, i, sr)
       if sr and (sr.level or 1) < MAX_LEVEL then
         local key = sr.id .. "\0" .. (sr.level or 1)
-        local g = groups[key]; if not g then g = {}; groups[key] = g end
-        g[#g + 1] = i
+        local g = groups[key]; if not g then g = {}; groups[key] = g; order[#order + 1] = key end
+        g[#g + 1] = { kind = kind, i = i }
       end
     end
-    for _, slots in pairs(groups) do
-      if #slots >= 3 then
-        local keep = slots[1]
-        local id, lvl = self.slotRigs[keep].id, (self.slotRigs[keep].level or 1) + 1
-        for k = 2, 3 do -- consomme 2 copies
-          self.slotRigs[slots[k]] = nil
-          self.board.slots[slots[k]].unit = nil
+    for i = 1, 9 do scan("board", i, self.slotRigs[i]) end
+    for i = 1, BENCH_SIZE do scan("bench", i, self.bench[i]) end
+    for _, key in ipairs(order) do -- ipairs (DÉTERMINISTE), jamais pairs
+      local g = groups[key]
+      if #g >= 3 then
+        local keep = g[1]
+        local kr = (keep.kind == "board") and self.slotRigs[keep.i] or self.bench[keep.i]
+        local id, lvl = kr.id, (kr.level or 1) + 1
+        for k = 2, 3 do -- consomme 2 copies (plateau ou banc)
+          local p = g[k]
+          if p.kind == "board" then self.slotRigs[p.i] = nil; self.board.slots[p.i].unit = nil
+          else self.bench[p.i] = nil end
         end
-        self.slotRigs[keep] = { id = id, level = lvl, char = self:newRig(id) } -- promeut la 1re
-        self.board.slots[keep].unit = id
+        local promoted = { id = id, level = lvl, char = self:newRig(id) } -- promeut la 1re copie
+        if keep.kind == "board" then self.slotRigs[keep.i] = promoted; self.board.slots[keep.i].unit = id
+        else self.bench[keep.i] = promoted end
         merged = true
         anyMerge = true
-        break -- re-scan (une promotion peut déclencher une nouvelle fusion)
+        break -- re-scan (une promotion peut déclencher une cascade)
       end
     end
   end
@@ -412,10 +443,16 @@ function Build:mousepressed(vx, vy, button)
     end
   end
   local si = self:slotAt(vx, vy)
-  if si and self.slotRigs[si] then -- ramasse une unité déjà posée (réarrangement / vente)
+  if si and self.slotRigs[si] then -- ramasse une unité du PLATEAU (réarrangement / vente / vers banc)
     self.drag = { id = self.slotRigs[si].id, level = self.slotRigs[si].level or 1, char = self.slotRigs[si].char, fromSlot = si }
     self.slotRigs[si] = nil
     self.board.slots[si].unit = nil
+    return
+  end
+  local bi = self:benchAt(vx, vy)
+  if bi and self.bench[bi] then -- ramasse une unité du BANC (réarrangement / vente / vers plateau)
+    self.drag = { id = self.bench[bi].id, level = self.bench[bi].level or 1, char = self.bench[bi].char, fromBench = bi }
+    self.bench[bi] = nil
   end
 end
 
@@ -424,18 +461,21 @@ function Build:mousereleased(vx, vy, button)
   local d = self.drag
   self.drag = nil
   local run = self.host.run
-  local si = self:slotAt(vx, vy)
+  local si = self:slotAt(vx, vy)    -- case PLATEAU sous le curseur
+  local bi = self:benchAt(vx, vy)   -- slot BANC sous le curseur
 
   if d.fromShop then
-    -- ACHAT : seulement sur une case débloquée et VIDE. L'or n'est débité qu'ici (placement garanti).
-    if si and self.board.slots[si].unlocked and not self.slotRigs[si] then
+    -- ACHAT : sur une case plateau débloquée et VIDE, OU un slot de banc VIDE. L'or n'est débité qu'ICI
+    -- (placement garanti). Le BANC découple l'achat du placement -> on peut STOCKER des copies pour fusionner.
+    local toBoard = si and self.board.slots[si].unlocked and not self.slotRigs[si]
+    local toBench = (not toBoard) and bi and not self.bench[bi]
+    if toBoard or toBench then
       local id = run and run:buy(d.fromShop)
       if id then
-        self.slotRigs[si] = { id = id, level = 1, char = d.char }
-        self.board.slots[si].unit = id
-        self:checkMerges() -- 3 copies (même id+niveau) -> fusion en niveau+1 (arme pendingLevelRelic une fois/round)
-        -- Lot 5 (§5.2) : une fusion a armé la récompense de level-up -> on présente l'offre 1-parmi-3 MID-ROUND
-        -- (retour au MÊME round : boutique/or/plateau préservés, AUCUN startRound). Bornée par le drapeau de run.
+        if toBoard then self.slotRigs[si] = { id = id, level = 1, char = d.char }; self.board.slots[si].unit = id
+        else self.bench[bi] = { id = id, level = 1, char = d.char } end
+        self:checkMerges() -- 3 copies (même id+niveau, plateau OU banc) -> fusion niveau+1 (arme pendingLevelRelic 1×/round)
+        -- Lot 5 (§5.2) : une fusion a armé la récompense de level-up -> offre 1-parmi-3 MID-ROUND (round préservé).
         if self.pendingLevelRelic then
           self.pendingLevelRelic = false
           if self.host.offerLevelUpRelic then self.host.offerLevelUpRelic() end
@@ -445,18 +485,33 @@ function Build:mousereleased(vx, vy, button)
     return
   end
 
-  -- Depuis un slot (l'origine a été vidée au pickup).
+  -- Déplacement d'une unité EXISTANTE (plateau OU banc ; l'origine a été vidée au pickup).
   if si and self.board.slots[si].unlocked then
+    -- -> CASE PLATEAU : place / swap (l'occupant repart vers l'ORIGINE du drag : plateau ou banc).
     local occ = self.slotRigs[si]
-    if occ and d.fromSlot and si ~= d.fromSlot then -- SWAP : l'occupant repart vers l'origine
-      self.slotRigs[d.fromSlot] = occ
-      self.board.slots[d.fromSlot].unit = occ.id
-    end
+    if occ then self:returnDragOrigin(d, occ) end
     self.slotRigs[si] = { id = d.id, level = d.level or 1, char = d.char }
     self.board.slots[si].unit = d.id
+  elseif bi then
+    -- -> SLOT BANC : place / swap.
+    local occ = self.bench[bi]
+    if occ then self:returnDragOrigin(d, occ) end
+    self.bench[bi] = { id = d.id, level = d.level or 1, char = d.char }
   else
-    -- Lâché HORS d'un slot : VENTE (remboursement) si on a une run ; sinon l'unité disparaît (sandbox).
-    if run and d.fromSlot then run:sell(d.id) end
+    -- Lâché HORS plateau ET banc : VENTE (remboursement) si run ; sinon l'unité disparaît (sandbox).
+    if run and (d.fromSlot or d.fromBench) then run:sell(d.id) end
+  end
+end
+
+-- Renvoie l'occupant déplacé (occ) vers l'ORIGINE du drag (case plateau ou slot banc) -> swap propre quel que
+-- soit le couple source/destination (plateau<->plateau, plateau<->banc, banc<->banc). Appelé UNIQUEMENT pour
+-- des drags d'unités existantes (fromSlot/fromBench) ; fromShop est géré plus haut (return).
+function Build:returnDragOrigin(d, occ)
+  if d.fromSlot then
+    self.slotRigs[d.fromSlot] = occ
+    self.board.slots[d.fromSlot].unit = occ.id
+  elseif d.fromBench then
+    self.bench[d.fromBench] = occ
   end
 end
 
@@ -686,6 +741,10 @@ function Build:update(frameDt)
     sr.char.x, sr.char.y = p.x, p.y + 9
     Rig.update(sr.char, self.t, frameDt)
   end
+  for i = 1, BENCH_SIZE do -- anime les rigs du BANC (réserve)
+    local sr = self.bench[i]
+    if sr then Rig.update(sr.char, self.t, frameDt) end
+  end
   for _, c in pairs(self.previewRigs) do Rig.update(c, self.t, frameDt) end
   if self.drag then
     self.drag.char.x, self.drag.char.y = self.mx, self.my + 9
@@ -697,7 +756,7 @@ end
 -- partagé entre drawBack (fonds) et drawOverlay (bordures/texte). Coords souris en espace virtuel.
 function Build:computeUi()
   local hover = self:slotAt(self.mx, self.my)
-  local ui = { hover = hover, dropTarget = self.drag and hover or nil, nbset = {}, shopHover = self:shopAt(self.mx, self.my) }
+  local ui = { hover = hover, dropTarget = self.drag and hover or nil, nbset = {}, shopHover = self:shopAt(self.mx, self.my), benchHover = self:benchAt(self.mx, self.my) }
   if hover then for _, j in ipairs(self.board:neighbors(hover)) do ui.nbset[j] = true end end
   self.uiState = ui -- champ distinct de la méthode (sinon self.uiState renverrait la méthode quand vide)
   return ui
@@ -778,6 +837,16 @@ function Build:drawBack(view)
     end
   end
 
+  -- BANC (réserve, rangée sous le plateau) : même atome Slot (drop/hover/selected/empty) + pip type/niveau si occupé.
+  for i = 1, BENCH_SIZE do
+    local r = self.benchSlots[i]
+    local bx, by, bw = r.x * 4, r.y * 4, r.w * 4
+    local sr = self.bench[i]
+    local hovering = (ui.benchHover == i)
+    local bstate = (self.drag and hovering and "drop") or (hovering and "hover") or (sr and "selected") or "empty"
+    Slot.draw(bx, by, bw, bstate, sr and { typePip = Units[sr.id].type, level = sr.level or 1 } or nil)
+  end
+
   -- Bandeau boutique (bas) + FOND de chaque carte = PANNEAUX propres (dégradé sombre + liseré teinté), dessinés
   -- DERRIÈRE le rig d'aperçu (drawWorld) ; le contenu (pip/nom/coût/chips) est posé en overlay. Le liseré LIT le
   -- TYPE de la créature (or vif au survol, sourd hors budget) ; Panel enregistre la box -> anneau de distorsion.
@@ -838,6 +907,26 @@ function Build:drawWorld()
         c.x, c.y = 0, 0
         Rig.draw(c)
         c.x, c.y = sx, sy
+        love.graphics.pop()
+      end
+    end
+  end
+  -- RIGS du BANC (réserve) : créatures stockées, rendu vivant à échelle réduite, pieds calés au bas du slot.
+  local BENCH_SCALE = 0.3
+  for i = 1, BENCH_SIZE do
+    local sr = self.bench[i]
+    if sr then
+      local r = self.benchSlots[i]
+      local gx = math.floor(r.x * 4 + r.w * 2 + 0.5)     -- centre X du slot (r.w*4/2 = r.w*2)
+      local gy = math.floor(r.y * 4 + r.h * 4 - 4 + 0.5) -- pieds vers le bas du slot
+      if Critter.has(sr.id) then
+        Critter.drawAt(nil, sr.id, gx, gy, BENCH_SCALE, self.t / 60, 1)
+      else
+        local s = self:rigFitScale(sr.id, 13, 13, 0.9, 1.4)
+        local bnd = self:rigBounds(sr.id)
+        love.graphics.push(); love.graphics.translate(gx, gy); love.graphics.scale(s, s); love.graphics.translate(0, -bnd.bot)
+        sr.char.x, sr.char.y, sr.char.facing = 0, 0, 1
+        Rig.draw(sr.char)
         love.graphics.pop()
       end
     end
@@ -978,7 +1067,11 @@ function Build:drawOverlay(view)
     if oi then id = run.shop[oi].id
     else
       local si = self:slotAt(self.mx, self.my)
-      if si and self.slotRigs[si] then id = self.slotRigs[si].id end
+      if si and self.slotRigs[si] then id = self.slotRigs[si].id
+      else
+        local bi = self:benchAt(self.mx, self.my)
+        if bi and self.bench[bi] then id = self.bench[bi].id end
+      end
     end
     if id then self:drawTooltip(id) end
   end

@@ -30,6 +30,10 @@ local function makeBuild(host)
   b:placeId(5, "templar") -- rempart central (buffe ses voisins) -> aura visible
   b:placeId(4, "marauder")
   b:placeId(6, "skeleton")
+  -- BANC (réserve) peuplé pour la capture : familles variées + une PAIRE (witch×2, pré-fusion lisible).
+  for i, id in ipairs({ "witch", "demon", "witch", "spore_tick", "gnaw_rat" }) do
+    b.bench[i] = { id = id, level = 1, char = b:newRig(id) }
+  end
   if b.syncSlots then b:syncSlots() end
   host.build = b
   return b
