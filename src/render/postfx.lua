@@ -50,6 +50,13 @@ function PostFX.markBox(x, y, w, h)
   if active then active:_markBox(x, y, w, h) end
 end
 
+-- ★ PANNEAU OPAQUE FLOTTANT (fiche au survol, modal) : EFFACE le masque sous TOUT son rect (pas juste un anneau)
+-- -> aucune distorsion sous lui ET aucune bordure de voisin échantillonnée à travers son fond (retour user 2026-06 :
+-- le fond de la fiche laissait voir les bordures des cartes de derrière). Forwarde à l'instance active (no-op sinon).
+function PostFX.markSolid(x, y, w, h)
+  if active then active:_markSolid(x, y, w, h) end
+end
+
 -- ╔═══════════════════════════════════════════════════════════════════════════════════════════════╗
 -- ║ LEVIERS DE DISTORSION ONIRIQUE — dose ici en UNE ligne (le user préfère trop fort puis réduire). ║
 -- ║ L'intensité globale est `PostFX.distort` (≈0..1, voir new()). Ces constantes en règlent le grain.  ║
@@ -59,16 +66,14 @@ end
 -- ║   masque). Seul l'ANNEAU autour du périmètre de chaque box ondule + dérive vers le violet/abysse.  ║
 -- ╚═══════════════════════════════════════════════════════════════════════════════════════════════╝
 local DISTORT = {
-  AMP_PX    = 3.0,   -- amplitude MAX du décalage d'UV, en PIXELS écran (dans les bordures ; ×distort). C'est l'EFFET DOMINANT (subtil).
+  AMP_PX    = 1.6,   -- amplitude RÉDUITE (retour user 2026-06 : la distorsion bavait sur l'intérieur + sur les voisins).
   SPEED     = 0.85,  -- vitesse d'écoulement des ondes (rad/s) : lent = onirique, organique
   SCALE     = 5.5,   -- échelle SPATIALE des ondes (≈ nb de lobes en travers de l'écran) : bas = larges houles
-  CHROMA    = 0.12,  -- force de la dérive chromatique violet/abysse (0 = aucune). FAIBLE + GATÉE par le déplacement
-                     --   (cf. GLSL : chromaAmount = CHROMA·bmask·clamp(|offsetPx|/AMP_PX)) -> SOUPÇON de violet
-                     --   sur le seul LISERÉ qui tangue, JAMAIS un aplat sur toute la bande sombre.
+  CHROMA    = 0.10,  -- force de la dérive chromatique violet/abysse (0 = aucune). FAIBLE + GATÉE par le déplacement.
   -- ── MASQUE DE BANDES-BORDURES (remplace l'ancien masque RADIAL) ──────────────────────────────────
   -- La distorsion ne s'applique QUE dans une bande autour du périmètre de chaque box enregistrée.
-  RING_PX   = 6.0,   -- largeur de l'anneau (bande-bordure) en px ÉCRAN. FIN : un liseré qui ondule, pas un bloc.
-  RING_FEATHER = 5.0,-- fondu doux (px écran) vers l'intérieur ET l'extérieur de l'anneau. AUGMENTÉ -> bande mince et FONDUE.
+  RING_PX   = 3.5,   -- anneau plus FIN, collé au bord (avant 6 -> mordait l'intérieur des cartes, retour user).
+  RING_FEATHER = 2.5,-- fondu réduit (avant 5 : la bande totale ~11px entrait trop loin dans les containers).
 }
 
 -- ── Teintes de palette-lock (palette Wraeclast, depuis Theme.c -> floats 0..1) ─────────────────────
@@ -199,7 +204,7 @@ vec4 effect(vec4 color, Image tex, vec2 tc, vec2 sc) {
 
   // ── Grain de film ANIMÉ (RNG non-seedé : RENDER pur). Densité montée par la tension. ──────────────
   number g = hash21(sc + vec2(time * 53.0, time * 71.0)) - 0.5;
-  col += g * (0.045 + 0.05 * tension) * strength;
+  col += g * (0.026 + 0.04 * tension) * strength;   // grain ATTÉNUÉ (retour user : VHS trop prononcé)
 
   // ── Pulsation de braise GLOBALE très lente : l'écran « respire » (chair froide), + chaud aux bords. ─
   number breath = 0.5 + 0.5 * sin(time * 0.6);
@@ -214,7 +219,7 @@ vec4 effect(vec4 color, Image tex, vec2 tc, vec2 sc) {
   col *= vig;
 
   // ── Scanline horizontale TRÈS subtile (rétro discret) — amplitude minime, pas un CRT (déforme pas le texte). ─
-  number scan = 1.0 - 0.025 * strength * (0.5 + 0.5 * sin(sc.y * 3.14159265));
+  number scan = 1.0 - 0.014 * strength * (0.5 + 0.5 * sin(sc.y * 3.14159265));
   col *= scan;
 
   return vec4(col, 1.0) * color;
@@ -257,8 +262,8 @@ function PostFX.new()
   local self = setmetatable({
     enabled = true,     -- défaut ON, mais SUBTIL (strength modeste) — la lisibilité prime
     available = false,  -- passe à true si le shader compile (sinon NO-OP partout)
-    strength = 0.85,    -- maître d'intensité (subtilité par défaut ; <1 garde l'UI lisible)
-    distort = 0.65,     -- ★ maître d'intensité de la DISTORSION onirique (displacement), CONFINÉE aux bordures.
+    strength = 0.50,    -- maître d'intensité ATTÉNUÉ (retour user 2026-06 : VHS/grain un peu trop prononcé, confort/accessibilité)
+    distort = 0.50,     -- ★ maître d'intensité de la DISTORSION onirique (displacement), CONFINÉE aux bordures.
                         --   L'effet DOMINANT mais SUBTIL : « le liseré ondule légèrement », pas « ça gondole ».
                         --   Dose en 1 ligne (0 = off, 1 = AMP_PX nominal). Inclus au [F9].
     t = 0,              -- horloge murale accumulée (s)
@@ -266,6 +271,8 @@ function PostFX.new()
     cw = 0, ch = 0,
     boxes = {},         -- ★ COLLECTEUR DE RECTS : box d'UI {x,y,w,h} (espace DESIGN) enregistrées cette frame
     nboxes = 0,         -- nb d'entrées valides dans `boxes` (on RÉUTILISE la table -> zéro churn GC/frame)
+    solids = {},        -- ★ PANNEAUX OPAQUES (fiche/modal) : rects qui EFFACENT le masque sous eux (anti-bave)
+    nsolids = 0,
     mask = nil,         -- canvas natif du MASQUE de bandes-bordures (créé une fois, redessiné/frame)
   }, PostFX)
 
@@ -304,6 +311,17 @@ function PostFX:_markBox(x, y, w, h)
   if b then b[1], b[2], b[3], b[4] = x, y, w, h
   else self.boxes[n] = { x, y, w, h } end
   self.nboxes = n
+end
+
+-- ★ Enregistre un PANNEAU OPAQUE (rect design) : la passe masque le REPEINT en NOIR par-dessus les anneaux ->
+-- distorsion NULLE sous lui (fiche/modal flottants restent nets, sans bave de bordure des cartes derrière).
+function PostFX:_markSolid(x, y, w, h)
+  if not (self.available and self.enabled) then return end
+  if not (w and h) or w <= 0 or h <= 0 then return end
+  local n = self.nsolids + 1
+  local b = self.solids[n]
+  if b then b[1], b[2], b[3], b[4] = x, y, w, h else self.solids[n] = { x, y, w, h } end
+  self.nsolids = n
 end
 
 -- Largeur de l'anneau exposée au reste du module (px écran ; lue par la passe masque).
@@ -365,6 +383,13 @@ function PostFX:_drawMask(view)
         end
       end
     end
+    -- ★ PANNEAUX OPAQUES : on REPEINT en NOIR tout leur rect (par-dessus les anneaux) -> distorsion = 0 sous eux
+    -- (la fiche flottante reste nette ET ne tire aucune bordure de voisin à travers son fond, retour user 2026-06).
+    love.graphics.setColor(0, 0, 0, 1)
+    for i = 1, self.nsolids do
+      local sb = self.solids[i]
+      love.graphics.rectangle("fill", sb[1], sb[2], sb[3], sb[4])
+    end
     love.graphics.pop()
     love.graphics.setColor(1, 1, 1, 1)
   end)
@@ -392,6 +417,7 @@ end
 function PostFX:beginFrame(dt, w, h)
   self.active = false
   self.nboxes = 0 -- ★ VIDE le collecteur de rects en début de frame (les composants ré-enregistrent au draw)
+  self.nsolids = 0 -- ★ idem pour les panneaux opaques flottants
   if not (self.available and self.enabled) then return false end
   self.t = self.t + (dt or 0)
   self:_ensureCanvas(w, h)

@@ -104,8 +104,8 @@ function Slot.draw(x, y, size, state, opts)
   -- famille n'a aucune incidence mécanique, retour user 2026-06). opts.tierCol = {r,g,b} (= rarity.tierColor).
   if opts.tierCol and gr and gr.circle then
     local tc = opts.tierCol
-    local pr = max(2, floor(size * 0.085))
-    local cx, cy = x + 6 + pr, y + 6 + pr
+    local pr = max(1.5, floor(size * 0.042)) -- petit point DISCRET (÷2, retour user 2026-06)
+    local cx, cy = x + 5 + pr, y + 5 + pr
     gr.setColor(tc[1], tc[2], tc[3], 1); gr.circle("fill", cx, cy, pr)
     gr.setColor(0, 0, 0, 0.5); gr.circle("line", cx, cy, pr + 0.5)
     gr.setColor(1, 1, 1, 1)

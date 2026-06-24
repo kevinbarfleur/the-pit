@@ -33,6 +33,7 @@ local Rarity = require("src.gen.rarity")
 local Units = require("src.data.units")
 local I18n = require("src.core.i18n")
 local MiniRig = require("src.render.minirig")
+local Critter = require("src.render.critter") -- rendu VIVANT : MÊME créature animée que le board (ailes/yeux/feu)
 local Rig = require("src.core.rig")
 local C = Theme.c
 local T = I18n.t
@@ -117,15 +118,14 @@ MonsterCard.drawDescLine = drawDescLine
 -- (Panel.niche : hachures + liseré iron). Halo de rareté additif derrière (héros R4-R5). `rigc` = char à
 -- dessiner (animé du build OU mini-rig figé) ; les bounds/scale viennent de MiniRig (déterministes,
 -- identiques à l'ancien Build:rigBounds). `view` requis pour le clip ; nil = pas de clip.
-local function drawCardPortrait(view, palette, id, rigc, region, rank, rarCol, rich)
-  rigc = rigc or MiniRig.rig(id, palette)
-  -- 1) niche propre (le « slot à sprite » du design system) — remplace les anciens dividers dorés.
-  Panel.niche(region.x, region.y, region.w, region.h)
+local function drawCardPortrait(view, palette, id, rigc, region, rank, rarCol, rich, t)
+  local useCritter = Critter and Critter.has and Critter.has(id) -- créature VIVANTE générée (comme le board)
+  -- 1) FOND propre : un simple panneau sombre + liseré, SANS hachure (retour user 2026-06 : « du moment qu'on
+  -- voit la créature, c'est simple, c'est parfait » -> on retire l'ancien Panel.niche hachuré).
+  Draw.rect(region.x, region.y, region.w, region.h, C.stone900, C.iron, 1)
   local cx = region.x + region.w / 2
-  local bnd = MiniRig.bounds(id, palette)
-  local s = MiniRig.fitScale(id, region.w, region.h, palette, 0.82, 3.5)
   local feet = region.y + region.h - 5
-  -- 2) halo de rareté (héros) : cercles additifs doux teintés du cadre de rang, DANS la niche.
+  -- 2) halo de rareté (héros) : cercles additifs doux teintés du cadre de rang, DERRIÈRE la créature.
   if rich and love.graphics.setBlendMode and love.graphics.circle then
     local rar = Rarity.get(rank)
     if rar and rar.glow and rar.glow > 0 then
@@ -137,22 +137,30 @@ local function drawCardPortrait(view, palette, id, rigc, region, rank, rarCol, r
       love.graphics.setBlendMode("alpha"); love.graphics.setColor(1, 1, 1, 1)
     end
   end
-  -- 3) CLIP : restaure le scissor parent au lieu de l'effacer (la carte peut elle-même vivre dans un clip).
+  -- 3) CLIP + CRÉATURE. On dessine EXACTEMENT le rendu vivant du board : Critter (ailes/yeux/feu animés). Repli
+  -- rig baké (créatures dessinées-main sans Critter). Restaure le scissor parent (la carte peut vivre dans un clip).
   local px, py, pw, ph
   if love.graphics.getScissor then px, py, pw, ph = love.graphics.getScissor() end
   if view then Draw.scissor(view, region.x, region.y, region.w, region.h) end
-  love.graphics.push()
-  love.graphics.translate(math.floor(cx), math.floor(feet))
-  love.graphics.scale(s, s)
-  love.graphics.translate(0, -bnd.bot)
-  rigc.x, rigc.y, rigc.facing = 0, 0, 1
-  Rig.draw(rigc)
-  love.graphics.pop()
+  if useCritter then
+    Critter.drawAt(nil, id, math.floor(cx), math.floor(feet), region.h * 0.95 / 64, t or 0, 1)
+  else
+    rigc = rigc or MiniRig.rig(id, palette)
+    local bnd = MiniRig.bounds(id, palette)
+    local s = MiniRig.fitScale(id, region.w, region.h, palette, 0.82, 3.5)
+    love.graphics.push()
+    love.graphics.translate(math.floor(cx), math.floor(feet))
+    love.graphics.scale(s, s)
+    love.graphics.translate(0, -bnd.bot)
+    rigc.x, rigc.y, rigc.facing = 0, 0, 1
+    Rig.draw(rigc)
+    love.graphics.pop()
+  end
   if view then
     if px then love.graphics.setScissor(px, py, pw, ph) else love.graphics.setScissor() end
   end
   love.graphics.setColor(1, 1, 1, 1)
-  -- 4) re-liseré iron par-dessus (le rig a pu mordre le bord de la niche).
+  -- 4) re-liseré iron par-dessus (la créature a pu mordre le bord).
   Draw.rect(region.x, region.y, region.w, region.h, nil, C.iron, 1)
 end
 MonsterCard.drawCardPortrait = drawCardPortrait
@@ -261,7 +269,8 @@ function MonsterCard.draw(view, palette, id, anchorX, anchorY, t, opts)
   -- ── 3) FOND : Panel propre (dégradé sombre + liseré iron + éclat haut ; accent de rareté pour héros). ──
   Panel.draw(x, y, W, h, {
     fill1 = C.stone800, fill2 = C.stone900,
-    accent = rarCol, -- liseré interne TEINTÉ par le TIER pour TOUTES les raretés (la carte « respecte » la couleur de rang, retour user 2026-06)
+    accent = rarCol, -- liseré interne TEINTÉ par le TIER pour TOUTES les raretés (la carte « respecte » la couleur de rang)
+    solid = true, -- fiche flottante OPAQUE : nette, sans bave de distorsion ni bordure des cartes de derrière (retour user 2026-06)
   })
 
   -- ── 4) CONTENU : pile à curseur vertical (calque du tooltip), chaque bloc mesuré. ──
@@ -283,7 +292,7 @@ function MonsterCard.draw(view, palette, id, anchorX, anchorY, t, opts)
 
   -- (b) PORTRAIT : rig ajusté pour remplir la niche, clippé. Halo de rareté pour les héros.
   local portRegion = { x = bodyX, y = cy, w = innerW, h = PORTRAIT_H }
-  drawCardPortrait(view, palette, id, opts.rig, portRegion, rank, rarCol, rich)
+  drawCardPortrait(view, palette, id, opts.rig, portRegion, rank, rarCol, rich, t)
   cy = cy + PORTRAIT_H + GAP
 
   -- (c) IDENTITÉ : [ pastille de TIER · NOM DE CASTE (couleur de rang) ........ ◆◆ rareté ]. La famille

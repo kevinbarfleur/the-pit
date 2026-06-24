@@ -39,7 +39,9 @@ end
 function Panel.draw(x, y, w, h, opts)
   opts = opts or {}
   x, y, w, h = math.floor(x + 0.5), math.floor(y + 0.5), math.floor(w + 0.5), math.floor(h + 0.5)
-  PostFX.markBox(x, y, w, h) -- ★ enregistre le rect (espace design) : l'anneau de distorsion suivra cette bordure
+  -- opts.solid : panneau OPAQUE flottant (fiche au survol / modal) -> EFFACE le masque sous lui (net, sans bave de
+  -- bordure des cartes derrière). Sinon : anneau de distorsion sur le périmètre (comportement normal des cartes).
+  if opts.solid then PostFX.markSolid(x, y, w, h) else PostFX.markBox(x, y, w, h) end
   if opts.fill then
     Draw.rect(x, y, w, h, opts.fill)
   else
