@@ -32,13 +32,15 @@ build (boutique + plateau + **BANC** sous le plateau) → COMBAT → relique tou
 7. **Refonte combat P0** — sol d'arène + ligne de front + brume centrale + vignette (fini « 2 clusters dans le noir »).
 8. **Reliques d'économie** (ton levier intérêts/or) — Usurer's Ledger (report+intérêt) · Tithe-Bowl (or/victoire) · Pauper's Boon (income/round) · Grave-Robber's Cut (vente pleine). Testées.
 9. **Bug runover `[level]`** corrigé · **équilibre CONFIRMÉ** (sim N=3000 : σ 0.051, entropie 0.999, **zéro outlier**).
-10. **Refonte combat P1/P2** — profondeur (gorge du puits + piliers silhouettés + brouillard + braises) + **feel** des coups (shake render-local + flash blanc + mort = flash de case + particules de sang). Render-only, golden inchangé, prouvé SIM-neutre (sonde headless).
+10. **Refonte combat P1/P2** — profondeur (gorge + piliers + brouillard + braises) + **feel** des coups (shake + flash + mort = particules de sang). Render-only, golden inchangé, prouvé SIM-neutre.
+11. **Icônes dédiées** des 7 reliques boutique/éco (ledger · bol de pièces · bourse · pelle · lanterne · parchemin scellé · tally d'os) — fin du losange générique.
+12. **Lore (flavor) des 83 unités** — affiché dans la fiche de monstre (« nom + lore » complété) ; la fiche montre aussi la **famille** (via le PIN).
 
 **Tout est committé et poussé sur `origin/feat/base-game`. Rien en cours.**
 
 **RESTANT / DIFFÉRÉ (à décider ensemble)** :
 - **Re-mécanique des effets** vers le visuel (« adapte tous les effets ») — **DIFFÉRÉE** : sim-gated + risque d'équilibre ; les **noms** règlent déjà la plainte #1. À faire ensemble, chaque batch sim-validé.
-- Icônes dédiées des reliques boutique/éco (génériques) · noms longs serrés sous les cases · doublons morts d'`en_ext.lua` · synergies de **TYPE** (M4) · combat P2.1/P2.4 (télégraphe / beat victoire).
+- Noms longs un peu serrés sous les cases · doublons morts d'`en_ext.lua` (override par en.lua, inertes) · synergies de **TYPE** (M4) · combat P2.1/P2.4 (télégraphe / beat victoire) · grille du cabinet debug `[r]` (18→25 icônes).
 - Collisions d'archetype créatures (3 herons…) — familles assumées, à arbitrer si gênant (`creature-renames.md`).
 
 ---
