@@ -73,6 +73,7 @@ return {
   ["ui.reshape"] = "[s] to reshape",
   ["ui.controls_build"] = "drag to place  -  [s] sigil  -  [g] gallery  -  [esc] quit",
   ["ui.offering"] = "THE OFFERING",
+  ["ui.offering_flavor"] = "dregs of the first terrace",
   ["ui.sold"] = "SOLD",
   ["ui.place_unit"] = "PLACE A UNIT",
   ["ui.gold"] = "GOLD",

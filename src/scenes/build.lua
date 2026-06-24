@@ -192,66 +192,70 @@ end
 -- a la MÊME taille avec des gouttières ÉGALES ; l'orbe REMPLIT la hauteur de sa colonne (pas un petit orbe
 -- flottant dans une grande boîte). Les widgets forge sont BAKÉS À LA TAILLE CALCULÉE (fill réel). On
 -- calcule les rects DESIGN une fois ; les hit-tests souris (en VIRTUEL) sont dérivés (÷4) -> self.shopSlots.
-local STRIP = { x = 16, y = 564, w = 1280 - 32, h = 720 - 564 - 12 } -- bandeau du bas (design), marges propres
-local STRIP_GAP = 18
-local SHOP_XPBAR_H = 34 -- hauteur de la longue BARRE D'XP de boutique, logée SOUS les cartes de monstres (retour user 2026-06)
+-- ── BARRE DU BAS = handoff designer « Bottom Bar.dc.html » : un PANNEAU ENCADRÉ (bord iron + dégradé + filet
+-- laiton gravé en haut) découpé en 3 colonnes séparées par des filets iron :
+--   [ LIFE VESSEL 168 (LIVES n/5 + orbe 108) | THE OFFERING (header + 5 cartes + rail de tier 5 crans) | ACTIONS 318 (FIGHT + éco) ].
+-- Les `--vars` CSS du designer == nos tokens Theme.c (même palette). On calcule les rects DESIGN une fois ;
+-- les hit-tests souris (VIRTUEL) sont dérivés (÷4).
+local BAR = { x = 16, y = 524, w = 1280 - 32, h = 720 - 524 - 12 } -- panneau encadré du bas (design), h ~184
+local BAR_RULE = 2     -- filet laiton gravé en haut du panneau
+local ORB_D = 108      -- diamètre de l'orbe de vie (life vessel)
+local CARD_ART_H = 74  -- zone d'art de la carte miniature (le reste = pied nom/coût)
+local CARD_FOOT_H = 28 -- pied de carte (nom + coût)
 
 function Build:computeShop()
-  -- 1) découpe principale : orbe (largeur fixe) | offres (flex) | boutons (largeur fixe).
-  local cols = Layout.row(STRIP, {
-    { size = 116 },  -- colonne orbe de vie
-    { flex = 1 },    -- rangée des offres (remplit le milieu)
-    { size = 360 },  -- colonne des boutons (COMBAT large + REROLL)
-  }, { gap = STRIP_GAP, align = "stretch" })
-  self.lay = { orbCol = cols[1], shopBox = cols[2], btnCol = cols[3] }
+  -- contenu sous le filet laiton ; marges du panneau (≈ design : padding 16/4).
+  local inner = Layout.inset(BAR, { l = 4, t = BAR_RULE + 14, r = 4, b = 16 })
+  -- 3 colonnes séparées par des filets iron (1px), sans gouttière.
+  local cols = Layout.row(inner, {
+    { size = 168 }, { size = 1 }, { flex = 1 }, { size = 1 }, { size = 318 },
+  }, { gap = 0, align = "stretch" })
+  self.lay = { lifeCol = cols[1], div1 = cols[2], offerCol = cols[3], div2 = cols[4], actCol = cols[5] }
 
-  -- 2) ORBE DE VIE : colonne [ compteur (fixe) | orbe (flex -> remplit la hauteur restante) ].
-  local oc = Layout.column(cols[1], { { size = 16 }, { flex = 1 } }, { gap = 4, align = "stretch" })
-  self.lay.lifeLabel = oc[1]
-  self.lay.lifeOrbBox = oc[2]
+  -- LIFE VESSEL : [ LIVES n/5 ] au-dessus de l'orbe 108 ; le groupe centré verticalement dans la colonne.
+  local lc = cols[1]
+  local groupH = 14 + 11 + ORB_D
+  local gy = lc.y + math.floor((lc.h - groupH) / 2)
+  self.lay.lifeLabel = { x = lc.x, y = gy, w = lc.w, h = 14 }
+  self.lay.lifeOrbBox = { x = lc.x + math.floor((lc.w - ORB_D) / 2), y = gy + 25, w = ORB_D, h = ORB_D }
 
-  -- 3) OFFRES : rangée de N cartes (flex, gouttières égales) AU-DESSUS d'une longue BARRE D'XP de boutique
-  -- (hauteur fixe). La progression de tier vit DIRECTEMENT sous les monstres (retour user 2026-06) : on scinde
-  -- la colonne shop en [ cartes (flex) | barre d'XP (SHOP_XPBAR_H) ]. Les cartes rétrécissent juste ce qu'il
-  -- faut pour loger la barre -> cartes + barre = hauteur de la colonne des boutons (FIGHT + éco), zone alignée.
-  local shopRows = Layout.column(cols[2], { { flex = 1 }, { size = SHOP_XPBAR_H } }, { gap = 8, align = "stretch" })
-  self.lay.shopXpBox = shopRows[2]
+  -- THE OFFERING : header (14) + marge (11) + bloc [ cartes (haut) … rail de tier (bas, poussé en bas) ].
+  local oin = Layout.inset(cols[3], { l = 18, t = 0, r = 18, b = 0 })
+  local orows = Layout.column(oin, { { size = 14 }, { size = 11 }, { flex = 1 } }, { gap = 0, align = "stretch" })
+  self.lay.offerHeader = orows[1]
+  local block = Layout.column(orows[3], { { size = CARD_ART_H + CARD_FOOT_H }, { flex = 1 }, { size = 20 } }, { gap = 0, align = "stretch" })
+  self.lay.cardsRow = block[1]
+  self.lay.tierRail = block[3]
   local specs = {}
   for _ = 1, Run.SHOP_SIZE do specs[#specs + 1] = { flex = 1 } end
-  self.lay.cards = Layout.row(shopRows[1], specs, { gap = 8, align = "stretch" })
+  self.lay.cards = Layout.row(self.lay.cardsRow, specs, { gap = 10, align = "stretch" })
 
-  -- 4) BOUTONS : COMBAT (gros, en haut) au-dessus d'une LIGNE éco. COMBAT reste DOMINANT (flex 3) ; la
-  -- ligne éco (flex 2) tient les petits boutons. BUY XP (achat d'XP de boutique) occupe TOUJOURS la moitié
-  -- gauche. À droite : REROLL seul (pas de grant) OU [ REROLL | REFUSER ] (un grant attend). On calcule
-  -- les DEUX dispositions et on choisit à l'affichage selon run.pendingSlotGrant -> jamais de poche vide.
-  local bc = Layout.column(cols[3], { { flex = 3 }, { size = 8 }, { flex = 2 } }, { gap = 0, align = "stretch" })
-  self.lay.combatBox = bc[1]
-  -- la ligne éco se scinde en [ BUY XP | reste ]. BUY XP = moitié gauche, fixe quel que soit le grant.
-  local ecoRow = Layout.row(bc[3], { { flex = 1 }, { flex = 1 } }, { gap = 10, align = "stretch" })
-  self.lay.raiseBox = ecoRow[1]                           -- BUY XP = achat d'XP de boutique (toujours à gauche)
-  self.lay.ecoRowBox = ecoRow[2]                          -- moitié droite : REROLL seul (pas de grant)
-  local ecoSplit = Layout.row(ecoRow[2], { { flex = 1 }, { flex = 1 } }, { gap = 10, align = "stretch" })
-  self.lay.rerollSplitBox = ecoSplit[1]                  -- REROLL quand un grant attend (1/4 droite gauche)
-  self.lay.declineBox = ecoSplit[2]                      -- REFUSER (visible seulement pendant un grant)
+  -- ACTIONS : spacer (= header+marge, aligne FIGHT au haut des cartes) + FIGHT (flex) + cluster éco (bas).
+  local ain = Layout.inset(cols[5], { l = 16, t = 0, r = 16, b = 0 })
+  local arows = Layout.column(ain, { { size = 25 }, { flex = 1 }, { size = 9 }, { size = 34 } }, { gap = 0, align = "stretch" })
+  self.lay.combatBox = arows[2] -- FIGHT remplit jusqu'au bas des cartes
+  self.lay.ecoRow = arows[4]    -- cluster éco sur la ligne du rail de tier
+  -- éco : 2 boutons (BUY XP | REROLL) hors grant ; 3 (… | REFUSER) pendant un grant. On calcule les deux.
+  local eco2 = Layout.row(arows[4], { { flex = 1 }, { flex = 1 } }, { gap = 7, align = "stretch" })
+  local eco3 = Layout.row(arows[4], { { flex = 1 }, { flex = 1 }, { flex = 1 } }, { gap = 7, align = "stretch" })
+  self.lay.buyXp2, self.lay.reroll2 = eco2[1], eco2[2]
+  self.lay.buyXp3, self.lay.reroll3, self.lay.refuse3 = eco3[1], eco3[2], eco3[3]
 
-  -- 5) hit-tests souris en VIRTUEL (÷4) — dérivés des rects DESIGN du layout (toujours synchrones).
-  -- Les rects REROLL/REFUSER sont (re)synchronisés à chaque frame par syncEcoRects(grant) (cf. drawOverlay).
+  -- hit-tests souris (VIRTUEL ÷4).
   local function toV(r) return { x = r.x / 4, y = r.y / 4, w = r.w / 4, h = r.h / 4 } end
   self._toV = toV
   self.shopSlots = {}
   for i = 1, Run.SHOP_SIZE do self.shopSlots[i] = toV(self.lay.cards[i]) end
   self.button = toV(self.lay.combatBox)
-  self.raiseBtn = toV(self.lay.raiseBox)                  -- BUY XP (achat d'XP de boutique)
-  self.declineBtn = toV(self.lay.declineBox)
   self:syncEcoRects(false)
-  self.xpBarRect = toV(self.lay.shopXpBox) -- survol de la longue barre d'XP -> infobulle des cotes (drawOddsTooltip)
+  self.xpBarRect = toV(self.lay.tierRail) -- survol du rail de tier -> infobulle des cotes (drawOddsTooltip)
   self:computeBench()
 end
 
 -- BANC (réserve) : rangée de BENCH_SIZE slots centrée, juste au-dessus du bandeau boutique. Rects en VIRTUEL
 -- (÷4) comme shopSlots -> hit-tests directs, ×4 au rendu. La réserve sert à STOCKER/FUSIONNER, elle ne combat jamais.
 function Build:computeBench()
-  local SLOT, GAP, Y = 60, 10, 478 -- taille/gouttière/haut de bande (design)
+  local SLOT, GAP, Y = 60, 10, 452 -- taille/gouttière/haut de bande (design) ; remonté : la barre du bas est plus haute (handoff)
   local total = BENCH_SIZE * SLOT + (BENCH_SIZE - 1) * GAP
   local x0 = math.floor(640 - total / 2 + 0.5) -- centré sur la largeur design (1280)
   self.benchSlots = {}
@@ -358,8 +362,16 @@ end
 -- Synchronise le rect de hit-test REROLL selon qu'un grant attend (ligne scindée) ou non (ligne pleine).
 -- Appelé chaque frame avant les clics/le rendu -> le hit-test colle TOUJOURS à ce qui est dessiné.
 function Build:syncEcoRects(granting)
-  local box = granting and self.lay.rerollSplitBox or self.lay.ecoRowBox
-  self.rerollBtn = self._toV(box)
+  -- cluster éco : [ BUY XP | REROLL ] hors grant ; [ BUY XP | REROLL | REFUSER ] pendant un grant.
+  if granting then
+    self.raiseBtn = self._toV(self.lay.buyXp3)
+    self.rerollBtn = self._toV(self.lay.reroll3)
+    self.declineBtn = self._toV(self.lay.refuse3)
+  else
+    self.raiseBtn = self._toV(self.lay.buyXp2)
+    self.rerollBtn = self._toV(self.lay.reroll2)
+    self.declineBtn = nil
+  end
 end
 
 -- Rect (ESPACE DESIGN) de la i-ème relique possédée (rangée au-dessus de la boutique). Inclut le cadre
@@ -1087,11 +1099,19 @@ function Build:drawBack(view)
     Slot.draw(bx, by, bw, bstate, sr and { tierCol = Rarity.tierColor(Units[sr.id].rank), level = sr.level or 1 } or nil)
   end
 
-  -- Bandeau boutique (bas) + FOND de chaque carte = PANNEAUX propres (dégradé sombre + liseré teinté), dessinés
-  -- DERRIÈRE le rig d'aperçu (drawWorld) ; le contenu (pip/nom/coût/chips) est posé en overlay. Le liseré LIT le
-  -- TYPE de la créature (or vif au survol, sourd hors budget) ; Panel enregistre la box -> anneau de distorsion.
-  Draw.rect(0, 556, Draw.W, 164, c.panel)
-  Draw.setColor(c.line); love.graphics.setLineWidth(2); love.graphics.line(0, 557, Draw.W, 557); love.graphics.setLineWidth(1)
+  -- ── BARRE DU BAS (handoff « Bottom Bar ») : panneau ENCADRÉ + filet laiton gravé + filets iron + fonds de carte ──
+  -- panneau : dégradé sombre (#15111c -> #0a0710) + bord iron + filet laiton gravé (2px) en haut.
+  Panel.vgrad(BAR.x, BAR.y, BAR.w, BAR.h, { 0x15 / 255, 0x11 / 255, 0x1c / 255, 1 }, { 0x0a / 255, 0x07 / 255, 0x10 / 255, 1 })
+  Draw.rect(BAR.x, BAR.y, BAR.w, BAR.h, nil, c.iron, 1)
+  Draw.rect(BAR.x + 1, BAR.y + 1, BAR.w - 2, BAR_RULE, c.brass) -- filet laiton (≈ dégradé transparent->brass->brassL->brass)
+  Draw.rect(math.floor(BAR.x + 1 + (BAR.w - 2) * 0.12), BAR.y + 1, math.floor((BAR.w - 2) * 0.76), 1, c.brassL)
+  Draw.setColor(c.brassS, 0.12); if love.graphics then love.graphics.rectangle("fill", BAR.x + 1, BAR.y + BAR_RULE + 1, BAR.w - 2, 1) end; Draw.reset()
+  -- filets iron entre les 3 colonnes.
+  Draw.rect(self.lay.div1.x, self.lay.div1.y, 1, self.lay.div1.h, c.iron)
+  Draw.rect(self.lay.div2.x, self.lay.div2.y, 1, self.lay.div2.h, c.iron)
+
+  -- FONDS DE CARTE : dégradé sombre + bord iron (laiton vif au survol, sourd hors budget) + zone d'art à
+  -- HACHURE diagonale (placeholder de sprite ; la créature de drawWorld se pose par-dessus) + bord bas iron.
   if run then
     for i, rect in ipairs(self.shopSlots) do
       local o = run.shop[i]
@@ -1102,23 +1122,25 @@ function Build:drawBack(view)
         else
           local playable = self:offerPlayable(o)
           local hot = (ui.shopHover == i) and playable
-          -- CADRE = RARETÉ (rang 1..5), pas type : couleur de carte = TIER (gris->vert->bleu->violet->or). Au
-          -- survol on RENFORCE la teinte (jamais de doré générique) + halo additif. DÉSACTIVÉE (pas d'or, ou
-          -- plein SANS level-up à la clé) -> cadre iron + fond assombri + aucun glow (retour user 2026-06).
-          local rank = (Units[o.id] and Units[o.id].rank) or 1
-          local border
-          if not playable then border = c.iron
-          elseif hot then border = Rarity.tierBright(rank)
-          else border = Rarity.tierColor(rank) end
-          local fill1 = (not playable) and c.stone900 or (hot and c.stone700 or c.stone800)
-          Panel.draw(x, y, w, h, { fill1 = fill1, fill2 = c.stone900, border = border, hi = playable })
+          -- fond carte (dégradé), assombri hors budget.
+          Panel.vgrad(x, y, w, h, playable and { 0x15 / 255, 0x11 / 255, 0x1d / 255, 1 } or { 0x0f / 255, 0x0c / 255, 0x14 / 255, 1 }, { 0x0d / 255, 0x0a / 255, 0x13 / 255, 1 })
+          -- zone d'art : base stone-900 + HACHURE diagonale stone-800 (clippée à la zone), puis bord bas iron.
+          local ah = CARD_ART_H
+          Draw.rect(x + 1, y + 1, w - 2, ah - 1, c.stone900)
+          if love.graphics then
+            if self.view then Draw.scissor(self.view, x + 1, y + 1, w - 2, ah - 1) end
+            Draw.setColor(c.stone800, 0.9); love.graphics.setLineWidth(3)
+            for d = -ah, w, 12 do love.graphics.line(x + d, y + ah, x + d + ah, y) end
+            love.graphics.setLineWidth(1); Draw.reset()
+            if self.view then Draw.noScissor() end
+          end
+          Draw.rect(x, y + ah, w, 1, c.iron) -- bord bas de la zone d'art
+          Draw.setColor(c.brassS, 0.06); if love.graphics then love.graphics.rectangle("fill", x + 1, y + 1, w - 2, 1) end; Draw.reset()
+          -- bord de carte : iron au repos, laiton vif + halo au survol.
+          Draw.rect(x, y, w, h, nil, hot and c.brassL or c.iron, 1)
           if hot and love.graphics and love.graphics.setBlendMode then
-            local b2 = Rarity.tierBright(rank)
-            love.graphics.setBlendMode("add")
-            love.graphics.setColor(b2[1], b2[2], b2[3], 0.20)
-            love.graphics.rectangle("line", x, y, w, h)
-            love.graphics.rectangle("line", x - 1, y - 1, w + 2, h + 2)
-            love.graphics.setBlendMode("alpha"); love.graphics.setColor(1, 1, 1, 1)
+            love.graphics.setBlendMode("add"); love.graphics.setColor(c.brassL[1], c.brassL[2], c.brassL[3], 0.18)
+            love.graphics.rectangle("line", x, y, w, h); love.graphics.setBlendMode("alpha"); love.graphics.setColor(1, 1, 1, 1)
           end
         end
       end
@@ -1137,7 +1159,8 @@ function Build:drawWorld()
   -- avec marge -> la créature REMPLIT la case sans déborder ni être coupée, pieds calés au sol de la case.
   local CELL_FIT_W, CELL_FIT_H = 18, 18
   -- Échelles du rendu VIVANT (cadre natif 64) par surface — placeholders à affiner au screenshot.
-  local SLOT_SCALE, SHOP_SCALE, DRAG_SCALE = 0.36, 0.5, 0.36
+  -- (la boutique n'a plus d'échelle fixe : la créature est calée à la ZONE D'ART de la carte via Critter.draw.)
+  local SLOT_SCALE, DRAG_SCALE = 0.36, 0.36
   for i, sr in pairs(self.slotRigs) do
     if b.slots[i].unlocked then
       local c = sr.char
@@ -1193,20 +1216,20 @@ function Build:drawWorld()
       if o and not o.sold then
         local c = self.previewRigs[o.id]
         if c then
-          -- aperçu calé au-dessus du bloc nom/coût (pieds = bas de la région créature), clippé à la carte.
-          local feet = rect.y + rect.h - 14
-          if self.view then Draw.scissor(self.view, rect.x * 4, rect.y * 4, rect.w * 4, rect.h * 4) end
+          -- CARTE ART-FORWARD (handoff « Bottom Bar ») : la créature est calée à la ZONE D'ART (haut CARD_ART_H)
+          -- via Critter.draw (échelle = hauteur de boîte) -> taille RELATIVE conservée, JAMAIS de débordement
+          -- (clip à la zone d'art en sus) ; les pieds tombent au bas de la zone, au-dessus du pied nom/coût.
+          local artHv = CARD_ART_H / 4
+          local artX, artY, artW, artH = rect.x + 1, rect.y, rect.w - 2, artHv
+          if self.view then Draw.scissor(self.view, artX * 4, artY * 4, artW * 4, artH * 4) end
           if Critter.has(o.id) then
-            -- RENDU VIVANT : cadre natif (taille relative + mouvement par famille).
-            Critter.drawAt(nil, o.id, rect.x + rect.w / 2, feet, SHOP_SCALE, self.t / 60, 1)
+            Critter.draw(nil, o.id, artX, artY, artW, artH, self.t / 60, 1, 0.92)
           else
-            -- fallback rig baké : fit-silhouette à la région créature (flex au-dessus du bloc nom/coût).
-            local artH = math.max(20, rect.h - 12)
-            local artW = rect.w - 4
-            local s = self:rigFitScale(o.id, artW, artH, 0.9, 1.8)
+            -- fallback rig baké (6 créatures dessinées-main) : fit-silhouette dans la zone d'art.
+            local s = self:rigFitScale(o.id, artW, artH * 0.9, 0.9, 2.2)
             local bnd = self:rigBounds(o.id)
             love.graphics.push()
-            love.graphics.translate(rect.x + rect.w / 2, feet)
+            love.graphics.translate(artX + artW / 2, artY + artH - 1)
             love.graphics.scale(s, s)
             love.graphics.translate(0, -bnd.bot)
             c.x, c.y, c.facing = 0, 0, 1
@@ -1288,15 +1311,15 @@ function Build:drawOverlay(view)
     end
   end
 
-  -- Boutique : chaque carte = PLAQUE FORGE pleine (fond baké en drawBack) + cadre forge patiné + contenu
-  -- mis en page par Layout.column REMPLISSANT la carte (créature / nom / coût+chips d'affliction) -> aucune
-  -- poche vide. drawShopCard fait tout le contenu d'overlay.
+  -- THE OFFERING (handoff « Bottom Bar ») : en-tête + 5 cartes ÉPURÉES (drawShopCard pose le contenu : tag de
+  -- tier + nom + coût ; fond/zone d'art en drawBack, créature en drawWorld) + rail de tier à 5 crans au pied.
   if run then
+    self:drawOfferingHeader()
     for i, rect in ipairs(self.shopSlots) do
       local o = run.shop[i]
       if o then self:drawShopCard(i, rect, o, ui.shopHover == i) end
     end
-    self:drawShopXpBar(run) -- longue BARRE D'XP de boutique, SOUS les monstres (retour user 2026-06)
+    self:drawShopXpBar(run) -- rail de tier (5 crans) au pied de la colonne THE OFFERING
     self:drawEcoButton("build.reroll", self.rerollBtn, T("ui.reroll_label"), Run.REROLL_COST, run:canReroll())
     -- Bouton REFUSER : visible seulement quand un grant de slot attend (sinon les slots ne s'achètent plus).
     if run.pendingSlotGrant then
@@ -1354,15 +1377,13 @@ function Build:drawOverlay(view)
   Draw.finish()
 end
 
--- Carte de boutique = Panel propre (fond + liseré teinté dessinés en drawBack) + contenu en COLONNE qui REMPLIT la carte :
--- [ région créature (flex, l'aperçu de drawWorld y vit) | nom | rangée coût+chips d'affliction ]. Le bas
--- ne flotte jamais : le moteur Layout colle nom/coût/chips au pied de la carte, et la région créature
--- absorbe le reste. États : achetable (or, lit au survol) / hors-budget (sombre) / vendu (SOLD).
--- rect = rect VIRTUEL de la carte ; o = l'offre {id, cost, sold} ; hot = survolée.
+-- Carte de boutique ÉPURÉE (handoff « Bottom Bar » : de l'info a été retirée de la mini-carte). Le FOND
+-- (dégradé + zone d'art hachurée + bord) est dessiné en drawBack ; la CRÉATURE en drawWorld (calée à la zone
+-- d'art) ; ICI = le CONTENU par-dessus : tag de tier (haut-gauche) + pied [ NOM (Cinzel, ellipsé) | COÛT (gem) ].
+-- Plus de chips d'affliction ni de cadre rareté (épuré). rect = rect VIRTUEL ; o = offre {id,cost,sold} ; hot = survolée.
 function Build:drawShopCard(i, rect, o, hot)
   local c = Theme.c
   local x, y, w, h = rect.x * 4, rect.y * 4, rect.w * 4, rect.h * 4
-  local box = { x = x, y = y, w = w, h = h }
 
   if o.sold then
     Draw.textC(T("ui.sold"), x + w / 2, y + h / 2 - 6, c.ghost, Theme.label(10))
@@ -1372,37 +1393,20 @@ function Build:drawShopCard(i, rect, o, hot)
   local playable = self:offerPlayable(o) -- jouable = or + (place OU trio à compléter). Sinon carte grisée.
   local rank = Units[o.id].rank or 1
 
-  -- (le FOND + le LISERÉ de la carte sont dessinés en drawBack, DERRIÈRE le rig d'aperçu ; ici = le CONTENU.)
-  -- COLONNE interne : région créature (flex) au-dessus du bloc d'info (nom + coût/chips), avec un padding.
-  local inner = Layout.inset(box, { l = 8, t = 8, r = 8, b = 8 })
-  local rows = Layout.column(inner, { { flex = 1 }, { size = 16 }, { size = 16 } }, { gap = 3, align = "stretch" })
-  local nameBox, costBox = rows[2], rows[3]
+  -- TAG DE TIER (haut-gauche, sur la zone d'art) : petit losange (couleur de RARETÉ) + nom de caste (DREGS..ELDER)
+  -- en Space Mono. C'est le SEUL rappel de tier sur la carte (le reste de l'info a été retiré -> carte épurée).
+  Badge.diamond(x + 12, y + 12, 3, playable and Rarity.tierColor(rank) or c.stone600, c.brassD, c.brassS)
+  Draw.text(T(Rarity.tierNameKey(rank)), x + 18, y + 8, playable and c.faint or c.fainter, Theme.label(8))
 
-  -- TAG DE TIER (haut-gauche) = juste le NOM DE CASTE (DREGS..ELDER) dans la couleur de RARETÉ, SANS encadré
-  -- (l'encadré était mal cadré / moins joli -> retour user 2026-06 : « mets juste le nom avec la couleur »).
-  -- Le cadre de la carte porte déjà la couleur de tier. Avivé si jouable, sourd sinon.
-  Draw.text(T(Rarity.tierNameKey(rank)), x + 9, y + 9, playable and Rarity.tierBright(rank) or c.faint, Theme.ui(8))
-
-  -- NOM (Cinzel = police de NOM du système 4-voix, lisible et centrée dans sa rangée).
-  local nameCol = playable and c.name or c.dim
-  local snm, snf = fitText(T("unit." .. o.id .. ".name"), nameBox.w, Theme.subhead, 12, 9)
-  Draw.textC(snm, nameBox.x + nameBox.w / 2, nameBox.y + 1, nameCol, snf)
-
-  -- RANGÉE BAS : chips d'affliction (gauche, ce que l'unité APPLIQUE) + coût (droite, Badge propre).
-  local font = Theme.label(8)
-  local affl = Keywords.applied(Units[o.id])
-  local cx = costBox.x
-  for _, k in ipairs(affl) do
-    local cw = Chip.draw(cx, costBox.y + 1, { key = k, label = "", icon = true, font = font, h = 13 })
-    cx = cx + cw + 3
-    if cx > costBox.x + costBox.w - 32 then break end -- ne déborde pas sous le coût (Badge.cost à droite)
-  end
-  -- COÛT : Badge.cost (losange laiton + nombre Space Mono), RIGHT-aligné (on mesure sa largeur pour finir au
-  -- bord droit de la rangée). Vire au sang séché si hors budget -> le prix saute aux yeux et lit le budget.
-  local valFont = Theme.value(15)
+  -- PIED (sous la zone d'art) : NOM (Cinzel 600, gauche, ajusté/ellipsé) + COÛT (gem or + nombre, droite).
+  local fy = y + h - CARD_FOOT_H
+  local valFont = Theme.value(13)
   local cval = tostring(o.cost)
-  local badgeW = 14 + (valFont and valFont:getWidth(cval) or #cval * 8)
-  Badge.cost(costBox.x + costBox.w - badgeW, costBox.y, o.cost, aff)
+  local badgeW = 13 + (valFont and valFont:getWidth(cval) or #cval * 8)
+  local navail = w - 20 - badgeW
+  local snm, snf = fitText(T("unit." .. o.id .. ".name"), navail, Theme.subhead, 10, 8)
+  Draw.text(snm, x + 10, fy + math.floor((CARD_FOOT_H - 10) / 2), playable and c.name or c.dim, snf)
+  Badge.cost(x + w - 10 - badgeW, fy + math.floor((CARD_FOOT_H - 13) / 2), o.cost, aff)
 end
 
 -- Bannière de run (HUD haut) : 4 stats [symbole · LABEL · VALEUR], symbole par stat (pièce/diamant/pip/case),
@@ -1478,35 +1482,63 @@ function Build:drawLifeOrb(run)
   LifeOrb.draw(box.x, box.y, box.w, box.h, run.lives, maxL, self.t / 60)
 end
 
--- LONGUE BARRE D'XP DE BOUTIQUE (sous les monstres) : « TIER n/5 » à gauche + barre de progression
--- (shopXp/xpToNext) qui remplit le reste de la largeur du shop. Survol -> infobulle des cotes par rang
--- (drawOddsTooltip, via le hit-test self.xpBarRect calculé en computeShop). Au tier MAX : barre pleine dorée
--- + « MAX » à droite. Le liseré de la barre s'avive au survol. Render-only -> golden neutre.
+-- RAIL DE TIER (handoff « Bottom Bar », au pied de la colonne THE OFFERING) : « TIER n/5 » à gauche + une
+-- barre divisée en 5 CRANS (les 5 tiers), remplie à la progression GLOBALE ((tier-1 + xp%)/5) en or. Survol ->
+-- infobulle des cotes par rang (drawOddsTooltip, hit-test self.xpBarRect). Render-only -> golden neutre.
 function Build:drawShopXpBar(run)
   local c = Theme.c
-  local box = self.lay.shopXpBox
+  local box = self.lay.tierRail
   if not box then return end
   local atMax = run.shopTier >= Run.MAX_TIER
   local hot = self.xpBarRect and inRect(self.mx, self.my, self.xpBarRect)
-  -- libellé TIER (gauche), centré verticalement dans la barre.
-  local capFont = Theme.label(10)
-  local tierStr = T("ui.tier_label") .. " " .. run.shopTier .. "/" .. Run.MAX_TIER
-  local lx = box.x + 6
-  local ly = box.y + math.floor((box.h - capFont:getHeight()) / 2)
-  Draw.text(tierStr, lx, ly, atMax and c.gold or (hot and c.title or c.faint), capFont)
-  -- barre : de après le libellé jusqu'au bord droit (en réservant la place de « MAX » au tier plafond).
-  local rightPad = atMax and (capFont:getWidth(T("ui.tier_max")) + 12) or 6
-  local barX = lx + capFont:getWidth(tierStr) + 12
-  local barW = (box.x + box.w) - rightPad - barX
-  local barH = math.max(8, math.min(14, box.h - 10))
-  local barY = box.y + math.floor((box.h - barH) / 2)
-  local toNext = run:xpToNext()
-  local pct = atMax and 1 or (toNext and toNext > 0 and math.min(1, run.shopXp / toNext) or 0)
+  -- « TIER » (sourd) + « n/5 » (or), centré verticalement.
+  local capFont = Theme.label(9)
+  local cy = box.y + math.floor(box.h / 2)
+  local ty = cy - math.floor(capFont:getHeight() / 2)
+  local pre = T("ui.tier_label") .. " "
+  local num = run.shopTier .. "/" .. Run.MAX_TIER
+  Draw.text(pre, box.x, ty, c.fainter, capFont)
+  Draw.text(num, box.x + capFont:getWidth(pre), ty, c.gold, capFont)
+  -- barre : de après le libellé jusqu'au bord droit.
+  local barX = box.x + capFont:getWidth(pre .. num) + 12
+  local barW = (box.x + box.w) - barX
+  local barH = 8
+  local barY = cy - math.floor(barH / 2)
   if barW > 20 then
-    -- piste un peu plus claire (stone800) que le panneau -> la barre se lit comme un élément défini même vide.
-    Draw.bar(barX, barY, barW, barH, pct, atMax and c.gold or c.goldBright, c.stone800, hot and c.brass or c.hair)
+    -- piste sombre (#0a0810) + bord iron.
+    Draw.rect(barX, barY, barW, barH, { 0x0a / 255, 0x08 / 255, 0x10 / 255, 1 }, c.iron, 1)
+    -- remplissage OR = progression GLOBALE vers le tier max ((tier-1 + xp dans le tier) / 5).
+    local toNext = run:xpToNext()
+    local within = atMax and 1 or (toNext and toNext > 0 and math.min(1, run.shopXp / toNext) or 0)
+    local globalPct = atMax and 1 or math.min(1, ((run.shopTier - 1) + within) / Run.MAX_TIER)
+    local fillW = math.floor((barW - 2) * globalPct)
+    if fillW > 0 then
+      Panel.vgrad(barX + 1, barY + 1, fillW, barH - 2, { 0xca / 255, 0xa6 / 255, 0x4a / 255, 1 }, { 0x7a / 255, 0x5e / 255, 0x24 / 255, 1 })
+    end
+    -- 5 CRANS : séparateurs verticaux iron (les 5 tiers).
+    for k = 1, Run.MAX_TIER - 1 do
+      Draw.rect(barX + math.floor(barW * k / Run.MAX_TIER), barY, 1, barH, c.iron)
+    end
+    if hot then Draw.rect(barX, barY, barW, barH, nil, c.brass, 1) end
   end
-  if atMax then Draw.textR(T("ui.tier_max"), box.x + box.w - 6, ly, c.gold, capFont) end
+end
+
+-- EN-TÊTE de la colonne THE OFFERING (handoff) : « THE OFFERING » (Space Mono, gauche) + filet + saveur
+-- (« dregs of the first terrace », Spectral italique, droite). Render-only -> golden neutre.
+function Build:drawOfferingHeader()
+  local c = Theme.c
+  local box = self.lay.offerHeader
+  if not box then return end
+  local cy = box.y + math.floor(box.h / 2)
+  local f = Theme.label(9)
+  local title = T("ui.offering")
+  Draw.text(title, box.x, cy - math.floor(f:getHeight() / 2), c.faint, f)
+  local ff = Theme.flavor(11)
+  local flav = T("ui.offering_flavor")
+  local fw = ff:getWidth(flav)
+  Draw.text(flav, box.x + box.w - fw, cy - math.floor(ff:getHeight() / 2), c.fainter, ff)
+  local dx1, dx2 = box.x + f:getWidth(title) + 10, box.x + box.w - fw - 10
+  if dx2 > dx1 then Draw.rect(dx1, cy, dx2 - dx1, 1, c.iron) end
 end
 
 -- INFOBULLE DES COTES (survol de la barre d'XP) : « SHOP ODDS · TIER n/5 » + une ligne par rang NON-NUL
