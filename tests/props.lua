@@ -36,9 +36,10 @@ local ok, err = pcall(function()
       if arena.over then break end
     end
     assert(arena.over, "non-terminaison sous " .. TICK_CAP .. " ticks (seed=" .. seed .. ")")
+    -- Décompte côté BOARD (exclut les commandants intouchables, cohérent avec la logique de victoire de l'arène).
     local l, r = 0, 0
     for _, u in ipairs(arena.units) do
-      if u.alive then if u.team == "left" then l = l + 1 else r = r + 1 end end
+      if u.alive and not u.isCommander then if u.team == "left" then l = l + 1 else r = r + 1 end end
     end
     assert((l > 0) ~= (r > 0), "fin de combat: il faut exactement un camp survivant (seed=" .. seed .. ")")
     return arena, log, n
@@ -82,8 +83,41 @@ local ok, err = pcall(function()
       played = played + 1
     end
   end
+  -- 3) COMMANDANT des DEUX côtés (§6.4.4) : le commandant est UNTARGETABLE (damage=0) et EXCLU du décompte.
+  -- Un combat commandant-vs-commandant DOIT conclure (le board meurt, la fatigue le garantit). On fuzz des
+  -- builds avec un commandant injecté dans CHAQUE camp -> terminaison + un seul vainqueur côté BOARD.
+  do
+    -- spec minimal d'unité (réutilise une unité réelle, marque isCommander). Le commandant n'a pas de slot board.
+    local function commander(id, team)
+      local u = Units[id]
+      local facing = (team == "left") and 1 or -1
+      local x = (team == "left") and 120 or 200
+      return { id = id, hp = u.hp, dmg = u.dmg, cd = u.cd, depth = 0, row = -1,
+        isCommander = true, untargetable = true, cdMult = 1.5, x = x, y = 50, facing = facing }
+    end
+    local fuzz2 = love.math.newRandomGenerator(424242)
+    local concluded = 0
+    for k = 1, 40 do
+      local b = randomBuild()
+      local left = b:buildLeftComp()
+      if #left == 0 then b:placeId(5, "marauder"); left = b:buildLeftComp() end
+      left[#left + 1] = commander("templar", "left")       -- commandant gauche (intouchable)
+      local right = b:buildRightComp(Encounters[(k % #Encounters) + 1])
+      right[#right + 1] = commander("witch", "right")       -- commandant droite (intouchable)
+      local arena, _, n = runToEnd(left, right, fuzz2:random(1, 2147483647))
+      -- vérifie : les commandants des DEUX camps survivent (intouchables) MAIS le combat est tranché côté board.
+      local liveCmd = 0
+      for _, u in ipairs(arena.units) do if u.isCommander and u.alive then liveCmd = liveCmd + 1 end end
+      assert(liveCmd == 2, "commandants intouchables: les 2 survivent (combat tranche par le board)")
+      assert(n < TICK_CAP, "commandant-vs-commandant: terminaison sous le plafond")
+      concluded = concluded + 1
+    end
+    assert(concluded == 40, "commandant des 2 cotes: 40/40 combats conclus")
+  end
+
   print(string.format("  props : %d/%d combats fuzz + invariants (PV/terminaison/1-vainqueur/determinisme) OK",
     played, N))
+  print("  props K4: commandant des 2 cotes (intouchable + exclu du decompte) -> 40/40 termines")
 end)
 
 if ok then

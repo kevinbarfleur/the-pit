@@ -911,16 +911,119 @@ function Build:buildComp(side)
   end
 
   local b = Place.bounds(placed)
+
+  -- ── K1 — `aura_stat` générique (foyer unique des auras agnostiques ET des commandants, spec §8.1/§6.2.1).
+  -- Un handler qui BAKE {stat, target, value} en CHAMPS combat-time sur le voisin/rôle/sous-ensemble, comme
+  -- shield_aura. Écritures ADDITIVES (`+=`), par-slot INDÉPENDANTES (itère `placed` en ipairs -> commutatif,
+  -- déterministe). Rôles AGNOSTIQUES À LA FORME (lit board.shape) -> re-marchent si les sigils reviennent
+  -- (testés sur le CARRÉ, seule forme vivante : centre=4 voisins, bords=3, coins=2). Gated : zéro `aura_stat`
+  -- dans le roster -> aucun champ posé -> empreinte golden inchangée. ──
+  -- Index slot -> entrée de `placed` (pour résoudre les rôles, le depth est cohérent avec `b.maxC - col`).
+  local byCell = {}
+  for _, p in ipairs(placed) do byCell[p.slot] = p end
+  -- Tie-break IDENTIQUE à chooseTarget (arena.lua:201-202) : row asc PUIS slot asc. Sinon le commandant
+  -- viserait une cible d'aura différente du ciblage de combat (non-déterminisme silencieux). Compare deux
+  -- entrées de `placed` (la "meilleure" = la plus petite par (row, slot)).
+  local function tieLess(a, c) -- a est-il AVANT c (row asc, slot asc) ?
+    if a.row ~= c.row then return a.row < c.row end
+    return a.slot < c.slot
+  end
+  -- role:front = min(depth) ; role:back = max(depth) ; même tie-break. depth = b.maxC - col (cohérent comp).
+  local function resolveExtreme(wantMin)
+    local best
+    for _, p in ipairs(placed) do
+      local d = b.maxC - p.col
+      if not best then best = p; best._d = d
+      else
+        local bd = b.maxC - best.col
+        if (wantMin and d < bd) or (not wantMin and d > bd)
+          or (d == bd and tieLess(p, best)) then best = p end
+      end
+    end
+    return best and best.slot or nil
+  end
+  -- role:center = nœud à 4 voisins du GRAPHE du sigil (board:degreeOf, PAS le depth) ; parmi les slots
+  -- occupés, le degré le plus haut atteignant 4, tie-break slot asc ; fallback déterministe role:front
+  -- (sigil ligne/anneau : aucun nœud à 4 voisins). cf. §6.2.1.
+  local function resolveCenter()
+    local best, bestDeg
+    for _, p in ipairs(placed) do
+      local deg = self.board:degreeOf(p.slot)
+      if not bestDeg or deg > bestDeg or (deg == bestDeg and p.slot < best.slot) then
+        best, bestDeg = p, deg
+      end
+    end
+    if best and bestDeg and bestDeg >= 4 then return best.slot end
+    return resolveExtreme(true) -- fallback front
+  end
+  local function resolveRole(role)
+    if role == "role:front" then return resolveExtreme(true)
+    elseif role == "role:back" then return resolveExtreme(false)
+    elseif role == "role:center" then return resolveCenter()
+    end
+    return nil
+  end
+  -- Stats numériques additives (les seules clés bakées par aura_stat ; focusWith = cas à part, ci-dessous).
+  local STAT_FIELDS = { haste = true, atkInc = true, dmgReduce = true, regen = true,
+    multicast = true, lifesteal = true, statInc = true }
+  local statBuf = {}    -- [slot] = { haste=…, atkInc=…, … } (sommes additives)
+  local focusWith = {}  -- [slot] = slot de l'allié dont on copie la cible (effet faible, tie-break)
+  local function addStat(slot, stat, value)
+    if not (slot and byCell[slot]) then return end -- cible vide -> aura inerte (jamais de crash)
+    local sb = statBuf[slot]; if not sb then sb = {}; statBuf[slot] = sb end
+    sb[stat] = (sb[stat] or 0) + value
+  end
+  for _, p in ipairs(placed) do
+    local sm = LEVEL_MULT[p.level] or 1.0 -- l'aura scale avec le NIVEAU de la source (duplicatas)
+    for _, e in ipairs(Units[p.id].effects or {}) do
+      if e.trigger == "combat_start" and e.op == "aura_stat" then
+        local pa = e.params or {}
+        local stat, target, value = pa.stat, pa.target or "neighbors", (pa.value or 0)
+        -- multicast = entier (PAS scalé par le niveau : changer une bascule scalée serait un double-snowball).
+        local scaled = (stat == "multicast") and value or (value * sm)
+        -- Résout l'ensemble des slots-cibles selon `target`.
+        local targets = {}
+        if target == "neighbors" then
+          for _, nb in ipairs(self.board:neighbors(p.slot)) do
+            if byCell[nb] then targets[#targets + 1] = nb end
+          end
+        elseif target == "team" then
+          for _, q in ipairs(placed) do targets[#targets + 1] = q.slot end
+        elseif target:sub(1, 5) == "role:" then
+          local r = resolveRole(target); if r then targets[1] = r end
+        elseif target:sub(1, 5) == "tier:" then
+          local n = tonumber(target:sub(6))
+          for _, q in ipairs(placed) do if (Units[q.id].rank or 0) == n then targets[#targets + 1] = q.slot end end
+        elseif target:sub(1, 6) == "level:" then
+          local n = tonumber(target:sub(7))
+          for _, q in ipairs(placed) do if (q.level or 1) == n then targets[#targets + 1] = q.slot end end
+        end
+        if stat == "focusWith" then
+          -- Effet FAIBLE (§2.5) : le voisin/rôle vise la même colonne avant que la SOURCE (tie-break only).
+          for _, t in ipairs(targets) do if byCell[t] then focusWith[t] = p.slot end end
+        elseif stat and STAT_FIELDS[stat] then
+          for _, t in ipairs(targets) do addStat(t, stat, scaled) end
+        end
+      end
+    end
+  end
+
   local comp = {}
   for _, p in ipairs(placed) do
     local u = Units[p.id]
     local x, y = Place.pos(p.col, p.row, side, b)
     -- depth (0 = front) + row dérivés de la forme -> exposition portée par le sigil (ciblage déterministe).
     local m = LEVEL_MULT[p.level] or 1.0 -- duplicatas : les stats scalent avec le niveau
+    local sb = statBuf[p.slot] -- champs combat-time bakés par K1 (nil = inerte, golden-safe)
     comp[#comp + 1] = { id = p.id, slot = p.slot, level = p.level,
       hp = math.floor(u.hp * m + 0.5), dmg = math.floor(u.dmg * m + 0.5), cd = u.cd,
       depth = b.maxC - p.col, row = p.row, effects = auraEffects(p.id, p.slot),
       shield = shield[p.slot] or 0, poisonInc = poisonInc[p.slot], burnInc = burnInc[p.slot],
+      -- K1 : auras agnostiques bakées (haste/atkInc/dmgReduce/regen/multicast/lifesteal/statInc) + focusWith.
+      haste = sb and sb.haste, atkInc = sb and sb.atkInc, dmgReduce = sb and sb.dmgReduce,
+      regenAura = sb and sb.regen, multicast = sb and sb.multicast,
+      lifestealAura = sb and sb.lifesteal, statInc = sb and sb.statInc,
+      focusWith = focusWith[p.slot],
       shieldCaster = casters[p.slot] and { value = casters[p.slot].value, cd = casters[p.slot].cd,
         reflect = casters[p.slot].reflect, overcharge = casters[p.slot].overcharge,
         targetSlots = casters[p.slot].targetSlots } or nil,

@@ -9,6 +9,17 @@ love = require("tests.mock_love")
 
 local Palette = require("src.core.palette")
 local Build = require("src.scenes.build")
+local Units = require("src.data.units")
+
+-- Injecte temporairement un effet `aura_stat` sur une unité du roster (le roster n'en porte aucun en
+-- phase moteur -> on les fabrique synthétiquement, HORS scénario golden). Renvoie un restaurateur.
+local function withAura(id, params)
+  local u = Units[id]
+  local saved = u.effects
+  u.effects = { { trigger = "combat_start", op = "aura_stat", params = params } }
+  return function() u.effects = saved end
+end
+local function compById(comp, id) for _, s in ipairs(comp) do if s.id == id then return s end end end
 
 -- dps de la 1re brûlure trouvée dans les effets MATÉRIALISÉS d'une unité de la compo (nil si base).
 local function burnDpsOf(comp, id)
@@ -65,7 +76,91 @@ local ok, err = pcall(function()
   for _, s in ipairs(comp3) do if s.id == "emberling" then iso = s end end
   assert(iso and iso.effects == nil and iso.burnInc == nil, "isolé: effects = nil ET burnInc = nil (base, golden inchangé)")
 
+  -- ════════ K1 — `aura_stat` générique : résolution de RÔLES sur le CARRÉ (spec §6.2.1) ════════
+  -- Plateau carré : slot 5 = centre (4 voisins). Layout cells : x=col, y=row (cf. shapes.carre).
+  -- depth = maxC - col. On place 9 unités (1 caster aura_stat + 8 cibles) et on vérifie l'UNICITÉ + la
+  -- STABILITÉ du rôle visé, tie-break IDENTIQUE à chooseTarget (row asc, slot asc).
+
+  -- 4) role:front = min(depth) = colonne avant (plus grand x). Cells carré : col 2 = slots 3,6,9 (depth 0).
+  -- Tie-break row asc -> slot 3 (row 0). L'aura empower (atkInc) doit atterrir UNIQUEMENT sur le slot 3.
+  do
+    local restore = withAura("soot_acolyte", { stat = "atkInc", target = "role:front", value = 0.20 })
+    local b = fresh()
+    for s = 1, 9 do b:placeId(s, s == 5 and "soot_acolyte" or "marauder") end
+    local comp = b:buildComp(-1)
+    local hits = {}
+    for _, s in ipairs(comp) do if s.atkInc and s.atkInc > 0 then hits[#hits + 1] = s.slot end end
+    assert(#hits == 1, "role:front cible UNE seule unité (obtenu " .. #hits .. ")")
+    assert(hits[1] == 3, "role:front carré = slot 3 (col 2, row 0) tie-break row/slot asc (obtenu " .. hits[1] .. ")")
+    restore()
+  end
+
+  -- 5) role:back = max(depth) = colonne arrière (col 0 -> depth 2) = slots 1,4,7 ; tie-break -> slot 1 (row 0).
+  do
+    local restore = withAura("soot_acolyte", { stat = "atkInc", target = "role:back", value = 0.20 })
+    local b = fresh()
+    for s = 1, 9 do b:placeId(s, s == 5 and "soot_acolyte" or "marauder") end
+    local comp = b:buildComp(-1)
+    local hits = {}
+    for _, s in ipairs(comp) do if s.atkInc and s.atkInc > 0 then hits[#hits + 1] = s.slot end end
+    assert(#hits == 1 and hits[1] == 1, "role:back carré = slot 1 unique (obtenu " ..
+      (hits[1] or "rien") .. ", n=" .. #hits .. ")")
+    restore()
+  end
+
+  -- 6) role:center = nœud à 4 voisins du GRAPHE (slot 5 au carré). +1 multicast doit y atterrir SEUL,
+  -- et multicast = ENTIER (non scalé par le niveau).
+  do
+    local restore = withAura("soot_acolyte", { stat = "multicast", target = "role:center", value = 1 })
+    local b = fresh()
+    for s = 1, 9 do b:placeId(s, s == 1 and "soot_acolyte" or "marauder") end -- caster en coin -> centre = 5
+    local comp = b:buildComp(-1)
+    local hits = {}
+    for _, s in ipairs(comp) do if s.multicast then hits[#hits + 1] = { slot = s.slot, mc = s.multicast } end end
+    assert(#hits == 1, "role:center cible UNE unité (obtenu " .. #hits .. ")")
+    assert(hits[1].slot == 5 and hits[1].mc == 1, "role:center carré = slot 5, multicast entier 1")
+    restore()
+  end
+
+  -- 7) DÉTERMINISME / STABILITÉ : deux builds identiques -> même rôle résolu (slot), à l'identique.
+  do
+    local restore = withAura("soot_acolyte", { stat = "atkInc", target = "role:front", value = 0.20 })
+    local function frontSlot()
+      local b = fresh()
+      for s = 1, 9 do b:placeId(s, s == 5 and "soot_acolyte" or "marauder") end
+      for _, s in ipairs(b:buildComp(-1)) do if s.atkInc and s.atkInc > 0 then return s.slot end end
+    end
+    assert(frontSlot() == frontSlot(), "role:front stable (déterministe) sur deux résolutions")
+    restore()
+  end
+
+  -- 8) target=team : l'aura touche TOUTES les unités placées (ici regen via K1 -> regenAura).
+  do
+    local restore = withAura("soot_acolyte", { stat = "regen", target = "team", value = 1 })
+    local b = fresh()
+    for s = 1, 4 do b:placeId(s, s == 1 and "soot_acolyte" or "marauder") end
+    local comp = b:buildComp(-1)
+    local n = 0
+    for _, s in ipairs(comp) do if s.regenAura and s.regenAura > 0 then n = n + 1 end end
+    assert(n == 4, "target=team touche les 4 unités (obtenu " .. n .. ")")
+    restore()
+  end
+
+  -- 9) target=tier:1 : seules les unités rank-1 reçoivent l'aura (marauder rank 1 ; templar rank 3 exclu).
+  do
+    local restore = withAura("soot_acolyte", { stat = "dmgReduce", target = "tier:1", value = 0.10 })
+    local b = fresh()
+    b:placeId(1, "soot_acolyte"); b:placeId(2, "marauder"); b:placeId(5, "templar")
+    local comp = b:buildComp(-1)
+    local mar, tem = compById(comp, "marauder"), compById(comp, "templar")
+    assert(mar.dmgReduce and mar.dmgReduce > 0, "tier:1 touche marauder (rank 1)")
+    -- templar (rank 3) : dmgReduce ne doit pas être posé par cette aura (peut rester nil = inerte)
+    assert((tem.dmgReduce or 0) == 0, "tier:1 n'atteint PAS templar (rank 3)")
+    restore()
+  end
+
   print("  auras : ampli increased sur voisin (lu a la pose) / grant d'effet / isolé = base (golden-safe) OK")
+  print("  auras K1: role front/back/center sur carré (unique+stable) / team / tier:N (spec §6.2.1) OK")
 end)
 
 if ok then

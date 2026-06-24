@@ -318,4 +318,130 @@ Effects.register("convert_to_rot", function(ctx, p)
   v.dots.bleed = nil -- la plaie se nécrose : le bleed devient pourriture
 end)
 
+-- ════════ NEW-OPS AGNOSTIQUES (spec §8.2 step 8) — verbes hors-affliction (enablers/carries/supports). Tous
+-- GATED (aucune unité du roster ne les porte en phase moteur) -> empreinte golden inchangée. Aucune RNG dans le
+-- chemin de dégât : le SEUL roll (crit) est en `on_attack` (AVANT damage), via condition.kind="chance" (§2.0.2). ══
+
+-- CRIT / Sauvagerie : ×2 dégâts de la frappe. RNG SEEDÉE résolue EN AMONT du damage : on_attack mute ctx.amount,
+-- la chance est portée par e.condition = {kind="chance", value≤0.35} (rollée 1×/swing par Effects.passCondition
+-- via ctx.arena.rng AVANT l'appel à l'op). Ne re-proc PAS d'on_hit. mult borné (défaut 2).
+Effects.register("crit", function(ctx, p)
+  ctx.amount = math.floor(ctx.amount * (p.mult or 2) + 0.5)
+end)
+
+-- EXÉCUTION : si la victime est sous un seuil de PV (état pur, zéro RNG), la frappe gagne +bonus. on_attack
+-- (mute ctx.amount AVANT damage). Le commandant est untargetable (pas frappable) -> jamais d'execute sur lui.
+Effects.register("execute", function(ctx, p)
+  local v = ctx.victim
+  if not v or v.maxHp <= 0 then return end
+  if (v.hp / v.maxHp) < (p.threshold or 0.25) then
+    ctx.amount = math.floor(ctx.amount * (1 + (p.bonus or 0.5)) + 0.5)
+  end
+end)
+
+-- GRANT_VULN (pose la vulnérabilité, K2 côté pose) : on_hit -> marque la cible (target.vulnInc), EDGE-TRIGGERED
+-- (refresh : prend le max, ne cumule pas par frame), DURÉE BORNÉE -> expire au tick (vulnRemaining décrémenté
+-- dans tickDots). cap appliqué à la LECTURE dans damage() (VULN_INC_CAP). value/dur = placeholders.
+Effects.register("grant_vuln", function(ctx, p)
+  local v = ctx.victim
+  local val = p.value or 0.15
+  v.vulnInc = max(v.vulnInc or 0, val) -- refresh (pas de cumul/frame)
+  v.vulnRemaining = max(v.vulnRemaining or 0, (p.dur or 2) * 60) -- secondes -> frames ; expire au tick
+end)
+
+-- INOCULATION (grant conditionnel) : pose l'affliction `family` SEULEMENT SI absente (ouvre un 2e DoT faible).
+-- on_hit, pur état (pas de double-stack : ne touche jamais une famille déjà active). Poison = liste -> "absent" = vide.
+Effects.register("grant_affliction_if_absent", function(ctx, p)
+  local v, fam = ctx.victim, p.family
+  if not fam then return end
+  local d = v.dots
+  if fam == "poison" then
+    if #d.poison == 0 then
+      d.poison[1] = { dps = p.dps or 1, remaining = p.dur or 120, acc = 0, weaken = p.weaken or 0, source = ctx.source }
+    end
+  elseif fam == "burn" then
+    if not d.burn then d.burn = { dps = p.dps or 2, remaining = p.dur or 120, acc = 0,
+      decayEvery = 60, decayAcc = 0, decayPct = 0.30, source = ctx.source } end
+  elseif fam == "bleed" then
+    if not d.bleed then d.bleed = { dps = p.dps or 1, srcDps = { { src = ctx.source, dps = p.dps or 1 } },
+      remaining = p.dur or 180, acc = 0, slowPct = 0, dynBonus = 0, source = ctx.source } end
+  elseif fam == "rot" then
+    if not d.rot then d.rot = { dps = p.base or 1, remaining = p.dur or 180, acc = 0,
+      capDps = p.capDps or 8, maxHpFrac = p.maxHpFrac or 0, source = ctx.source } end
+  elseif fam == "shock" then
+    if not d.shock then d.shock = { stacks = p.add or 1, remaining = p.dur or 150,
+      cap = 8, volt = p.volt, source = ctx.source } end
+  end
+end)
+
+-- CONVERSION croisée généralisée {from, to} : sur une cible portant le DoT `from`, le coup le convertit en `to`
+-- (consomme le from). Généralise `convert_to_rot` (conservé pour le roster existant). Pur, edge-triggered, borné
+-- par les caps de chaque famille. Supporte bleed/burn/poison/shock -> rot/burn/bleed/poison (paires data).
+Effects.register("convert_dot", function(ctx, p)
+  local v, from, to = ctx.victim, p.from, p.to
+  local d = v.dots
+  -- présence du `from` (poison = liste)
+  local has = (from == "poison") and (#d.poison > 0) or (d[from] ~= nil)
+  if not has or not to then return end
+  -- consomme le `from` (nettoie ses effets de bord : slow du bleed)
+  if from == "bleed" and d.bleed then
+    v.atkSlow = max(0, v.atkSlow - (d.bleed.slowPct or 0) - (d.bleed.dynBonus or 0))
+    d.bleed = nil
+  elseif from == "poison" then for i = #d.poison, 1, -1 do d.poison[i] = nil end
+  else d[from] = nil end
+  -- pose/enfle le `to`
+  if to == "rot" then
+    if not d.rot then d.rot = { dps = p.base or 2, remaining = p.dur or 240, acc = 0,
+      capDps = p.capDps or 10, maxHpFrac = p.maxHpFrac or 0.10, source = ctx.source }
+    else d.rot.dps = min(d.rot.capDps, d.rot.dps + (p.growth or 1)) end
+  elseif to == "burn" then
+    if not d.burn or (p.dps or 0) > d.burn.dps then d.burn = { dps = p.dps or 6, remaining = p.dur or 180,
+      acc = 0, decayEvery = 60, decayAcc = 0, decayPct = 0.30, source = ctx.source } end
+  elseif to == "poison" then
+    d.poison[#d.poison + 1] = { dps = p.dps or 2, remaining = p.dur or 180, acc = 0, weaken = p.weaken or 0, source = ctx.source }
+    if #d.poison > 8 then table.remove(d.poison, 1) end
+  elseif to == "bleed" then
+    if not d.bleed then d.bleed = { dps = p.dps or 2, srcDps = { { src = ctx.source, dps = p.dps or 2 } },
+      remaining = p.dur or 240, acc = 0, slowPct = p.slowPct or 0, dynBonus = 0, source = ctx.source }
+      v.atkSlow = v.atkSlow + (p.slowPct or 0) end
+  end
+end)
+
+-- CLEAVE / Éclaboussure : la frappe touche les VOISINS-CHAMP de la cible (proximité champ, déterministe).
+-- on_hit. PROFONDEUR 1 : AUCUN on_hit/dischargeShock secondaire (anti-boucle), cause="cleave", ignoreShield=false
+-- (respecte les boucliers, lisible/anti-burst). Les morts suivent l'ordre §2.4.1 (self.deaths). frac du coup porté.
+Effects.register("cleave", function(ctx, p)
+  local arena, v, src = ctx.arena, ctx.victim, ctx.source
+  local dealt = ctx.dealt or 0
+  local splash = math.floor(dealt * (p.frac or 0.5) + 0.5)
+  if splash <= 0 then return end
+  for _, nb in ipairs(arena:neighborsOf(v)) do
+    if nb.alive then
+      arena:damage(nb, splash, { cause = "cleave", source = src }) -- ignoreShield=false (défaut) ; pas d'on_hit
+    end
+  end
+end)
+
+-- SOIN-ON-KILL : le tueur se soigne. on_kill (broadcast fin de frame, ctx.source = killer, hors réentrance).
+-- Borné à maxHp. Valeur plate OU fraction des PV max. Gated.
+Effects.register("heal_on_kill", function(ctx, p)
+  local me = ctx.source
+  if not (me and me.alive) then return end
+  local heal = (p.value or 0) + math.floor((me.maxHp or 0) * (p.frac or 0) + 0.5)
+  if heal > 0 then me.hp = min(me.maxHp, me.hp + heal) end
+end)
+
+-- PURGE / Cleanse : retire SES PROPRES afflictions (nouvel axe de contre anti-DoT). 1× (combat_start) ou au
+-- franchissement de seuil (on_low_hp). Pur. Nettoie les effets de bord (slow du bleed, weaken du poison).
+Effects.register("purge", function(ctx, p)
+  local u = ctx.source
+  local d = u.dots
+  d.burn = nil
+  if d.bleed then u.atkSlow = max(0, u.atkSlow - (d.bleed.slowPct or 0) - (d.bleed.dynBonus or 0)); d.bleed = nil end
+  for i = #d.poison, 1, -1 do d.poison[i] = nil end
+  u.weaken = 0
+  d.rot = nil
+  d.shock = nil
+end)
+
 return Effects

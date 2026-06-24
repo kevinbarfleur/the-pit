@@ -15,6 +15,7 @@
 local Units = require("src.data.units")
 local Bus = require("src.core.bus")
 local Effects = require("src.effects.engine")
+local Stats = require("src.effects.stats") -- couche de modificateurs (empower/vuln en `increased` sur la base)
 require("src.effects.ops") -- enregistre les ops de base (effet de bord)
 
 local Arena = {}
@@ -30,6 +31,14 @@ local WEAKEN_CAP = 0.40    -- malus de valeur max (poison)
 local VOLT_PER_STACK = 3    -- CHOC : dégâts libérés PAR STACK à la décharge (instance cause="shock")
 local SHOCK_STACK_CAP = 8   -- CHOC : plafond DUR de stacks (anti-explosion ; clamp comme les autres familles)
 local AGGRO_STD = 10       -- aggro par défaut (standard) ; tank ~40, bruiser ~15, carry ~5 (porté par la data)
+
+-- KEYSTONES — caps DURS (placeholders, tunés en Phase 4) clampés À LA LECTURE combat. CONTRAINTE C (spec
+-- §8.1 step 2) : per-field cap × multicast peut atteindre ×11 -> on borne CHAQUE couche ET le multiplicateur
+-- COMPOSÉ d'UNE frappe (backstop global) pour que le TTK p10 ne s'effondre pas. Tout en `increased` (additif).
+local ATK_INC_CAP = 1.5      -- empower cumulé (K2) : +150% dégâts d'attaque sortants max
+local VULN_INC_CAP = 0.5     -- vulnérabilité cumulée (K2) : +50% dégâts entrants max
+local HIT_DMG_CAP_MULT = 7   -- backstop : UNE frappe ne dépasse jamais ×7 le `dmg` de base de l'attaquant
+local MULTICAST_MAX = 3      -- K3 : cap DUR du nombre de sous-coups par swing (async-vérifiable, anti-boucle)
 
 -- BOUTON GLOBAL DE DURÉE DE COMBAT (levier d'équilibrage) : multiplie les PV de TOUTE unité à la création
 -- (makeUnit, sur la COPIE -> jamais le spec d'entrée). Tout le reste (dégâts, dps de DoT, boucliers, regen,
@@ -89,7 +98,9 @@ function Arena.new(opts)
   self.hpMult = opts.hpMult or HP_MULT -- bouton global de PV (rallonge les combats) ; override par combat, sinon constante
   self.ctx = {} -- contexte d'effets RÉUTILISÉ (aucune allocation par hook)
   self.deathCtx = {} -- ctx DÉDIÉ au broadcast on_death (n'écrase pas self.ctx pendant hit/tick)
-  self.deaths = {}   -- file des morts de la frame : on_death résolu APRÈS la boucle (hors réentrance)
+  self.killCtx = {}  -- ctx DÉDIÉ on_kill (K5) : le killer agit à la mort de sa victime (soin/scavenger)
+  self.allyDeathCtx = {} -- ctx DÉDIÉ on_ally_death (K6) : un allié vivant réagit à la mort d'un allié (stats only)
+  self.deaths = {}   -- file des morts de la frame : enregistrements {victim,killer} résolus APRÈS la boucle (hors réentrance)
   if opts.autoReset ~= nil then
     self.autoReset = opts.autoReset
   else
@@ -116,7 +127,7 @@ function Arena:makeUnit(spec, team)
     shield = spec.shield or 0, maxShield = spec.shield or 0,
     poisonInc = spec.poisonInc, burnInc = spec.burnInc, -- ampli d'aura (increased) lu par la pose de DoT (resolve+cap)
     bleedInc = spec.bleedInc, rotInc = spec.rotInc,     -- idem bleed/rot (aura OU relique team-wide) ; nil = inerte
-    dmgReduce = spec.dmgReduce,                          -- DÉFENSE : -frac dégâts d'ATTAQUE subis (relique) ; nil = inerte
+    dmgReduce = spec.dmgReduce,                          -- DÉFENSE : -frac dégâts d'ATTAQUE subis (relique/aura K1) ; nil = inerte
     haste = spec.haste, secondBreath = spec.secondBreath, -- WHETSTONE (cadence) / SECOND BREATH (survie 1×) ; nil = inerte
     atkTimer = self.rng:random() * spec.cd, -- décalage seedé -> pas de swings synchronisés
     firstHit = true,
@@ -124,9 +135,20 @@ function Arena:makeUnit(spec, team)
     dots = { poison = {} },
     weaken = 0,    -- malus de valeur (poison) : réduit les valeurs PRODUITES par l'unité
     atkSlow = 0,   -- slow de cadence (bleed) : rallonge le rechargement du timer d'attaque
-    regen = 0, regenAcc = 0, -- contre-DoT : soin au fil du temps
+    regen = spec.regenAura or 0, regenAcc = 0, -- contre-DoT : soin au fil du temps (+ aura K1 regen si présente)
     swinging = false, swingAge = 0, swingHit = false,
     shieldReflect = 0, -- bouclier réfléchissant (posé par un shield_caster « miroir »)
+    -- ── Champs combat-time des KEYSTONES (spec §2.6/§2.0.4) : INITIALISÉS À nil/défaut INERTE -> golden-safe
+    -- (comme poisonInc/dmgReduce). Posés par K1 (aura/commandant) ou les new-ops. nil = inerte. ──
+    atkInc = spec.atkInc,           -- K2 empower : +% dégâts d'attaque SORTANTS (increased, cappé à la lecture)
+    vulnInc = nil,                  -- K2 vuln : +% dégâts ENTRANTS (posé en combat par grant_vuln, edge-trigger)
+    multicast = spec.multicast,     -- K3 : re-frappe N× par swing (entier, cap MULTICAST_MAX)
+    cdMult = spec.cdMult,           -- K4 commandant : ralentit la cadence (≥1) ; nil -> 1
+    isCommander = spec.isCommander, -- K4 : exclu du ciblage/décompte ; reçoit damage=0
+    untargetable = spec.untargetable, -- K4 : alias lisible (le ciblage utilise isCommander)
+    focusWith = spec.focusWith,     -- focus-fire (faible) : tie-break vers la cible d'un allié (slot)
+    statInc = spec.statInc,         -- commandant : +% stats globales (baké au build ; lecture combat selon stat)
+    lifestealAura = spec.lifestealAura, -- aura K1 lifesteal : soin = frac × dégâts infligés (appliqué dans hit)
     alive = true, target = nil,
   }
   if spec.shieldCaster then -- COPIE par combat : le spec est réutilisé sur N matchs (sim) -> ne JAMAIS le muter
@@ -182,20 +204,22 @@ end
 -- depth est DÉRIVÉ de la géométrie du sigil (maxCol - cell.x) -> chaque forme a son profil
 -- d'exposition. Tout est une fonction pure de l'état : pas de RNG, mirror-safe.
 function Arena:chooseTarget(a)
+  -- COMMANDANT (K4, §6.4.1) : isCommander est UNTARGETABLE -> exclu AUX DEUX endroits (calcul de minDepth ET
+  -- sélection). Sinon un commandant au front fausserait la colonne avant de TOUS les ennemis (minDepth=son depth).
   local minDepth
   for _, o in ipairs(self.units) do
-    if o.alive and o.team ~= a.team and (not minDepth or o.depth < minDepth) then minDepth = o.depth end
+    if o.alive and o.team ~= a.team and not o.isCommander and (not minDepth or o.depth < minDepth) then minDepth = o.depth end
   end
   if not minDepth then return nil end
 
   local anyTaunt = false
   for _, o in ipairs(self.units) do
-    if o.alive and o.team ~= a.team and o.depth == minDepth and o.taunt then anyTaunt = true; break end
+    if o.alive and o.team ~= a.team and not o.isCommander and o.depth == minDepth and o.taunt then anyTaunt = true; break end
   end
 
   local target
   for _, o in ipairs(self.units) do
-    if o.alive and o.team ~= a.team and o.depth == minDepth and (not anyTaunt or o.taunt) then
+    if o.alive and o.team ~= a.team and not o.isCommander and o.depth == minDepth and (not anyTaunt or o.taunt) then
       if not target
         or o.aggro > target.aggro
         or (o.aggro == target.aggro and o.row < target.row)
@@ -242,6 +266,9 @@ local function afflictionCount(d)
 end
 function Arena:damage(target, amount, opts)
   opts = opts or {}
+  -- COMMANDANT (K4, §6.4.2) : intouchable -> ne subit JAMAIS de dégâts (attaque, DoT, fatigue, réflexion). Ses
+  -- PV sont cosmétiques. return 0 AVANT toute mutation (réutilise le pattern invuln). nil = inerte (golden-safe).
+  if target.isCommander then return 0 end
   -- SACRED SHIELD (relique) : invulnérabilité d'OUVERTURE — l'équipe ne subit RIEN tant que t < invulnT. Gated.
   local itf = self.teamFlags and self.teamFlags[target.team]
   if itf and itf.invulnT and self.t < itf.invulnT then return 0 end
@@ -251,6 +278,11 @@ function Arena:damage(target, amount, opts)
     if stf and stf.plagueAmp and afflictionCount(target.dots) >= 2 then
       amount = math.floor(amount * (1 + stf.plagueAmp) + 0.5)
     end
+  end
+  -- VULNÉRABILITÉ (K2) : la cible marquée prend +% de TOUTES sources (frappe ET DoT) en `increased` (additif)
+  -- sur la base. Cap dur à la LECTURE (VULN_INC_CAP). nil = inerte (golden-safe). damage() reste SANS RNG.
+  if target.vulnInc and target.vulnInc > 0 then
+    amount = Stats.resolve(amount, { Stats.increased(math.min(VULN_INC_CAP, target.vulnInc)) }, { round = "floor" })
   end
   -- DÉFENSE (relique Aegis) : réduit les dégâts d'ATTAQUE subis (pas les DoT ni la fatigue). Gated -> nil =
   -- inerte (golden-safe). Arrondi au plus proche : le chip à 1 n'est pas annulé, les gros coups sont amputés.
@@ -307,7 +339,10 @@ function Arena:damage(target, amount, opts)
   end
   if died then
     self.bus:emit("death", target)
-    self.deaths[#self.deaths + 1] = target -- on_death résolu en fin de frame (différé, hors réentrance)
+    -- ENREGISTREMENT de mort (K5/§2.4.1) : {victim, killer} -> le broadcast fin de frame résout on_kill (au
+    -- killer), on_death (aux ennemis, EXISTANT), on_ally_death (aux alliés). killer = la source du coup fatal
+    -- (peut être nil : fatigue/DoT sans source). Différé hors réentrance.
+    self.deaths[#self.deaths + 1] = { victim = target, killer = opts.source }
   end
   return dealt
 end
@@ -317,13 +352,32 @@ function Arena:hit(a, target)
   local ctx = self.ctx
   ctx.arena, ctx.source, ctx.victim = self, a, target
   ctx.amount, ctx.dealt = a.dmg, 0
-  Effects.run(a, "on_attack", ctx) -- peut modifier ctx.amount (ex. bonus 1re frappe)
+  Effects.run(a, "on_attack", ctx) -- peut modifier ctx.amount (ex. bonus 1re frappe, crit ×2, execute)
+  -- EMPOWER (K2) : +% dégâts d'attaque SORTANTS en `increased` (additif) sur la base courante. Cap dur à la
+  -- LECTURE (ATK_INC_CAP) -> anti-explosion. nil = inerte (Stats renvoie la base) -> golden-safe.
+  if a.atkInc and a.atkInc > 0 then
+    ctx.amount = Stats.resolve(ctx.amount, { Stats.increased(math.min(ATK_INC_CAP, a.atkInc)) }, { round = "floor" })
+  end
   -- Malus de VALEUR (poison) : une unité empoisonnée produit moins (dégâts réduits ici).
   if a.weaken > 0 then ctx.amount = math.max(0, math.floor(ctx.amount * (1 - a.weaken))) end
+  -- BACKSTOP (CONTRAINTE C) : borne le multiplicateur COMPOSÉ d'UNE frappe (crit×empower×bonus) à ×HIT_DMG_CAP_MULT
+  -- du `dmg` de base de l'attaquant. Avec multicast, chaque sous-coup est borné individuellement (cap × cap = pas
+  -- d'effondrement du TTK). Inerte tant que ctx.amount reste sous le plafond -> golden-safe (frappes normales).
+  do
+    local cap = (a.dmg or 0) * HIT_DMG_CAP_MULT
+    if ctx.amount > cap then ctx.amount = cap end
+  end
 
   local dealt = self:damage(target, ctx.amount, { source = a, cause = "attack" })
   ctx.dealt = dealt
   self.bus:emit("hit", a, target) -- le render déclenche l'anim "hurt" + l'impact
+
+  -- AURA LIFESTEAL (K1) : soin = frac × dégâts infligés (commandant Calice / aura d'équipe). Gated (nil =
+  -- inerte). Le malus de valeur (weaken) ronge le taux, comme l'op lifesteal. Borné à maxHp.
+  if a.lifestealAura and a.lifestealAura > 0 and dealt > 0 then
+    local frac = a.lifestealAura * (1 - (a.weaken or 0))
+    a.hp = math.min(a.maxHp, a.hp + math.floor(dealt * frac + 0.5))
+  end
 
   Effects.run(a, "on_hit", ctx) -- ex. vol de vie (soigne a), poison (applique a la victime), pose de choc
 
@@ -414,6 +468,13 @@ end
 
 function Arena:tickDots(u, frameDt)
   local d = u.dots
+
+  -- VULNÉRABILITÉ (K2/grant_vuln) : expire au tick. Durée bornée -> la marque retombe (pas d'exposition
+  -- permanente). nil = inerte (golden-safe). Décrémentée comme une durée de DoT (frames).
+  if u.vulnRemaining then
+    u.vulnRemaining = u.vulnRemaining - frameDt
+    if u.vulnRemaining <= 0 then u.vulnInc = nil; u.vulnRemaining = nil end
+  end
 
   -- BRÛLURE : intensité qui DÉCROÎT ; n'IGNORE PAS le bouclier (le feu lèche l'enveloppe d'abord).
   local b = d.burn
@@ -562,12 +623,39 @@ function Arena:tickShieldCaster(u, frameDt)
   self.bus:emit("shield_cast", { caster = u, targets = cast, value = sc.value, overcharge = sc.overcharge })
 end
 
+-- on_low_hp (K7) — EDGE-TRIGGER par SEUIL mémorisé (u._thresholdFired[seuil]), PAS par-frame : un effet ne
+-- se déclenche qu'au FRANCHISSEMENT du seuil (descendant), une seule fois. Évalué dans update() (HORS du chemin
+-- réentrant damage), ctx dédié = self.ctx réutilisé ici (on n'est pas dans hit/tick). Chaque effet porte SON
+-- seuil (params.threshold, défaut 0.30) -> on n'exécute QUE l'op de cet effet (pas Effects.run global, qui
+-- déclencherait tous les on_low_hp à un seul seuil). Les ops on_low_hp sont stats/purge (jamais dégât immédiat).
+function Arena:checkLowHp(u)
+  local list = u.effects
+  if not list then return end
+  local frac = u.maxHp > 0 and (u.hp / u.maxHp) or 0
+  for i = 1, #list do
+    local e = list[i]
+    if e.trigger == "on_low_hp" then
+      local thr = (e.params and e.params.threshold) or 0.30
+      local fired = u._thresholdFired
+      if frac < thr and not (fired and fired[thr]) then
+        if not fired then fired = {}; u._thresholdFired = fired end
+        fired[thr] = true
+        local ctx = self.ctx
+        ctx.arena, ctx.source, ctx.victim = self, u, u
+        local op = Effects.ops[e.op]
+        if op and Effects.passCondition(e.condition, ctx) then op(ctx, e.params or {}, e) end
+      end
+    end
+  end
+end
+
 function Arena:update(frameDt, t)
   self.t = t
 
   for _, u in ipairs(self.units) do
     if u.alive then
       self:tickDots(u, frameDt) -- statuts (burn/bleed/poison/rot/choc/regen) + recompute des malus
+      self:checkLowHp(u) -- on_low_hp (K7) : edge-trigger par seuil (purge/festin) ; gated -> golden-safe
       if u.shieldCaster then self:tickShieldCaster(u, frameDt) end -- bouclier périodique (framework payoff)
     end
 
@@ -578,7 +666,8 @@ function Arena:update(frameDt, t)
       u.atkTimer = u.atkTimer - frameDt
       if not u.swinging and u.target and u.atkTimer <= 0 then
         u.swinging = true; u.swingAge = 0; u.swingHit = false
-        u.atkTimer = u.cd * (1 + u.atkSlow) * (1 - (u.haste or 0)) -- bleed ralentit ; WHETSTONE (haste) accélère ; gated
+        -- bleed ralentit ; WHETSTONE/aura haste accélère ; cdMult (commandant K4) ralentit (≥1, nil->1). Tous gated.
+        u.atkTimer = u.cd * (1 + u.atkSlow) * (1 - (u.haste or 0)) * (u.cdMult or 1)
         u.target = self:chooseTarget(u)
         self.bus:emit("attack", u) -- le render joue l'anim d'attaque
         local blz = u.dots.bleed -- BLOODLETTER : le saignement ÉCLATE quand la cible agit (aggravate)
@@ -591,7 +680,14 @@ function Arena:update(frameDt, t)
       if u.swinging then
         u.swingAge = u.swingAge + frameDt
         if u.swingAge >= SWING_DUR * CONNECT_AT and not u.swingHit and u.target and u.target.alive then
-          self:hit(u, u.target)
+          -- MULTICAST (K3, contrat §2.1.1) : re-frappe N× le MÊME swing AU NIVEAU update() (jamais en rappelant
+          -- hit() depuis un op : aliasing du ctx). Re-check target.alive AVANT chaque sous-coup (mono-cible :
+          -- sous-coups perdus si la cible meurt — voulu). Consommables (firstHit, décharge choc) consommés au 1er
+          -- sous-coup ; épines ×N bornées par MULTICAST_MAX. multicast=nil -> 1 (défaut) -> golden-safe.
+          local n = math.min(u.multicast or 1, MULTICAST_MAX)
+          for _ = 1, n do
+            if u.target and u.target.alive then self:hit(u, u.target) end
+          end
           u.swingHit = true
         end
         if u.swingAge >= SWING_DUR then u.swinging = false end
@@ -621,12 +717,26 @@ function Arena:update(frameDt, t)
     end
   end
 
-  -- on_death : broadcast DIFFÉRÉ (hors du chemin réentrant hit/tick), ctx dédié. Les ops de propagation
-  -- ne posent que des DoT (jamais de dégât immédiat) -> aucune cascade de mort pendant le drain.
+  -- BROADCAST DIFFÉRÉ des morts (hors du chemin réentrant hit/tick), ORDRE FIXE §2.4.1 par enregistrement
+  -- {victim, killer}. Les ops ne posent que des DoT/stats (jamais de dégât immédiat) -> aucune cascade de mort.
+  --   (1) on_kill au KILLER (si vivant)  -> killCtx     [K5]
+  --   (2) on_death aux ENNEMIS vivants du mort (propagation DoT, EXISTANT inchangé) -> deathCtx
+  --   (3) on_ally_death aux ALLIÉS vivants du mort, en SAUTANT les morts de la frame -> allyDeathCtx [K6, stats only]
   if #self.deaths > 0 then
-    local dctx = self.deathCtx
+    -- Morts de la frame (pour sauter un allié mort cette frame en étape 3). ipairs : déterministe.
+    local diedThisFrame = {}
+    for di = 1, #self.deaths do diedThisFrame[self.deaths[di].victim] = true end
+    local dctx, kctx, actx = self.deathCtx, self.killCtx, self.allyDeathCtx
     for di = 1, #self.deaths do
-      local dead = self.deaths[di]
+      local rec = self.deaths[di]
+      local dead = rec.victim
+      -- (1) on_kill au killer (s'il vit et porte un effet) — ctx dédié, victim = le mort.
+      local killer = rec.killer
+      if killer and killer.alive and killer.effects then
+        kctx.arena, kctx.source, kctx.victim = self, killer, dead
+        Effects.run(killer, "on_kill", kctx)
+      end
+      -- (2) on_death aux ennemis vivants du mort (comportement EXISTANT inchangé : lit rec.victim).
       dctx.arena, dctx.victim = self, dead
       for _, w in ipairs(self.units) do
         if w.alive and w.team ~= dead.team and w.effects then
@@ -634,14 +744,24 @@ function Arena:update(frameDt, t)
           Effects.run(w, "on_death", dctx)
         end
       end
+      -- (3) on_ally_death aux alliés vivants du mort (skip les morts de la frame), stats only.
+      actx.arena, actx.victim = self, dead
+      for _, w in ipairs(self.units) do
+        if w.alive and w.team == dead.team and w ~= dead and not diedThisFrame[w] and w.effects then
+          actx.source = w
+          Effects.run(w, "on_ally_death", actx)
+        end
+      end
     end
     for di = #self.deaths, 1, -1 do self.deaths[di] = nil end
   end
 
-  -- Décompte des vivants par camp.
+  -- Décompte des vivants par camp. COMMANDANT (K4, §6.4.5) : EXCLU du décompte -> le board mort = défaite même
+  -- si le commandant vit (le fanal seul ne gagne rien). Un combat commandant-vs-commandant conclut dès que les
+  -- deux BOARDS sont morts (la fatigue frappe les commandants à damage=0 mais ne les tue pas -> terminaison OK).
   local left, right = 0, 0
   for _, u in ipairs(self.units) do
-    if u.alive then
+    if u.alive and not u.isCommander then
       if u.team == "left" then left = left + 1 else right = right + 1 end
     end
   end
@@ -664,5 +784,10 @@ end
 -- Constantes exposées (lecture seule) : les tests/le lab s'y réfèrent (seuil de Fatigue ; multiplicateur de PV).
 Arena.FATIGUE_START = FATIGUE_START
 Arena.HP_MULT = HP_MULT
+-- Caps des keystones (tests d'équilibrage : pire combo, idempotence du cap).
+Arena.MULTICAST_MAX = MULTICAST_MAX
+Arena.ATK_INC_CAP = ATK_INC_CAP
+Arena.VULN_INC_CAP = VULN_INC_CAP
+Arena.HIT_DMG_CAP_MULT = HIT_DMG_CAP_MULT
 
 return Arena

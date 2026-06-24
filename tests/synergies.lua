@@ -178,9 +178,224 @@ local ok, err = pcall(function()
     assert(#tgt.dots.poison == 12, ("SYNERGIE festering: cap leve, 12 stacks tiennent >8 (obtenu %d)"):format(#tgt.dots.poison))
   end
 
+  -- ════════ KEYSTONES — contrats MULTICAST (§2.1.1) + EMPOWER/VULN caps (§8.1 step 2) ════════
+
+  -- K3-A — MULTICAST × PORTE-ÉPINES (§2.1.1) : un multicast×3 sur un skeleton (épines 3) prend 3× les épines
+  -- (auto-dmg BORNÉ par MULTICAST_MAX). On compare 1 swing multicast=3 vs 3 swings simples : identique (3× épines).
+  do
+    local a = Arena.new({ left = { U("marauder", {}, { hp = 9999 }) },
+      right = { U("skeleton") }, autoReset = false, seed = 31 })
+    local atk, skel = a.units[1], a.units[2]
+    atk.multicast = 3
+    local hp0 = atk.hp
+    -- swingAge atteint le point de connexion -> la boucle multicast frappe 3× ; le skeleton renvoie 3 ×3 épines.
+    atk.atkTimer = 0
+    a:update(1.0, 1) -- déclenche le swing (attack)
+    for i = 2, 40 do a:update(1.0, i); if atk.swingHit then break end end
+    local lost = hp0 - atk.hp
+    assert(lost >= 9, ("K3 multicast×epines: 3 sous-coups -> >=3×3 epines (perte %d)"):format(lost))
+    -- borne : jamais plus que MULTICAST_MAX × épines (3×3=9) sur CE swing (les épines sont plates).
+    assert(lost <= 9, ("K3 multicast borne par MULTICAST_MAX (perte %d <= 9)"):format(lost))
+  end
+
+  -- K3-B — MULTICAST × CHOC (idempotence de la décharge, §2.1.1) : la charge se vide au 1ER sous-coup ; les
+  -- sous-coups 2-3 ne la retrouvent pas (consommable). On charge la cible, on frappe avec multicast=3.
+  do
+    local a = Arena.new({ left = { U("bandit", {}) }, right = { U("marauder", {}, { hp = 9999 }) },
+      autoReset = false, seed = 32 })
+    local atk, tgt = a.units[1], a.units[2]
+    atk.multicast = 3
+    tgt.dots.shock = { stacks = 4, remaining = 600, cap = 8, volt = 3, source = atk } -- décharge attendue 12, UNE fois
+    local hp0 = tgt.hp
+    a:hit(atk, tgt) -- 1er sous-coup (décharge) — appel direct
+    assert(tgt.dots.shock == nil, "K3 multicast×choc: condensateur vidé au 1er sous-coup")
+    local d1 = hp0 - tgt.hp
+    a:hit(atk, tgt) -- 2e sous-coup : plus de charge
+    local d2 = (hp0 - tgt.hp) - d1
+    assert(d2 < d1, ("K3 idempotence choc: la décharge ne se reproduit pas (d2 %d < d1 %d)"):format(d2, d1))
+  end
+
+  -- K2-A — EMPOWER (atkInc) : +increased sur la base, cappé à ATK_INC_CAP. Un atkInc demesuré est CLAMPÉ.
+  do
+    local a = Arena.new({ left = { U("bandit", {}) }, right = { U("marauder", {}, { hp = 99999 }) },
+      autoReset = false, seed = 33 })
+    local atk, tgt = a.units[1], a.units[2]
+    local hp0 = tgt.hp; a:hit(atk, tgt); local base = hp0 - tgt.hp -- bandit dmg = 7
+    atk.atkInc = 0.5 -- +50%
+    local hp1 = tgt.hp; a:hit(atk, tgt); local emp = hp1 - tgt.hp
+    assert(emp > base, ("K2 empower: +increased augmente la frappe (%d > %d)"):format(emp, base))
+    atk.atkInc = 99 -- absurde -> clampé à ATK_INC_CAP (×2.5 max), backstop ×7 du dmg de base
+    local hp2 = tgt.hp; a:hit(atk, tgt); local capped = hp2 - tgt.hp
+    assert(capped <= (atk.dmg) * Arena.HIT_DMG_CAP_MULT,
+      ("K2 backstop: une frappe ne depasse pas ×%d le dmg de base (%d)"):format(Arena.HIT_DMG_CAP_MULT, capped))
+    assert(capped <= math.floor(atk.dmg * (1 + Arena.ATK_INC_CAP)) + 1,
+      ("K2 cap atkInc: empower clampe a ATK_INC_CAP (%d)"):format(capped))
+  end
+
+  -- K2-B — VULN (vulnInc) : +increased sur les dégâts ENTRANTS (frappe ET DoT), cappé VULN_INC_CAP.
+  do
+    local a = Arena.new({ left = { U("bandit", {}) }, right = { U("marauder", {}, { hp = 99999 }) },
+      autoReset = false, seed = 34 })
+    local atk, tgt = a.units[1], a.units[2]
+    local hp0 = tgt.hp; a:hit(atk, tgt); local base = hp0 - tgt.hp
+    tgt.vulnInc = 0.5
+    local hp1 = tgt.hp; a:hit(atk, tgt); local vuln = hp1 - tgt.hp
+    assert(vuln > base, ("K2 vuln: +increased sur degats entrants (%d > %d)"):format(vuln, base))
+    -- s'applique AUSSI au DoT (poison ignore le bouclier) : un tick poison amplifié.
+    tgt.vulnInc = 99 -- absurde -> clampé VULN_INC_CAP
+    local hp2 = tgt.hp; a:hit(atk, tgt); local capped = hp2 - tgt.hp
+    assert(capped <= math.floor(atk.dmg * (1 + Arena.VULN_INC_CAP)) + 1,
+      ("K2 cap vuln: clampe a VULN_INC_CAP (%d)"):format(capped))
+  end
+
+  -- DÉTERMINISME des nouveaux chemins : même seed + même build (multicast+empower+vuln) -> même résultat.
+  do
+    local function loss(seed)
+      local a = Arena.new({ left = { U("bandit", {}) }, right = { U("marauder", {}, { hp = 99999 }) },
+        autoReset = false, seed = seed })
+      local atk, tgt = a.units[1], a.units[2]
+      atk.multicast = 3; atk.atkInc = 0.4; tgt.vulnInc = 0.3
+      local hp0 = tgt.hp
+      atk.atkTimer = 0
+      for i = 1, 30 do a:update(1.0, i); if atk.swingHit then break end end
+      return hp0 - tgt.hp
+    end
+    assert(loss(77) == loss(77), "K-determinisme: multicast×empower×vuln reproductible (meme seed)")
+  end
+
+  -- ════════ NEW-OPS agnostiques (spec §8.2 step 8) — chacun gated, testé synthétiquement (hors golden) ════════
+
+  -- OP crit — RNG SEEDÉE en on_attack (AVANT damage). chance=1.0 -> toujours ×2 ; chance=0.0 -> jamais.
+  do
+    local critEff = { { trigger = "on_attack", op = "crit", params = { mult = 2 }, condition = { kind = "chance", value = 1.0 } } }
+    local a = Arena.new({ left = { U("bandit", critEff) }, right = { U("marauder", {}, { hp = 99999 }) }, autoReset = false, seed = 41 })
+    local atk, tgt = a.units[1], a.units[2]
+    local hp0 = tgt.hp; a:hit(atk, tgt); local crit = hp0 - tgt.hp
+    -- comparatif sans crit (chance 0)
+    local noEff = { { trigger = "on_attack", op = "crit", params = { mult = 2 }, condition = { kind = "chance", value = 0.0 } } }
+    local b = Arena.new({ left = { U("bandit", noEff) }, right = { U("marauder", {}, { hp = 99999 }) }, autoReset = false, seed = 41 })
+    local hp1 = b.units[2].hp; b:hit(b.units[1], b.units[2]); local base = hp1 - b.units[2].hp
+    assert(crit > base, ("op crit: ×2 quand chance=1.0 (%d > %d)"):format(crit, base))
+    assert(crit <= base * 2 + 1, "op crit: ×2 borné (pas plus)")
+  end
+
+  -- OP execute — état pur (zéro RNG) : bonus seulement sous le seuil de PV de la victime.
+  do
+    local exEff = { { trigger = "on_attack", op = "execute", params = { threshold = 0.25, bonus = 1.0 } } }
+    local a = Arena.new({ left = { U("bandit", exEff) }, right = { U("marauder", {}, { hp = 100, maxHp = 100 }) }, autoReset = false, seed = 42 })
+    local atk, tgt = a.units[1], a.units[2]
+    tgt.maxHp = 100; tgt.hp = 100
+    local hp0 = tgt.hp; a:hit(atk, tgt); local healthy = hp0 - tgt.hp -- au-dessus du seuil : pas de bonus
+    tgt.hp = 20 -- 20% < 25% -> execute
+    local hp1 = tgt.hp; a:hit(atk, tgt); local low = hp1 - tgt.hp
+    assert(low > healthy, ("op execute: +degats sous le seuil (%d > %d)"):format(low, healthy))
+  end
+
+  -- OP grant_vuln — pose vulnInc (on_hit), refresh (max), EXPIRE au tick (vulnRemaining -> vulnInc nil).
+  do
+    local gvEff = { { trigger = "on_hit", op = "grant_vuln", params = { value = 0.3, dur = 1 } } }
+    local a = Arena.new({ left = { U("bandit", gvEff) }, right = { U("marauder", {}, { hp = 99999 }) }, autoReset = false, seed = 43 })
+    local atk, tgt = a.units[1], a.units[2]
+    a:hit(atk, tgt)
+    assert(tgt.vulnInc and tgt.vulnInc > 0, "op grant_vuln: la cible est marquée (vulnInc posé)")
+    assert(tgt.vulnRemaining and tgt.vulnRemaining > 0, "op grant_vuln: durée bornée armée")
+    atk.alive = false -- l'attaquant ne re-pose plus la marque -> on observe l'EXPIRATION pure
+    for i = 1, 70 do a:update(1.0, i) end -- > 60 frames -> expire
+    assert(tgt.vulnInc == nil, "op grant_vuln: la marque EXPIRE au tick (vulnInc effacé)")
+  end
+
+  -- OP cleave — éclabousse les VOISINS-champ (profondeur 1), cause="cleave", PAS d'on_hit secondaire ; respecte
+  -- le bouclier (ignoreShield=false). Un voisin avec bouclier absorbe ; un voisin nu perd des PV.
+  do
+    local clEff = { { trigger = "on_hit", op = "cleave", params = { frac = 0.5 } } }
+    local a = Arena.new({ left = { U("bandit", clEff) },
+      right = { U("marauder", {}, { row = 0 }), U("marauder", {}, { row = 1 }) }, autoReset = false, seed = 44 })
+    local atk, t0, t1 = a.units[1], a.units[2], a.units[3]
+    local h1 = t1.hp
+    a:hit(atk, t0)
+    assert(t1.hp < h1, "op cleave: le voisin-champ de la cible prend l'éclaboussure (profondeur 1)")
+    -- pas de double-comptage : le cleave ne re-déclenche pas un on_hit (sinon le bandit n'a pas d'on_hit, neutre).
+  end
+
+  -- OP heal_on_kill — on_kill (broadcast fin de frame, ctx.source = killer). Le tueur se soigne, borné maxHp.
+  do
+    local hkEff = { { trigger = "on_kill", op = "heal_on_kill", params = { value = 30 } } }
+    local a = Arena.new({ left = { U("marauder", hkEff, { hp = 200, maxHp = 200 }) },
+      right = { U("marauder", {}, { hp = 1 }) }, autoReset = false, seed = 45 })
+    local killer, victim = a.units[1], a.units[2]
+    killer.hp = 50; killer.maxHp = 200
+    a:damage(victim, 999, { source = killer, cause = "attack" }) -- tue -> deaths {victim, killer}
+    assert(not victim.alive, "la victime meurt")
+    local hp0 = killer.hp
+    a:update(1.0, 1) -- draine -> on_kill au killer
+    assert(killer.hp > hp0, ("op heal_on_kill: le tueur se soigne (%d > %d)"):format(killer.hp, hp0))
+    assert(killer.hp <= killer.maxHp, "op heal_on_kill: borné à maxHp")
+  end
+
+  -- OP purge — vide ses propres afflictions (anti-DoT). combat_start OU on_low_hp. Ici on l'arme on_low_hp.
+  do
+    local pgEff = { { trigger = "on_low_hp", op = "purge", params = { threshold = 0.5 } } }
+    local a = Arena.new({ left = { U("marauder", pgEff, { hp = 100, maxHp = 100 }) }, right = {}, autoReset = false, seed = 46 })
+    local u = a.units[1]
+    u.maxHp = 100; u.hp = 100
+    u.dots.poison[1] = { dps = 2, remaining = 600, acc = 0, weaken = 0, source = u }
+    u.dots.burn = { dps = 3, remaining = 600, acc = 0, decayEvery = 60, decayAcc = 0, decayPct = 0.3, source = u }
+    u.hp = 40 -- sous 50% -> on_low_hp edge-trigger
+    a:update(1.0, 1)
+    assert(#u.dots.poison == 0 and u.dots.burn == nil, "op purge: afflictions retirées au franchissement du seuil")
+  end
+
+  -- OP convert_dot — généralise convert_to_rot : {from=bleed, to=rot} consomme le bleed, pose la pourriture.
+  do
+    local cvEff = { { trigger = "on_hit", op = "convert_dot", params = { from = "bleed", to = "rot", base = 3 } } }
+    local a = Arena.new({ left = { U("bandit", cvEff) }, right = { U("marauder", {}) }, autoReset = false, seed = 47 })
+    local atk, tgt = a.units[1], a.units[2]
+    tgt.dots.bleed = { dps = 2, remaining = 300, acc = 0, slowPct = 0.2, dynBonus = 0, source = atk }
+    tgt.atkSlow = 0.2
+    a:hit(atk, tgt)
+    assert(not tgt.dots.bleed, "op convert_dot: le bleed (from) est consommé")
+    assert(tgt.dots.rot, "op convert_dot: la pourriture (to) est posée")
+  end
+
+  -- OP grant_affliction_if_absent — pose poison SI absent (pas de double-stack).
+  do
+    local giEff = { { trigger = "on_hit", op = "grant_affliction_if_absent", params = { family = "poison", dps = 1, dur = 120 } } }
+    local a = Arena.new({ left = { U("bandit", giEff) }, right = { U("marauder", {}) }, autoReset = false, seed = 48 })
+    local atk, tgt = a.units[1], a.units[2]
+    a:hit(atk, tgt); assert(#tgt.dots.poison == 1, "grant_if_absent: pose si absent")
+    a:hit(atk, tgt); assert(#tgt.dots.poison == 1, "grant_if_absent: PAS de 2e pose (déjà présent)")
+  end
+
+  -- ════════ PIRE COMBO (§9.1) — multicast × empower × vuln × crit : 4 multiplicateurs composés. Prouve que le
+  -- TTK ne s'EFFONDRE PAS (les caps + le backstop tiennent) : le combo tue plus vite qu'une frappe nue MAIS reste
+  -- au-dessus d'un plancher de ticks (pas un one-shot instantané). Déterministe (même seed -> même TTK). ════════
+  do
+    local critEff = { { trigger = "on_attack", op = "crit", params = { mult = 2 }, condition = { kind = "chance", value = 1.0 } } }
+    local function ttk(combo)
+      local a = Arena.new({ left = { U("bandit", combo and critEff or {}) },
+        right = { U("templar", {}, { hp = 600, maxHp = 600 }) }, autoReset = false, seed = 99 })
+      local atk, tgt = a.units[1], a.units[2]
+      tgt.maxHp = 600; tgt.hp = 600
+      if combo then atk.multicast = 3; atk.atkInc = 99; tgt.vulnInc = 99 end -- atkInc/vulnInc absurdes -> clampés
+      local n = 0
+      for i = 1, 8000 do a:update(1.0, i); n = i; if not tgt.alive then break end end
+      return n, tgt.alive
+    end
+    local tCombo = ttk(true)
+    local tBase = ttk(false)
+    assert(not select(2, ttk(true)), "pire combo: la cible MEURT (le combo conclut)")
+    assert(tCombo < tBase, ("pire combo: tue plus vite que nu (%d < %d ticks)"):format(tCombo, tBase))
+    -- plancher anti-one-shot : avec backstop ×7 + caps, il faut PLUSIEURS swings (le swing dure SWING_DUR ticks).
+    assert(tCombo >= 30, ("pire combo: PAS un one-shot instantané (%d ticks >= 30, TTK p10 ne s'effondre pas)"):format(tCombo))
+    assert(ttk(true) == tCombo, "pire combo: déterministe (même seed -> même TTK)")
+  end
+
   print("  synergies : choc-decharge-allie / poison-multi-sources / weaken-reduit-output / bleed-ralentit-cadence / regen-contre-DoT")
   print("  synergies+: contagion / propagation-a-la-mort / aggravate / shieldEat (T2)")
   print("  synergies#: bleed->rot / poison->feu / festering-sans-cap (T3 croises) OK")
+  print("  keystones : multicast×epines (borne) / multicast×choc (idempotence) / empower+vuln caps / determinisme OK")
+  print("  new-ops   : crit(seedé) / execute / grant_vuln(expire) / cleave / heal_on_kill / purge / convert_dot / grant_if_absent OK")
+  print("  pire-combo: multicast×empower×vuln×crit conclut SANS one-shot (caps+backstop tiennent) OK")
 end)
 
 if ok then
