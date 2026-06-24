@@ -50,6 +50,9 @@ luajit tests/i18n.lua
 echo "== run (economie roguelite : invariants + determinisme) =="
 luajit tests/run.lua
 
+echo "== oppgen (adversaire procedural scale : determinisme + validite + scaling + tier) =="
+luajit tests/oppgen.lua
+
 echo "== auras (adjacence build-resolue via le graphe du sigil) =="
 luajit tests/auras.lua
 
