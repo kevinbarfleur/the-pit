@@ -1137,10 +1137,15 @@ function Build:drawBack(view)
           end
           Draw.rect(x, y + ah, w, 1, c.iron) -- bord bas de la zone d'art
           Draw.setColor(c.brassS, 0.06); if love.graphics then love.graphics.rectangle("fill", x + 1, y + 1, w - 2, 1) end; Draw.reset()
-          -- bord de carte : iron au repos, laiton vif + halo au survol.
-          Draw.rect(x, y, w, h, nil, hot and c.brassL or c.iron, 1)
+          -- bord de carte = COULEUR DE RARETÉ (gris DREGS -> vert -> bleu -> violet -> or) : la rareté se lit
+          -- d'un coup d'œil (retour user 2026-06 : le bord iron du mockup masquait le tier). Avivé + halo au
+          -- survol (tierBright) ; sourd (iron) si hors budget.
+          local rank = (Units[o.id] and Units[o.id].rank) or 1
+          local border = (not playable) and c.iron or (hot and Rarity.tierBright(rank) or Rarity.tierColor(rank))
+          Draw.rect(x, y, w, h, nil, border, 1)
           if hot and love.graphics and love.graphics.setBlendMode then
-            love.graphics.setBlendMode("add"); love.graphics.setColor(c.brassL[1], c.brassL[2], c.brassL[3], 0.18)
+            local glow = Rarity.tierBright(rank)
+            love.graphics.setBlendMode("add"); love.graphics.setColor(glow[1], glow[2], glow[3], 0.18)
             love.graphics.rectangle("line", x, y, w, h); love.graphics.setBlendMode("alpha"); love.graphics.setColor(1, 1, 1, 1)
           end
         end
