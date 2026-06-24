@@ -417,7 +417,7 @@ function Playground:mousepressed(vx, vy, button)
   if button ~= 1 then return end
   local dx, dy = vx * 4, vy * 4
   self.mx, self.my = dx, dy
-  if Nav.hit(self.backRect, dx, dy) then Feel.press("pg.back"); self.host.goto("menu"); return end -- bouton retour
+  if Nav.hit(self.backRect, dx, dy) then Feel.press("pg.back", function() self.host.goto("menu") end); return end -- ⭐ différé
   for _, ch in ipairs(self.chipRects) do -- clic sur une chip de filtre
     if ptIn(dx, dy, ch) then self:setFilter(ch.key); return end
   end
@@ -427,10 +427,9 @@ function Playground:mousepressed(vx, vy, button)
     end
     return
   end
-  -- WATCH / SIM : feedback de press IMMÉDIAT (squash + flash) puis action TOUT DE SUITE (WATCH bascule de
-  -- scène, SIM lance le batch). On ne diffère pas (cohérent build.lua : les actions « lourdes » de banc
-  -- d'essai partent au press ; pas de mousereleased dans cette scène).
-  if ptIn(dx, dy, self:watchRect()) then Feel.press("pg.watch"); self:startWatch(); return end
+  -- WATCH : ⭐ DIFFÉRÉE (bascule de scène -> press visible AVANT, ~160 ms). SIM : in-scène (le batch tourne
+  -- DANS la scène, le press s'affiche déjà) -> reste IMMÉDIAT. Pas de mousereleased dans cette scène.
+  if ptIn(dx, dy, self:watchRect()) then Feel.press("pg.watch", function() self:startWatch() end); return end
   if ptIn(dx, dy, self:simRect()) then Feel.press("pg.sim"); self:startSim(); return end
 end
 

@@ -236,18 +236,21 @@ function Combat:mousepressed(vx, vy, button)
   -- Feedback de press IMMÉDIAT (Feel.press sans action -> squash/flash) PUIS action TOUT DE SUITE : le test
   -- headless asserte openChronicle/finishCombat juste après le clic -> on n'utilise PAS l'action différée.
   if inBtn(self.mx, self.my, self._btnChron) then
-    Feel.press("combat.chron")
-    -- CHRONICLE : ouvre l'overlay modal (chronique du combat en cours). No-op hors run (exhibition).
-    if self.host.openChronicle then self.host.openChronicle() end
+    -- ⭐ ACTION DIFFÉRÉE (Feel, bible §4) : press visible AVANT l'ouverture (~160 ms) -> on SENT le clic.
+    -- Le test mûrit l'action via Combat:update (-> Feel.update) avant d'asserter openChronicle.
+    Feel.press("combat.chron", function()
+      if self.host.openChronicle then self.host.openChronicle() end -- overlay chronique (no-op hors run)
+    end)
     return
   end
   if inBtn(self.mx, self.my, self._btnCont) then
-    Feel.press("combat.cont")
-    -- CONTINUE : route normale (comme l'ancien clic). EXHIBITION (banc d'essai) : payload.onFinish prend
-    -- la main (retour Proving Ground, SANS toucher la méta de run). Sinon host (résout vies/victoires).
-    if self.payload.onFinish then self.payload.onFinish(self.arena.win, self.arena)
-    elseif self.host.finishCombat then self.host.finishCombat(self.arena.win)
-    else self.host.goto("build") end
+    -- ⭐ DIFFÉRÉE : press visible AVANT le changement de scène. EXHIBITION (banc d'essai) : payload.onFinish
+    -- prend la main (retour Proving Ground, sans toucher la méta de run) ; sinon host ; fallback goto build.
+    Feel.press("combat.cont", function()
+      if self.payload.onFinish then self.payload.onFinish(self.arena.win, self.arena)
+      elseif self.host.finishCombat then self.host.finishCombat(self.arena.win)
+      else self.host.goto("build") end
+    end)
     return
   end
 end

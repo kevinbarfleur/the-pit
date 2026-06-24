@@ -209,18 +209,18 @@ function Relicpick:mousepressed(vx, vy, button)
   if button ~= 1 then return end
   local dx, dy = vx * 4, vy * 4
   self.mx, self.my = dx, dy
-  -- REFUSE en premier (toujours actif, indépendant de la sélection) : feedback de press IMMÉDIAT (Feel.press
-  -- sans action différée) + action SYNCHRONE (le test asserte le routage juste après le clic -> pas de différé).
+  -- REFUSE en premier (toujours actif, indépendant de la sélection) : ⭐ ACTION DIFFÉRÉE (Feel) -> press
+  -- visible AVANT le changement de scène (~160 ms). Le test mûrit via Relicpick:update avant d'asserter.
   if self.decline and ptIn(dx, dy, self.decline) then
-    Feel.press("relicpick.decline"); self:declineOffer(); return
+    Feel.press("relicpick.decline", function() self:declineOffer() end); return
   end
   -- Clic sur une carte : sélection (le BIND confirmera). Feedback léger de press sur l'id de la carte.
   for i, card in ipairs(self.cards) do
     if ptIn(dx, dy, card) then self.sel = i; Feel.press("relicpick.card." .. i); return end
   end
-  -- BIND : confirme la sélection. Feedback de press IMMÉDIAT + confirm SYNCHRONE (test-safe).
+  -- BIND : confirme la sélection. ⭐ DIFFÉRÉE : press visible AVANT que l'écran change (test mûrit via update).
   if self.sel and ptIn(dx, dy, self.bind) then
-    Feel.press("relicpick.bind"); self:confirm()
+    Feel.press("relicpick.bind", function() self:confirm() end)
   end
 end
 

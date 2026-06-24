@@ -552,7 +552,8 @@ local ok, err = pcall(function()
     assert(rp.bindHover, "relicpick : survol BIND")
     rp:mousepressed((bd.x + bd.w / 2) / 4, (bd.y + bd.h / 2) / 4, 1)
     rp:mousereleased()
-    assert(picked == "bloodstone", "relicpick : BIND confirme le pick de la carte 1")
+    rp:update(60) -- ⭐ mûrit l'action différée (Feel) : le press du BIND est visible avant la confirmation
+    assert(picked == "bloodstone", "relicpick : BIND confirme le pick de la carte 1 (apres differe)")
     rp:keypressed("2"); assert(rp.sel == 2, "relicpick : touche 2 sélectionne")
     rp:keypressed("return") -- confirme via clavier (no crash)
   end
@@ -643,7 +644,8 @@ local ok, err = pcall(function()
       ro:drawOverlay(view) -- bouton survolé (œil ouvert)
       ro:mousepressed((cta.x + cta.w / 2) / 4, (cta.y + cta.h / 2) / 4, 1)
       ro:mousereleased()
-      assert(restarted, "runover : clic relance la run (" .. res .. ")")
+      ro:update(60) -- ⭐ mûrit l'action différée (Feel) : le press du CTA est visible avant la relance
+      assert(restarted, "runover : clic relance la run (" .. res .. ", apres differe)")
     end
     -- relance clavier [r] (no crash).
     local ro2 = Runover.new(Palette, 320, 180, { newRun = function() end }, { result = "lose" })

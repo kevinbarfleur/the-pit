@@ -385,9 +385,9 @@ function Build:mousepressed(vx, vy, button)
   -- rect REROLL fidèle à l'état du grant (ligne pleine / scindée) AVANT le hit-test (mousepressed peut être
   -- appelé sans update, ex. tests headless).
   self:syncEcoRects(run and run.pendingSlotGrant)
-  -- COMBAT : feedback de press IMMÉDIAT (squash + flash -> les YEUX du CTA réagissent au clic) puis bascule
-  -- de scène TOUT DE SUITE (l'e2e headless asserte la transition juste après le clic -> on ne diffère pas).
-  if inRect(vx, vy, self.button) then Feel.press("build.combat"); self:startCombat(); return end
+  -- COMBAT : ⭐ ACTION DIFFÉRÉE (Feel) -> les YEUX du CTA réagissent au clic (squash + flash) AVANT la bascule
+  -- de scène (~160 ms), pour qu'on SENTE le clic. Le test e2e mûrit l'action via Build:update avant d'asserter.
+  if inRect(vx, vy, self.button) then Feel.press("build.combat", function() self:startCombat() end); return end
   if run then
     -- Grant en attente : REFUSER prioritaire (son rect cohabite avec la moitié REROLL) ; sinon ACCEPTER
     -- (clic sur une case verrouillée). Puis REROLL.

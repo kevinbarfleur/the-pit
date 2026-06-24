@@ -457,7 +457,7 @@ function Screen:mousepressed(vx, vy, button)
   local dx, dy = vx * 4, vy * 4
   self.mx, self.my = dx, dy
   if self.backRect and ptIn(dx, dy, self.backRect.x, self.backRect.y, self.backRect.w, self.backRect.h) then
-    Feel.press("grim.back"); self.host.goto("menu"); return
+    Feel.press("grim.back", function() self.host.goto("menu") end); return -- ⭐ différé : press visible avant la bascule
   end
   if self._tabRects then
     for id, r in pairs(self._tabRects) do

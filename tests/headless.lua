@@ -252,9 +252,11 @@ local ok, err = pcall(function()
     -- Les rects sont en DESIGN ; la souris arrive en VIRTUEL (÷4) comme dans le vrai jeu (main.lua:toVirtual)
     -- -> on clique les coords VIRTUELLES du centre de chaque bouton (sinon on testerait le mauvais espace).
     rc:mousepressed((rc._btnChron.x + rc._btnChron.w / 2) / 4, (rc._btnChron.y + rc._btnChron.h / 2) / 4, 1)
-    assert(opened, "clic CHRONICLE -> host.openChronicle")
+    for _ = 1, 12 do rc:update(1.0) end -- ⭐ mûrit l'action différée (Feel) : le press est visible AVANT l'ouverture
+    assert(opened, "clic CHRONICLE -> host.openChronicle (apres differe)")
     rc:mousepressed((rc._btnCont.x + rc._btnCont.w / 2) / 4, (rc._btnCont.y + rc._btnCont.h / 2) / 4, 1)
-    assert(called and finished ~= nil, "clic CONTINUE -> host.finishCombat appele avec l'issue")
+    for _ = 1, 12 do rc:update(1.0) end -- mûrit l'action différée avant d'asserter la transition
+    assert(called and finished ~= nil, "clic CONTINUE -> host.finishCombat appele avec l'issue (apres differe)")
     print("  routing : ecran de fin (CHRONICLE/CONTINUE) -> openChronicle / finishCombat OK")
   end
 
@@ -411,7 +413,8 @@ local ok, err = pcall(function()
     assert(run.gold > g2 and eb:placedCount() == 1, "e2e vente: remboursement + unite retiree")
     -- COMBAT -> transition.
     eb:mousepressed(eb.button.x + 1, eb.button.y + 1, 1)
-    assert(gotoName == "combat", "e2e: COMBAT -> transition vers la scene combat")
+    for _ = 1, 12 do eb:update(1.0) end -- ⭐ mûrit l'action différée (Feel) : le press du CTA est visible avant la transition
+    assert(gotoName == "combat", "e2e: COMBAT -> transition vers la scene combat (apres differe)")
     print("  e2e : boutique (achat/case-verrou) + reroll + grant(accept/refuse) + vente + COMBAT OK")
   end
 

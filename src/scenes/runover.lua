@@ -120,16 +120,15 @@ function Runover:mousemoved(vx, vy)
   Feel.hover("runover.again", self.ctaHover)
 end
 
--- ⭐ Pointer-DOWN sur le CTA : feedback de press IMMÉDIAT (Feel.press SANS action -> squash + flash + braise)
--- PUIS relance TOUT DE SUITE (host.newRun). On ne diffère PAS l'action : le test asserte la relance juste
--- après le clic (comme le bouton COMBAT du build). Le verrou de Feel ne s'arme pas (aucune action en file).
+-- ⭐ Pointer-DOWN sur le CTA : ACTION DIFFÉRÉE (Feel, bible §4) -> press visible (squash + flash + braise)
+-- AVANT la relance (~160 ms), pour qu'on SENTE le clic avant que l'écran change. Le verrou de Feel évite le
+-- double-fire. Le test mûrit l'action via Runover:update (-> Feel.update) avant d'asserter la relance.
 function Runover:mousepressed(vx, vy, button)
   if button ~= 1 then return end
   local dx, dy = vx * 4, vy * 4
   self.mx, self.my = dx, dy
   if ptIn(dx, dy, self.cta) then
-    Feel.press("runover.again") -- feedback immédiat (pas d'action différée)
-    self.host.newRun()
+    Feel.press("runover.again", function() self.host.newRun() end)
   end
 end
 
