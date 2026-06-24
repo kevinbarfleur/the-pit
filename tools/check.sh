@@ -41,6 +41,9 @@ luajit tests/headless.lua
 echo "== stats (couche de modificateurs : formule + determinisme + clamp) =="
 luajit tests/stats.lua
 
+echo "== dot_family (lint famille DoT declarative : couverture + coherence op/famille) =="
+luajit tests/dot_family.lua
+
 echo "== i18n (multilangue : interpolation + fallback + couverture anglaise) =="
 luajit tests/i18n.lua
 

@@ -449,6 +449,39 @@ local U = {
   mire_thing = { id = "mire_thing", type = "abyss", family = "gelatine", rank = 1, cost = 1, hp = 50, dmg = 5, cd = 54, effects = {} },
 }
 
+-- ══ FAMILLE DoT DÉCLARATIVE (M2/2.4 — « type » des synergies P1 + segmentation Grimoire). Porteur explicite,
+-- 1 entrée par unité QUI POSE/AMPLIFIE un DoT (5 familles : brûlure/saignement/poison/pourriture/choc). Les
+-- 20 unités sans DoT (tanks/boucliers/épines/brutes) sont volontairement ABSENTES (`dot_family` = nil : elles
+-- ne comptent dans aucun type). DATA PURE, NON lue par la SIM -> golden-neutre. La famille = la famille
+-- DOMMAGEABLE PRIMAIRE : les ops 0-dps (slow/weaken) et les `grant_team` ne la changent pas (ex. wither_bloom
+-- = rot, ses bleed/poison à 0 dps sont utilitaires). Couverture + cohérence (op RÉEL vs famille déclarée)
+-- garanties par tests/dot_family.lua (lint dans check.sh). ⚠ pièges : `rot_grub` est POISON (op), pas rot
+-- (nom) ; les 4 auras (soot/clot/miasma/decay) portent leur famille mais ne sont PAS des poseurs actifs
+-- (exclues du plancher rang). Audit complet : docs/roadmap-lab/audit/identity-audit.md.
+U.dotFamily = {
+  -- BRÛLURE (13)
+  emberling = "burn", cinder_cur = "burn", pyre_tender = "burn", ash_moth = "burn", bellows_priest = "burn",
+  wildfire_hound = "burn", kiln_warden = "burn", ash_maw = "burn", plague_pyre = "burn", pyre_herald = "burn",
+  zeal_inquisitor = "burn", skull_colossus = "burn", soot_acolyte = "burn",
+  -- SAIGNEMENT (12)
+  razorkin = "bleed", gash_fiend = "bleed", hookjaw = "bleed", leech_thorn = "bleed", bloodletter = "bleed",
+  tendon_render = "bleed", vein_splitter = "bleed", slow_bleed = "bleed", wailing_shade = "bleed",
+  byakhee = "bleed", gnaw_rat = "bleed", clot_mender = "bleed",
+  -- POISON (15)
+  witch = "poison", spore_tick = "poison", corruptor = "poison", bile_spitter = "poison", rot_grub = "poison",
+  plague_bearer = "poison", acid_maw = "poison", festering = "poison", venom_censer = "poison",
+  chitin_drone = "poison", coil_viper = "poison", web_recluse = "poison", ink_horror = "poison",
+  deep_kraken = "poison", miasma_acolyte = "poison",
+  -- POURRITURE (12)
+  rot_hound = "rot", carrion_pecker = "rot", maggot_king = "rot", necro_leech = "rot", patient_worm = "rot",
+  hollow_gut = "rot", blight_spreader = "rot", marrow_drinker = "rot", pit_maw = "rot", wither_bloom = "rot",
+  bore_worm = "rot", decay_tender = "rot",
+  -- CHOC (11)
+  stormcaller = "shock", live_wire = "shock", thunderhead = "shock", static_swarm = "shock",
+  galvanizer = "shock", stormlord = "shock", dynamo_priest = "shock", arc_warden = "shock",
+  storm_anchor = "shock", siphon_jelly = "shock", rust_sentinel = "shock",
+}
+
 -- Roster complet (ordre d'affichage). Les 6 premiers = vanille/v0 ; les suivants = familles de statuts.
 U.order = { "marauder", "templar", "skeleton", "bandit", "witch", "demon",
   "spore_tick", "corruptor", "emberling", "razorkin", "rot_hound", "stormcaller", "plague_doctor",
