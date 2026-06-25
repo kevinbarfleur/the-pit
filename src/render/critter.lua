@@ -132,7 +132,7 @@ local function info(id)
     { id = id, type = spec.type, family = spec.family, effects = spec.effects, rank = spec.rank })
   if not ok or not d or not d.grid then return nil end
   local data, W, H = d.grid, d.w, d.h
-  local cells, n, minX, maxX = {}, 0, W, 0
+  local cells, n, minX, maxX, minY, maxY = {}, 0, W, 0, H, 0
   for y = 0, H - 1 do
     local row = y * W
     for x = 0, W - 1 do
@@ -142,6 +142,8 @@ local function info(id)
         n = n + 1; cells[n] = { x, y, r, g, b }
         if x < minX then minX = x end
         if x > maxX then maxX = x end
+        if y < minY then minY = y end
+        if y > maxY then maxY = y end
       end
     end
   end
@@ -156,6 +158,7 @@ local function info(id)
   c = {
     cells = cells, eyes = d.eyes or {}, h = H,
     cx = cx, cy = cy, bodyR = bodyR, bellyY = bellyY, groundY = groundY,
+    topY = (n > 0) and minY or 0, contentH = max(1, (n > 0) and (maxY - minY + 1) or H), -- bounds TIGHTS (fit-to-content)
     headSpan = max(1, groundY - (cy - bodyR - 6)),
     halfW = max(4, (maxX - minX) / 2),
     float = A.float and true or false,
@@ -248,6 +251,25 @@ function Critter.draw(view, id, x, y, boxW, boxH, t, facing, fill, opts)
   fill = fill or 1.0
   local scale = (boxH / c.h) * fill
   Critter.drawAt(view, id, x + boxW * 0.5, y + (c.groundY / c.h) * boxH * fill, scale, t, facing, opts)
+end
+
+-- DESSINE `id` AJUSTÉ AU CONTENU dans une boîte (x,y,boxW,boxH) : échelle par les bounds TIGHTS (la créature
+-- REMPLIT la boîte quelle que soit la place vide de son cadre 64×64 -> un commandant bas-et-large ne « flotte »
+-- plus dans le grand creux d'un piédestal). Pieds ancrés au BAS de la boîte (margin px sous le sol). Limité par
+-- maxScale pour ne pas pixeliser à outrance. fill (~0.9) = part de la boîte remplie. Réutilisable (niches/fiches).
+function Critter.drawFit(view, id, x, y, boxW, boxH, t, facing, fill, maxScale, opts)
+  local c = info(id)
+  if not c then return end
+  fill = fill or 0.9
+  maxScale = maxScale or 2.0
+  -- scale par la hauteur RÉELLE du contenu (contentH), pas le cadre (h) -> remplissage franc.
+  local sH = (boxH * fill) / c.contentH
+  local sW = (boxW * fill) / (c.halfW * 2)
+  local scale = math.min(maxScale, sH, sW)
+  -- pieds calés vers le bas de la boîte : on place le SOL (groundY) à ~ boxH - 1px du bas.
+  local footX = x + boxW * 0.5
+  local footY = y + boxH - 1
+  Critter.drawAt(view, id, footX, footY, scale, t, facing, opts)
 end
 
 -- Réinitialise le cache (changement de palette / tests). La grille live elle-même est cachée côté CreatureGen.

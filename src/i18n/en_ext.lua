@@ -171,4 +171,17 @@ return {
   ["ui.stat_hp"]  = "HP",
   ["ui.stat_dmg"] = "DMG",
   ["ui.stat_cd"]  = "CD",
+
+  -- ── COMMANDANT (C4, UI ui-artisan) — piédestal hors-graphe + portée VISIBLE au survol (spec §4.2). ──
+  -- L'étiquette de portée résolue depuis le `target` du commandBonus : qui l'aura touche, en clair.
+  ["ui.command_word"]   = "COMMANDS",        -- préfixe de l'étiquette de portée (survol du piédestal)
+  ["ui.command_pack"]   = "the whole pack",  -- target=team  (toute la meute pulse)
+  ["ui.command_front"]  = "the vanguard",    -- target=role:front (la seule unité avant)
+  ["ui.command_back"]   = "the rear-guard",  -- target=role:back
+  ["ui.command_center"] = "the heart",       -- target=role:center
+  ["ui.command_tier"]   = "tier-{n} beasts", -- target=tier:N (le Roi des Rats : rang 1)
+  ["ui.command_level"]  = "level-{n} beasts", -- target=level:N (l'Aïeul : non-fusionnées)
+  ["ui.command_none_short"] = "none in range", -- aura qui ne touche aucune unité posée (portée vide)
+  ["ui.pedestal_label"] = "WARLORD",         -- libellé gravé du socle (au-dessus du piédestal)
+  ["ui.pedestal_cadence"] = "SLOW CADENCE",  -- légende de la barre de cadence lente (sous le piédestal)
 }

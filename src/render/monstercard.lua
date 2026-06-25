@@ -234,6 +234,17 @@ function MonsterCard.draw(view, palette, id, anchorX, anchorY, t, opts)
   local flavorKey = "unit." .. id .. ".flavor"
   local hasFlavor = I18n.has(flavorKey)
 
+  -- ── C4 — LIGNE « AU COMMANDEMENT » (chaque unité porte la sienne, spec §4.3) : si l'unité a un commandBonus,
+  -- on affiche son aura EN VALEURS CONCRÈTES (le i18n command_desc, déjà rédigé sans %). Sinon « Cannot command »
+  -- (grisé, honnête — sous-set curé). Mesuré comme un BANDEAU encastré (titre « AT COMMAND » + corps enroulé). ──
+  local canCmd = U.commandBonus ~= nil
+  local cmdDescKey = "unit." .. id .. ".command_desc"
+  local cmdDesc = canCmd and I18n.has(cmdDescKey) and T(cmdDescKey) or nil
+  local cmdHeadFont = Theme.label(8)            -- « AT COMMAND » (Space Mono, kicker doré)
+  local cmdBodyFont = Theme.body(12) or descFont -- corps lisible (Spectral)
+  local cmdLines = {}
+  if cmdDesc and cmdBodyFont then local _w2; _w2, cmdLines = cmdBodyFont:getWrap(cmdDesc, innerW - 16) end
+
   -- mesure des hauteurs de bloc
   local hName = (nameFont and nameFont:getHeight()) or 16
   local hIdent = (idFont and idFont:getHeight()) or 12
@@ -252,6 +263,16 @@ function MonsterCard.draw(view, palette, id, anchorX, anchorY, t, opts)
   if #affl > 0 then h = h + GAP + CHIP_H end          -- rangée de chips
   if hasPassiveName then h = h + GAP + hPassName end  -- nom de passif
   h = h + GAP + nDescLines * DESC_LINE                -- description
+  -- C4 : bandeau « AT COMMAND » (aura de chef) OU mention « Cannot command » (grisé) — toujours présent.
+  local cmdHeadH = (cmdHeadFont and cmdHeadFont:getHeight()) or 10
+  local cmdBodyLineH = (cmdBodyFont and cmdBodyFont:getHeight() or 13) + 1
+  local cmdBarH
+  if cmdDesc then
+    cmdBarH = 8 + cmdHeadH + 3 + math.max(1, #cmdLines) * cmdBodyLineH + 8
+  else
+    cmdBarH = 8 + cmdHeadH + 8 -- « Cannot command » sur une ligne (grisé)
+  end
+  h = h + SECTION_GAP + cmdBarH
   if hasFlavor and flavFont then
     local _, fLines = flavFont:getWrap(T(flavorKey), innerW)
     h = h + SECTION_GAP + #fLines * (hFlav + 1)
@@ -351,6 +372,32 @@ function MonsterCard.draw(view, palette, id, anchorX, anchorY, t, opts)
   for _, line in ipairs(descLines) do
     drawDescLine(line, bodyX, cy, descFont, C.ink2, primAff, innerW)
     cy = cy + DESC_LINE
+  end
+
+  -- (g-bis) C4 — BANDEAU « AT COMMAND » : l'aura de chef de cette unité (commandBonus), en valeurs concrètes.
+  -- Encastré (rect sombre + liseré laiton + crête dorée) -> il se LIT comme une capacité distincte du kit de
+  -- board (« troupier ≠ leader »). Sans commandBonus -> « Cannot command » grisé (honnête). Enseigne le système.
+  cy = cy + SECTION_GAP
+  do
+    local cmdGold = canCmd and C.gold or C.ink4
+    Draw.rect(bodyX, cy, innerW, cmdBarH, C.stone900, C.brassD, 1)
+    if canCmd and love.graphics and love.graphics.setColor then
+      love.graphics.setColor(C.brass[1], C.brass[2], C.brass[3], 0.6) -- crête dorée (héros : « il commande »)
+      love.graphics.rectangle("fill", bodyX + 1, cy + 1, innerW - 2, 1)
+      love.graphics.setColor(1, 1, 1, 1)
+    end
+    local hx, hy = bodyX + 8, cy + 8
+    Draw.text(T("ui.command_prefix"), hx, hy, cmdGold, cmdHeadFont) -- « AT COMMAND »
+    if cmdDesc then
+      local by = hy + cmdHeadH + 3
+      for _, line in ipairs(cmdLines) do
+        Draw.text(line, hx, by, C.ink2, cmdBodyFont)
+        by = by + cmdBodyLineH
+      end
+    else
+      Draw.textR(T("ui.command_none"), bodyX + innerW - 8, hy, C.ink4, cmdHeadFont) -- « Cannot command » (grisé)
+    end
+    cy = cy + cmdBarH
   end
 
   -- (h) FLAVOR (Spectral italique), détaché du bloc mécanique par un divider laiton discret.

@@ -41,6 +41,7 @@ local Draw = require("src.ui.draw")
 local Panel = require("src.ui.panel")    -- surface propre (dégradé + liseré iron) : remplace Frame/Forge.uiPlate/uiCard
 local Button = require("src.ui.button")  -- boutons propres : primary (CTA + yeux) / eco (coût) / secondary
 local Slot = require("src.ui.slot")      -- cases du plateau (6 états) : remplace Forge.uiSocket
+local Pedestal = require("src.ui.pedestal") -- C4 : SOCLE/TRÔNE du commandant (carvé, hors-graphe, barre de cadence lente)
 local Gauge = require("src.ui.gauge")    -- jauges vies/XP : remplace l'orbe forge baké
 local LifeOrb = require("src.render.lifeorb") -- GLOBE DE VIE nightmare-forge (pixel net + nageur + shader cosmardesque)
 local Badge = require("src.ui.badge")    -- coût (pièce+nombre) / pips de niveau / diamants : remplace Forge.coinAt/diamondAt/label
@@ -122,6 +123,8 @@ function Build.new(palette, vw, vh, host)
     slotRigs = {},     -- [slot] = { id, char } : unités posées (PLATEAU = combat)
     bench = {},        -- [i] = { id, level, char } : RÉSERVE hors-combat (stock/fusion ; n'entre PAS en combat)
     commanderSlot = nil, -- C3 : { id, level, char } au PIÉDESTAL (1 slot logique HORS graphe de sigil, sans voisins)
+    cmdCadence = 0,      -- C4 : phase 0..1 de la barre de cadence LENTE du commandant (cosmétique, dt-piloté)
+    cmdShake = 0,        -- C4 : timer de SECOUSSE de refus (drop d'un non-chef) ; >0 = le socle tremble + sang
     fx = {},           -- GAME FEEL : effets ÉPHÉMÈRES (achat/vente/level-up) — { kind, x, y, t, dur, ... } (design)
     previewRigs = {},  -- [id] = char idle (aperçu boutique)
     drag = nil,        -- { id, char, fromSlot? | fromShop? }
@@ -201,11 +204,21 @@ function Build:computeLayout()
       y = math.floor(oy + (c.y - my) * sp + 0.5),
     }
   end
-  -- C3 — PIÉDESTAL : 1 emplacement DISTINCT du graphe 3×3 (lisibilité « pas d'adjacence »). Posé à GAUCHE du
-  -- board, à hauteur de son centre, dans la marge libre (board centré en vw/2, demi-étendue ~BOARD_HALF_W/4).
-  -- Rect VIRTUEL (espace souris), comme benchSlots. RENDU MINIMAL (drop-zone) ; la polish DA est pour ui-artisan.
-  local pedX = math.max(4, math.floor(ox - BOARD_HALF_W / 4 - 26 + 0.5))
-  self.commanderRect = { x = pedX, y = math.floor(oy - 12 + 0.5), w = 24, h = 24 }
+  -- C4 — PIÉDESTAL : 1 emplacement DISTINCT du graphe 3×3 (lisibilité « pas d'adjacence » : AUCUNE arête vers
+  -- le board). Un vrai SOCLE/TRÔNE carvé (src/ui/pedestal.lua), posé dans la MARGE LIBRE à gauche du board, à
+  -- hauteur de son centre. Le rect VIRTUEL (hit-test souris) = la NICHE où trône le commandant ; le label
+  -- (au-dessus) et la barre de cadence (dessous) débordent du hit-test (cosmétiques, non cliquables).
+  -- Géométrie : niche ~ 30×30 virtuel (= un peu plus grande qu'une case 20px -> le chef est plus imposant).
+  local PED_W, PED_H = 34, 44            -- boîte VIRTUELLE (niche + dais) ; ×4 = 136×176 design
+  local pedX = math.max(6, math.floor(ox - BOARD_HALF_W / 4 - PED_W - 6 + 0.5))
+  local pedY = math.floor(oy - PED_H * 0.38 + 0.5) -- niche calée à hauteur du centre du board
+  -- self.pedRect = la BOÎTE complète (design ×4) passée à Pedestal.draw. self.commanderRect = la NICHE
+  -- (hit-test souris, VIRTUEL) -> seule la niche est cliquable/droppable (le label/cadence ne le sont pas).
+  -- La niche est un SIÈGE (un peu plus large que haute) -> le chef « s'assied » sur le trône, pas dans un puits ;
+  -- un commandant bas-et-large (ex. ratking) remplit sans flotter dans un grand vide vertical.
+  self.pedRect = { x = pedX, y = pedY, w = PED_W, h = PED_H }
+  local nicheH = math.floor(PED_H * 0.58 + 0.5) -- niche ~30w × 26h (siège)
+  self.commanderRect = { x = pedX + 2, y = pedY, w = PED_W - 4, h = nicheH }
 end
 
 -- Le piédestal sous le curseur (espace virtuel) -> true si la drop-zone est touchée. Inerte tant que le
@@ -226,6 +239,81 @@ end
 local function canCommand(id)
   local u = Units[id]
   return u and u.commandBonus ~= nil
+end
+
+-- ── C4 — PORTÉE DU COMMANDANT (survol du piédestal -> éclaire les unités du board affectées + étiquette). ──
+-- Résout le `target` du commandBonus EN unités POSÉES sur le board (mêmes règles que buildComp:resolveTargets,
+-- mais lues ICI pour le RENDU, pas pour le bake). `neighbors` -> vide (le commandant n'a aucun voisin, hors
+-- graphe). Renvoie (set, labelKey, labelVars) : set[slot]=true pour chaque case touchée ; l'étiquette résume
+-- la portée en clair (« COMMANDS the whole pack / level-1 beasts / the vanguard »). PUR (lecture data).
+function Build:commandRange()
+  local cmd = self.commanderSlot
+  if not cmd then return {}, nil, nil end
+  local cb = Units[cmd.id] and Units[cmd.id].commandBonus
+  if not cb then return {}, nil, nil end
+  -- portée + étiquette dérivées du `target` (les rôles se résolvent comme le ciblage de combat).
+  local target = cb.target or (cb.params and cb.params.target) or "neighbors"
+  local set = {}
+  local labelKey, labelVars
+  if target == "team" then
+    for i = 1, 9 do if self.slotRigs[i] then set[i] = true end end
+    labelKey = "ui.command_pack"
+  elseif target:sub(1, 5) == "role:" then
+    -- role:front/back = extrême d'exposition (depth = maxCol - col) ; role:center = nœud de degré 4 du sigil.
+    local role = target:sub(6)
+    local pick = self:resolveRoleSlot(role)
+    if pick then set[pick] = true end
+    labelKey = (role == "front" and "ui.command_front") or (role == "back" and "ui.command_back")
+      or (role == "center" and "ui.command_center") or "ui.command_front"
+  elseif target:sub(1, 5) == "tier:" then
+    local n = tonumber(target:sub(6))
+    for i = 1, 9 do local sr = self.slotRigs[i]; if sr and (Units[sr.id].rank or 0) == n then set[i] = true end end
+    labelKey, labelVars = "ui.command_tier", { n = n }
+  elseif target:sub(1, 6) == "level:" then
+    local n = tonumber(target:sub(7))
+    for i = 1, 9 do local sr = self.slotRigs[i]; if sr and (sr.level or 1) == n then set[i] = true end end
+    labelKey, labelVars = "ui.command_level", { n = n }
+  else -- grant_team (Bris-Siège, stripEnemyShield) : pas de cible AMIE -> étiquette « toute la meute » (effet d'équipe)
+    for i = 1, 9 do if self.slotRigs[i] then set[i] = true end end
+    labelKey = "ui.command_pack"
+  end
+  return set, labelKey, labelVars
+end
+
+-- Résout le SLOT d'un rôle (front/back/center) sur les unités POSÉES, MIROIR de buildComp (depth + degré du
+-- sigil + tie-break row asc puis slot asc). Réutilisé par commandRange ET (potentiellement) ailleurs. nil si vide.
+function Build:resolveRoleSlot(role)
+  local placed = {}
+  for i = 1, 9 do
+    if self.slotRigs[i] then
+      local c = self.board.shape.cells[i]
+      placed[#placed + 1] = { slot = i, col = c.x, row = c.y }
+    end
+  end
+  if #placed == 0 then return nil end
+  local maxC = -math.huge
+  for _, p in ipairs(placed) do if p.col > maxC then maxC = p.col end end
+  local function tieLess(a, b) if a.row ~= b.row then return a.row < b.row end return a.slot < b.slot end
+  if role == "center" then
+    local best, bestDeg
+    for _, p in ipairs(placed) do
+      local deg = self.board:degreeOf(p.slot)
+      if not bestDeg or deg > bestDeg or (deg == bestDeg and p.slot < best.slot) then best, bestDeg = p, deg end
+    end
+    if best and bestDeg and bestDeg >= 4 then return best.slot end
+    role = "front" -- fallback déterministe (sigil sans nœud de degré 4)
+  end
+  local wantMin = (role ~= "back")
+  local best
+  for _, p in ipairs(placed) do
+    local d = maxC - p.col
+    if not best then best = p
+    else
+      local bd = maxC - best.col
+      if (wantMin and d < bd) or (not wantMin and d > bd) or (d == bd and tieLess(p, best)) then best = p end
+    end
+  end
+  return best and best.slot or nil
 end
 
 -- ── BARRE DU BAS = une RANGÉE flex (moteur Layout) en ESPACE DESIGN ────────────────────────────────
@@ -773,6 +861,8 @@ function Build:mousereleased(vx, vy, button)
   -- Une seule unité au piédestal ; seuls les porteurs de `commandBonus` y sont admis (refus propre sinon).
   if onPed then
     if not canCommand(d.id) then -- refus : l'unité non-chef RETOURNE à son origine (jamais de crash/perte).
+      self.cmdShake = 0.32 -- C4 : SECOUSSE de refus (le socle tremble + liseré sang) ; décroît dans update.
+      Feel.press("build.commander.refuse") -- petit feedback de press (squash/flash) au point de refus
       self:returnDrag(d)
       return
     end
@@ -1283,6 +1373,16 @@ function Build:update(frameDt)
     Feel.hover("build.decline", (run0.pendingSlotGrant and inRect(self.mx, self.my, self.declineBtn)) or false)
   end
   self.ambient:update(frameDt)
+  -- C4 — CADENCE LENTE du commandant : la phase 0..1 boucle au rythme cd × cdMult de l'unité au piédestal,
+  -- VISIBLEMENT plus lente que les troupiers (cdMult 1.5 + cd long). Cosmétique (dt mural), pas la SIM.
+  if self.commanderSlot then
+    local cu = Units[self.commanderSlot.id]
+    local cd = ((cu and cu.cd) or 90) * COMMANDER_CD_MULT -- frames @60 ; ×cdMult -> « il dirige, lentement »
+    self.cmdCadence = (self.cmdCadence + frameDt / math.max(1, cd)) % 1
+  else
+    self.cmdCadence = 0
+  end
+  if self.cmdShake > 0 then self.cmdShake = math.max(0, self.cmdShake - frameDt / 60) end -- décroît la secousse de refus
   if self.host.run and self.board.activeCount ~= self.host.run.slots then self:syncSlots() end
   for i, sr in pairs(self.slotRigs) do
     local p = self.pos[i]
@@ -1378,6 +1478,11 @@ function Build:computeUi()
   local ui = { hover = hover, dropTarget = self.drag and hover or nil, nbset = {}, shopHover = self:shopAt(self.mx, self.my), benchHover = self:benchAt(self.mx, self.my),
     commanderHover = self:commanderAt(self.mx, self.my) }
   if hover then for _, j in ipairs(self.board:neighbors(hover)) do ui.nbset[j] = true end end
+  -- C4 — PORTÉE DU COMMANDANT : survoler le piédestal (rempli) éclaire les unités du board que son aura touche
+  -- + une étiquette de portée (« COMMANDS … »). cmdRange[slot]=true ; cmdRangeLabel = clé i18n (+ vars).
+  if ui.commanderHover and self.commanderSlot then
+    ui.cmdRange, ui.cmdRangeLabel, ui.cmdRangeVars = self:commandRange()
+  end
   ui.auraLinks = self:resolveAuraLinks() -- « qui buffe qui » : arêtes colorées (drawBack) + chips (drawOverlay)
   self.uiState = ui -- champ distinct de la méthode (sinon self.uiState renverrait la méthode quand vide)
   return ui
@@ -1470,6 +1575,21 @@ function Build:drawBack(view)
         love.graphics.rectangle("fill", x, y, S, S)
       end
     end
+    -- C4 — PORTÉE DU COMMANDANT (survol du piédestal) : la case affectée par l'aura du chef PULSE en OR
+    -- (liseré + voile additif qui respire) -> on VOIT qui le commandant commande. Réutilise le langage de
+    -- surlignage (additif respirant) déjà employé pour les voisins/cibles. Seulement sur les cases TOUCHÉES.
+    if ui.cmdRange and ui.cmdRange[i] and sr and love.graphics.setBlendMode then
+      local pulse = 0.5 + 0.5 * math.sin(self.t / 60 * 4.2)
+      local gcol = c.gold
+      love.graphics.setBlendMode("add")
+      love.graphics.setColor(gcol[1], gcol[2], gcol[3], 0.12 + 0.14 * pulse)
+      love.graphics.rectangle("fill", x, y, S, S)
+      love.graphics.setColor(gcol[1], gcol[2], gcol[3], 0.45 + 0.30 * pulse)
+      love.graphics.setLineWidth(2)
+      love.graphics.rectangle("line", x - 1, y - 1, S + 2, S + 2)
+      love.graphics.setLineWidth(1)
+      love.graphics.setBlendMode("alpha"); love.graphics.setColor(1, 1, 1, 1)
+    end
   end
 
   -- BANC (réserve, rangée sous le plateau) : même atome Slot (drop/hover/selected/empty) + pip type/niveau si
@@ -1485,24 +1605,23 @@ function Build:drawBack(view)
     end
   end
 
-  -- C3 — PIÉDESTAL (rendu MINIMAL fonctionnel ; polish DA = ui-artisan, cf. plan §4.1). Drop-zone distincte du
-  -- graphe : un Slot + un liseré DORÉ (marque « commandant », pas une case ordinaire) + un appel à l'action si vide.
-  -- Visible quand débloqué OU pendant l'offre (le joueur doit voir où cliquer pour accepter — minimal).
+  -- C4 — PIÉDESTAL (socle/trône carvé, src/ui/pedestal.lua) : DISTINCT du graphe, AUCUNE arête vers le board.
+  -- Visible quand débloqué OU pendant l'offre (le joueur doit voir où cliquer pour accepter). Le FOND du socle
+  -- (dais + niche + label + barre de cadence) se dessine ICI, DERRIÈRE le rig du commandant (drawWorld). Le rig
+  -- du commandant est rendu dans la niche par drawWorld ; le CTA texte + l'étiquette de portée vivent en overlay.
   local pedOffer = run and run.pendingCommanderGrant
-  if not self.locked and self.commanderRect and (self:commanderUnlocked() or pedOffer) then
-    local r = self.commanderRect
-    local px, py, pw = r.x * 4, r.y * 4, r.w * 4
+  if not self.locked and self.pedRect and (self:commanderUnlocked() or pedOffer) then
+    local r = self.pedRect
     local sr = self.commanderSlot
-    local hovering = ui.commanderHover or (pedOffer and inRect(self.mx, self.my, r))
-    -- drop valide seulement si on glisse un porteur de commandBonus.
-    local validDrop = self.drag and canCommand(self.drag.id)
-    local pstate = (pedOffer and "drop") or (validDrop and hovering and "drop") or (hovering and "hover") or (sr and "selected") or "empty"
-    Slot.draw(px, py, pw, pstate, sr and { tierCol = Rarity.tierColor(Units[sr.id].rank), level = sr.level or 1 } or nil)
-    -- liseré doré : signe distinctif du piédestal (le commandant). 1px or terni par-dessus le bord du Slot.
-    Draw.rect(px, py, pw, pw, nil, c.brass, 1)
-    if not sr then -- appel à l'action (couronne une bête) sous la zone — court, capitales, Theme.ui (mono).
-      Draw.textC(T("ui.commander_unlock"), px + pw / 2, py + pw + 2, c.brassS, Theme.ui(8))
-    end
+    local hovering = ui.commanderHover or (pedOffer and inRect(self.mx, self.my, self.commanderRect))
+    local validDrop = self.drag and canCommand(self.drag.id) and hovering -- drop valide = porteur de commandBonus survolant
+    -- SECOUSSE de refus : décale le socle horizontalement (sinusoïde amortie) tant que cmdShake > 0.
+    local shakeX = 0
+    if self.cmdShake > 0 then shakeX = math.sin(self.cmdShake * 60) * 3 * (self.cmdShake / 0.32) end
+    Pedestal.draw(r.x * 4 + shakeX, r.y * 4, r.w * 4, r.h * 4, {
+      filled = sr ~= nil, hover = hovering, validDrop = validDrop, offered = pedOffer and not sr,
+      danger = self.cmdShake > 0, accent = sr and Rarity.tierColor(Units[sr.id].rank) or nil,
+      t = self.t / 60, cadence = sr and self.cmdCadence or nil })
   end
 
   -- ── BARRE DU BAS (handoff « Bottom Bar ») : panneau ENCADRÉ + filet laiton gravé + filets iron + fonds de carte ──
@@ -1619,18 +1738,24 @@ function Build:drawWorld()
       end
     end
   end
-  -- C3 — RIG DU COMMANDANT au piédestal (rendu MINIMAL ; la polish DA — socle/trône, liseré doré, lift —
-  -- est pour ui-artisan). Calé au bas de la drop-zone, comme un slot de banc. Visible seulement si débloqué.
+  -- C4 — RIG DU COMMANDANT au piédestal : SURÉLEVÉ dans la NICHE du socle (un cran plus grand qu'un troupier
+  -- -> le chef trône). Calé sur les pieds au bas de la niche, AVEC une légère respiration (lift) — le commandant
+  -- est plus imposant que la piétaille. Visible seulement si débloqué. Le décor (socle/liseré/halo) = drawBack.
   if self.commanderSlot and self.commanderRect and self:commanderUnlocked() then
     local sr = self.commanderSlot
     local r = self.commanderRect
-    local gx = math.floor(r.x + r.w / 2 + 0.5)
-    local gy = math.floor(r.y + r.h - 1 + 0.5)
+    local lift = math.sin(self.t / 60 * 1.7) * 0.5 -- respiration douce (le chef « règne »), virtuel
+    -- CALÉ À LA NICHE (box-fit) : le commandant REMPLIT la niche (fill 0.9) quelle que soit la silhouette
+    -- native -> il TRÔNE (plus imposant qu'un troupier), pieds ancrés au bas du creux. -lift = il « respire ».
+    local boxX, boxY = r.x + 2, r.y + 2 - lift
+    local boxW, boxH = r.w - 4, r.h - 5
     if Critter.has(sr.id) then
-      Critter.drawAt(nil, sr.id, gx, gy, 0.32, self.t / 60, 1)
+      Critter.drawFit(nil, sr.id, boxX, boxY, boxW, boxH, self.t / 60, 1, 0.88, 2.4)
     elseif sr.char then
-      local s = self:rigFitScale(sr.id, 14, 14, 0.9, 1.4)
+      local s = self:rigFitScale(sr.id, boxW, boxH, 0.92, 2.0)
       local bnd = self:rigBounds(sr.id)
+      local gx = math.floor(boxX + boxW / 2 + 0.5)
+      local gy = math.floor(boxY + boxH - 1 + 0.5)
       love.graphics.push(); love.graphics.translate(gx, gy); love.graphics.scale(s, s); love.graphics.translate(0, -bnd.bot)
       sr.char.x, sr.char.y, sr.char.facing = 0, 0, 1
       Rig.draw(sr.char)
@@ -1778,6 +1903,7 @@ function Build:drawOverlay(view)
     end
   end
   if run or self.uiState then self:drawAuraChips(ui) end -- chips chiffrés sur les arêtes d'aura (par-dessus rigs)
+  if not self.locked then self:drawPedestalOverlay(ui, run) end -- C4 : CTA piédestal + étiquette de portée (DEVANT le rig)
 
   -- THE OFFERING (handoff « Bottom Bar ») : en-tête + 5 cartes ÉPURÉES (drawShopCard pose le contenu : tag de
   -- tier + nom + coût ; fond/zone d'art en drawBack, créature en drawWorld) + rail de tier à 5 crans au pied.
@@ -1845,6 +1971,59 @@ function Build:drawOverlay(view)
 
   self:drawFx() -- GAME FEEL : bursts achat/vente/level-up PAR-DESSUS tout (transitoires)
   Draw.finish()
+end
+
+-- ── C4 — OVERLAY DU PIÉDESTAL (texte net DEVANT le rig) : appel à l'action si vide + ÉTIQUETTE DE PORTÉE au
+-- survol (spec §4.2 : « COMMANDS the whole pack / level-1 beasts / the vanguard »). Le socle/dais/cadence sont
+-- dessinés en drawBack ; ici on ne pose que le TEXTE (lisibilité par-dessus la créature). PUR-RENDER. ──
+function Build:drawPedestalOverlay(ui, run)
+  if not self.pedRect then return end
+  local pedOffer = run and run.pendingCommanderGrant
+  if not (self:commanderUnlocked() or pedOffer) then return end
+  local c = Theme.c
+  local r = self.pedRect
+  local cx = r.x * 4 + r.w * 2
+  local sr = self.commanderSlot
+
+  -- (1) ÉTAT VIDE / OFFRE : appel à l'action « CROWN A BEAST » sous le socle (au-dessus de la barre de cadence,
+  -- absente quand vide). Court, capitales, Space Mono ; doré vif pendant l'offre (clique pour accepter).
+  if not sr then
+    local f = Theme.label(7)
+    local cta = T("ui.commander_unlock")
+    local ctaY = (r.y + r.h) * 4 + 3
+    local col = pedOffer and c.gold or c.brassL
+    -- léger pulse pendant l'offre (invite franche, jamais clignotant).
+    local a = pedOffer and (0.75 + 0.25 * (0.5 + 0.5 * math.sin(self.t / 60 * 2.4))) or 0.85
+    Draw.textC(cta, cx, ctaY, { col[1], col[2], col[3], a }, f)
+  end
+
+  -- (2) SURVOL (rempli) : ÉTIQUETTE DE PORTÉE — un petit cartouche laiton ancré sous le socle, « COMMANDS … ».
+  -- C'est la portée VISIBLE en mots (les cases touchées pulsent déjà en or en drawBack). Mesuré -> jamais coupé.
+  if ui and ui.commanderHover and sr and ui.cmdRangeLabel then
+    local f = Theme.label(8)
+    local prefix = T("ui.command_word") .. " "
+    local scope = T(ui.cmdRangeLabel, ui.cmdRangeVars)
+    -- portée vide (aucune unité posée touchée) -> « none in range » (honnête, grisé).
+    local hasAny = false
+    if ui.cmdRange then for _ in pairs(ui.cmdRange) do hasAny = true; break end end
+    if not hasAny then scope = T("ui.command_none_short") end
+    local full = prefix .. scope
+    local tw = (f and f:getWidth(full)) or (#full * 5)
+    local pad, hgt = 7, 15
+    local pw = tw + pad * 2
+    local px = math.floor(cx - pw / 2)
+    -- ancré sous le socle (sous la barre de cadence) ; rebond si ça sort du bas de l'écran -> au-dessus du label.
+    local py = (r.y + r.h) * 4 + 9
+    if py + hgt > Draw.H - 4 then py = r.y * 4 - Pedestal.LABEL_H * 1 - hgt - 4 end
+    if px < 2 then px = 2 end
+    if px + pw > Draw.W - 2 then px = Draw.W - 2 - pw end
+    -- cartouche : panneau sombre + liseré laiton + le mot « COMMANDS » sourd, la PORTÉE en doré (hiérarchie).
+    Draw.rect(px, py, pw, hgt, { 0x12 / 255, 0x0d / 255, 0x08 / 255, 0.96 }, c.brass, 1)
+    local tx = px + pad
+    local ty = py + math.floor((hgt - (f and f:getHeight() or 9)) / 2)
+    Draw.text(prefix, tx, ty, c.ink4, f)
+    Draw.text(scope, tx + (f and f:getWidth(prefix) or 0), ty, hasAny and c.gold or c.ink4, f)
+  end
 end
 
 -- Carte de boutique ÉPURÉE (handoff « Bottom Bar » : de l'info a été retirée de la mini-carte). Le FOND

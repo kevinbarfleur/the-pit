@@ -40,6 +40,39 @@ local function makeBuild(host)
   return b
 end
 
+-- C4 — BUILD avec PIÉDESTAL pour juger le rendu du commandant (états vide/rempli/offre/survol portée). `mode`
+-- pilote l'état du socle ; `hoverPed`/`hoverUnit` simulent un survol (curseur posé) ; `dragNonChief` simule un
+-- drag de refus. Réutilise makeBuild (board peuplé) -> on voit le board ET le socle dans la même capture.
+local function makeCommanderBuild(host, mode, opts)
+  opts = opts or {}
+  local b = makeBuild(host)
+  local run = host.run
+  if mode == "offer" then
+    run.pendingCommanderGrant = true -- offre en attente (socle pulse en or, CTA « clique pour accepter »)
+  else
+    run.commanderUnlocked = true     -- piédestal débloqué (vide ou rempli)
+    if mode == "filled" or mode == "hover" then
+      -- galvanizer (Le Roi des Rats : commandBonus tier:1) -> sa portée éclaire les unités RANG-1 du board.
+      b.commanderSlot = { id = "galvanizer", level = 1, char = b:newRig("galvanizer") }
+    end
+  end
+  -- survol simulé : pose le curseur sur la NICHE (commanderRect, VIRTUEL). Le warm-up animera la pulsation.
+  if mode == "hover" or mode == "offer" then
+    local r = b.commanderRect
+    b.mx, b.my = r.x + r.w / 2, r.y + r.h / 2
+  end
+  if opts.dragNonChief then
+    -- drag d'un NON-chef survolant le piédestal -> refus visuel (le caller mousepressed/released le déclenche,
+    -- mais pour une CAPTURE statique on pose juste cmdShake + un drag par-dessus la niche).
+    b.drag = { id = "skeleton", level = 1, char = b:newRig("skeleton") }
+    local r = b.commanderRect
+    b.mx, b.my = r.x + r.w / 2, r.y + r.h / 2
+    b.drag.char.x, b.drag.char.y = b.mx, b.my
+    b.cmdShake = 0.30
+  end
+  return b
+end
+
 local Builders = {}
 
 -- MENU : écran titre (indépendant du run).
@@ -50,6 +83,33 @@ end
 -- BUILD : plateau peuplé + boutique (run seedé).
 function Builders.build(host)
   return makeBuild(host)
+end
+
+-- C4 — captures dédiées du PIÉDESTAL (revue visuelle ui-artisan) : vide / rempli / survol portée / refus drag.
+function Builders.commander_empty(host)  return makeCommanderBuild(host, "empty") end
+function Builders.commander_filled(host) return makeCommanderBuild(host, "filled") end
+function Builders.commander_hover(host)  return makeCommanderBuild(host, "hover") end
+function Builders.commander_offer(host)  return makeCommanderBuild(host, "offer") end
+function Builders.commander_refuse(host) return makeCommanderBuild(host, "empty", { dragNonChief = true }) end
+
+-- FICHE « At command » : survol d'une unité-chef du BOARD -> la fiche montre la ligne « AT COMMAND : <aura> ».
+-- On pose un galvanizer (porte commandBonus) en case 4 et le curseur dessus.
+function Builders.commander_fiche(host)
+  local b = makeBuild(host)
+  host.run.commanderUnlocked = true
+  b:placeId(4, "galvanizer") -- chef sur le board -> sa fiche au survol porte « AT COMMAND »
+  local p = b.pos[4]
+  b.mx, b.my = p.x, p.y -- curseur sur la case 4
+  return b
+end
+
+-- FICHE « Cannot command » : survol d'une unité SANS commandBonus -> la fiche montre « Cannot command » (grisé).
+function Builders.commander_fiche_none(host)
+  local b = makeBuild(host)
+  host.run.commanderUnlocked = true
+  local p = b.pos[5] -- templar (pas de commandBonus dans makeBuild) en case 5
+  b.mx, b.my = p.x, p.y
+  return b
 end
 
 -- COMBAT : on construit les compos gauche/droite depuis un build peuplé, puis on lance l'arène (seedée).
@@ -118,7 +178,9 @@ end
 local M = {}
 
 -- Liste des noms de scènes capturables (ordre stable, pour --shoot=all et les messages d'erreur).
-M.names = { "menu", "build", "combat", "summary", "relicpick", "runover", "grimoire", "gallery", "designsystem" }
+M.names = { "menu", "build", "combat", "summary", "relicpick", "runover", "grimoire", "gallery", "designsystem",
+  "commander_empty", "commander_filled", "commander_hover", "commander_offer", "commander_refuse",
+  "commander_fiche", "commander_fiche_none" }
 
 -- Renvoie la fabrique d'une scène nommée (ou nil si inconnue).
 function M.builder(name)

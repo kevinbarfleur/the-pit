@@ -564,6 +564,62 @@ local ok, err = pcall(function()
     -- maxScale autorise l'AGRANDISSEMENT (portrait de fiche : petit sprite -> remplit le logement).
     local sBig = b:rigFitScale("plague_doctor", 280, 72, 0.82, 3.5)
     assert(sBig > 1 and sBig <= 3.5, "rigFitScale : maxScale autorise l'upscale du portrait (cap respecté)")
+
+    -- ── C4 — PIÉDESTAL DU COMMANDANT : atome Pedestal (tous états) + portée + rôles + overlay/world headless. ──
+    local Pedestal = require("src.ui.pedestal")
+    -- atome : la NICHE utile est une boîte interne saine ; LABEL_H/CADENCE_H exposés (réservation du caller).
+    local nb = Pedestal.nicheRect(100, 100, 128, 176)
+    assert(nb and nb.w > 0 and nb.h > 0 and nb.h < 176, "Pedestal.nicheRect : niche interne valide (plus courte que la boite)")
+    assert(Pedestal.LABEL_H > 0 and Pedestal.CADENCE_H > 0, "Pedestal : reservations label/cadence exposees")
+    -- smoke RENDER : chaque état (vide/rempli/survol/drop/offre/refus) se dessine sans crash, renvoie la geom.
+    for _, o in ipairs({
+      { filled = false }, { filled = true, accent = { 0.8, 0.6, 0.3 }, cadence = 0.4 },
+      { hover = true }, { validDrop = true }, { offered = true }, { danger = true, filled = true, cadence = 0.1 },
+    }) do
+      local gm = Pedestal.draw(100, 100, 128, 176, o)
+      assert(gm and gm.box and gm.niche, "Pedestal.draw : renvoie la geometrie (box+niche)")
+    end
+
+    -- portée du commandant (commandRange) : on couronne un porteur de commandBonus (galvanizer = tier:1) et on
+    -- vérifie que la portée éclaire les unités RANG-1 posées + l'étiquette i18n « tier ».
+    for i = 1, 9 do b.slotRigs[i] = nil; b.board.slots[i].unit = nil end
+    b.host.run = nil -- sandbox -> commanderUnlocked() == true
+    b.board:setShape("carre"); b.board:unlock(9); b:computeLayout()
+    b:placeId(4, "marauder"); b:placeId(5, "templar"); b:placeId(6, "skeleton")
+    b.commanderSlot = { id = "galvanizer", level = 1, char = b:newRig("galvanizer") }
+    local rset, rkey, rvars = b:commandRange()
+    assert(rkey == "ui.command_tier" and rvars and rvars.n == 1, "commandRange : galvanizer -> portee tier-1 (etiquette)")
+    -- au moins une unité rang-1 du board est dans la portée ; le commandant n'est jamais dans le set (hors board).
+    local nIn = 0; for _ in pairs(rset) do nIn = nIn + 1 end
+    assert(nIn >= 1, "commandRange : au moins une unite rang-1 posee est touchee")
+
+    -- resolveRoleSlot : front = exposition min (col max), back = exposition max, tie-break deterministe.
+    local frontSlot = b:resolveRoleSlot("front")
+    local backSlot = b:resolveRoleSlot("back")
+    assert(frontSlot and backSlot, "resolveRoleSlot : front ET back resolus sur les unites posees")
+    -- portée role:front d'un commandBonus -> EXACTEMENT 1 case (la plus avancée).
+    b.commanderSlot = { id = "maggot_king", level = 1, char = b:newRig("maggot_king") } -- commandBonus role:front
+    local fset, fkey = b:commandRange()
+    local nf = 0; for _ in pairs(fset) do nf = nf + 1 end
+    assert(nf == 1 and fkey == "ui.command_front", "commandRange : role:front -> 1 case + etiquette vanguard")
+
+    -- overlay + world headless : le piédestal (rempli, survolé) se dessine sans crash (portée + cadence + rig).
+    b.commanderSlot = { id = "galvanizer", level = 1, char = b:newRig("galvanizer") }
+    b.cmdCadence, b.cmdShake = 0.4, 0
+    local r = b.commanderRect
+    b.mx, b.my = r.x + r.w / 2, r.y + r.h / 2 -- curseur sur la niche -> commanderHover
+    b:computeUi()
+    assert(b.uiState.commanderHover, "computeUi : survol du piedestal detecte")
+    assert(b.uiState.cmdRange, "computeUi : portee resolue au survol du piedestal rempli")
+    b:drawBack(b.view)               -- socle (Pedestal.draw) + pulse de portée sur les cases
+    b:drawWorld()                    -- rig du commandant ajusté dans la niche (Critter.drawFit)
+    b:drawPedestalOverlay(b.uiState, nil) -- CTA + étiquette de portée (rempli -> étiquette)
+    -- refus : un drag de non-chef arme la secousse + le voile sang (no crash, le socle « tremble »).
+    b.commanderSlot = nil
+    b.cmdShake = 0.3
+    b.drag = { id = "skeleton", level = 1, char = b:newRig("skeleton") }
+    b:drawBack(b.view)
+    b.drag = nil; b.cmdShake = 0
   end
 
   -- ── CHUNK C : re-skin forge des scènes relicpick / menu / runover (construit+update+draw+souris/clavier
