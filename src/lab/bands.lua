@@ -132,11 +132,25 @@ end
 -- mirror = la compo elle-même (relancée) ; counters = compos d'archétype opposé ; opponents = un set fixe.
 -- Le runner AJOUTE des opposants OppGen scalés au stade (procéduraux, seedés) -> couverture procédurale + figée.
 -- Référence les ids du CATALOGUE (Compositions) ET des bandes (Bands.byId) ; le runner résout les deux. ──
+-- ── REPRÉSENTATIVITÉ du champ MID (audit équilibrage r2, 2026-06-25). Le champ MID d'origine ne contenait
+-- AUCUN punisseur de DoT SYNERGISÉ : ses opposants statiques (bruiser/tank/sustain_carre) + les 4 OppGen
+-- (équipes ALÉATOIRES de 5 unités, sans aura ni pièce-clé, cf. src/data/oppgen) sont des cibles MOLLES que
+-- toute compo serrée écrase. Or le vrai jeu sert, via OppGen (round/tier/slots-scalé sur Units.pool) ET les
+-- snapshots de joueurs, des équipes DE PLUS EN PLUS synergisées au stade -> dont des DoT croisés (venom/pyre,
+-- rot) qui pressent les fast comps. À l'INVERSE, le champ END contenait DÉJÀ 4 compos full-build (tank/
+-- fortress/poison_diamant_perfect/bulwark) -> les joueurs END affrontaient une vraie résistance, les MID non.
+-- Cette asymétrie GONFLAIT artificiellement le win% MID (mid_poison/mid_shock sans pression) -> la "violation"
+-- de courbe MID>END était EN PARTIE un artefact de mesure. On AJOUTE `cross_venom_pyre` (DoT croisé poison<->feu,
+-- coût ~mid 0.33, présent dans le pool) : un punisseur SYNERGISÉ qui presse les fast comps SANS être un bully
+-- universel (il NE bat PAS le mur -> le mur reste mesuré honnêtement, cf. rapport). ⚠️ CONSTAT HONNÊTE : aucune
+-- compo du catalogue ne CONTRE proprement le mur mid (regen+taunt+purge) à coût comparable -> la domination du
+-- mur au MID est RÉELLE, pas un simple artefact ; on ne truque RIEN pour l'aplatir (cf. rapport r2 §courbe).
 Bands.field = {
   -- EARLY : on s'affronte entre petits builds + un mur mid sous-dimensionné (l'early ne perce pas encore).
   early = { "early_bruisers", "early_affliction", "tank_carre_mid", "poison_diamant_mid" },
-  -- MID : le cœur du jeu — DoT mid vs murs vs choc, + les counters d'archétype.
-  mid = { "mid_poison", "mid_tank", "mid_shock", "bruiser_carre", "tank_carre", "sustain_carre" },
+  -- MID : le cœur du jeu — DoT mid vs murs vs choc, + les counters d'archétype + un punisseur DoT SYNERGISÉ
+  -- (cross_venom_pyre) pour que les fast comps affrontent une vraie résistance (caliber END), pas que des cibles molles.
+  mid = { "mid_poison", "mid_tank", "mid_shock", "bruiser_carre", "tank_carre", "sustain_carre", "cross_venom_pyre" },
   -- END : tout le monde est armé — carries amplifiés, transforms, murs complets.
   end_ = { "end_poison", "end_rot", "end_shock_multicast", "tank_carre", "fortress_thorns_carre",
     "poison_diamant_perfect", "bulwark_carre" },

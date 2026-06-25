@@ -88,8 +88,11 @@ local U = {
     effects = { { trigger = "on_hit", op = "bleed", params = { dps = 2, dur = 240, slowPct = 0.20 } } },
   },
   rot_hound = { -- POURRITURE : enfle, ampute les PV max
+    -- ÉQUILIBRAGE r2 (2026-06-25, levier A « rot front-load ») : base 1->2, growth 1->2. Le rot OUVRE plus fort et
+    -- MÛRIT plus vite -> survit la COURSE de débit vs poison/shock rapides (perdait à 0% vs end_poison/end_shock,
+    -- tué en ~12-16 s avant maturation). capDps/maxHpFrac INCHANGÉS = plafond/amputation (identité anti-mur) intacts.
     id = "rot_hound", bodyplan = "quadruped", rank = 2, type = "bone", family = "larve", cost = 2, hp = 54, dmg = 5, cd = 56,
-    effects = { { trigger = "on_hit", op = "rot", params = { base = 1, growth = 1, dur = 240, capDps = 10, maxHpFrac = 0.15 } } },
+    effects = { { trigger = "on_hit", op = "rot", params = { base = 2, growth = 2, dur = 240, capDps = 10, maxHpFrac = 0.15 } } },
   },
   stormcaller = { -- CHOC : charge un condensateur (décharge stacks × volt) + AMPLI MARQUE (là où il regarde, ça frappe)
     id = "stormcaller", bodyplan = "robe", rank = 2, type = "arcane", family = "oeil", cost = 2, hp = 38, dmg = 6, cd = 58, aggro = 5,
@@ -162,8 +165,9 @@ local U = {
   carrion_pecker = { -- rot rapide (cap bas) + SOIN-SUR-KILL : le charognard se repaît du cadavre qu'il a fait
     id = "carrion_pecker", bodyplan = "swarm", rank = 1, type = "flesh", family = "colosse", cost = 1, hp = 38, dmg = 4, cd = 38,
     -- GREFFE 9c′ (A10 sustain) : heal_on_kill +4 PV au tueur (broadcast on_kill, borné maxHp). Verbe non-multiplicatif.
+    -- ÉQUILIBRAGE r2 (levier A) : base 1->2, growth 1->2 (front-load). cap=6 (cap BAS, pression early) INCHANGÉ.
     effects = {
-      { trigger = "on_hit", op = "rot", params = { base = 1, growth = 1, dur = 180, capDps = 6, maxHpFrac = 0.10 } },
+      { trigger = "on_hit", op = "rot", params = { base = 2, growth = 2, dur = 180, capDps = 6, maxHpFrac = 0.10 } },
       { trigger = "on_kill", op = "heal_on_kill", params = { value = 4 } },
     },
   },
@@ -171,8 +175,9 @@ local U = {
     id = "maggot_king", bodyplan = "swarm", rank = 3, type = "bone", family = "pendu", cost = 3, hp = 70, dmg = 5, cd = 64,
     -- GREFFE 9c (Forge/A3) : atkInc=0.20 aux VOISINS qui FRAPPENT (boost le dégât d'ATTAQUE, PAS le rot du thème).
     -- À placer au centre (4 voisins) entouré de carries d'attaque. Cumul cappé ATK_INC_CAP=1.5 à la lecture.
+    -- ÉQUILIBRAGE r2 (levier A) : base 1->2, growth 1->2 (front-load). capDps=12 (cap HAUT, payoff long terme) INCHANGÉ.
     effects = {
-      { trigger = "on_hit", op = "rot", params = { base = 1, growth = 1, dur = 300, capDps = 12, maxHpFrac = 0.15 } },
+      { trigger = "on_hit", op = "rot", params = { base = 2, growth = 2, dur = 300, capDps = 12, maxHpFrac = 0.15 } },
       { trigger = "combat_start", op = "aura_stat", target = "neighbors", params = { stat = "atkInc", value = 0.20 } },
     },
     -- COMMANDANT (LA COURONNE D'ÉCHOS) : mono-cible FORT — l'avant-garde (role:front) re-frappe (+1 multicast,
@@ -181,7 +186,8 @@ local U = {
   },
   necro_leech = { -- pourriture + amputation RENFORCÉE des PV max
     id = "necro_leech", bodyplan = "serpent", rank = 3, type = "abyss", family = "ombre", cost = 3, hp = 50, dmg = 5, cd = 56,
-    effects = { { trigger = "on_hit", op = "rot", params = { base = 1, growth = 1, dur = 240, capDps = 10, maxHpFrac = 0.35 } } },
+    -- ÉQUILIBRAGE r2 (levier A) : base 1->2, growth 1->2 (front-load). maxHpFrac=0.35 (signature amputation) INCHANGÉ.
+    effects = { { trigger = "on_hit", op = "rot", params = { base = 2, growth = 2, dur = 240, capDps = 10, maxHpFrac = 0.35 } } },
   },
 
   -- ══ VAGUE 2 : AURAS d'adjacence (T1.5 « semeurs »). Build-résolues via le GRAPHE du sigil (buildComp +
@@ -258,11 +264,13 @@ local U = {
   -- POURRITURE T2
   patient_worm = { -- la pourriture enfle même SANS frapper (ramp passif tant qu'active)
     id = "patient_worm", bodyplan = "serpent", rank = 4, type = "bone", family = "pendu", cost = 4, hp = 58, dmg = 4, cd = 52,
-    effects = { { trigger = "on_hit", op = "rot", params = { base = 1, passiveRamp = 1, dur = 240, capDps = 10, maxHpFrac = 0.10 } } },
+    -- ÉQUILIBRAGE r2 (levier A) : base 1->2 (front-load). passiveRamp=1 (sa signature « enfle sans frapper ») INCHANGÉ.
+    effects = { { trigger = "on_hit", op = "rot", params = { base = 2, passiveRamp = 1, dur = 240, capDps = 10, maxHpFrac = 0.10 } } },
   },
   hollow_gut = { -- l'amputation des PV max NOURRIT le porteur (vol de plafond de vie)
     id = "hollow_gut", bodyplan = "blob", rank = 4, type = "abyss", family = "gelatine", cost = 4, hp = 50, dmg = 5, cd = 58,
-    effects = { { trigger = "on_hit", op = "rot", params = { base = 1, growth = 1, dur = 240, capDps = 10, maxHpFrac = 0.20, amputateHealsMe = 0.5 } } },
+    -- ÉQUILIBRAGE r2 (levier A) : base 1->2, growth 1->2 (front-load). cap/maxHpFrac/amputateHealsMe INCHANGÉS.
+    effects = { { trigger = "on_hit", op = "rot", params = { base = 2, growth = 2, dur = 240, capDps = 10, maxHpFrac = 0.20, amputateHealsMe = 0.5 } } },
   },
   blight_spreader = { -- à la mort d'une cible pourrie, la pourriture prend ses voisins (proximité champ)
     id = "blight_spreader", bodyplan = "swarm", rank = 4, type = "bone", family = "pendu", cost = 4, hp = 52, dmg = 5, cd = 56,
@@ -450,7 +458,8 @@ local U = {
   },
   bore_worm = { -- ANNÉLIDE / foreur qui digère
     id = "bore_worm", type = "bone", family = "annelide", rank = 2, cost = 2, hp = 58, dmg = 5, cd = 58,
-    effects = { { trigger = "on_hit", op = "rot", params = { base = 1, growth = 1, dur = 210, capDps = 8, maxHpFrac = 0.12 } } },
+    -- ÉQUILIBRAGE r2 (levier A) : base 1->2, growth 1->2 (front-load). cap=8/maxHpFrac=0.12 INCHANGÉS.
+    effects = { { trigger = "on_hit", op = "rot", params = { base = 2, growth = 2, dur = 210, capDps = 8, maxHpFrac = 0.12 } } },
   },
   wailing_shade = { -- SPECTRE / lacération froide
     id = "wailing_shade", type = "bone", family = "spectre", rank = 2, cost = 2, hp = 40, dmg = 6, cd = 52,
