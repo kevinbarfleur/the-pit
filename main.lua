@@ -26,6 +26,7 @@ local Grimoire = require("src.core.grimoire")
 local Dev = require("src.core.dev") -- MODE DEV (cheat) : toggle full-unlock du codex (menu) ; master switch Dev.ENABLED
 local Bestiary = require("src.core.bestiary") -- codex des créatures rencontrées (persistant, full-unlock-aware)
 local Theme = require("src.ui.theme")
+local SFX = require("src.audio.sfx") -- SON PROCÉDURAL (identité Oniric grave) : bake + câble les hooks Feel ; no-op headless
 local T = require("src.core.i18n").t
 
 local VW, VH = 320, 180           -- résolution virtuelle (×4 = 1280×720 pile)
@@ -259,6 +260,7 @@ function love.load(args)
   postfx = PostFX.new() -- SURCOUCHE CAUCHEMARDESQUE : shader+canvas natifs créés une fois (no-op si GPU/shader absent)
 
   Theme.load() -- charge polices + DA une fois (pré-chauffe les tailles courantes ; fallback si TTF absent)
+  pcall(SFX.load) -- SON : bake les SFX (Oniric grave) UNE fois + câble Feel.onHover/onPress -> tout l'UI sonne (no-op si pas de device)
   Grimoire.load() -- charge le codex persistant (reliques identifiées, méta-progression cross-run)
   Dev.load()      -- MODE DEV : restaure l'état du toggle full-unlock (inerte si Dev.ENABLED = false)
   Bestiary.load() -- codex des créatures rencontrées (méta cross-run)
