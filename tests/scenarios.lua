@@ -1,0 +1,109 @@
+-- tests/scenarios.lua
+-- MOTEUR DE SCÉNARIOS d'équilibrage (Phase C.0) — garde-fous :
+--   1. COMMON : DESIGNED (counters intentionnels) + invest (Compcost) + résolution catalogue/bandes +
+--      percentile + archetypeOf + JSON diff-able (clés triées).
+--   2. SMOKE de chaque MODE (invest/policy/godroll/commander/counter) à N MINIMAL via le driver unifié
+--      (luajit tools/sim.lua <mode> 1) : tourne sans crash, écrit son report-<mode>.json (JSON parsable),
+--      et le P7 god-roll RESPECTE ses garde-fous (caps moteur : multicast bake <= cap, zéro 1-swing -> assert
+--      DUR dans le mode lui-même ; si un cap sautait, le smoke échouerait avec exit!=0).
+--   3. DÉTERMINISME : un mode relancé à même N produit un rapport IDENTIQUE (règle d'or).
+-- Lancement : luajit tests/scenarios.lua
+package.path = "./?.lua;" .. package.path
+love = require("tests.mock_love")
+
+local Common = require("tools.scenarios.common")
+
+-- Décodeur JSON minimal pour vérifier que nos rapports sont PARSABLES (on ne dépend d'aucune lib : nos
+-- rapports sont produits par tools/gamed/json, bien formés ; ce mini-parser valide la structure top-level).
+local function jsonLooksObject(s)
+  s = (s or ""):gsub("^%s+", "")
+  return s:sub(1, 1) == "{" and s:find("}") ~= nil
+end
+
+local ok, err = pcall(function()
+  -- 1) COMMON ─────────────────────────────────────────────────────────────────────────────────────────
+  -- DESIGNED : counters INTENTIONNELS (poison/burn/rot/shock>tank, bleed>bruiser, tank>bruiser).
+  assert(Common.isDesigned("poison", "tank"), "DESIGNED: poison>tank")
+  assert(Common.isDesigned("burn", "tank"), "DESIGNED: burn>tank")
+  assert(Common.isDesigned("rot", "tank"), "DESIGNED: rot>tank")
+  assert(Common.isDesigned("shock", "tank"), "DESIGNED: shock>tank")
+  assert(Common.isDesigned("bleed", "bruiser"), "DESIGNED: bleed>bruiser")
+  assert(Common.isDesigned("tank", "bruiser"), "DESIGNED: tank>bruiser")
+  assert(not Common.isDesigned("bleed", "tank"), "DESIGNED: bleed>tank N'EST PAS un counter voulu (flaguable)")
+  assert(not Common.isDesigned("poison", "shield"), "DESIGNED: poison>shield N'EST PAS un counter voulu")
+
+  -- Résolution catalogue ET bandes (le bug qui faisait disparaître les candidats shock du god-roll explorer).
+  local cat = Common.compById("poison_diamant_perfect") -- catalogue
+  assert(cat and #cat.units >= 1, "compById: compo de catalogue resolue")
+  local band = Common.compById("end_shock_multicast")   -- BANDE (pas le catalogue)
+  assert(band and #band.units >= 1, "compById: compo de bande resolue (pas seulement le catalogue)")
+  local okErr = pcall(Common.compById, "id_qui_n_existe_pas_xyz")
+  assert(not okErr, "compById: id inconnu -> ERREUR (anti-saut silencieux)")
+  assert(Common.compByIdOrNil("id_qui_n_existe_pas_xyz") == nil, "compByIdOrNil: id inconnu -> nil")
+
+  -- Investissement (Compcost) : descripteur complet, score borné, or > 0 sur une vraie compo.
+  local inv = Common.invest(cat)
+  assert(inv.score > 0 and inv.score <= 1.0001, "invest: score dans (0,1]")
+  assert(inv.gold > 0, "invest: or > 0 sur une compo peuplee")
+
+  -- archetypeOf : champ déclaré prioritaire, sinon vote des unités.
+  assert(Common.archetypeOf({ archetype = "poison", units = {} }) == "poison", "archetypeOf: champ declare")
+  assert(Common.archetypeOf({ units = { { id = "spore_tick" }, { id = "bile_spitter" } } }) == "poison",
+    "archetypeOf: vote des unites (poison)")
+
+  -- percentile (échantillon trié) : bornes + médiane.
+  local s = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 }
+  assert(Common.percentileSorted(s, 0) == 1, "percentile: q=0 -> min")
+  assert(Common.percentileSorted(s, 1.0) == 10, "percentile: q=1 -> max")
+  assert(Common.percentileSorted({}, 0.5) == 0, "percentile: vide -> 0")
+  assert(math.abs(Common.mean({ 2, 4, 6 }) - 4) < 1e-9, "mean: moyenne correcte")
+
+  -- JSON diff-able : clés TRIÉES (réutilise tools/gamed/json) -> rapports stables au diff.
+  assert(Common.json.encode({ b = 2, a = 1 }) == '{"a":1,"b":2}', "json: cles triees (diff-able)")
+  print("  scenarios : COMMON OK (DESIGNED + invest + resolution catalogue/bandes + percentile + json trie)")
+
+  -- 2) SMOKE de chaque MODE via le driver unifie (N minimal=1) ───────────────────────────────────────────
+  -- On lance chaque mode dans un sous-process luajit (comme l'utilisateur) ; code retour 0 = pas de crash
+  -- ET (pour god-roll) garde-fous tenus (le mode asserte ses caps -> exit!=0 si un cap saute). On vérifie
+  -- aussi que le report-<mode>.json est produit et ressemble a un objet JSON.
+  -- ⚠️ ISOLATION : on redirige la sortie vers runs/_test (PIT_SCEN_OUT) pour NE PAS écraser le golden de
+  -- méta de référence (runs/report-ref.json) avec des rapports à N=1. Dossier jetable, nettoyé en fin de test.
+  local OUT = "runs/_test"
+  local ENV = "PIT_SCEN_OUT=" .. OUT .. " "
+  os.execute("rm -rf " .. OUT .. " && mkdir -p " .. OUT)
+  local MODES = { "invest", "policy", "godroll", "commander", "counter" }
+  for _, m in ipairs(MODES) do
+    local code = os.execute(ENV .. "luajit tools/sim.lua " .. m .. " 1 >/dev/null 2>&1")
+    -- os.execute renvoie true (5.2+) ou 0 (5.1) au succes ; on accepte les deux conventions.
+    assert(code == 0 or code == true, "mode " .. m .. " : driver tourne sans crash (exit 0)")
+    local f = io.open(OUT .. "/report-" .. m .. ".json", "r")
+    assert(f, "mode " .. m .. " : report-" .. m .. ".json produit")
+    local body = f:read("*a"); f:close()
+    assert(jsonLooksObject(body), "mode " .. m .. " : report-" .. m .. ".json est un objet JSON")
+  end
+  print("  scenarios : SMOKE OK (5 modes tournent via le driver + ecrivent un rapport JSON ; garde-fous god-roll tenus)")
+
+  -- 3) DÉTERMINISME : un mode relance a meme N -> rapport IDENTIQUE (regle d'or). On teste le plus rapide.
+  os.execute(ENV .. "luajit tools/sim.lua godroll 1 >/dev/null 2>&1")
+  local r1 = io.open(OUT .. "/report-godroll.json"):read("*a")
+  os.execute(ENV .. "luajit tools/sim.lua godroll 1 >/dev/null 2>&1")
+  local r2 = io.open(OUT .. "/report-godroll.json"):read("*a")
+  assert(r1 == r2, "determinisme: meme mode+N -> rapport identique")
+  print("  scenarios : DETERMINISME OK (godroll relance a meme N -> rapport bit-identique)")
+
+  -- 4) GOLDEN DE META : l'agregat report-ref.json est ecrit (dans le dossier isole) et ressemble a un objet.
+  local rf = io.open(OUT .. "/report-ref.json", "r")
+  assert(rf, "golden de meta: report-ref.json agrege ecrit")
+  local ref = rf:read("*a"); rf:close()
+  assert(jsonLooksObject(ref), "golden de meta: report-ref.json est un objet JSON")
+  os.execute("rm -rf " .. OUT) -- nettoie le dossier jetable (le runs/report-ref.json de reference reste intact)
+  print("  scenarios : GOLDEN DE META OK (report-ref.json agrege, diff-able ; isole de la reference)")
+end)
+
+if ok then
+  print("=> SCENARIOS OK : moteur de scenarios (common + 5 modes + determinisme + golden de meta).")
+else
+  print("=> SCENARIOS FAIL :")
+  print(err)
+  os.exit(1)
+end

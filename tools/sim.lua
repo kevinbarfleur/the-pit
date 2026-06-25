@@ -12,8 +12,20 @@
 -- Écrit runs/report.json (diff-able). Déterministe : même N -> même rapport.
 --
 --   Lancement : luajit tools/sim.lua [N]      (N defaut 400)
+--
+-- ── MOTEUR DE SCÉNARIOS (Phase C.0) — DRIVER UNIFIÉ : `luajit tools/sim.lua <mode> [N]`. Si arg[1] est un
+-- MODE connu, on DÉLÈGUE au scénario dédié (tools/scenarios/<mode>) et on s'arrête AVANT le code P0 ci-dessous.
+-- Sinon (arg[1] absent ou numérique), comportement HISTORIQUE = P0 méta (builds aléatoires symétriques) intact
+-- -> runs/report.json + golden de méta inchangés. Les modes sont SIM-purs, seedés, déterministes, diff-ables. ──
 package.path = "./?.lua;" .. package.path
 love = require("tests.mock_love")
+
+local MODES = { invest = true, policy = true, godroll = true, commander = true, counter = true }
+local mode = arg and arg[1]
+if mode and MODES[mode] then
+  require("tools.scenarios." .. mode) -- chaque scénario s'exécute à l'import (lit arg[2] = N via tools.scenarios.argn)
+  return
+end
 
 local Palette = require("src.core.palette")
 local Units = require("src.data.units")
@@ -377,3 +389,16 @@ local json = "{" .. table.concat(parts, ",") .. "}\n"
 os.execute("mkdir -p runs")
 local f = io.open("runs/report.json", "w")
 if f then f:write(json); f:close(); print("=> ecrit runs/report.json") else print("(!) impossible d'ecrire runs/report.json") end
+
+-- ── GOLDEN DE MÉTA (Phase C.0) : le P0 contribue son RÉSUMÉ compact (santé globale) au runs/report-ref.json
+-- agrégé multi-modes -> un diff patch-sur-patch montre la dérive de la méta (entropie qui chute = méta qui se
+-- referme ; nouveaux drapeaux). N'altère PAS runs/report.json (le rapport détaillé P0 historique reste intact). ──
+do
+  local Common = require("tools.scenarios.common")
+  Common.updateRef("meta", {
+    n = N, meta_stddev = stddev, meta_entropy = entropy, field_mean = mean,
+    avg_ttk = avgTTK, ttk_p10 = ttkP10, ttk_p50 = ttkP50, ttk_p90 = ttkP90,
+    status_dmg_share = statusShare, flag_count = #flags,
+  })
+  print("=> contribue le resume meta a runs/report-ref.json")
+end
