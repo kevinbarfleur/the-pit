@@ -47,6 +47,7 @@ local LifeOrb = require("src.render.lifeorb") -- GLOBE DE VIE nightmare-forge (p
 local Badge = require("src.ui.badge")    -- coût (pièce+nombre) / pips de niveau / diamants : remplace Forge.coinAt/diamondAt/label
 local Dividers = require("src.ui.dividers") -- séparateurs laiton/sang propres
 local Feel = require("src.ui.feel")      -- JUICE : survol (glow/lift) + press (squash/flash) + action différée
+local Juice = require("src.ui.juice")    -- MOUVEMENT « candy » : number-roll de l'or (scale-punch + valeur lissée)
 local Layout = require("src.ui.layout") -- MOTEUR de layout flex (alignement parfait, fill-to-container)
 local Keywords = require("src.ui.keywords") -- registre afflictions (mini-chips de carte)
 local Chip = require("src.ui.chip") -- pastilles keyword (icône d'affliction)
@@ -133,6 +134,8 @@ function Build.new(palette, vw, vh, host)
     drag = nil,        -- { id, char, fromSlot? | fromShop? }
     mx = -100, my = -100,
     combatCount = 0,
+    goldShown = nil,  -- NUMBER-ROLL de l'or (RENDER-local) : valeur AFFICHÉE qui roule vers run.gold ; punché à chaque
+                      -- delta (Juice "build.gold"). nil = pas encore initialisée (1re frame -> snap sur la vraie valeur).
   }, Build)
   self:computeLayout()
   self:computeShop()
@@ -1412,6 +1415,26 @@ function Build:update(frameDt)
     Feel.hover("build.raise", inRect(self.mx, self.my, self.raiseBtn))
     Feel.hover("build.decline", (run0.pendingSlotGrant and inRect(self.mx, self.my, self.declineBtn)) or false)
   end
+  -- NUMBER-ROLL de l'OR (game feel, comme le score punché de la démo) : la valeur AFFICHÉE roule vers run.gold
+  -- au lieu de sauter. À chaque CHANGEMENT de cible (achat/vente/reroll/budget de round), un petit PUNCH de scale
+  -- (Juice "build.gold") + on relance le roulement. RENDER pur : on ne lit que run.gold (jamais écrit) ; le SON
+  -- « coin » est déjà câblé ailleurs -> ici on apporte le MOUVEMENT apparié. frameDt en frames@60 -> /60 = s.
+  if run0 then
+    local target = run0.gold or 0
+    if self.goldShown == nil then
+      self.goldShown, self._goldTarget = target, target -- 1re frame : snap (pas de roulement au montage)
+    else
+      if target ~= self._goldTarget then
+        self._goldTarget = target
+        Juice.juice_up("build.gold", 0.18) -- PUNCH au moindre changement d'or (gain OU dépense)
+      end
+      -- lissage framerate-correct vers la cible (tau ~0,12 s -> roule vite mais visiblement) ; snap fin pour
+      -- finir pile sur l'entier (sinon le rendu arrondi « colle » à ±1 indéfiniment).
+      local k = 1 - math.exp(-(frameDt / 60) / 0.12)
+      self.goldShown = self.goldShown + (target - self.goldShown) * k
+      if math.abs(target - self.goldShown) < 0.5 then self.goldShown = target end
+    end
+  end
   self.ambient:update(frameDt)
   -- C4 — CADENCE LENTE du commandant : la phase 0..1 boucle au rythme cd × cdMult de l'unité au piédestal,
   -- VISIBLEMENT plus lente que les troupiers (cdMult 1.5 + cd long). Cosmétique (dt mural), pas la SIM.
@@ -2150,8 +2173,23 @@ function Build:drawRunBanner(run)
       label(T("ui.relics")); self:drawBannerRelics(run)
     elseif s.k == "gold" then
       label(T("ui.gold"))
-      Badge.diamond(sx + pad + 6, midY, 6, C.gold, C.iron, C.brassS)
-      Draw.text(goldStr, sx + pad + 16, midY - fBig:getHeight() / 2, C.gold, fBig)
+      -- NUMBER-ROLL : on AFFICHE la valeur lissée (self.goldShown, posée en update) arrondie -> elle roule vers
+      -- run.gold. Un PUNCH de scale (Juice "build.gold") autour du diamant+nombre à chaque changement. Le pivot
+      -- du scale = le diamant (sx+pad+6, midY) -> le groupe « gonfle » depuis la pièce. La LARGEUR de segment est
+      -- mesurée sur la VRAIE valeur (goldStr, plus haut) -> layout STABLE pendant que le nombre roule (pas de jitter).
+      local shown = math.floor((self.goldShown or run.gold) + 0.5)
+      local js = Juice.scale("build.gold")
+      local pivx, pivy = sx + pad + 6, midY
+      if love and love.graphics and love.graphics.push and js ~= 1 then
+        love.graphics.push()
+        love.graphics.translate(pivx, pivy); love.graphics.scale(js, js); love.graphics.translate(-pivx, -pivy)
+        Badge.diamond(pivx, midY, 6, C.gold, C.iron, C.brassS)
+        Draw.text(tostring(shown), sx + pad + 16, midY - fBig:getHeight() / 2, C.gold, fBig)
+        love.graphics.pop()
+      else
+        Badge.diamond(pivx, midY, 6, C.gold, C.iron, C.brassS)
+        Draw.text(tostring(shown), sx + pad + 16, midY - fBig:getHeight() / 2, C.gold, fBig)
+      end
     elseif s.k == "lives" then
       Draw.text(T("ui.lives"), sx + pad, labelY, C.ink4, fL)
       Draw.text("  " .. run.lives .. "/" .. Run.START_LIVES, sx + pad + fL:getWidth(T("ui.lives")), labelY, C.ink3, fL)

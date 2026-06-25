@@ -26,6 +26,7 @@ local Grimoire = require("src.core.grimoire")
 local Dev = require("src.core.dev") -- MODE DEV (cheat) : toggle full-unlock du codex (menu) ; master switch Dev.ENABLED
 local Bestiary = require("src.core.bestiary") -- codex des créatures rencontrées (persistant, full-unlock-aware)
 local Theme = require("src.ui.theme")
+local Juice = require("src.ui.juice") -- MOUVEMENT « candy » : screen-shake trauma² + hitstop, piloté au dt MURAL (RENDER pur)
 local SFX = require("src.audio.sfx") -- SON PROCÉDURAL (identité Oniric grave) : bake + câble les hooks Feel ; no-op headless
 local T = require("src.core.i18n").t
 
@@ -270,7 +271,11 @@ end
 function love.update(dt)
   if host.overlay then return end -- Chronique ouverte : le jeu derrière est FIGÉ (combat/anims gelés)
   if not host.scene then return end -- mode export/--shoot : la scène GLOBALE n'est pas montée (Export.shoot a son propre host)
-  host.scene:update(dt * FRAME) -- ~1.0 par tick au pas fixe 1/60
+  -- HITSTOP (juice) : le dt de la SCÈNE/MONDE est multiplié par Juice.timeScale() -> 0 pendant un micro-gel
+  -- (gros coup/mort), 1 sinon. La SIM ne fait que SUSPENDRE sa progression À L'ÉCRAN ; le pas reste fixe et
+  -- le total de pas est inchangé (le golden tourne l'arène directement, hors de cette boucle) -> empreinte
+  -- intacte. Feel/Juice eux-mêmes ne sont JAMAIS gelés (avancés au dt mural dans love.draw).
+  host.scene:update(dt * FRAME * Juice.timeScale()) -- ~1.0 par tick au pas fixe 1/60 (0 pendant un hitstop)
 end
 
 function love.draw()
@@ -301,6 +306,24 @@ function love.draw()
   -- capture). fxCanvas = le canvas natif si la surcouche est engagée, sinon nil (== écran : comportement par défaut).
   local fxCanvas = postfx and postfx:currentCanvas() or nil
 
+  -- SCREEN-SHAKE (juice trauma²) : on avance Juice au dt MURAL (1×/frame réelle, JAMAIS gelé par le hitstop)
+  -- puis on ENROBE scène + monde + chrome d'un transform translate/rotate autour du CENTRE écran (comme
+  -- feel-lab/main.lua). shx/shy sont en px DESIGN 1280×720 -> ramenés en px écran par s = scale/4 (le design
+  -- = virtuel 320×180 ×4). La Chronique (overlay modal) et la surcouche shader restent HORS du shake
+  -- (lisibilité). RENDER pur : Juice ne lit/écrit jamais la SIM. dt mural via getDelta (0 en headless).
+  do
+    local wallDt = (love.timer and love.timer.getDelta and love.timer.getDelta()) or 0
+    Juice.update(wallDt)
+  end
+  local shx, shy, shr = Juice.shake()
+  local shaking = (shx ~= 0 or shy ~= 0 or shr ~= 0)
+  if shaking and love.graphics.push then
+    local s = scale / 4
+    love.graphics.push()
+    love.graphics.translate(sw / 2, sh / 2); love.graphics.rotate(shr); love.graphics.translate(-sw / 2, -sh / 2)
+    love.graphics.translate(shx * s, shy * s)
+  end
+
   -- 1. Pre-pass ATMOSPHÈRE native (glows lisses), DERRIÈRE le monde pixel. Optionnel par scène.
   if scene.drawBack then scene:drawBack(view) end
 
@@ -311,6 +334,9 @@ function love.draw()
   --     au canvas, mais un seul rééchantillonnage => créatures NETTES (cf. combat/build/gallery).
   --   • sinon -> canvas virtuel basse-réso (look pixel du décor), blit en scale ENTIER. Clear TRANSPARENT :
   --     l'atmosphère transparaît dans les vides (nearest + scale entier => alpha droit correct, pas de halo).
+  -- Le monde HORS-canvas (nativeWorld + le blit) hérite du transform de shake ci-dessus -> il TREMBLE. La passe
+  -- vers le canvas virtuel (setCanvas) écrit dans un buffer à son PROPRE repère : on neutralise le shake le temps
+  -- de le remplir (origin) puis on le restaure pour BLITTER le canvas (c'est le blit qui tremble, pas la gravure).
   love.graphics.setColor(1, 1, 1, 1)
   if scene.nativeWorld then
     love.graphics.push()
@@ -320,15 +346,19 @@ function love.draw()
     love.graphics.pop()
   else
     love.graphics.setCanvas(canvas)
+    love.graphics.push(); love.graphics.origin() -- grave le décor dans le buffer SANS le shake (repère canvas)
     love.graphics.clear(0, 0, 0, 0)
     scene:drawWorld()
+    love.graphics.pop()
     love.graphics.setCanvas(fxCanvas) -- restaure la cible (canvas natif fx, ou écran si surcouche inactive)
-    love.graphics.draw(canvas, view.ox, view.oy, 0, scale, scale)
+    love.graphics.draw(canvas, view.ox, view.oy, 0, scale, scale) -- ce BLIT hérite du shake -> le décor tremble
   end
 
   -- 4. UI native par-dessus (texte net). La chrome DA est portée par la scène ; sinon HUD générique.
   scene:drawOverlay(view)
   if not scene.daChrome then drawHud(scene) end
+
+  if shaking and love.graphics.pop then love.graphics.pop() end -- fin du transform de shake (scène + chrome)
 
   -- 5. Overlay MODAL (La Chronique) par-dessus tout, si ouvert.
   if host.overlay then host.overlay:draw(view) end

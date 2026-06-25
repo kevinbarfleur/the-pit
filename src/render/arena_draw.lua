@@ -21,6 +21,7 @@ local Draw = require("src.ui.draw")
 local HealthBar = require("src.render.healthbar")
 local AfflictionFx = require("src.render.affliction_fx") -- feedback visuel des afflictions (particules + contour bouclier)
 local SFX = require("src.audio.sfx") -- SON (Oniric grave) : cues de COMBAT (gros coup/mort) — RENDER pur, no-op headless. NE touche JAMAIS la SIM.
+local Juice = require("src.ui.juice") -- MOUVEMENT « candy » : screen-shake trauma² + hitstop appariés au SON (RENDER pur, hors SIM)
 local T = require("src.core.i18n").t
 
 -- Échelle-monde des sprites générés en combat = MÊME que le Rig baké (def.scale = Primgen.WORLD_FIT) : critter
@@ -328,11 +329,21 @@ function ArenaDraw:flushAudio()
     -- coups 8..~30 PV -> pitch ~1.0 → 0.82 (plus grave = plus lourd). jitter par défaut du bank (anti-répétition).
     local heavy = math.min(1, (self.sndThud - 8) / 22)
     SFX.play("thud", { pitch = 1.0 - heavy * 0.18 })
+    -- MOUVEMENT apparié au thud (game feel) : l'écran ENCAISSE le coup. trauma ∝ poids (modeste, calibrage
+    -- grimdark) -> petits coups quasi-imperceptibles (trauma²), gros coups secs. Un gros coup (heavy > 0.45)
+    -- ajoute un MICRO-GEL (hitstop ~50 ms) : le combat « s'arrête » l'espace d'un battement -> l'impact pèse.
+    -- Throttlé 1/frame réelle (comme le son). RENDER pur : Juice ne lit/écrit jamais la SIM (golden intact).
+    Juice.addTrauma(0.10 + heavy * 0.18)        -- 0.10 (8 PV) -> 0.28 (≈30 PV) : trauma² rend ça discret/punché
+    if heavy > 0.45 then Juice.freeze(0.05) end -- HITSTOP bref sur un gros coup (le monde gèle, pas l'UI/Juice)
     self.sndThud = 0
   end
   if self.sndDeaths > 0 then
     -- une mort « compte » : cue grave et discret (drop pitché en bas). Une seule fois même si plusieurs morts/frame.
     SFX.play("drop", { pitch = 0.85 })
+    -- MOUVEMENT apparié à la mort : trauma un peu PLUS fort qu'un coup (une chute « pèse » davantage) + un
+    -- hitstop bref -> le moment de mort marque un temps. Plafonné par addTrauma (clamp 1) si plusieurs/frame.
+    Juice.addTrauma(0.22)
+    Juice.freeze(0.05)
     self.sndDeaths = 0
   end
 end
