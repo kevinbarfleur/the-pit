@@ -3,8 +3,16 @@
 -- la SIM en LECTURE SEULE (arena.units : hp/shield/x/y/alive) et s'abonne aux ÉVÉNEMENTS de l'arène
 -- (spawned/attack/hit/damage/death) pour déclencher animations et transients visuels (nombres de
 -- dégâts, impacts, traînées de frappe). Ne mute JAMAIS la sim. cf. docs/research/engine-architecture.md §4.
+--
+-- B.1b — RENDU VIVANT EN COMBAT : les créatures GÉNÉRÉES (Critter.has(id)=true) sont dessinées via
+-- `src/render/critter.lua` (déplacement par pixel : idle + attack/hurt/death), piloté par un état d'anim
+-- RENDER-LOCAL (`self.anim[unit]`) commuté par les MÊMES évènements bus (attack -> atk, hit -> hurt,
+-- death -> death ; priorité death > hurt > atk, latch sur la mort). Les 6 créatures dessinées-main
+-- (Creatures[id]) restent sur le Rig baké (chemin inchangé). TOUS les VFX existants (nombres, shake,
+-- flash, impacts, sang/débris de mort, afflictions, traînées) sont CONSERVÉS et s'ajoutent au critter.
 
 local Rig = require("src.core.rig")
+local Critter = require("src.render.critter") -- rendu vivant des créatures générées (idle + réactions de combat)
 local Creatures = require("src.data.creatures")
 local Units = require("src.data.units")
 local CreatureGen = require("src.gen.creaturegen") -- visuel généré pour les unités sans rig main
@@ -13,6 +21,19 @@ local Draw = require("src.ui.draw")
 local HealthBar = require("src.render.healthbar")
 local AfflictionFx = require("src.render.affliction_fx") -- feedback visuel des afflictions (particules + contour bouclier)
 local T = require("src.core.i18n").t
+
+-- Échelle-monde des sprites générés en combat = MÊME que le Rig baké (def.scale = Primgen.WORLD_FIT) : critter
+-- et rig partagent l'espace VIRTUEL (u.x,u.y) et le scale -> bascule sans déplacement ni resize. Le ×4 natif est
+-- appliqué par le transform externe (main.lua / export.shoot, scene.nativeWorld), pas ici. cf. primgen.lua:2504.
+local WORLD_FIT = require("src.gen.primgen").WORLD_FIT
+
+-- Durées des RÉACTIONS critter, en FRAMES (l'horloge de combat = frames @60fps ; le proto les donne en SECONDES :
+-- ATK 1.05s / HURT 0.45s / DEATH 1.2s + DEAD_HOLD 0.7s — cf. docs/generation/generateur-bestiaire.html l.930).
+-- La PHASE ph = age/DUR ∈ [0,1] (clampée). Après DEATH_DUR, la mort RESTE figée à ph=1 (corps désagrégé, alpha
+-- déjà retombé) le temps du DEAD_HOLD : on laisse le fondu `self.dead` finir d'éteindre le sprite.
+local CR_ATK_DUR = 63   -- 1.05 s × 60
+local CR_HURT_DUR = 27  -- 0.45 s × 60
+local CR_DEATH_DUR = 72 -- 1.2 s × 60
 
 -- Nombres de dégâts flottants : trajectoire « feu d'artifice » (éjection vers le haut + dérive latérale +
 -- gravité) et REGROUPEMENT des tics par (cible, auteur, cause) -> ils s'additionnent au lieu de s'empiler.
@@ -50,10 +71,15 @@ end
 local ArenaDraw = {}
 ArenaDraw.__index = ArenaDraw
 
+-- Durées des réactions critter exposées (lecture seule) : permet aux planches d'export (--shoot) de poser une
+-- phase de pic (age = ph × DUR) sur une unité sans dupliquer ces constantes. RENDER-only (zéro impact SIM).
+ArenaDraw.CR_DUR = { atk = CR_ATK_DUR, hurt = CR_HURT_DUR, death = CR_DEATH_DUR }
+
 function ArenaDraw.new(arena, palette)
   local self = setmetatable({
     arena = arena, palette = palette,
     rigs = {},       -- [unit] = char (rig)
+    anim = {},       -- B.1b : [unit] = { state = "idle"|"atk"|"hurt"|"death", age } pour les créatures GÉNÉRÉES (critter)
     dead = {},       -- [unit] = age (fondu de mort, géré côté render)
     dmgNumbers = {}, -- nombres flottants
     impacts = {},    -- étincelles d'impact
@@ -66,11 +92,16 @@ function ArenaDraw.new(arena, palette)
   }, ArenaDraw)
   self.fx = AfflictionFx.new() -- couche d'afflictions (créée avant rebuild, qui peut la reset)
   self:rebuild()
-  -- Abonnements au bus de l'arène (la sim émet, le render réagit).
+  -- Abonnements au bus de l'arène (la sim émet, le render réagit). Chaque évènement pilote À LA FOIS le Rig
+  -- baké (6 main) ET l'état d'anim critter (générés) — un seul est ensuite dessiné par unité selon Critter.has.
   arena.bus:on("spawned", function() self:rebuild() end)
-  arena.bus:on("attack", function(u) Rig.trigger(self:rigFor(u), "attack") end)
+  arena.bus:on("attack", function(u)
+    Rig.trigger(self:rigFor(u), "attack")
+    self:setAnim(u, "atk") -- B.1b : armé seulement si pas déjà en hurt/death (priorité ; cf. setAnim)
+  end)
   arena.bus:on("hit", function(a, target)
     Rig.trigger(self:rigFor(target), "hurt")
+    self:setAnim(target, "hurt") -- B.1b : le coup reçu interrompt l'attaque, mais jamais la mort
     table.insert(self.impacts, { x = target.x - a.facing * 6, y = target.y - 14, age = 0 })
   end)
   arena.bus:on("damage", function(rec)
@@ -110,6 +141,7 @@ function ArenaDraw.new(arena, palette)
   -- du rig est sinon gérée par le fondu `dead`, trop discret seul). 100% RENDER, ne mute jamais la SIM.
   arena.bus:on("death", function(u)
     if not u then return end
+    self:setAnim(u, "death") -- B.1b : latch — la créature générée se désagrège (deathPix), priorité absolue
     self.deathFx[#self.deathFx + 1] = { x = u.x, y = u.y, age = 0 }
     -- éclat de sang : ~10 fragments éjectés du torse (gravité), couleur sang/sang-séché, dispersion Weyl.
     local cx, cy = u.x, u.y - 12
@@ -163,9 +195,26 @@ function ArenaDraw:rigFor(u)
   return c
 end
 
+-- B.1b — COMMUTATION de l'état d'anim critter (RENDER-local), piloté par le bus. Priorité death > hurt > atk,
+-- exactement comme le driver du proto (l.932-938) : un mort n'attaque plus (latch), un touché interrompt l'attaque.
+-- On (ré)arme l'âge à 0 quand l'évènement EST autorisé à prendre la main ; sinon on l'ignore (l'état en cours
+-- de priorité supérieure poursuit son cours). No-op pour les unités dessinées-main (jamais lues : rendu via Rig).
+local ANIM_PRIO = { idle = 0, atk = 1, hurt = 2, death = 3 }
+function ArenaDraw:setAnim(u, state)
+  if not (u and Critter.has and Critter.has(u.id)) then return end
+  local a = self.anim[u]
+  if not a then a = { state = "idle", age = 0 }; self.anim[u] = a end
+  if a.state == "death" then return end                 -- mort = définitif (latch), aucun évènement ne le relance
+  -- atk ne s'arme PAS si un hurt est encore en cours (le coup reçu prime tant qu'il n'est pas résorbé).
+  if state == "atk" and a.state == "hurt" and a.age < CR_HURT_DUR then return end
+  if ANIM_PRIO[state] >= ANIM_PRIO[a.state] or a.state == "idle" then
+    a.state, a.age = state, 0
+  end
+end
+
 -- (Re)construit les rigs à partir des unités courantes (initial + respawn de la démo).
 function ArenaDraw:rebuild()
-  self.rigs = {}; self.dead = {}; self.dmgNumbers = {}; self.impacts = {}
+  self.rigs = {}; self.anim = {}; self.dead = {}; self.dmgNumbers = {}; self.impacts = {}
   self.shake = { x = 0, y = 0, mag = 0 }; self.flash = {}; self.deathFx = {}; self.dparts = {}
   if self.fx then self.fx:reset() end
   for _, u in ipairs(self.arena.units) do self:rigFor(u) end
@@ -194,6 +243,15 @@ function ArenaDraw:update(frameDt, t)
       local age = (self.dead[u] or 0) + frameDt
       self.dead[u] = age
       c.alpha = math.max(0, 1 - age / 40)
+    end
+
+    -- B.1b — avance l'état d'anim critter (générés) : age += dt ; atk/hurt arrivés à terme retombent en idle,
+    -- la mort RESTE figée (latch) à son âge max (ph plafonnée à 1 dans draw). Indépendant du fondu `dead`.
+    local an = self.anim[u]
+    if an and an.state ~= "idle" then
+      an.age = an.age + frameDt
+      if an.state == "atk" and an.age >= CR_ATK_DUR then an.state, an.age = "idle", 0
+      elseif an.state == "hurt" and an.age >= CR_HURT_DUR then an.state, an.age = "idle", 0 end
     end
   end
 
@@ -375,6 +433,44 @@ function ArenaDraw:drawDeathParts()
   love.graphics.setColor(1, 1, 1, 1)
 end
 
+-- B.1b — RENDU d'une créature GÉNÉRÉE via critter (vivant). Construit `opts` depuis l'état d'anim render-local
+-- (`self.anim[u]`) : résout le kind (atk/hurt/death) une fois par unité (mémoïsé sur le rig — constant par id),
+-- calcule la phase ph = age/DUR (clampée à 1 ; la mort reste figée à 1 après DEATH_DUR), et le fondu alpha (réutilise
+-- `rig.alpha`, déjà calculé en update). `shadow=false` : l'ombre du sol est DÉJÀ dessinée plus haut (pas de double).
+-- `death.noFx=true` : la gerbe interne de critter est coupée — `self.dparts` (burst de sang au thème) fait déjà le job.
+-- PAS de flash blanc additif ici (critter n'a pas de teinte uniforme ; le brief interdit la teinte rouge interne) :
+-- le hurt DÉFORMÉ + l'impact + le shake portent déjà le feedback du coup reçu pour les générés.
+function ArenaDraw:drawCritter(u, rig)
+  -- descripteurs de réaction résolus UNE fois (constants par id : forme/famille fixes) -> évite un lookup/frame.
+  if rig.crAtk == nil then
+    rig.crAtk = Critter.atkFor(u.id) or false
+    rig.crHurt = Critter.hurtFor(u.id) or "recoil"
+    rig.crDeath = Critter.deathFor(u.id) or "gib"
+  end
+  local an = self.anim[u]
+  local opts
+  if an and an.state ~= "idle" then
+    if an.state == "atk" then
+      local d = rig.crAtk or nil
+      if d then opts = { shadow = false, atk = { k = d.k, pr = d, ph = math.min(1, an.age / CR_ATK_DUR) } } end
+    elseif an.state == "hurt" then
+      opts = { shadow = false, hurt = { k = rig.crHurt, ph = math.min(1, an.age / CR_HURT_DUR) } }
+    elseif an.state == "death" then
+      -- La DÉSAGRÉGATION (deathPix) éteint elle-même chaque cellule sur DEATH_DUR (alpha par cellule -> 0 à ph=1) :
+      -- on garde alpha GLOBAL=1 pour la laisser s'exprimer EN ENTIER (le fade `rig.alpha` 40f la tronquerait).
+      opts = { shadow = false, death = { k = rig.crDeath, ph = math.min(1, an.age / CR_DEATH_DUR), noFx = true },
+        alpha = 1 }
+    end
+  end
+  if not opts then opts = { shadow = false } end -- idle
+  -- Idle/atk/hurt : applique le fondu de mort `rig.alpha` (une unité tombée AVANT d'avoir reçu l'event death, ou
+  -- dont l'anim death est retombée, s'efface). En death, alpha=1 est déjà posé ci-dessus (désagrégation autonome).
+  if opts.alpha == nil then opts.alpha = rig.alpha or 1 end
+  -- ANCRAGE : pieds (grille 32,57) sur (u.x, u.y), échelle WORLD_FIT = MÊME empreinte que le Rig baké (pivot 32,58).
+  -- t en SECONDES (self.t est en frames @60fps -> /60) pour l'idle/yeux de critter. facing = miroir d'équipe.
+  Critter.drawAt(nil, u.id, u.x, u.y, WORLD_FIT, (self.t or 0) / 60, u.facing or 1, opts)
+end
+
 -- ───────────────────────── Rendu monde (canvas virtuel) ─────────────────────────
 function ArenaDraw:draw(showBones)
   local units = self.arena.units
@@ -402,12 +498,16 @@ function ArenaDraw:draw(showBones)
 
   for _, u in ipairs(units) do
     local rig = self:rigFor(u)
-    Rig.draw(rig)
-    -- P2.2 — flash blanc bref : on RE-TRACE le rig en blanc additif (tint render-local restauré juste après).
-    -- `Rig.draw` impose sa propre couleur -> on passe par son canal `anim.tint`/`char.alpha` (recalculés à
-    -- chaque update, donc cette mutation transitoire DANS draw est sans incidence sur la frame suivante).
-    local fa = self.flash[u]
-    if fa then self:drawRigFlash(rig, 1 - fa / FLASH_DUR) end
+    if Critter.has(u.id) then
+      -- B.1b — CRÉATURE GÉNÉRÉE : rendu VIVANT (critter). Même ancrage que le Rig (pieds à u.x/u.y, scale
+      -- WORLD_FIT, espace virtuel) -> bascule sans déplacement. L'état d'anim render-local fournit la phase.
+      self:drawCritter(u, rig)
+    else
+      -- 6 créatures DESSINÉES-MAIN : chemin Rig baké INCHANGÉ + flash blanc additif (re-tracé du rig touché).
+      Rig.draw(rig)
+      local fa = self.flash[u]
+      if fa then self:drawRigFlash(rig, 1 - fa / FLASH_DUR) end
+    end
   end
 
   -- Afflictions : matière (sang/spores/bulles/mouches) sur les rigs, puis glow additif (flammes/chaleur).

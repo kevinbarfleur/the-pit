@@ -776,8 +776,10 @@ local function paint(c, t, disp, alpha, shadow, atk, death)
   love.graphics.setColor(1, 1, 1, alpha) -- l'alpha global multiplie les couleurs par-cellule du batch (fondu de mort)
   love.graphics.draw(c.batch, 0, 0)
   -- overlays one-shot APRÈS le corps (proto l.108-109) : éclat d'arme/projectile, gerbe de mort. En espace grille.
+  -- `death.noFx` coupe la gerbe interne (le caller dessine déjà son propre burst de sang — ex. arena_draw.dparts —
+  -- pour éviter un double-emploi criard) ; la DÉSAGRÉGATION (deathPix, le mouvement) reste, elle, toujours active.
   if atk then atkFx(c, atk, c.A) end
-  if death then deathFx(c, death, c.A) end
+  if death and not death.noFx then deathFx(c, death, c.A) end
   -- yeux coupés dès la fragmentation (proto l.110 : !(_death.ph>0.3)) — le corps se désagrège, plus de globe.
   if death and death.ph > 0.3 then return end
   local e = c.prof.eyes
@@ -808,7 +810,8 @@ end
 -- l'échelle `scale` (cadre natif 64 -> 64*scale px ; les tailles RELATIVES sont conservées). t = SECONDES.
 -- facing 1/-1 (miroir). `Critter` reste STATELESS : le caller passe la phase de l'évènement.
 --   opts = { alpha = fondu (défaut 1), shadow = false si la scène dessine déjà son ombre,
---            atk = {k, pr, ph}, hurt = {k, ph}, death = {k, ph} }  -- réactions optionnelles.
+--            atk = {k, pr, ph}, hurt = {k, ph}, death = {k, ph, noFx?} }  -- réactions optionnelles.
+--            (death.noFx = true coupe la gerbe de sang interne — désagrégation conservée — si le caller a la sienne.)
 -- Priorité (comme le driver du proto, l.932-940) : death > hurt > atk (un mort n'attaque plus ; un touché
 -- interrompt l'attaque). `pr` d'attaque vient de Critter.atkFor(id) ; les kinds de Critter.atkFor/hurtFor/deathFor.
 function Critter.drawAt(view, id, footX, footY, scale, t, facing, opts)

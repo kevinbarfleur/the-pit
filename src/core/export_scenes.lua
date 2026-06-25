@@ -125,6 +125,45 @@ function Builders.combat(host)
   return Combat.new(Palette, VW, VH, host, { left = left, right = right, enemyKey = b:encounterKeyFor(#enc.units), seed = 7 })
 end
 
+-- COMBAT_REACT (B.1b) : prouve au SCREENSHOT le rendu combat MID-RÉACTION des créatures vivantes (critter)
+-- ancrées dans l'arène (cartes/barres/ombres). On engage la bataille quelques ticks (placement réel), puis on
+-- ÉPINGLE 3 unités vivantes en atk/hurt/death à leur PHASE de pic via renderer.anim[u] (age = ph×DUR), et on
+-- GÈLE la scène (update -> no-op) pour que Export.shoot ne fasse plus avancer les phases ni re-commuter le bus.
+local function makeCombatReact(host)
+  local b = makeBuild(host)
+  host.run.round, host.run.shopTier, host.run.slots = 7, 3, 7
+  local left = b:buildLeftComp()
+  local enc = OppGen.generate({ round = host.run.round, tier = host.run.shopTier, slots = host.run.slots,
+    rng = love.math.newRandomGenerator(7), odds = host.run.ODDS })
+  local right = b:buildRightComp(enc)
+  local cs = Combat.new(Palette, VW, VH, host, { left = left, right = right,
+    enemyKey = b:encounterKeyFor(#enc.units), seed = 7 })
+  -- engage le combat un court instant (les unités s'animent / se font face), sans laisser personne mourir.
+  for _ = 1, 18 do cs:update(1.0); if cs.arena.over then break end end
+  -- ÉPINGLE des états réactifs sur les unités VIVANTES (tout le roster est généré -> Critter.has partout). On
+  -- alterne atk(frappe)/hurt(recul)/death(désagrégation) à leur phase de PIC pour couvrir les 3 couches dans une
+  -- même image, sur les DEUX camps (montre le miroir facing). atk en majorité (état le plus fréquent en combat).
+  local Arena = require("src.render.arena_draw")
+  local DUR = Arena.CR_DUR
+  local cycle = { { st = "atk", ph = 0.42 }, { st = "hurt", ph = 0.10 }, { st = "atk", ph = 0.42 },
+    { st = "death", ph = 0.5 } }
+  local i = 0
+  for _, u in ipairs(cs.arena.units) do
+    if u.alive then
+      i = i + 1
+      local p = cycle[(i - 1) % #cycle + 1]
+      cs.renderer.anim[u] = { state = p.st, age = p.ph * (DUR[p.st] or 60) }
+    end
+  end
+  cs.update = function() end -- GEL : phases figées au pic pour la capture (RENDER-only ; jamais en jeu)
+  return cs
+end
+
+-- COMBAT_REACT (B.1b) : capture du rendu combat avec 3 unités épinglées en atk/hurt/death (revue mid-réaction).
+function Builders.combat_react(host)
+  return makeCombatReact(host)
+end
+
 -- SUMMARY : combat joué JUSQU'À CONCLUSION (+ overAge dépassé) -> capture l'écran de RÉSUMÉ post-combat
 -- (verdict + ruban de stats + DAMAGE BY CAUSE + THE LEDGER + actions). Réutilise le câblage de Builders.combat.
 function Builders.summary(host)
@@ -253,7 +292,7 @@ end
 local M = {}
 
 -- Liste des noms de scènes capturables (ordre stable, pour --shoot=all et les messages d'erreur).
-M.names = { "menu", "build", "combat", "summary", "relicpick", "runover", "grimoire", "grimoire_relics",
+M.names = { "menu", "build", "combat", "combat_react", "summary", "relicpick", "runover", "grimoire", "grimoire_relics",
   "gallery", "designsystem", "build_relic_hover",
   "anim_attack", "anim_death", "anim_hurt",
   "commander_empty", "commander_filled", "commander_hover", "commander_offer", "commander_refuse",

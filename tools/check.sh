@@ -91,6 +91,9 @@ luajit tests/chronicle.lua
 echo "== chronicle-ui (panneau + overlay carrousel : draw + navigation headless) =="
 luajit tests/chronicle_ui.lua
 
+echo "== arena-anim (B.1b : machine a etats critter en combat — priorite/latch pilotee par le bus) =="
+luajit tests/arena_anim.lua
+
 echo "== designsystem-ui (storybook in-engine : scene + sidebar + page scrollable + tokens/atomes) =="
 luajit tests/designsystem.lua
 
