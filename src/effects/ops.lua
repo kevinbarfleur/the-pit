@@ -19,7 +19,7 @@ local ceil, min, max = math.ceil, math.min, math.max
 
 -- Framework PAYOFF (cf. docs/research/payoff-framework.md) : une pose de DoT amplifiée = base × (1+Σinc),
 -- bornée à ×3 (cap par-axe anti-snowball). `inc` (nombre) vient de l'aura bakée sur le porteur au build.
-local DOT_CAP_MULT = 3
+local DOT_CAP_MULT = 4
 
 -- SAIGNEMENT : contrairement au poison (LISTE de stacks), le bleed est une instance UNIQUE dont le dps
 -- s'ACCUMULE à la réapplication (les plaies se cumulent) -> une équipe bleed engagée compose une vraie
