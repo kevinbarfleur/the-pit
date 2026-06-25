@@ -16,7 +16,9 @@ local Units = require("src.data.units")
 local Bus = require("src.core.bus")
 local Effects = require("src.effects.engine")
 local Stats = require("src.effects.stats") -- couche de modificateurs (empower/vuln en `increased` sur la base)
+local Whispers = require("src.data.whispers") -- MURMURES (3e couche cachée) : registre data PAR ID (voie A)
 require("src.effects.ops") -- enregistre les ops de base (effet de bord)
+require("src.effects.whispers_ops") -- enregistre whisper_lineage / whisper_solo (resolver des murmures)
 
 local Arena = {}
 Arena.__index = Arena
@@ -149,6 +151,12 @@ function Arena:makeUnit(spec, team)
     focusWith = spec.focusWith,     -- focus-fire (faible) : tie-break vers la cible d'un allié (slot)
     statInc = spec.statInc,         -- commandant : +% stats globales (baké au build ; lecture combat selon stat)
     lifestealAura = spec.lifestealAura, -- aura K1 lifesteal : soin = frac × dégâts infligés (appliqué dans hit)
+    -- ── MURMURES (3e couche cachée) : résolus PAR ID au combat_start (voie A) -> un GHOST (qui ne porte que
+    -- {id,...} via snapshot) les re-déclenche GRATUITEMENT. `whispers` = liste data lue par runWhispers ;
+    -- les champs ci-dessous sont les CIBLES combat-time des ops, INERTES par défaut (nil = golden-safe). ──
+    whispers = Whispers[spec.id], -- liste de murmures de cette id (nil si aucune) ; jamais mutée (data partagée)
+    lifestealBonus = nil,         -- additif lu dans hit() (the_gorging) : soin = frac × dégâts ; nil = inerte
+    _whisperStacks = nil, _whisperBase = nil, _whisperTimed = nil, _whisperFired = nil, -- état interne (inerte)
     alive = true, target = nil,
   }
   if spec.shieldCaster then -- COPIE par combat : le spec est réutilisé sur N matchs (sim) -> ne JAMAIS le muter
@@ -178,6 +186,13 @@ function Arena:spawn()
   for _, u in ipairs(self.units) do
     self.ctx.arena, self.ctx.source, self.ctx.victim = self, u, u
     Effects.run(u, "combat_start", self.ctx)
+  end
+  -- MURMURES combat_start (voie A) : APRÈS les effets (l'état d'équipe est posé : présence/adjacence
+  -- fiables). Le resolver scanne self.units -> les DEUX camps déclenchent leurs murmures NON-RNG au replay
+  -- d'un ghost sans rien encoder de neuf. Gated : whispers nil -> ignoré -> golden-safe. ctx réutilisé.
+  for _, u in ipairs(self.units) do
+    self.ctx.arena, self.ctx.source, self.ctx.victim = self, u, u
+    self:runWhispers(u, "combat_start", self.ctx)
   end
   -- BRIS-SIÈGE (commandant, C1) : un drapeau d'équipe `stripEnemyShield` (posé par grant_team au combat_start)
   -- ampute les boucliers INITIAUX de l'équipe ENNEMIE (shield ET maxShield), AVANT le set des boucliers
@@ -262,6 +277,40 @@ function Arena:neighborsOf(u)
     end
   end
   return out
+end
+
+-- ── MURMURES (3e couche cachée) — dispatch PARALLÈLE à Effects.run, sur la liste `owner.whispers` (data
+-- du registre src/data/whispers.lua, indexée par ID). On NE mélange PAS les murmures dans owner.effects
+-- (séparation/curation + pas de pollution de la mécanique publique) : ils ont leur propre boucle, mais
+-- réutilisent EXACTEMENT le même contrat ctx + le même registre d'ops (whisper_lineage/whisper_solo).
+-- ORDRE DE LA LISTE (ipairs -> déterministe). condition (chance) rollée via ctx.arena.rng (seedé). ──
+function Arena:runWhispers(owner, trigger, ctx)
+  local list = owner.whispers
+  if not list then return end
+  for i = 1, #list do
+    local e = list[i]
+    if e.trigger == trigger and Effects.passCondition(e.condition, ctx) then
+      local op = Effects.ops[e.op]
+      if op then op(ctx, e.params or {}, e) end -- op absent -> ignoré (gracieux, comme Effects.run)
+    end
+  end
+end
+
+-- TICK des murmures ARMÉS (afterT) : un murmure « patient » (THE HOLLOW MARIONETTE) ne s'applique qu'après
+-- ~N frames de combat. Posé par whisper_solo au combat_start (u._whisperTimed), il se déclenche UNE fois au
+-- franchissement (edge-trigger). Déterministe (compare self.t, zéro RNG). Gated : _whisperTimed nil -> no-op.
+function Arena:tickWhispers(u)
+  local w = u._whisperTimed
+  if not w or u._whisperFired then return end
+  if self.t >= w.afterT then
+    u._whisperFired = true
+    local ctx = self.ctx
+    ctx.arena, ctx.source, ctx.victim = self, u, u
+    -- pose directe via whisper_apply (effet borné + event 2 canaux), même chemin que whisper_solo immédiat ;
+    -- le timer est consommé (_whisperFired=true) -> jamais re-déclenché. e = le bloc armé (effect/key/verb).
+    local op = Effects.ops["whisper_apply"]
+    if op then op(ctx, w, w) end
+  end
 end
 
 -- Application centralisée des dégâts : le bouclier absorbe d'abord (sauf ignoreShield), puis les
@@ -390,6 +439,12 @@ function Arena:hit(a, target)
   -- inerte). Le malus de valeur (weaken) ronge le taux, comme l'op lifesteal. Borné à maxHp.
   if a.lifestealAura and a.lifestealAura > 0 and dealt > 0 then
     local frac = a.lifestealAura * (1 - (a.weaken or 0))
+    a.hp = math.min(a.maxHp, a.hp + math.floor(dealt * frac + 0.5))
+  end
+  -- MURMURE THE GORGING (lifestealBonus) : même voie que l'aura lifesteal, posé par whisper_solo on_low_hp
+  -- (HOLLOW GUT, qui n'a pas de lifesteal de base). Additif, weaken ronge le taux, borné maxHp. nil = inerte.
+  if a.lifestealBonus and a.lifestealBonus > 0 and dealt > 0 then
+    local frac = a.lifestealBonus * (1 - (a.weaken or 0))
     a.hp = math.min(a.maxHp, a.hp + math.floor(dealt * frac + 0.5))
   end
 
@@ -661,6 +716,26 @@ function Arena:checkLowHp(u)
       end
     end
   end
+  -- MURMURES on_low_hp (THE GORGING) : même edge-trigger par seuil, sur la liste `whispers` (clé séparée
+  -- u._whisperLowFired -> jamais de collision avec les seuils des effets publics). Gated -> golden-safe.
+  local wl = u.whispers
+  if wl then
+    for i = 1, #wl do
+      local e = wl[i]
+      if e.trigger == "on_low_hp" then
+        local thr = (e.params and e.params.threshold) or 0.30
+        local wf = u._whisperLowFired
+        if frac < thr and not (wf and wf[thr]) then
+          if not wf then wf = {}; u._whisperLowFired = wf end
+          wf[thr] = true
+          local ctx = self.ctx
+          ctx.arena, ctx.source, ctx.victim = self, u, u
+          local op = Effects.ops[e.op]
+          if op and Effects.passCondition(e.condition, ctx) then op(ctx, e.params or {}, e) end
+        end
+      end
+    end
+  end
 end
 
 function Arena:update(frameDt, t)
@@ -670,6 +745,7 @@ function Arena:update(frameDt, t)
     if u.alive then
       self:tickDots(u, frameDt) -- statuts (burn/bleed/poison/rot/choc/regen) + recompute des malus
       self:checkLowHp(u) -- on_low_hp (K7) : edge-trigger par seuil (purge/festin) ; gated -> golden-safe
+      if u._whisperTimed then self:tickWhispers(u) end -- MURMURE patient (afterT) : pose au franchissement ; gated
       if u.shieldCaster then self:tickShieldCaster(u, frameDt) end -- bouclier périodique (framework payoff)
     end
 
@@ -758,12 +834,15 @@ function Arena:update(frameDt, t)
           Effects.run(w, "on_death", dctx)
         end
       end
-      -- (3) on_ally_death aux alliés vivants du mort (skip les morts de la frame), stats only.
+      -- (3) on_ally_death aux alliés vivants du mort (skip les morts de la frame), stats only. + MURMURES
+      -- (THE HOLLOW VESSEL : HUSK se gorge du défunt, cumul borné). runWhispers est indépendant de w.effects
+      -- (une unité sans effet public peut quand même porter un murmure) -> on l'appelle même si effects vide.
       actx.arena, actx.victim = self, dead
       for _, w in ipairs(self.units) do
-        if w.alive and w.team == dead.team and w ~= dead and not diedThisFrame[w] and w.effects then
+        if w.alive and w.team == dead.team and w ~= dead and not diedThisFrame[w] then
           actx.source = w
-          Effects.run(w, "on_ally_death", actx)
+          if w.effects then Effects.run(w, "on_ally_death", actx) end
+          if w.whispers then self:runWhispers(w, "on_ally_death", actx) end
         end
       end
     end

@@ -25,6 +25,17 @@ function EventLog.attach(arena, meta)
   bus:on("death", function(u)
     self:push("death", { tgt = u.id, tgt_slot = u.slot, team = u.team })
   end)
+  -- MURMURE (3e couche cachée — CANAL DEV) : la VRAIE magnitude (trueKind/trueValue) pour le tuning/sim,
+  -- JAMAIS affichée au joueur. RENDER-only (aucun abonné SIM n'altère l'issue) -> golden-safe tant qu'aucune
+  -- unité du scénario golden ne porte de murmure (registre vide pour celles-ci = zéro émission). cf. plan §4.
+  bus:on("murmur", function(e)
+    self:push("murmur", {
+      key = e.key,
+      src = e.source and e.source.id, src_team = e.source and e.source.team,
+      partner = e.partner and e.partner.id,
+      true_kind = e.trueKind, true_value = e.trueValue, -- la magnitude réelle (canal dev only)
+    })
+  end)
   return self
 end
 

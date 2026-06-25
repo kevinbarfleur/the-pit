@@ -13,6 +13,7 @@ local Shapes = require("src.board.shapes")
 local Encounters = require("src.data.encounters")
 local Relics = require("src.data.relics")
 local Compositions = require("src.data.compositions")
+local Whispers = require("src.data.whispers") -- MURMURES : chaque key active doit avoir sa ligne cryptique
 
 local ok, err = pcall(function()
   -- Locale par défaut = anglais.
@@ -58,6 +59,12 @@ local ok, err = pcall(function()
     need("relic." .. id .. ".name")
     need("relic." .. id .. ".effect")
     need("relic." .. id .. ".flavor")
+  end
+  -- MURMURES (3e couche cachee) : chaque key ACTIVE du registre a sa ligne cryptique (canal joueur). Le
+  -- registre est indexe par id-porteur ; on couvre toutes les keys declarees (les murmures OFF/commentes
+  -- comme the_coward ne sont pas dans le registre, donc non requis -- mais leur ligne existe deja pour W7).
+  for _, list in pairs(Whispers) do
+    for _, w in ipairs(list) do need("whisper." .. w.key .. ".cryptic") end
   end
   -- Banc d'essai (Proving Ground) : archetype/variant/note de chaque compo + labels/notes de scénarios.
   for _, comp in ipairs(Compositions.list) do

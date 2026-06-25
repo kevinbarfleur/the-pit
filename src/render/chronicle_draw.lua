@@ -50,16 +50,20 @@ local MINI_CAUSE = 14 -- boîte sur une conséquence 20px (Spectral 12)
 local MINI_DEATH = 22 -- boîte sur le bloc MORT 32px (gros, du poids visuel)
 local MINI_GAP   = 3  -- gouttière entre la frimousse et le nom
 
-local KINDS = { "strike", "affliction", "spread", "shield", "death" }
+-- « murmur » (3e couche cachée) = catégorie à part : du SPICE rituel, lu comme une note d'ambiance (ton
+-- sourd, violet arcane), JAMAIS un chiffre. cf. docs/research/murmures-plan.md §4.
+local KINDS = { "strike", "affliction", "spread", "shield", "death", "murmur" }
 local FLABEL = {
   strike = "chronicle.f.strike", affliction = "chronicle.f.affliction",
   spread = "chronicle.f.spread", shield = "chronicle.f.shield", death = "chronicle.f.death",
+  murmur = "chronicle.f.murmur",
 }
 -- Les puces de filtre sont des CATÉGORIES (pas des familles précises) : pas d'icône (elle induirait en erreur,
 -- ex. « Afflict » couvre poison/bleed/burn/rot). On lit la catégorie par son LISERÉ coloré + son label.
 local FCOLOR = function(c, k)
   return (k == "affliction") and c.poison or (k == "spread") and c.rot
-    or (k == "shield") and c.shield or (k == "death") and c.bloodBright or c.gold
+    or (k == "shield") and c.shield or (k == "death") and c.bloodBright
+    or (k == "murmur") and c.rot or c.gold -- violet (rot) = ton arcane/cryptique du murmure
 end
 local TEAM_CYCLE = { [0] = nil, [1] = "left", [2] = "right" }
 local TEAM_LABEL = { "chronicle.team.all", "chronicle.team.you", "chronicle.team.foe" }
@@ -70,7 +74,7 @@ function CD.new(chronicle)
   return setmetatable({
     chron = chronicle,
     scroll = 0,
-    fkinds = { strike = true, affliction = true, spread = true, shield = true, death = true },
+    fkinds = { strike = true, affliction = true, spread = true, shield = true, death = true, murmur = true },
     fstate = 0, -- index dans TEAM_CYCLE (0 = tout)
     t = 0,      -- horloge d'animation (compat ; avancée par :update — la plaque propre ne respire pas)
     _rect = nil, _frects = {}, _teamRect = nil,
@@ -98,6 +102,7 @@ function CD:_segColor(c, seg, e)
     local kw = Keywords.afflictions and Keywords.afflictions[e.family]
     return (kw and kw.color) or c.muted
   end
+  if seg.role == "murmur" then return c.rot or c.muted end -- ligne cryptique : ton arcane (violet), pas de chiffre
   return c.muted
 end
 

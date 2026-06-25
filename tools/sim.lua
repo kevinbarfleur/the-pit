@@ -60,6 +60,11 @@ end
 local stat = {} -- [id] = { appear, wins, dmg }
 local function S(id) local s = stat[id]; if not s then s = { appear = 0, wins = 0, dmg = 0 }; stat[id] = s end; return s end
 local causeDmg = {}
+-- MURMURES (3e couche cachée — canal DEV) : on agrège leur FRÉQUENCE par key (combien de fois chaque
+-- murmure se résout) + le set des PORTEURS. Le but est de PROUVER que c'est du SPICE : ils se déclenchent
+-- (système vivant), mais leurs porteurs ne deviennent pas des outliers de win% (>2σ). cf. murmures-plan.md §6.
+local murmurCount = {} -- [key] = nb d'émissions ; murmurCarrier[id] = true (porteur d'au moins un murmure)
+local murmurCarrier = {}
 local ttkSum, decided = 0, 0
 local ttks = {}     -- échantillons de TTK -> percentiles (pas seulement la moyenne)
 local pairData = {} -- [key] = {a,b,appear,wins} : co-occurrence de paires DISTINCTES -> lift (combos)
@@ -145,6 +150,9 @@ for run = 1, N do
     if r.ev == "damage" and r.hp and r.hp > 0 then
       if r.src then S(r.src).dmg = S(r.src).dmg + r.hp end
       causeDmg[r.cause or "?"] = (causeDmg[r.cause or "?"] or 0) + r.hp
+    elseif r.ev == "murmur" then -- canal dev : un murmure s'est résolu (frequence + porteur)
+      murmurCount[r.key or "?"] = (murmurCount[r.key or "?"] or 0) + 1
+      if r.src then murmurCarrier[r.src] = true end
     end
   end
 end
@@ -288,6 +296,42 @@ end
 print(string.format("sante meta : ecart-type win-rate = %.3f (bas = equilibre) | entropie = %.3f (haut = sain)",
   stddev, entropy))
 
+-- ── MURMURES : VERDICT de SPICE (le murmure est-il bien marginal, jamais build-defining ?). On vérifie
+-- (a) que le système est VIVANT (au moins un murmure émis sur le batch), et (b) qu'aucun PORTEUR de murmure
+-- n'est un outlier de win% au-delà de ±2σ du champ. Un murmure qui ferait basculer le win% de son porteur
+-- se verrait ICI (déviation σ élevée) — exactement le détecteur d'« easter egg cassé ». cf. plan §6. ──
+local murmurKeys = {}
+for k in pairs(murmurCount) do murmurKeys[#murmurKeys + 1] = k end
+table.sort(murmurKeys)
+local totalMurmurs = 0
+for _, k in ipairs(murmurKeys) do totalMurmurs = totalMurmurs + murmurCount[k] end
+local devOf = {} -- [id] = déviation σ du win% (réutilise mean/stddev du champ)
+for _, r in ipairs(rows) do devOf[r.id] = (stddev > 0) and (r.wr - mean) / stddev or 0 end
+local murmurOutliers = {}
+local carrierIds = {} -- ids des PORTEURS effectivement résolus dans le batch
+for id in pairs(murmurCarrier) do carrierIds[#carrierIds + 1] = id end
+table.sort(carrierIds)
+for _, id in ipairs(carrierIds) do
+  local d = devOf[id] or 0
+  if math.abs(d) > 2.0 and (stat[id] and stat[id].appear or 0) >= FLAG_MIN_APPEAR then
+    murmurOutliers[#murmurOutliers + 1] = { id = id, dev = d }
+  end
+end
+print(string.format("murmures (3e couche cachee) : %d emissions sur %d combats (%d keys distinctes) :",
+  totalMurmurs, N, #murmurKeys))
+for _, k in ipairs(murmurKeys) do
+  print(string.format("  %-26s x%-5d", k, murmurCount[k]))
+end
+if #murmurKeys == 0 then
+  print("  (aucun murmure emis — augmenter N ou verifier les porteurs dans Units.order)")
+end
+if #murmurOutliers == 0 then
+  print("  -> SPICE OK : aucun porteur de murmure n'est outlier de win% (>2 sigma) => marginal, jamais build-defining.")
+else
+  print("  -> ATTENTION : porteur(s) de murmure outlier(s) de win% (>2 sigma) — a inspecter (spice trop fort ?) :")
+  for _, o in ipairs(murmurOutliers) do print(string.format("     %-12s (%+.1f sigma)", o.id, o.dev)) end
+end
+
 -- ── report.json (clés triées -> diff-able) ──
 local function num(v) if v == math.floor(v) then return string.format("%d", v) else return string.format("%.4f", v) end end
 local parts = {}
@@ -320,6 +364,14 @@ for _, f in ipairs(flags) do
 end
 parts[#parts + 1] = string.format('"flag_band":{"mean":%s,"band":%s},', num(mean), num(BAND))
   .. '"flags":[' .. table.concat(flagParts, ",") .. "]"
+-- MURMURES (canal dev) : fréquence par key + porteurs outliers (vide = spice sain).
+local murmurParts = {}
+for _, k in ipairs(murmurKeys) do murmurParts[#murmurParts + 1] = string.format('"%s":%d', k, murmurCount[k]) end
+local moParts = {}
+for _, o in ipairs(murmurOutliers) do moParts[#moParts + 1] = string.format('{"id":"%s","sigma":%s}', o.id, num(o.dev)) end
+parts[#parts + 1] = '"murmurs":{"emissions":' .. totalMurmurs
+  .. ',"by_key":{' .. table.concat(murmurParts, ",") .. "}"
+  .. ',"outliers":[' .. table.concat(moParts, ",") .. "]}"
 local json = "{" .. table.concat(parts, ",") .. "}\n"
 
 os.execute("mkdir -p runs")

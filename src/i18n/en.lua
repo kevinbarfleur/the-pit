@@ -188,6 +188,7 @@ return {
   ["chronicle.f.spread"] = "Spread",
   ["chronicle.f.shield"] = "Shield",
   ["chronicle.f.death"] = "Deaths",
+  ["chronicle.f.murmur"] = "Murmurs",
   ["chronicle.team.all"] = "All",
   ["chronicle.team.you"] = "You",
   ["chronicle.team.foe"] = "Foe",
@@ -197,6 +198,20 @@ return {
   ["chronicle.loss"] = "DEFEAT",
   ["chronicle.close_hint"] = "[c]/[esc] close    [<] [>] round",
   ["chronicle.empty_hist"] = "no chronicle yet",
+
+  -- ── MURMURES (3e couche cachée — CANAL JOUEUR). Lignes CRYPTIQUES : on NOMME les unités ({x}=porteur,
+  -- {y}=partenaire), JAMAIS la valeur (le chiffre vit dans le canal dev). Le joueur SENT un lien noué,
+  -- sans lire la fiche. Découverte par observation. cf. docs/research/murmures-plan.md §4. ──
+  ["whisper.the_lure_and_the_brood.cryptic"] = "Something in the dark binds {x} to {y} — its ink runs surer when the brood is near.",
+  ["whisper.the_forge_circle.cryptic"] = "Where {x} preaches and {y} tends the pyre, the first fire catches with an older hunger.",
+  ["whisper.the_brood_below.cryptic"] = "{x} answers to {y} below; the spawn strikes with a confidence not its own.",
+  ["whisper.the_three_skulls.cryptic"] = "Three skulls share one furnace — and around {x}, every nearby flame burns a blacker shade.",
+  ["whisper.the_kindred_machines.cryptic"] = "The works of {x} fall into step with {y}; the kindred machines know their own.",
+  ["whisper.the_gorging.cryptic"] = "Bleeding low, {x} opens one more mouth — and feeds on what spills.",
+  ["whisper.the_hollow_vessel.cryptic"] = "{x} drinks in the fallen, and stands a little straighter for the loss.",
+  ["whisper.the_lone_titan.cryptic"] = "{x}, last of its kind on the field, feels itself grow vast.",
+  ["whisper.the_patient_one.cryptic"] = "{x} has waited long enough; the strings draw taut at last.",
+  ["whisper.the_coward.cryptic"] = "{x} folds into the shadow — a blow passes through where it stood.",
 
   -- run over
   ["runover.win"] = "ASCENSION",

@@ -113,6 +113,17 @@ function Chronicle:_subscribe(bus)
     })
   end)
 
+  -- MURMURE (3e couche cachée — CANAL JOUEUR) : un lien noué se RESSENT, sans chiffre. On stocke seulement
+  -- l'id du porteur/partenaire + la clé cryptique ; le phrasé (i18n `whisper.<key>.cryptic`) est résolu à
+  -- l'affichage (segments). ZÉRO valeur (trueValue ne quitte JAMAIS le canal dev). RENDER-only, golden-safe.
+  bus:on("murmur", function(e)
+    self:_add({
+      kind = "murmur", whisperKey = e.key,
+      actorId = idOf(e.source), actorTeam = teamOf(e.source),
+      targetId = idOf(e.partner), targetTeam = teamOf(e.partner), -- partenaire (lignée) ou nil (solo)
+    })
+  end)
+
   -- BOUCLIER (cast périodique) -> catégorie "soins/boucliers".
   bus:on("shield_cast", function(e)
     self:_add({
@@ -171,6 +182,12 @@ function Chronicle:segments(e)
   elseif e.kind == "death" then
     push(nm(e.targetId), e.targetTeam, "target")
     push(" " .. T("chronicle.v.fall"), nil, "op")
+  elseif e.kind == "murmur" then
+    -- CANAL JOUEUR : phrase cryptique entière (i18n), noms d'unités interpolés, JAMAIS de chiffre. Un seul
+    -- fragment « murmur » (le rendu le distingue : italique/ton sourd). {x}=porteur, {y}=partenaire (ou ?).
+    local line = T("whisper." .. (e.whisperKey or "") .. ".cryptic",
+      { x = nm(e.actorId), y = e.targetId and nm(e.targetId) or nil })
+    push(line, e.actorTeam, "murmur")
   end
   return s
 end

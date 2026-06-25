@@ -18,6 +18,17 @@ if [ -n "$SIM_DIRS" ] && grep -rnE 'math\.random' $SIM_DIRS 2>/dev/null; then
 fi
 echo "OK (RNG seede uniquement)"
 
+echo "== garde data pure (whispers declaratif : ni function/RNG/love) =="
+# Les MURMURES (src/data/whispers.lua) sont du DATA DÉCLARATIF PUR : toute la logique vit dans les ops
+# (src/effects/whispers_ops.lua, sous SIM_DIRS -> couvert par le firewall RNG). Un fichier de tables
+# littérales ne peut pas introduire de RNG global ni d'appel au framework. cf. docs/research/murmures-plan.md §6.
+if [ -f src/data/whispers.lua ] && \
+   grep -nE '\bfunction\b|math\.random|love\.' src/data/whispers.lua 2>/dev/null; then
+  echo "FAIL: whispers.lua doit etre DECLARATIF PUR (aucune logique). Mettre l'op dans src/effects."
+  exit 1
+fi
+echo "OK (whispers data pure)"
+
 echo "== garde firewall SIM/RENDER (love.graphics interdit dans la SIM) =="
 # point d'accès membre (love.graphics.xxx) = vrai appel ; un commentaire 'love.graphics' n'a pas le point.
 if [ -n "$SIM_DIRS" ] && grep -rnE 'love\.(graphics|window|mouse|keyboard)\.' $SIM_DIRS 2>/dev/null; then
@@ -67,6 +78,9 @@ luajit tests/snapshot.lua
 
 echo "== synergies (interactions inter-effets en combat : deroule + resultat) =="
 luajit tests/synergies.lua
+
+echo "== murmures (3e couche cachee : resolution + bornes + determinisme + 2-canaux + snapshot) =="
+luajit tests/murmures.lua
 
 echo "== chronicle (journal de combat : agregation lignes vivantes + entrees + filtrage) =="
 luajit tests/chronicle.lua
