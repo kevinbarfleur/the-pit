@@ -7,7 +7,7 @@
 --   3. courbe de coût croissante early < mid < end (l'axe d'investissement est bien ordonné) ;
 --   4. champ de chaque bande entièrement résolvable (catalogue OU bandes) ;
 --   5. injection relique + commandant via Compbuild.toComp(opts) = FIDÈLE (cap multicast tient) ;
---   6. les 6 commandants attendus sont bien dérivés du roster (commandBonus).
+--   6. les commandants attendus (= TOUT le roster depuis le rollout §3) sont bien dérivés du roster (commandBonus).
 -- Déterministe, headless. Lancement : luajit tests/bands.lua
 package.path = "./?.lua;" .. package.path
 love = require("tests.mock_love")
@@ -89,10 +89,12 @@ local ok, err = pcall(function()
   end
   assert(hasCmd, "commandant injecte present dans le comp")
 
-  -- 6) les 6 commandants : exactement les unités à commandBonus (le harnais les balaye toutes).
+  -- 6) commandants : exactement les unités à commandBonus (le harnais les balaye toutes). Depuis le rollout
+  -- « commandement à tout le roster » (command-auras-rollout-spec §3 / tests/commanders.lua), TOUT le roster
+  -- porte un commandBonus -> on attend len(Units.order), pas un nombre figé (le harnais les sweep toutes).
   local cmds = {}
   for _, id in ipairs(Units.order) do if Units[id].commandBonus then cmds[#cmds + 1] = id end end
-  assert(#cmds == 6, "6 commandants attendus (commandBonus), obtenu " .. #cmds)
+  assert(#cmds == #Units.order, #Units.order .. " commandants attendus (tout le roster commande), obtenu " .. #cmds)
 
   -- 7) reliques INERTES en combat = celles sans champ `op` (eco/run-only) : Relics.apply ne mute pas la compo
   --    -> Δ stats nul (le harnais les marque inertes, Δ~0 attendu).
@@ -112,4 +114,4 @@ if not ok then
   io.stderr:write("BANDS FAIL: " .. tostring(err) .. "\n")
   os.exit(1)
 end
-print("=> BANDS OK : integrite bandes + courbe de cout + champ + injection relique/commandant + 6 commandants.")
+print("=> BANDS OK : integrite bandes + courbe de cout + champ + injection relique/commandant + tout le roster commande.")

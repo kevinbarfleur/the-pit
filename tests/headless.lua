@@ -462,13 +462,20 @@ local ok, err = pcall(function()
     eb:placeId(5, "marauder", 1)
     local hp0 = Units.marauder.hp -- base (level 1) avant aura
 
-    -- 3) Pose un non-chef au piédestal -> REFUS propre (retourne à l'origine, pas de crash).
-    eb:placeId(1, "skeleton") -- skeleton n'a pas de commandBonus
+    -- 3) Pose un non-chef au piédestal -> REFUS propre (retourne à l'origine, pas de crash). Depuis le rollout
+    -- « commandement à tout le roster » (command-auras-rollout-spec §3), PLUS AUCUNE unité réelle n'est sans
+    -- `commandBonus` (cf. tests/commanders.lua) -> on injecte un non-chef SYNTHÉTIQUE pour exercer le GATE
+    -- `canCommand` (build.lua:238-241, drop au piédestal) sans dépendre du contenu data. L'id se rend via
+    -- CreatureGen.cached (newRig fallback) ; on le retire après (ne pollue ni le roster ni les autres tests).
+    Units.__noncmd_probe = { id = "__noncmd_probe", type = "bone", family = "mortvivant", rank = 1, hp = 40, dmg = 6, cd = 44, effects = {} } -- volontairement SANS commandBonus
+    eb:placeId(1, "__noncmd_probe")
     local pr = eb.commanderRect
-    eb:mousepressed(eb.pos[1].x, eb.pos[1].y, 1)               -- ramasse le skeleton (board)
+    eb:mousepressed(eb.pos[1].x, eb.pos[1].y, 1)               -- ramasse le non-chef (board)
     eb:mousereleased(pr.x + pr.w / 2, pr.y + pr.h / 2, 1)      -- lâche sur le piédestal -> refus
     assert(eb.commanderSlot == nil, "C3: non-chef REFUSÉ au piédestal")
-    assert(eb.slotRigs[1] and eb.slotRigs[1].id == "skeleton", "C3: le non-chef retourne à son origine (board)")
+    assert(eb.slotRigs[1] and eb.slotRigs[1].id == "__noncmd_probe", "C3: le non-chef retourne à son origine (board)")
+    eb.slotRigs[1] = nil; eb.board.slots[1].unit = nil -- nettoie la case probe (board)
+    Units.__noncmd_probe = nil -- retire l'unité synthétique (pas de fuite vers les autres tests)
 
     -- 4) Pose un CHEF (deep_kraken = L'Aïeul) au piédestal via drag-drop (depuis le banc).
     eb.bench[1] = { id = "deep_kraken", level = 1, char = eb:newRig("deep_kraken") }

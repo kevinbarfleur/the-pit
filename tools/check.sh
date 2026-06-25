@@ -58,6 +58,9 @@ luajit tests/dot_family.lua
 echo "== i18n (multilangue : interpolation + fallback + couverture anglaise) =="
 luajit tests/i18n.lua
 
+echo "== commanders (tout le roster commande : aura resolue contre le moteur + i18n complete) =="
+luajit tests/commanders.lua
+
 echo "== run (economie roguelite : invariants + determinisme) =="
 luajit tests/run.lua
 
