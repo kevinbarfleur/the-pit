@@ -128,6 +128,20 @@ local R = {
   -- mirror incline ~+12 pts, la frappe-large reste un payoff). PLACEHOLDER assumé (réserve HAUT/late = garde-fou Q3).
   splitting_maw = { id = "splitting_maw", op = "relic_add_effect", tier = 4, band = "high",
     params = { effect = { trigger = "on_hit", op = "cleave", params = { frac = 0.05 } } } },
+
+  -- ── W1 — AXE TYPE-IDENTITÉ (plan big-update §AXE 2) — gating PAR TYPE (calque Batomon Orb). Le gating de type
+  -- n'existait pas chez nous : ces reliques le posent (mono-type amps + rainbow team payoff). GOLDEN-SAFE : aucune
+  -- relique n'est dans le scénario golden (combat sans relique) ; les ops type:/rainbow sont gated. PLACEHOLDERS. ──
+  -- SANG-DE-MEUTE (mid) : empower (atkInc) aux seules unités FLESH du board. Récompense un board mono-flesh.
+  pack_blood = { id = "pack_blood", op = "relic_aura_stat", tier = 3, band = "mid",
+    params = { stat = "atkInc", target = "type:flesh", value = 0.08 } },
+  -- ORBE-DE-BILE (mid) : ampli POISON (poisonInc, additif, lu par la pose de DoT) aux seules unités ABYSS.
+  bile_orb = { id = "bile_orb", op = "relic_aura_stat", tier = 3, band = "mid",
+    params = { stat = "poisonInc", target = "type:abyss", value = 0.12 } },
+  -- SPECTRE-PRISMATIQUE (high) : le payoff RAINBOW d'ÉQUIPE — +3 dmg / +5 hp par type distinct (max 5 -> +15/+25
+  -- sur CHAQUE unité). Récompense le toolbox multi-type (la stratégie opposée au mono-type). Réécrit « plus tu mélanges ».
+  prismatic_wraith = { id = "prismatic_wraith", op = "relic_rainbow", tier = 4, band = "high",
+    params = { dmgPerType = 3, hpPerType = 5 } },
 }
 
 R.order = { "bloodstone", "carapace", "aegis", "kings_bowl", "ember_heart", "weeping_nail", "grave_cap",
@@ -138,7 +152,9 @@ R.order = { "bloodstone", "carapace", "aegis", "kings_bowl", "ember_heart", "wee
   "usurers_ledger", "tithe_bowl", "paupers_boon", "grave_robbers_cut",
   -- refonte 2026-06 (relics-overhaul) — NOUVELLES (append-only). MOYEN (V2) puis HAUT (V3).
   "blood_banner", "seers_mark", "carrion_feast", "second_plague", "tide_caller", "bait_lantern",
-  "echo_crown", "gravediggers_due", "splitting_maw" }
+  "echo_crown", "gravediggers_due", "splitting_maw",
+  -- W1 — axe type-identité (mono-type amps + rainbow team payoff ; plan big-update §AXE 2)
+  "pack_blood", "bile_orb", "prismatic_wraith" }
 
 -- ── relic_aura_stat : BAKE direct d'un CHAMP combat-time sur les specs (plan relics-overhaul §2.0). ──
 -- POINT DUR : applyRelics tourne APRÈS buildComp (qui a déjà baké aura_stat -> spec.atkInc/multicast/…).
@@ -196,8 +212,35 @@ function R.apply(comp, relic)
     elseif target == "role:front" or target == "role:back" then
       local s = resolveRoleSpec(comp, target == "role:front")
       if s then bakeStat(s, stat, value) end
+    elseif target:sub(1, 5) == "type:" then
+      -- W1 (axe Type-identité) : MIROIR de build.lua:resolveTargets — bake le stat sur les specs du `type` X.
+      -- Une relique mono-type (ex. Sang-de-Meute = atkInc sur type:flesh). Déterministe (ipairs), zéro RNG.
+      -- INERTE tant qu'aucune relique ne cible type: -> golden inchangé (le commandant isCommander est aussi
+      -- typé, mais bakeStat sur lui est sans effet de combat car son spec d'arène est intouchable/cdMult).
+      local ty = target:sub(6)
+      for _, spec in ipairs(comp) do
+        if Units[spec.id] and Units[spec.id].type == ty then bakeStat(spec, stat, value) end
+      end
     end
     return -- traité ; ne pas retomber dans la boucle par-spec ci-dessous
+  end
+  -- relic_rainbow (W1 — payoff TEAM-WIDE) : +flat dmg/hp par TYPE DISTINCT du board, sur CHAQUE unité (le
+  -- Spectre-Prismatique : « plus tu mélanges, plus tu frappes »). Compté ici (post-buildComp, déterministe,
+  -- ipairs) car relic_add_effect serait INERTE (l'effet ajouté ne serait plus baké, cf. note relic_aura_stat).
+  -- count borné à 5 (le jeu n'a que 5 types). Gated -> golden inchangé.
+  if op == "relic_rainbow" then
+    local seen, count = {}, 0
+    for _, spec in ipairs(comp) do
+      local ty = Units[spec.id] and Units[spec.id].type
+      if ty and not seen[ty] then seen[ty] = true; count = count + 1 end
+    end
+    count = math.min(5, count)
+    local addD, addH = (p.dmgPerType or 0) * count, (p.hpPerType or 0) * count
+    for _, spec in ipairs(comp) do
+      if spec.dmg and addD > 0 then spec.dmg = spec.dmg + addD end
+      if spec.hp and addH > 0 then spec.hp = spec.hp + addH end
+    end
+    return
   end
   for _, spec in ipairs(comp) do
     if op == "relic_more_dmg" then

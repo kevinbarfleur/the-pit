@@ -711,6 +711,46 @@ local U = {
   mire_thing = { id = "mire_thing", type = "abyss", family = "gelatine", arch = "slime", rank = 1, cost = 1, hp = 50, dmg = 5, cd = 54, effects = {},
     -- stat-stick -> micro-sustain team (le plus faible ; regen 1, sans cap).
     commandBonus = { trigger = "combat_start", op = "aura_stat", target = "team", params = { stat = "regen", value = 1 } } },
+
+  -- ── W1 — AXE TYPE-IDENTITÉ (plan big-update §AXE 2). « Primary star » mono-type : chaque unité ampli SON
+  -- type (aura_stat target="type:X") -> empiler des unités du même type devient une STRATÉGIE lisible (le squelette
+  -- d'identité de build qui manquait). + 1 « rainbow payoff » (aura_per_unique_type) = la stratégie OPPOSÉE
+  -- (récompense le toolbox multi-type). Build-résolu, déterministe, zéro RNG. GOLDEN-SAFE : aucune unité golden
+  -- (templar/marauder/skeleton/witch/demon) n'est touchée ; ces nouvelles unités sont append-only et la branche
+  -- type:X reste inerte tant qu'elles ne sont pas placées. family/arch = combos déjà éprouvés (rendu garanti). ──
+  -- chiffres = PLACEHOLDERS (à tuner via tools/sim.lua).
+  flesh_warband = { id = "flesh_warband", type = "flesh", family = "bete", arch = "behemoth", rank = 2, cost = 2, hp = 56, dmg = 7, cd = 54, aggro = 12,
+    -- « la meute saigne ensemble » : empower (atkInc, cappé ATK_INC_CAP) à TOUTES les unités flesh du board.
+    effects = { { trigger = "combat_start", op = "aura_stat", target = "type:flesh", params = { stat = "atkInc", value = 0.10 } } },
+    -- COMMANDANT : la meute couronnée arme l'avant-garde (empower role:front, 1 cible -> magnitude sûre).
+    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "role:front", params = { stat = "atkInc", value = 0.12 } } },
+  bone_choir = { id = "bone_choir", type = "bone", family = "pendu", arch = "hanged", rank = 2, cost = 2, hp = 60, dmg = 5, cd = 60,
+    -- « os sur os, rien ne passe » : armure (dmgReduce, lu damage cause=attack) à toutes les unités bone.
+    effects = { { trigger = "combat_start", op = "aura_stat", target = "type:bone", params = { stat = "dmgReduce", value = 0.08 } } },
+    -- COMMANDANT : l'ossuaire généralise son armure à toute la meute (dmgReduce team léger, sans cap moteur).
+    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "team", params = { stat = "dmgReduce", value = 0.06 } } },
+  arcane_seer = { id = "arcane_seer", type = "arcane", family = "oeil", arch = "eyecluster", rank = 2, cost = 2, hp = 40, dmg = 6, cd = 56, aggro = 5,
+    -- cadence (haste, cappé HASTE_CAP à la lecture) à toutes les unités arcane (la fréquence du savoir).
+    effects = { { trigger = "combat_start", op = "aura_stat", target = "type:arcane", params = { stat = "haste", value = 0.08 } } },
+    -- COMMANDANT : la prescience presse toute la meute (haste team, cappé HASTE_CAP à la lecture).
+    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "team", params = { stat = "haste", value = 0.06 } } },
+  abyss_maw = { id = "abyss_maw", type = "abyss", family = "cephalo", arch = "squid", rank = 2, cost = 2, hp = 46, dmg = 6, cd = 58, aggro = 5,
+    -- ampli POISON (poisonInc, routé vers le buffer dédié, cappé DOT_CAP_MULT) à toutes les unités abyss : croise
+    -- l'axe 1 (un « commandant toxique de type »). Mono-abyss = la marée venimeuse.
+    effects = { { trigger = "combat_start", op = "aura_stat", target = "type:abyss", params = { stat = "poisonInc", value = 0.15 } } },
+    -- COMMANDANT (LE VENIN PROFOND) : ampli poison d'équipe (mono-école, TROU #1) ; chaque venin mord plus profond.
+    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "team", params = { stat = "poisonInc", value = 0.18 } } },
+  order_marshal = { id = "order_marshal", type = "order", family = "automate", arch = "automaton", rank = 2, cost = 2, hp = 58, dmg = 6, cd = 60, aggro = 20,
+    -- sustain (regen, lu par tickDots) à toutes les unités order : l'empire qui se répare (mur regen mono-order).
+    effects = { { trigger = "combat_start", op = "aura_stat", target = "type:order", params = { stat = "regen", value = 2 } } },
+    -- COMMANDANT : l'ordre permanent répare toute la meute (regen team, sans cap moteur -> valeur prudente).
+    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "team", params = { stat = "regen", value = 2 } } },
+  prism_horror = { id = "prism_horror", type = "abyss", family = "chimere", arch = "chimera", rank = 4, cost = 4, hp = 52, dmg = 6, cd = 58,
+    -- RAINBOW : « chaque chair étrangère le nourrit » — +2 dmg / +4 hp par TYPE DISTINCT du board (max 5 -> +10/+20).
+    -- SELF-aura build-résolue (aura_per_unique_type) : punit l'empilage mono-type, récompense le toolbox. Cappé par count.
+    effects = { { trigger = "combat_start", op = "aura_per_unique_type", params = { dmgPerType = 2, hpPerType = 4 } } },
+    -- COMMANDANT : le prisme arme le cœur du board (empower role:center -> récompense le placement carry).
+    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "role:center", params = { stat = "atkInc", value = 0.12 } } },
 }
 
 -- ══ FAMILLE DoT DÉCLARATIVE (M2/2.4 — « type » des synergies P1 + segmentation Grimoire). Porteur explicite,
@@ -779,7 +819,9 @@ U.order = { "marauder", "templar", "skeleton", "bandit", "witch", "demon",
   "coil_viper", "web_recluse", "siphon_jelly", "skull_colossus", "rust_sentinel",
   "runestone_golem", "ink_horror", "deep_kraken",
   -- plancher rang-1 (PRD progression-economy)
-  "husk", "gnaw_rat", "footman", "mire_thing" }
+  "husk", "gnaw_rat", "footman", "mire_thing",
+  -- W1 — axe type-identité (mono-type amps + rainbow payoff ; plan big-update §AXE 2)
+  "flesh_warband", "bone_choir", "arcane_seer", "abyss_maw", "order_marshal", "prism_horror" }
 
 -- Pool d'unités ACHETABLES en boutique (cf. src/run/state.lua). Identique au roster pour l'instant.
 U.pool = { "marauder", "templar", "skeleton", "bandit", "witch", "demon",
@@ -806,7 +848,9 @@ U.pool = { "marauder", "templar", "skeleton", "bandit", "witch", "demon",
   "coil_viper", "web_recluse", "siphon_jelly", "skull_colossus", "rust_sentinel",
   "runestone_golem", "ink_horror", "deep_kraken",
   -- plancher rang-1 (PRD progression-economy)
-  "husk", "gnaw_rat", "footman", "mire_thing" }
+  "husk", "gnaw_rat", "footman", "mire_thing",
+  -- W1 — axe type-identité (mono-type amps + rainbow payoff ; plan big-update §AXE 2)
+  "flesh_warband", "bone_choir", "arcane_seer", "abyss_maw", "order_marshal", "prism_horror" }
 
 -- Visuel : les 6 vanille ont un rig DESSINÉ main (src/data/creatures.lua) ; toutes les autres unités
 -- sont GÉNÉRÉES procéduralement (src/gen/creaturegen.lua, déterministe par id), résolu côté rendu

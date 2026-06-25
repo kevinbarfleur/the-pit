@@ -146,6 +146,7 @@ return {
   ["ui.reroll_label"] = "REROLL",
   ["ui.refuse_label"] = "REFUSE",
   ["ui.lives_orb"]    = "LIVES {n}/{max}", -- compteur au-dessus de l'orbe de vie
+  ["ui.merge_to_lvl"] = "LVL {n}", -- badge brillant boutique : niveau ATTEINT si l'achat déclenche une fusion (duplicatas)
 
   -- ── Fiche monstre TCG (carte au survol, src/scenes/build.lua) : rôles (tank/carry/bruiser) + tags ──
   -- Le rôle est DÉRIVÉ d'aggro/taunt (taunt OU aggro>=30 -> TANK ; aggro<=7 -> CARRY ; sinon BRUISER).
@@ -185,4 +186,63 @@ return {
   ["ui.pedestal_label"] = "WARLORD",         -- libellé gravé du socle (au-dessus du piédestal)
   ["ui.pedestal_cadence"] = "SLOW CADENCE",  -- légende de la barre de cadence lente (sous le piédestal)
   ["ui.commander_tag"] = "COMMANDER",        -- repère de combat AU-DESSUS du chef qui supervise (sans barre de vie)
+
+  -- ── W1 — AXE TYPE-IDENTITÉ (plan big-update §AXE 2) : 5 mono-type amps + 1 rainbow payoff + 3 reliques.
+  -- Convention de valeur = celle du roster (atkInc/dmgReduce/haste en % car increased ; regen/dmg/hp en plat).
+  ["unit.flesh_warband.name"]         = "FLESH WARBAND",
+  ["unit.flesh_warband.passive_name"] = "Pack Fury",
+  ["unit.flesh_warband.passive_desc"] = "Combat start: every Flesh ally strikes for +10% more - the warband bleeds together.",
+
+  ["unit.bone_choir.name"]         = "BONE CHOIR",
+  ["unit.bone_choir.passive_name"] = "Ossuary",
+  ["unit.bone_choir.passive_desc"] = "Combat start: every Bone ally takes 8% less attack damage - bone on bone, nothing passes.",
+
+  ["unit.arcane_seer.name"]         = "ARCANE SEER",
+  ["unit.arcane_seer.passive_name"] = "Quickened Mind",
+  ["unit.arcane_seer.passive_desc"] = "Combat start: every Arcane ally attacks 8% faster - the frequency of foreknowledge.",
+
+  ["unit.abyss_maw.name"]         = "ABYSS MAW",
+  ["unit.abyss_maw.passive_name"] = "Tidal Venom",
+  ["unit.abyss_maw.passive_desc"] = "Combat start: every Abyss ally's poison bites 15% deeper - the venom of the deep obeys.",
+
+  ["unit.order_marshal.name"]         = "ORDER MARSHAL",
+  ["unit.order_marshal.passive_name"] = "Standing Order",
+  ["unit.order_marshal.passive_desc"] = "Combat start: every Order ally regenerates 2 HP/s - the empire mends its own ranks.",
+
+  ["unit.prism_horror.name"]         = "PRISM HORROR",
+  ["unit.prism_horror.passive_name"] = "Foreign Flesh",
+  ["unit.prism_horror.passive_desc"] = "Combat start: gains +2 damage and +4 HP for each distinct type on your board - every alien flesh feeds it.",
+
+  -- reliques type-identité (mono-type gating + rainbow team payoff)
+  ["relic.pack_blood.name"]   = "PACK BLOOD",
+  ["relic.pack_blood.effect"] = "Your Flesh beasts strike for +8% more.",
+  ["relic.pack_blood.flavor"] = "One scent, one hunger; the meat-things move as a single starving thing.",
+
+  ["relic.bile_orb.name"]   = "BILE ORB",
+  ["relic.bile_orb.effect"] = "Your Abyss beasts' poison bites 12% deeper.",
+  ["relic.bile_orb.flavor"] = "A globe of standing black water; everything drowned in it learns to drown others.",
+
+  ["relic.prismatic_wraith.name"]   = "PRISMATIC WRAITH",
+  ["relic.prismatic_wraith.effect"] = "Each beast gains +3 damage and +5 HP per distinct type on your board.",
+  ["relic.prismatic_wraith.flavor"] = "It wears every nature at once, and none of them fit; the seams are where it cuts.",
+
+  -- COMMANDANT (« At command » sur la fiche) des 6 unités W1 (clés requises par tests/commanders.lua + i18n).
+  ["unit.flesh_warband.command_name"]   = "THE PACK CROWNED",
+  ["unit.flesh_warband.command_desc"]   = "Its foremost killer strikes for +12% more.",
+  ["unit.flesh_warband.command_flavor"] = "Lashed together hide to hide, the warband finds one throat to feed, and feeds it first.",
+  ["unit.bone_choir.command_name"]   = "THE WALLED CHOIR",
+  ["unit.bone_choir.command_desc"]   = "The whole pit takes 6% less.",
+  ["unit.bone_choir.command_flavor"] = "A scaffold of singing bone; under its dirge the whole pit hardens to a single ossuary.",
+  ["unit.arcane_seer.command_name"]   = "THE OPENED EYE",
+  ["unit.arcane_seer.command_desc"]   = "The whole pit strikes 6% faster.",
+  ["unit.arcane_seer.command_flavor"] = "It saw the blow before the arm rose; on its foreknowledge the whole pit moves the quicker.",
+  ["unit.abyss_maw.command_name"]   = "THE DROWNING TIDE",
+  ["unit.abyss_maw.command_desc"]   = "The pit's venom bites 18% deeper.",
+  ["unit.abyss_maw.command_flavor"] = "A maw that opens onto black water; under it, every venom in the pit drinks the deeper.",
+  ["unit.order_marshal.command_name"]   = "THE STANDING ORDER",
+  ["unit.order_marshal.command_desc"]   = "The whole pit mends 2 HP each second.",
+  ["unit.order_marshal.command_flavor"] = "It does not bleed so much as repair; under its order the whole pit closes its own wounds.",
+  ["unit.prism_horror.command_name"]   = "THE SHATTERED LIGHT",
+  ["unit.prism_horror.command_desc"]   = "The unit at the heart strikes for +12% more.",
+  ["unit.prism_horror.command_flavor"] = "Every nature refracts through it onto the one it crowns at the center; the heart of the pit cuts brightest.",
 }

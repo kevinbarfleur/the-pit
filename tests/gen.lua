@@ -352,7 +352,9 @@ do
   -- (b) GOLDEN DE GÉNÉRATION : empreinte stable cross-process (hashId = FNV-1a 5.1-safe, IEEE déterministe).
   -- Re-baseline INTENTIONNEL au PIN (B.2 : la forme passe de hash-dérivée à ancrée-au-nom). Si tu changes un
   -- builder/une palette/un PIN VOLONTAIREMENT, regénère et colle la nouvelle valeur ici.
-  local EXPECTED_GEN = 1150543352
+  local EXPECTED_GEN = 541702824 -- re-baseline W1 (2026-06-25) : +6 unités type-identité APPEND-ONLY (flesh_warband/
+  -- bone_choir/arcane_seer/abyss_maw/order_marshal/prism_horror). PROUVÉ golden-neutre sur les 83 existantes (le
+  -- fold des 83 d'origine = 1150543352 inchangé) -> seul l'ajout des 6 nouvelles formes déplace l'empreinte. Antérieur : 1150543352.
   local function roll(acc, s) return CreatureGen.hashId(string.format("%d|", acc) .. s) end
   local acc = 0
   for _, id in ipairs(Units.order) do acc = roll(acc, id .. "=" .. sigs[id]) end
