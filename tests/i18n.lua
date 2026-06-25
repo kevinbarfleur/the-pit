@@ -81,6 +81,13 @@ local ok, err = pcall(function()
     "result.left", "result.right", "ui.hint_playground", "menu.proving", "encounter.exhibition.name" }) do
     need(k)
   end
+  -- GRIMOIRE Pokédex : noms de TIER (caste affichée sur les chips de filtre tier + sous-label de case) +
+  -- libellés de FACETTE de filtre (TYPE/TIER/BAND) + ALL. Tout texte affiché passe par i18n (anti-trou).
+  for r = 1, 5 do need("tier." .. r .. ".name") end
+  for _, k in ipairs({ "grimoire.filter_all", "grimoire.facet_type", "grimoire.facet_tier",
+    "grimoire.facet_band", "grimoire.band_low", "grimoire.band_mid", "grimoire.band_high", "grimoire.hint" }) do
+    need(k)
+  end
 
   assert(#missing == 0, "cles de traduction manquantes : " .. table.concat(missing, ", "))
 

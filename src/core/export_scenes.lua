@@ -154,13 +154,33 @@ function Builders.runover(host)
   return Runover.new(Palette, VW, VH, host, { result = "win", run = host.run })
 end
 
--- GRIMOIRE : codex persistant (reliques + bestiaire). refresh() relit l'état connu/vu.
+-- GRIMOIRE : codex persistant POKÉDEX (grille + filtres + fiche au survol). refresh() relit l'état connu/vu.
+-- Pour la capture : onglet BESTIAIRE -> on voit (1) les chips de filtre TYPE *et* TIER, (2) le bord de chaque
+-- case TEINTÉ par le tier (comme les cartes shop), (3) la FICHE au survol. On POSE LE CURSEUR sur une case du
+-- TIER LE PLUS HAUT révélé (bord violet/or + halo) pour PROUVER le color-codage le plus vif dans le png.
 function Builders.grimoire(host)
   local s = GrimoireS.new(Palette, VW, VH, host)
   if s.refresh then s:refresh() end
-  if s.setTab then s:setTab("bestiary") end -- capture l'onglet BESTIAIRE (là où se lit la RARETÉ par couleur de tier)
-  if s.sort and s.sort.bestiary then s.sort.bestiary = "rank"; if s.rebuildRows then s:rebuildRows() end end -- trié par RANG -> dégradé de tier lisible
-  if s.rows and #s.rows > 0 then s.sel = #s.rows; if s.maxScroll then s.scroll = s:maxScroll() end end -- bas de liste = rangs hauts (ELDER/or) -> prouve le haut de l'échelle
+  if s.setTab then s:setTab("bestiary") end -- onglet BESTIAIRE (là où se lit la RARETÉ par couleur de tier)
+  -- pose le curseur (espace DESIGN) au centre d'une case révélée de RANG ÉLEVÉ et VISIBLE (sous le pli de scroll)
+  -- pour déclencher la fiche ET montrer un bord de tier saturé. La grille est triée par tier ascendant.
+  if s.cells and #s.cells > 0 then
+    local target, bestRank = nil, -1
+    for i = 1, #s.cells do
+      local c = s.cells[i]
+      local _, cy = s:cellOrigin(i)
+      local onscreen = cy >= s.gridTop and (cy + 92) <= 690 -- entièrement dans la fenêtre clippée
+      if c.on and onscreen then
+        local rk = (c.e and c.e.rank) or 0
+        if rk >= bestRank then target, bestRank = i, rk end -- >= : préfère un index plus à droite/bas à rang égal
+      end
+    end
+    target = target or 1
+    local x, y = s:cellOrigin(target)
+    s.hover = target
+    s.mx, s.my = x + 138 / 2, y + 92 / 2 -- centre de la vignette (espace design)
+    -- le harness ne passe pas par mousemoved ; on pose mx/my en design directement (la fiche lit mx/my design).
+  end
   return s
 end
 

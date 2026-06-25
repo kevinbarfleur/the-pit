@@ -10,7 +10,12 @@
 --       "hover"    bord laiton-spéculaire + hachure plus claire (survolé/drag par-dessus)
 --     opts = { typePip = "flesh|order|bone|arcane|abyss"  (pip en haut-gauche),
 --              level   = n (1..3 -> pips de niveau en haut-droite, via Badge),
---              affkeys = { "burn", "poison", ... } (petites marques d'affliction en bas) }
+--              affkeys = { "burn", "poison", ... } (petites marques d'affliction en bas),
+--              tierCol = {r,g,b}  (PASTILLE de rareté en haut-gauche, point discret — board),
+--              tierBorder = {r,g,b} (le BORD ENTIER prend la couleur de RARETÉ, comme les cartes shop —
+--                           override du bord d'état ; le grimoire/Pokédex l'utilise pour lire le tier
+--                           au cadre exactement comme en build ; sans cette opt -> bord d'état inchangé),
+--              tierGlow = bool   (avec tierBorder : halo additif de rareté autour de la case — héros R4-R5) }
 --   • edge(x1,y1,x2,y2,active) — l'ARÊTE de synergie : un trait SANG lumineux entre deux cases (segment).
 --
 -- COUCHE RENDER PURE (love.graphics, espace design 1280×720, sous Draw.begin). Pips de type via Draw.pip,
@@ -83,15 +88,29 @@ function Slot.draw(x, y, size, state, opts)
   -- 3) glyphe de cadenas (verrouillé).
   if s.lock then lockGlyph(x + size / 2, y + size / 2, floor(size * 0.18)) end
 
-  -- 4) bord d'état (2px : un liseré net + un ourlet intérieur sombre = relief léger).
-  Draw.rect(x, y, size, size, nil, s.border, 2)
+  -- 4) bord d'état (2px : un liseré net + un ourlet intérieur sombre = relief léger). Le bord prend la
+  -- COULEUR DE RARETÉ si opts.tierBorder est fourni (la rareté se lit AU CADRE, comme les cartes shop) ;
+  -- sinon le bord d'état canonique (board/design-system inchangés -> golden-neutre).
+  local border = opts.tierBorder or s.border
+  Draw.rect(x, y, size, size, nil, border, 2)
   if gr then
     gr.setColor(C.iron[1], C.iron[2], C.iron[3], 0.5)
     gr.rectangle("line", x + 2, y + 2, size - 4, size - 4)
   end
 
-  -- 5) lueur de bord (additive) pour neighbor/drop/hover — l'« émissif » d'état (synergie/cible/survol).
-  if s.glow and gr and gr.setBlendMode then
+  -- 5) lueur de bord (additive). Avec tierBorder -> halo de RARETÉ (héros) si tierGlow ; sinon l'« émissif »
+  -- d'état (synergie/cible/survol). Les deux teintes restent additives, discrètes.
+  if opts.tierBorder and opts.tierGlow and gr and gr.setBlendMode then
+    local tg = opts.tierBorder
+    gr.setBlendMode("add")
+    gr.setColor(tg[1], tg[2], tg[3], 0.45)
+    gr.rectangle("line", x, y, size, size)
+    gr.setColor(tg[1], tg[2], tg[3], 0.22)
+    gr.rectangle("line", x - 1, y - 1, size + 2, size + 2)
+    gr.rectangle("line", x - 2, y - 2, size + 4, size + 4)
+    gr.setBlendMode("alpha")
+    gr.setColor(1, 1, 1, 1)
+  elseif s.glow and gr and gr.setBlendMode then
     gr.setBlendMode("add")
     gr.setColor(s.glow[1], s.glow[2], s.glow[3], 0.4)
     gr.rectangle("line", x, y, size, size)

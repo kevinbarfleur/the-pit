@@ -241,6 +241,16 @@ return {
   ["grimoire.sort"] = "SORT: {mode}",
   ["grimoire.unseen"] = "UNENCOUNTERED",
   ["grimoire.beast_unknown"] = "Something moved in the dark of the Pit. You have not yet met it face to face.",
+  -- Pokédex refonte 2026-06 : grande grille + filtres en haut + fiche au survol.
+  ["grimoire.filter_all"] = "ALL",
+  ["grimoire.band_low"] = "SILVER",
+  ["grimoire.band_mid"] = "GOLD",
+  ["grimoire.band_high"] = "PRISMATIC",
+  ["grimoire.hint"] = "hover a cell to read its card",
+  -- titres de FACETTE de filtre (rangées du bestiaire : par TYPE et par TIER ; reliques : par PALIER).
+  ["grimoire.facet_type"] = "TYPE",
+  ["grimoire.facet_tier"] = "TIER",
+  ["grimoire.facet_band"] = "BAND",
 
   -- relic pick (1-of-3 acquisition)
   ["relicpick.kicker"] = "the victory loosens something below",

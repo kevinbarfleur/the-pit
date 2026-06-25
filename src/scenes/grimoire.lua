@@ -1,33 +1,39 @@
 -- src/scenes/grimoire.lua
--- LE GRIMOIRE — codex/COLLECTION persistant, à DEUX ONGLETS : RELIQUES + BESTIAIRE. Une entrée RENCONTRÉE
--- (relique inscrite : Grimoire.isKnown ; créature vue : Bestiary.isSeen) s'y dévoile à vie au niveau du compte
--- (méta-progression). Les non rencontrées restent voilées (« ??? ») — sauf MODE DEV full-unlock (read-time).
--- Tri cyclable (reliques : catégorie/tier/nom ; créatures : type/rang/nom).
+-- LE GRIMOIRE — codex/COLLECTION persistant, refondu en interface TYPE POKÉDEX (2026-06) : une BARRE DE
+-- FILTRES en haut + UNE grande GRILLE scrollable de cases, et la fiche détaillée au SURVOL (la MÊME carte
+-- qu'en build/combat). Couvre RELIQUES + MONSTRES. Une entrée RENCONTRÉE (relique inscrite : Grimoire.isKnown ;
+-- créature vue : Bestiary.isSeen) se dévoile à vie au niveau du compte (méta-progression). Les non rencontrées
+-- restent voilées (silhouette « ? » assombrie façon Pokédex) — sauf MODE DEV full-unlock (read-time).
 --
--- CHROME = KIT PROPRE (.dc.html / design-system) : la scène ne dessine plus ses panneaux/rangs/onglets À LA
--- MAIN. Elle compose les ATOMES du kit (Panel/Button/Slot/Dividers/Badge) pour rester cohérente avec le reste
--- du jeu (build/menu/designsystem) :
---   • onglets RELIQUES/BESTIAIRE = Button.draw (secondary, état actif) + compteur Space Mono ;
---   • puce de tri = Button.draw (secondary, cyclable) ;
---   • liste scrollable = Panel backing + vignette en Slot.draw (icône RelicGen / rig Rig.draw RESEATÉ dans la
---     case propre) + nom Cinzel + méta Space Mono ; clip Draw.scissor + molette + thumb laiton ;
---   • détail = Panel.draw (accent de rareté en bestiaire) + Dividers + Badge.rarity ; noms Cinzel, prose/flavor
---     Spectral, valeurs Space Mono ;
---   • retour = Button.ghost « [esc] back ».
--- On RÉUTILISE les appels d'art (RelicGen.cached pour les reliques, Rig.draw pour les créatures, Rarity
--- glow/frame + l'échelle des 5 rangs) — on les RÉASSOIT seulement dans des cadres propres.
+-- ── POURQUOI ce refactor (demande user) ──────────────────────────────────────────────────────────────
+-- On remplace la liste verticale + panneau de détail persistant par : (1) une bascule primaire RELIQUES |
+-- BESTIAIRE + une rangée de chips de SOUS-FILTRE (reliques : par palier band Argent/Or/Prismatique ;
+-- monstres : par TYPE) ; (2) une grande grille de cases (Slot) à icône/rig centré + label ; (3) au SURVOL
+-- d'une case, la FICHE flottante au curseur — relique = RelicCard, monstre = MonsterCard (le MÊME composant
+-- que le build, mêmes données/visuel) -> aucun doublon, on lit la collection exactement comme en jeu.
 --
--- Couche RENDER (love.graphics) en ESPACE DESIGN 1280x720. daChrome=true. [esc]/[g] -> retour menu (main).
+-- ── RÉUTILISE (cœur de la qualité) ───────────────────────────────────────────────────────────────────
+--   • cases       = atome Slot (6 états) ; visuel monstre = Critter (rendu VIVANT, comme le board/galerie),
+--                   repli Rig baké (6 dédiées) ; icône relique = RelicGen.cached bakée.
+--   • fiche relique = src/ui/relic_card.lua (band/fam depuis Relics + i18n) — câblage calqué sur relicpick.
+--   • fiche monstre = src/render/monstercard.lua (MonsterCard.draw(view,palette,id,mx,my,t,{rig})) — câblage
+--                   calqué sur build:drawTooltip (rig d'aperçu animé -> le portrait respire).
+--   • filtres     = chips (Chip) + bascule (Button) ; layout des chips = wrap (idiome playground).
+--   • JUICE       = Feel par case (lift/glow au survol) + bascule/chips/back.
+--   • scroll      = scissor + molette + thumb + clamp (idiome designsystem/grimoire).
+--
+-- ── CONTRAT (inchangé : routage + scène) ─────────────────────────────────────────────────────────────
+-- Couche RENDER (love.graphics) en ESPACE DESIGN 1280×720. daChrome=true. new/refresh/setTab/rebuildRows/
+-- update/drawBack/drawWorld/drawOverlay + souris (mousemoved/mousepressed/wheelmoved) + keypressed.
+-- [esc]/[g] -> retour menu (main). GOLDEN-NEUTRE (RENDER pur, aucune touche SIM).
 
 local Theme = require("src.ui.theme")
 local Draw = require("src.ui.draw")
-local Panel = require("src.ui.panel")      -- surface propre (dégradé + liseré iron + éclat)
-local Button = require("src.ui.button")    -- onglets / tri (secondary)
-local Nav = require("src.ui.nav")          -- bouton retour homogène (règle de navigation)
-local Slot = require("src.ui.slot")        -- cadre de vignette (case propre) pour icône/rig
-local Dividers = require("src.ui.dividers") -- séparateurs laiton/sang/texte propres
-local Badge = require("src.ui.badge")      -- échelle de rareté R1..R5 propre (bestiaire)
-local Feel = require("src.ui.feel")        -- JUICE : survol des onglets/tri/back (glow/lift)
+local Button = require("src.ui.button")    -- bascule RELIQUES/BESTIAIRE (secondary)
+local Nav = require("src.ui.nav")          -- bouton retour homogène
+local Slot = require("src.ui.slot")        -- cadre de case (vignette)
+local Chip = require("src.ui.chip")        -- chips de sous-filtre (band / type)
+local Feel = require("src.ui.feel")        -- JUICE : survol des cases / bascule / chips / back
 local Ambient = require("src.fx.ambient")
 local Relics = require("src.data.relics")
 local Grimoire = require("src.core.grimoire")
@@ -37,7 +43,10 @@ local Rig = require("src.core.rig")
 local Creatures = require("src.data.creatures")
 local Units = require("src.data.units")
 local CreatureGen = require("src.gen.creaturegen")
+local Critter = require("src.render.critter") -- rendu VIVANT (mêmes créatures animées que le board)
 local Rarity = require("src.gen.rarity")
+local RelicCard = require("src.ui.relic_card")   -- fiche relique (band/fam) — survol
+local MonsterCard = require("src.render.monstercard") -- fiche monstre (MÊME carte que build) — survol
 local T = require("src.core.i18n").t
 
 local C = Theme.c
@@ -45,40 +54,32 @@ local C = Theme.c
 local Screen = {}
 Screen.__index = Screen
 
--- Catégorie de chaque relique (A stats · B amplis · C paliers · D défensives · E transformatives) — métadonnée
--- d'affichage/tri (cf. docs/research/relics-design.md). En dur ici : la data de jeu ne porte que tier.
-local RELIC_CAT = {
-  bloodstone = "A", carapace = "A", aegis = "A", whetstone = "A",
-  kings_bowl = "B", ember_heart = "B", weeping_nail = "B", grave_cap = "B",
-  famines_math = "C", hollow_choir = "C", feeding_frenzy = "C",
-  thornguard = "D", sacred_shield = "D", second_breath = "D",
-  forked_tongue = "E", everburn = "E", open_wounds = "E", plague_communion = "E",
-}
-local CAT_LABEL = { A = "STATS", B = "AFFLICTION", C = "PAYOFF", D = "DEFENSE", E = "TRANSFORM" }
-
--- Teinte d'accent par type de créature (réutilise la convention galerie) — sert au liseré du portrait.
-local TYPE_COL = {
-  flesh = { 0.66, 0.53, 0.45 }, order = { 0.77, 0.63, 0.29 }, bone = { 0.66, 0.57, 0.44 },
-  arcane = { 0.55, 0.40, 0.66 }, abyss = { 0.62, 0.24, 0.16 },
+-- Emblème (FAMILLE de gemme) par relique : teinte du losange de RelicCard. Aligné sur relicpick/build
+-- (clés ∈ Theme.types). Sans entrée -> "bone" (neutre).
+local RELIC_FAM = {
+  bloodstone = "flesh", carapace = "bone", aegis = "order",
+  kings_bowl = "abyss", ember_heart = "arcane", weeping_nail = "flesh", grave_cap = "abyss",
+  usurers_ledger = "order", tithe_bowl = "order", paupers_boon = "order",
+  grave_robbers_cut = "bone", carrion_ledger = "bone",
+  black_summons = "abyss", beggars_lantern = "order",
+  blood_banner = "flesh", seers_mark = "abyss", carrion_feast = "bone", second_plague = "abyss",
+  tide_caller = "order", bait_lantern = "flesh",
+  echo_crown = "order", gravediggers_due = "bone", splitting_maw = "flesh",
 }
 
--- Modes de tri cyclables par onglet.
-local SORTS = {
-  relics = { "category", "tier", "name" },
-  bestiary = { "type", "rank", "name" },
-}
-local SORT_LABEL = { category = "CATEGORY", tier = "TIER", name = "NAME", type = "TYPE", rank = "RANK" }
+-- ── MISE EN PAGE (espace design 1280×720) — façon Pokédex : titre + bascule + chips, puis grande grille. ──
+local TITLE_Y = 28
+local TAB_Y, TAB_W, TAB_H = 78, 176, 34   -- bascule RELIQUES | BESTIARY
+local CHIP_Y = 126                         -- 1re rangée de chips de sous-filtre
+local CHIP_H, CHIP_GAP, CHIP_PAD = 24, 8, 10
+local GRID_X0 = 40                         -- marge latérale de la grille
+local GRID_TOP_FALLBACK = 176             -- haut de la grille si une seule rangée de chips (recalculé)
+local GRID_BOTTOM = 690
+local COLS = 8                             -- 8 colonnes -> cases ~138px de pitch (centrées)
+local CELL_W, CELL_H = 138, 124            -- pitch d'une case (slot + label)
+local TILE = 92                            -- côté de la vignette Slot dans la case
+local CELL_PADX = (CELL_W - TILE) / 2
 
--- Mise en page (espace design). On garde l'inset/colonnes pour préserver les hit-tests + le clip de la liste.
-local TITLE_Y = 30
-local TAB_Y, TAB_W, TAB_H = 84, 168, 32
-local SORT_Y, SORT_W, SORT_H = 124, 200, 26
-local LIST_X, LIST_Y, LIST_W = 32, 158, 396
-local LIST_BOTTOM = 690
-local ROW_H, ROW_GAP = 48, 6
-local DET_X, DET_Y, DET_W, DET_H = 452, 158, 796, 532
-
-local function listViewH() return LIST_BOTTOM - LIST_Y end
 local function ptIn(px, py, x, y, w, h) return px >= x and px <= x + w and py >= y and py <= y + h end
 
 function Screen.new(palette, vw, vh, host)
@@ -87,17 +88,20 @@ function Screen.new(palette, vw, vh, host)
     daChrome = true,
     titleKey = "scene.build", hintKey = "ui.empty",
     tab = "relics",
-    sort = { relics = "category", bestiary = "type" },
-    sel = 1, hover = nil, scroll = 0,
-    mx = -100, my = -100, -- souris en ESPACE DESIGN (pour le survol des boutons)
+    -- SOUS-FILTRES par FACETTE (sélection unique par facette ; combinées en ET). Reliques : 1 facette (palier
+    -- band). Bestiaire : 2 facettes indépendantes -> TYPE *et* TIER (l'user veut filtrer/trier par tier).
+    filter = { relics = { band = "all" }, bestiary = { type = "all", tier = "all" } },
+    hover = nil, scroll = 0,
+    mx = -100, my = -100, -- souris en ESPACE DESIGN (survol cases + boutons)
+    gridTop = GRID_TOP_FALLBACK,
     ambient = Ambient.new(5),
   }, Screen)
-  Feel.reset() -- repart au repos (survol/press des onglets/tri vierges) en (re)entrant
+  Feel.reset() -- repart au repos en (re)entrant
 
   -- ENTRÉES RELIQUES (métadonnée seule ; l'icône bakée est tirée à la volée via RelicGen.cached).
   self.relicEntries = {}
   for _, id in ipairs(Relics.order) do
-    self.relicEntries[#self.relicEntries + 1] = { id = id, cat = RELIC_CAT[id] or "Z", tier = Relics[id].tier or 1 }
+    self.relicEntries[#self.relicEntries + 1] = { id = id, band = Relics[id].band or "mid", tier = Relics[id].tier or 1 }
   end
 
   -- ENTRÉES BESTIAIRE : un rig par unité, EXACTEMENT comme le combat (6 dédiées sinon génération procédurale).
@@ -113,7 +117,11 @@ function Screen.new(palette, vw, vh, host)
     }
   end
 
-  self._tabRects = {}
+  -- FICHE monstre : rig d'aperçu ANIMÉ par unité (le portrait de MonsterCard respire, comme en build). On le
+  -- réutilise pour la créature de la case ET pour la fiche au survol (1 rig animé partagé / unité).
+  self.previewRigs = {}
+  for _, e in ipairs(self.beastEntries) do self.previewRigs[e.id] = e.char end
+
   self:refresh()
   return self
 end
@@ -123,61 +131,154 @@ function Screen:refresh()
   self.knownRelics, self.seenBeasts = 0, 0
   for _, e in ipairs(self.relicEntries) do if Grimoire.isKnown(e.id) then self.knownRelics = self.knownRelics + 1 end end
   for _, e in ipairs(self.beastEntries) do if Bestiary.isSeen(e.id) then self.seenBeasts = self.seenBeasts + 1 end end
-  self:rebuildRows()
+  self:rebuildChips()
+  self:rebuildCells()
 end
 
--- Trie l'onglet courant -> self.rows (entrées + flag « révélé »). Inconnus regroupés EN FIN (tri stable).
-function Screen:rebuildRows()
-  local mode = self.sort[self.tab]
-  local src, revealed
+-- Construit les CHIPS de sous-filtre de l'onglet courant. Chaque chip porte sa FACETTE (sélection unique PAR
+-- facette ; le bestiaire en a deux -> elles se combinent en ET). Une facette = une RANGÉE précédée d'un petit
+-- label-titre (gravé court). Reliques : 1 facette (band palier). Bestiaire : TYPE + TIER (rangs présents),
+-- chaque chip de tier TEINTÉ de sa couleur de rareté (= Rarity.frame) -> le tier se lit AU CHIP comme au cadre.
+--   chip = { facet, key, label, color }. "all" = tout passe pour cette facette.
+-- Les positions (wrap) sont calculées ici (idiome playground:layoutChips) -> hit-test direct.
+function Screen:rebuildChips()
+  -- décrit les facettes de l'onglet : { facet, titleKey, chips={...} } ; le "ALL" de tête est ajouté par facette.
+  local facets = {}
+  if self.tab == "relics" then
+    local BANDS = { { "low", "grimoire.band_low", C.steel },
+                    { "mid", "grimoire.band_mid", C.gold },
+                    { "high", "grimoire.band_high", C.rot } }
+    local seen = {}
+    for _, e in ipairs(self.relicEntries) do seen[e.band] = true end
+    local chips = {}
+    for _, b in ipairs(BANDS) do if seen[b[1]] then chips[#chips + 1] = { key = b[1], label = T(b[2]), color = b[3] } end end
+    facets[#facets + 1] = { facet = "band", titleKey = "grimoire.facet_band", chips = chips }
+  else
+    -- FACETTE TYPE (la famille mécanique) — gardée car épurée (1 rangée).
+    local TORDER = { "flesh", "order", "bone", "arcane", "abyss" }
+    local seenT = {}
+    for _, e in ipairs(self.beastEntries) do seenT[e.type] = true end
+    local tchips = {}
+    for _, ty in ipairs(TORDER) do
+      if seenT[ty] then tchips[#tchips + 1] = { key = ty, label = (T("type." .. ty)):upper(), color = Theme.type(ty).color } end
+    end
+    facets[#facets + 1] = { facet = "type", titleKey = "grimoire.facet_type", chips = tchips }
+    -- FACETTE TIER (le RANG) — l'ajout demandé : chips ascendants, TEINTÉS de la couleur de rareté (cadre).
+    local seenR = {}
+    for _, e in ipairs(self.beastEntries) do if e.rank then seenR[Rarity.clamp(e.rank)] = true end end
+    local rchips = {}
+    for r = 1, 5 do
+      if seenR[r] then rchips[#rchips + 1] = { key = tostring(r), label = T(Rarity.tierNameKey(r)), color = Rarity.tierBright(r) } end
+    end
+    facets[#facets + 1] = { facet = "tier", titleKey = "grimoire.facet_tier", chips = rchips }
+  end
+
+  -- pose : par facette -> un label-titre court (gravé) puis [ALL][chips…] qui s'enroulent dans la largeur. Le
+  -- bas de la dernière rangée = haut de grille (air conscient). Chaque chip mémorise (facet,key) -> hit-test.
+  local font = Theme.label(10)
+  local titleFont = Theme.ui(9)
+  local maxX = GRID_X0 + COLS * CELL_W
+  self.chipRects, self.chipLabels = {}, {}
+  local y = CHIP_Y
+  for fi, fac in ipairs(facets) do
+    -- titre de facette à gauche, baseline alignée sur la rangée de chips.
+    local tlab = T(fac.titleKey)
+    local tw = (titleFont and titleFont:getWidth(tlab)) or (#tlab * 6)
+    self.chipLabels[#self.chipLabels + 1] = { text = tlab, x = GRID_X0, y = y + (CHIP_H - 9) / 2 + 1 }
+    local x = GRID_X0 + tw + 12
+    local rowStart = x
+    local entries = { { key = "all", label = T("grimoire.filter_all") } }
+    for _, c in ipairs(fac.chips) do entries[#entries + 1] = c end
+    for _, ch in ipairs(entries) do
+      local w = (font and font:getWidth(ch.label) or #ch.label * 6) + CHIP_PAD * 2
+      if x > rowStart and x + w > maxX then x = rowStart; y = y + CHIP_H + CHIP_GAP end
+      self.chipRects[#self.chipRects + 1] = { facet = fac.facet, key = ch.key, label = ch.label, color = ch.color, x = x, y = y, w = w, h = CHIP_H }
+      x = x + w + CHIP_GAP
+    end
+    if fi < #facets then y = y + CHIP_H + CHIP_GAP end -- rangée suivante pour la facette d'après
+  end
+  self.gridTop = y + CHIP_H + 18 -- la grille démarre sous la dernière rangée de chips (air conscient)
+end
+
+-- Filtre (toutes facettes en ET) + ordonne l'onglet courant -> self.cells. Inconnus regroupés EN FIN.
+-- Bestiaire : tri par TIER ASCENDANT (puis ordre de data) dans chaque groupe -> le rang se lit aussi à la pile.
+function Screen:rebuildCells()
+  local f = self.filter[self.tab]
+  local src, revealed, byTier
   if self.tab == "relics" then
     src = self.relicEntries
     revealed = function(e) return Grimoire.isKnown(e.id) end
+    byTier = false
   else
     src = self.beastEntries
     revealed = function(e) return Bestiary.isSeen(e.id) end
+    byTier = true -- l'user veut VOIR/trier par tier : pile ascendante
   end
-  local rows = {}
-  for _, e in ipairs(src) do rows[#rows + 1] = { e = e, on = revealed(e) } end
 
-  -- Clé de tri : connus d'abord (les inconnus en bas), puis par le mode, puis nom (id) pour la stabilité.
-  local function nameOf(e) return T("relic." .. e.id .. ".name") end
-  local function beastName(e) return T("unit." .. e.id .. ".name") end
-  local function key(row)
-    local e = row.e
+  -- prédicat = chaque facette active doit matcher ("all" -> facette ignorée). Combinées en ET.
+  local function keep(e)
     if self.tab == "relics" then
-      if mode == "tier" then return string.format("%d|%s|%s", e.tier, e.cat, e.id) end
-      if mode == "name" then return nameOf(e) .. "|" .. e.id end
-      return string.format("%s|%d|%s", e.cat, e.tier, e.id) -- category (défaut)
+      return f.band == "all" or e.band == f.band
     else
-      if mode == "rank" then return string.format("%d|%s|%s", e.rank or 1, e.type, e.id) end
-      if mode == "name" then return beastName(e) .. "|" .. e.id end
-      return string.format("%s|%d|%s", e.type, e.rank or 1, e.id) -- type (défaut)
+      local okT = (f.type == "all") or (e.type == f.type)
+      local okR = (f.tier == "all") or (Rarity.clamp(e.rank) == tonumber(f.tier))
+      return okT and okR
     end
   end
-  table.sort(rows, function(a, b)
-    if a.on ~= b.on then return a.on end -- révélés en haut
-    return key(a) < key(b)
-  end)
-  self.rows = rows
-  self.sel = math.min(self.sel or 1, #rows)
-  if self.sel < 1 then self.sel = 1 end
+
+  -- ORDRE : RÉVÉLÉS d'abord puis voilés (façon Pokédex). Bestiaire -> clé de tri (tier, idx) ASCENDANTE ;
+  -- reliques -> ordre de data. Tri STABLE (clé composite, jamais d'égalité ambiguë).
+  local known, unknown = {}, {}
+  for i, e in ipairs(src) do
+    if keep(e) then
+      local cell = { e = e, on = revealed(e), idx = i }
+      if cell.on then known[#known + 1] = cell else unknown[#unknown + 1] = cell end
+    end
+  end
+  if byTier then
+    local function cmp(a, b)
+      local ra, rb = Rarity.clamp(a.e.rank), Rarity.clamp(b.e.rank)
+      if ra ~= rb then return ra < rb end
+      return a.idx < b.idx
+    end
+    table.sort(known, cmp); table.sort(unknown, cmp)
+  end
+  local cells = {}
+  for _, cell in ipairs(known) do cells[#cells + 1] = cell end
+  for _, cell in ipairs(unknown) do cells[#cells + 1] = cell end
+  self.cells = cells
   self.scroll = 0
 end
 
-function Screen:contentH() return #self.rows * (ROW_H + ROW_GAP) end
-function Screen:maxScroll() return math.max(0, self:contentH() - listViewH()) end
+-- Géométrie de défilement.
+function Screen:rows() return math.ceil(#(self.cells or {}) / COLS) end
+function Screen:gridViewH() return GRID_BOTTOM - self.gridTop end
+function Screen:contentH() return self:rows() * CELL_H end
+function Screen:maxScroll() return math.max(0, self:contentH() - self:gridViewH()) end
+
+-- Coin haut-gauche de la case d'index local i (1-based), AVANT scroll. Grille centrée dans la largeur.
+function Screen:cellOrigin(i)
+  local c = (i - 1) % COLS
+  local r = math.floor((i - 1) / COLS)
+  local gridW = COLS * CELL_W
+  local x0 = GRID_X0 + math.floor((COLS * CELL_W - gridW) / 2) -- (centré : ici no-op, prêt si COLS change)
+  local x = x0 + c * CELL_W
+  local y = self.gridTop + r * CELL_H - self.scroll
+  return x, y
+end
 
 function Screen:update(frameDt)
   self.t = self.t + frameDt
-  -- Survol des onglets/tri/back -> glow/lift animés (Feel, RENDER pur). Les rects sont posés en draw (1re frame
-  -- déjà couverte par new()).
   Feel.update(frameDt)
-  Feel.hover("grim.tab.relics", self._tabRects.relics and ptIn(self.mx, self.my, self._tabRects.relics.x, self._tabRects.relics.y, self._tabRects.relics.w, self._tabRects.relics.h) or false)
-  Feel.hover("grim.tab.bestiary", self._tabRects.bestiary and ptIn(self.mx, self.my, self._tabRects.bestiary.x, self._tabRects.bestiary.y, self._tabRects.bestiary.w, self._tabRects.bestiary.h) or false)
-  Feel.hover("grim.sort", self.sortRect and ptIn(self.mx, self.my, self.sortRect.x, self.sortRect.y, self.sortRect.w, self.sortRect.h) or false)
-  Feel.hover("grim.back", self.backRect and ptIn(self.mx, self.my, self.backRect.x, self.backRect.y, self.backRect.w, self.backRect.h) or false)
-  -- Anim idle des rigs du bestiaire (comme la galerie).
+  -- survol de la bascule / chips / back (glow/lift). Les rects sont posés en draw (1re frame couverte par new).
+  Feel.hover("grim.tab.relics", self._tabRects and self._tabRects.relics and ptIn(self.mx, self.my, self._tabRects.relics.x, self._tabRects.relics.y, self._tabRects.relics.w, self._tabRects.relics.h) or false)
+  Feel.hover("grim.tab.bestiary", self._tabRects and self._tabRects.bestiary and ptIn(self.mx, self.my, self._tabRects.bestiary.x, self._tabRects.bestiary.y, self._tabRects.bestiary.w, self._tabRects.bestiary.h) or false)
+  for _, r in ipairs(self.chipRects or {}) do
+    Feel.hover("grim.chip." .. r.facet .. "." .. r.key, ptIn(self.mx, self.my, r.x, r.y, r.w, r.h))
+  end
+  -- JUICE des cases : la case survolée monte/glow (Feel). Une clé stable par index VISIBLE.
+  for i = 1, #(self.cells or {}) do Feel.hover("grim.cell." .. i, self.hover == i) end
+  -- anim idle des rigs du bestiaire (comme la galerie) — la créature de chaque case respire.
   for _, e in ipairs(self.beastEntries) do Rig.update(e.char, self.t, frameDt) end
 end
 
@@ -189,7 +290,7 @@ end
 
 function Screen:drawWorld() end
 
--- Blit d'une icône bakée centrée sur (cx, cy) à scale entier (pixel-perfect, sans teinte).
+-- Blit d'une icône bakée centrée sur (cx, cy) à scale entier (pixel-perfect).
 local function drawIconC(baked, cx, cy, s)
   if not baked or not baked.image then return false end
   love.graphics.setColor(1, 1, 1, 1)
@@ -197,245 +298,215 @@ local function drawIconC(baked, cx, cy, s)
   return true
 end
 
--- Dessine un rig à (cx, cyFeet) en espace design, scalé (le rig est nativement petit). cyFeet = ligne de pieds.
-local function drawRigC(char, cx, cyFeet, s)
-  love.graphics.push()
-  love.graphics.translate(math.floor(cx), math.floor(cyFeet))
-  love.graphics.scale(s, s)
-  char.x, char.y, char.facing = 0, 0, 1
-  Rig.draw(char)
-  love.graphics.pop()
-  love.graphics.setColor(1, 1, 1, 1)
-end
-
 function Screen:drawOverlay(view)
   Draw.begin(view)
 
-  -- En-tête : titre Cinzel (voix gravée) — le « ? ? ? » reste Jacquard (display) pour les inconnus.
-  Draw.text(T("grimoire.title"), LIST_X, TITLE_Y, C.ink, Theme.title(34))
-  -- retour = bouton homogène « ‹ MENU » (règle de nav design-system). [esc]/[g] restent des accélérateurs.
+  -- En-tête : titre gravé (Cinzel) + indice discret À DROITE du titre (même ligne, baseline basse -> aucun
+  -- chevauchement avec la bascule en dessous) + retour homogène.
+  local titleFont = Theme.title(34)
+  Draw.text(T("grimoire.title"), GRID_X0, TITLE_Y, C.ink, titleFont)
+  local titleW = (titleFont and titleFont:getWidth(T("grimoire.title"))) or 380
+  Draw.text(T("grimoire.hint"), GRID_X0 + titleW + 20, TITLE_Y + 22, C.ink4, Theme.label(11))
   self.backRect = Nav.back(view, T("grimoire.back"), { mx = self.mx, my = self.my, id = "grim.back" })
 
-  -- Onglets RELIQUES / BESTIAIRE = boutons propres (secondary), l'actif forcé en survol + un éclat doré ;
-  -- compteur n/total en Space Mono (gold actif).
-  self:drawTab("relics", T("grimoire.tab_relics"), LIST_X, self.knownRelics, #self.relicEntries)
-  self:drawTab("bestiary", T("grimoire.tab_bestiary"), LIST_X + TAB_W + 12, self.seenBeasts, #self.beastEntries)
+  -- Bascule RELIQUES | BESTIARY (deux boutons secondary, l'actif forcé en survol + liseré doré) + compteur.
+  self._tabRects = {}
+  self:drawTab("relics", T("grimoire.tab_relics"), GRID_X0, self.knownRelics, #self.relicEntries)
+  self:drawTab("bestiary", T("grimoire.tab_bestiary"), GRID_X0 + TAB_W + 14, self.seenBeasts, #self.beastEntries)
 
-  -- Puce de TRI cyclable = bouton secondary compact.
-  local sortStr = T("grimoire.sort", { mode = SORT_LABEL[self.sort[self.tab]] or "?" })
-  self.sortRect = { x = LIST_X, y = SORT_Y, w = SORT_W, h = SORT_H }
-  local sf = Feel.state("grim.sort")
-  Button.draw(self.sortRect.x, self.sortRect.y, self.sortRect.w, self.sortRect.h, "secondary", sortStr,
-    { hover = sf.hover > 0.5, feel = sf })
+  -- Chips de SOUS-FILTRE (band / type) — sélection unique ; l'actif = liseré plein de sa couleur.
+  self:drawChips()
 
-  -- Liste : Panel de fond (dégradé + liseré iron) sous la zone, puis lignes clippées.
-  Panel.draw(LIST_X - 6, LIST_Y - 6, LIST_W + 14, listViewH() + 12, { fill = C.stone900 })
-  Draw.scissor(view, LIST_X - 4, LIST_Y - 2, LIST_W + 12, listViewH() + 4)
-  for i, row in ipairs(self.rows) do
-    local y = LIST_Y + (i - 1) * (ROW_H + ROW_GAP) - self.scroll
-    if y + ROW_H >= LIST_Y - 2 and y <= LIST_BOTTOM then self:drawRow(i, row, y) end
+  -- GRILLE scrollable (cases clippées).
+  Draw.scissor(view, GRID_X0 - 4, self.gridTop - 4, COLS * CELL_W + 8, self:gridViewH() + 8)
+  for i, cell in ipairs(self.cells) do
+    local x, y = self:cellOrigin(i)
+    if y + CELL_H >= self.gridTop - 2 and y <= GRID_BOTTOM + 2 then self:drawCell(view, i, cell, x, y) end
   end
   Draw.noScissor()
 
-  -- Barre de défilement (thumb laiton, idiome design-system).
+  -- Barre de défilement (thumb laiton).
   local maxS = self:maxScroll()
   if maxS > 0 then
-    local vh = listViewH()
+    local vh = self:gridViewH()
     local thumbH = math.max(28, vh * vh / self:contentH())
-    local ty = LIST_Y + (vh - thumbH) * (self.scroll / maxS)
-    Draw.rect(LIST_X + LIST_W + 4, LIST_Y, 3, vh, C.stone900)
-    Draw.rect(LIST_X + LIST_W + 4, ty, 3, thumbH, C.brass)
+    local ty = self.gridTop + (vh - thumbH) * (self.scroll / maxS)
+    local sbx = GRID_X0 + COLS * CELL_W + 10
+    Draw.rect(sbx, self.gridTop, 3, vh, C.stone900)
+    Draw.rect(sbx, ty, 3, thumbH, C.brass)
   end
 
-  -- Détail (droite).
-  self:drawDetail()
+  -- FICHE au SURVOL (au curseur). DERNIER dessiné -> par-dessus la grille. Relique = RelicCard ; monstre =
+  -- MonsterCard (la MÊME que build/combat). On NE la dessine que sur une case RÉVÉLÉE (rien à montrer si voilée).
+  self:drawHoverCard(view)
+
   Draw.finish()
 end
 
--- Onglet = bouton SECONDARY. Actif -> forcé en état survol (le plus clair) + un éclat doré au-dessus ; inactif
--- -> état idle/survol selon Feel. Le compteur (n/total) est posé À DROITE en Space Mono (gold si actif).
+-- Bascule = bouton SECONDARY. Actif -> forcé en survol (le plus clair) + liseré doré ; le compteur n/total
+-- à droite (Space Mono, gold sur l'actif).
 function Screen:drawTab(id, label, x, n, total)
   local active = (self.tab == id)
   self._tabRects[id] = { x = x, y = TAB_Y, w = TAB_W, h = TAB_H }
   local fs = Feel.state("grim.tab." .. id)
   Button.draw(x, TAB_Y, TAB_W, TAB_H, "secondary", label, { hover = active or fs.hover > 0.5, feel = fs })
-  if active then -- liseré doré (l'onglet retenu = héros léger), comme l'accent Panel
-    Draw.rect(x, TAB_Y, TAB_W, TAB_H, nil, C.brass, 1)
-  end
-  -- compteur n/total à droite du bouton (Space Mono ; gold sur l'actif).
-  Draw.textR(n .. "/" .. total, x + TAB_W - 10, TAB_Y + (TAB_H - 12) / 2 - 1,
+  if active then Draw.rect(x, TAB_Y, TAB_W, TAB_H, nil, C.brass, 1) end
+  Draw.textR(n .. "/" .. total, x + TAB_W - 12, TAB_Y + (TAB_H - 12) / 2 - 1,
     active and C.gold or C.ink4, Theme.labelSmall(10))
 end
 
--- Une ligne de liste : vignette en CASE PROPRE (Slot) avec l'icône/rig reseaté (ou un « ? » Jacquard si voilé)
--- + nom Cinzel + méta Space Mono. Sélection -> Panel surligné (accent laiton) ; survol -> liseré laiton.
-function Screen:drawRow(i, row, y)
-  local e, on = row.e, row.on
-  local sel, hov = (self.sel == i), (self.hover == i)
-
-  -- Fond de ligne : Panel propre. Sélection = éclat haut + accent laiton ; survol = liseré laiton ; sinon plat.
-  -- BESTIAIRE : la ligne lit la RARETÉ (couleur de tier) ; sélection/survol RENFORCENT la teinte (jamais un
-  -- laiton générique qui écrase le rang) + un halo additif -> « ça glow, ça renforce » sans changer de hue
-  -- (retour user 2026-06). Les reliques gardent le laiton.
-  local bestiary = (self.tab == "bestiary")
-  local tierC = (bestiary and e.rank) and Rarity.tierColor(e.rank) or nil
-  if sel then
-    Panel.draw(LIST_X, y, LIST_W, ROW_H, { fill1 = C.stone800, fill2 = C.stone900,
-      border = tierC and Rarity.tierBright(e.rank) or C.brass, accent = tierC or C.brassD })
-  elseif hov then
-    Panel.draw(LIST_X, y, LIST_W, ROW_H, { fill1 = C.stone850, fill2 = C.stone900,
-      border = tierC and Rarity.tierBright(e.rank) or C.brassL, hi = false })
-  else
-    Panel.draw(LIST_X, y, LIST_W, ROW_H, { fill = C.stone850, border = tierC or C.iron, hi = false })
+-- Rangées de chips de sous-filtre (une par FACETTE, précédée d'un petit titre gravé). Actif = liseré PLEIN de
+-- sa couleur (band/type/tier) + label avivé ; sinon liseré sourd + label sourd. JUICE : survol = lift léger (Feel).
+function Screen:drawChips()
+  -- titres de facette (gravés courts, sourds) à gauche de leur rangée.
+  local titleFont = Theme.ui(9)
+  for _, l in ipairs(self.chipLabels or {}) do
+    Draw.text(l.text, l.x, l.y, C.ink4, titleFont)
   end
-  if tierC and (sel or hov) and love.graphics and love.graphics.setBlendMode then
-    local b2 = Rarity.tierBright(e.rank)
-    love.graphics.setBlendMode("add")
-    love.graphics.setColor(b2[1], b2[2], b2[3], sel and 0.16 or 0.10)
-    love.graphics.rectangle("line", LIST_X, y, LIST_W, ROW_H)
-    love.graphics.setBlendMode("alpha"); love.graphics.setColor(1, 1, 1, 1)
-  end
-
-  -- Vignette = CASE PROPRE Slot (38px) ; l'icône (relique) / le rig (créature) y est REASSIS, ou « ? » si voilé.
-  local TH = ROW_H - 10
-  local tx, ty = LIST_X + 5, y + 5
-  Slot.draw(tx, ty, TH, on and "selected" or "locked",
-    (on and bestiary and e.rank) and { tierCol = Rarity.tierColor(e.rank) } or nil)
-  local thumbCx, thumbCy = tx + TH / 2, ty + TH / 2
-  if on then
-    if self.tab == "relics" then
-      drawIconC(RelicGen.cached(e.id, self.palette), thumbCx, thumbCy, 2)
-    else
-      drawRigC(e.char, thumbCx, ty + TH - 4, 1.5)
+  local font = Theme.label(10)
+  for _, r in ipairs(self.chipRects) do
+    local active = (self.filter[self.tab][r.facet] == r.key)
+    local fs = Feel.state("grim.chip." .. r.facet .. "." .. r.key)
+    local lift = math.floor((fs.lift or 0) + 0.5)
+    local col = r.color or C.brass
+    local fill = active and C.stone700 or C.stone900
+    -- BORD : actif -> couleur PLEINE (liseré 2px) ; inactif -> teinte SOURDE de SA couleur (≈40%) plutôt que
+    -- l'iron neutre -> chaque chip de tier/type/palier porte SA couleur même au repos (l'user veut « teinté de
+    -- sa couleur de tier comme les chips de band »). "ALL" reste neutre (pas de couleur de catégorie).
+    local hasCol = r.color ~= nil
+    local border = active and col
+      or (hasCol and { col[1] * 0.5 + 0.06, col[2] * 0.5 + 0.06, col[3] * 0.5 + 0.06 } or C.iron)
+    Draw.rect(r.x, r.y - lift, r.w, r.h, fill, border, active and 2 or 1)
+    -- éclat additif au survol (le métal accroche la lumière), discret.
+    if fs.glow and fs.glow > 0.02 and love.graphics and love.graphics.setBlendMode then
+      love.graphics.setBlendMode("add")
+      love.graphics.setColor(col[1], col[2], col[3], 0.12 * fs.glow)
+      love.graphics.rectangle("line", r.x, r.y - lift, r.w, r.h)
+      love.graphics.setBlendMode("alpha"); love.graphics.setColor(1, 1, 1, 1)
     end
-  else
-    Draw.textC("?", thumbCx, thumbCy - 11, C.lock, Theme.display(20))
-  end
-
-  -- Nom (Cinzel, voix gravée) + méta (Space Mono).
-  local nameKey = (self.tab == "relics") and ("relic." .. e.id .. ".name") or ("unit." .. e.id .. ".name")
-  local nx = tx + TH + 10
-  Draw.text(on and T(nameKey) or T("grimoire.unknown"), nx, y + 9, on and C.ink or C.ink4, Theme.subhead(15))
-  if on then
-    -- Méta tier-forward (bestiaire) : NOM DE CASTE + rang, dans la couleur de rareté (le type n'a aucune
-    -- incidence mécanique -> retiré du codex, retour user 2026-06). Les reliques gardent catégorie + tier.
-    local meta, metaCol = "", C.ink4
-    if self.tab == "relics" then meta = (CAT_LABEL[e.cat] or "?") .. "   T" .. e.tier
-    elseif e.rank then
-      meta = T(Rarity.tierNameKey(e.rank)) .. "   R" .. e.rank .. "/5"
-      metaCol = Rarity.tierBright(e.rank)
-    end
-    Draw.text(meta, nx, y + 29, metaCol, Theme.labelSmall(9))
-  else
-    Draw.text(T(self.tab == "relics" and "grimoire.cryptic" or "grimoire.unseen"), nx, y + 29, C.ink5, Theme.labelSmall(9))
+    -- LABEL : actif -> couleur pleine ; inactif coloré -> teinte douce de sa couleur (lisible) ; sinon ink sourd.
+    local labCol = active and col
+      or (hasCol and { col[1] * 0.72 + 0.12, col[2] * 0.72 + 0.12, col[3] * 0.72 + 0.12 })
+      or (fs.glow > 0.3 and C.ink2 or C.ink4)
+    Draw.textTrackedC(r.label, r.x + r.w / 2, r.y - lift + (r.h - 11) / 2, labCol, font, 1.2)
   end
 end
 
-function Screen:drawDetail()
-  local row = self.rows[self.sel]
-  -- Panneau de détail PROPRE. Accent de rareté (bestiaire révélé) -> liseré interne héros ; sinon nu.
-  local accent
-  if row and row.on and self.tab == "bestiary" and row.e.rank then
-    local fr = Rarity.frame(row.e.rank)
-    if fr then accent = { fr[1], fr[2], fr[3], 1 } end
-  end
-  local ix, iy, iw = Panel.draw(DET_X, DET_Y, DET_W, DET_H, { accent = accent })
-  if not row then return end
-  local e, on = row.e, row.on
-  local cx = ix + iw / 2
+-- Une CASE de la grille : vignette Slot (icône relique OU rig/critter monstre) + label lisible dessous.
+-- Voilée -> Slot "locked" + grand « ? » (silhouette inconnue façon Pokédex) + label « ? ? ? ». JUICE : la
+-- case survolée MONTE (lift) + son Slot passe en "selected"/teinté + un halo additif -> « ça réagit ».
+function Screen:drawCell(view, i, cell, x, y)
+  local e, on = cell.e, cell.on
+  local hov = (self.hover == i)
+  local fs = Feel.state("grim.cell." .. i)
+  local lift = math.floor((fs.lift or 0) + 0.5)
 
-  if self.tab == "relics" then
-    -- Portrait : icône bakée reseatée dans une CASE PROPRE (Slot) centrée ; « ? » Jacquard si voilé.
-    local PS = 96
-    local px, py = math.floor(cx - PS / 2), DET_Y + 30
-    Slot.draw(px, py, PS, on and "selected" or "locked")
-    if on then
-      drawIconC(RelicGen.cached(e.id, self.palette), cx, py + PS / 2, 5)
-    else
-      Draw.textC("?", cx, py + PS / 2 - 28, C.lock, Theme.display(56))
+  local tx, ty = x + CELL_PADX, y - lift
+  local bestiary = (self.tab == "bestiary")
+  -- TIER lu AU CADRE (comme les cartes shop) : la case bestiaire prend la COULEUR DE RARETÉ sur tout son bord,
+  -- avivée au survol (calque de build:drawShop `hot and Rarity.tierBright`). Rangs hauts -> halo de rareté.
+  local rich = bestiary and on and e.rank and Rarity.clamp(e.rank) >= 4
+  local tierBorder = (bestiary and on and e.rank)
+    and (hov and Rarity.tierBright(e.rank) or Rarity.tierColor(e.rank)) or nil
+  local tierC = tierBorder -- (rétro-compat des couleurs de label plus bas)
+
+  -- État du Slot : voilé -> "locked" ; révélé -> "empty", "selected" au survol. Bestiaire -> bord TEINTÉ par tier.
+  local state = on and (hov and "selected" or "empty") or "locked"
+  Slot.draw(tx, ty, TILE, state, (on and tierBorder)
+    and { tierBorder = tierBorder, tierGlow = rich } or nil)
+
+  -- halo additif de rareté DERRIÈRE la créature (bestiaire, rangs hauts) — « ça rayonne ».
+  local cx, cy = tx + TILE / 2, ty + TILE / 2
+  if on and bestiary and e.rank and love.graphics and love.graphics.setBlendMode and love.graphics.circle then
+    local rar = Rarity.get(e.rank)
+    if rar and rar.glow and rar.glow > 0 then
+      local g = Rarity.frame(e.rank)
+      love.graphics.setBlendMode("add")
+      for k = 3, 1, -1 do
+        love.graphics.setColor(g[1], g[2], g[3], rar.glow * 0.10 * k)
+        love.graphics.circle("fill", cx, cy, TILE * 0.42 * (k / 3))
+      end
+      love.graphics.setBlendMode("alpha"); love.graphics.setColor(1, 1, 1, 1)
     end
-    -- Nom (Cinzel title) + sous-titre catégorie/tier (Space Mono, gold).
-    Draw.textC(on and T("relic." .. e.id .. ".name") or T("grimoire.unknown"), cx, py + PS + 14,
-      on and C.ink or C.ink4, Theme.title(24))
-    if on then
-      Draw.textTrackedC(CAT_LABEL[e.cat] .. "   ·   TIER " .. e.tier, cx, py + PS + 48, C.gold, Theme.label(11), 1.5)
-    end
-    -- Séparateur de section PROPRE (le titre de bloc « KNOWN EFFECT »).
-    Dividers.text(cx, DET_Y + 206, DET_W - 200, T("grimoire.effect_known"))
-    if on then
-      -- Effet = prose lisible (Spectral body) ; flavor = Spectral italique (loreRoman).
-      Draw.textWrap(T("relic." .. e.id .. ".effect"), DET_X + 70, DET_Y + 240, DET_W - 140, C.ink, Theme.body(16), "center")
-      Draw.textWrap(T("relic." .. e.id .. ".flavor"), DET_X + 70, DET_Y + 300, DET_W - 140, C.ink3, Theme.flavor(16), "center")
+  end
+
+  -- Contenu de la case.
+  if on then
+    if self.tab == "relics" then
+      drawIconC(RelicGen.cached(e.id, self.palette), cx, cy, 4) -- 16×16 -> 64 design (tient dans la case 92)
     else
-      Draw.textWrap(T("grimoire.body_unknown"), DET_X + 70, DET_Y + 244, DET_W - 140, C.ink3, Theme.flavor(16), "center")
+      -- créature VIVANTE (comme le board/galerie) si générée ; repli rig baké (6 dédiées). Clip à la case.
+      if Critter.has(e.id) then
+        Critter.draw(view, e.id, tx + 6, ty + 4, TILE - 12, TILE - 14, self.t / 60, 1)
+      else
+        love.graphics.push()
+        love.graphics.translate(cx, ty + TILE - 10)
+        love.graphics.scale(2.0, 2.0)
+        e.char.x, e.char.y, e.char.facing = 0, 0, 1
+        Rig.draw(e.char)
+        love.graphics.pop()
+        love.graphics.setColor(1, 1, 1, 1)
+      end
     end
   else
-    -- Bestiaire.
-    local col = TYPE_COL[e.type] or { 0.8, 0.8, 0.8 }
-    -- Portrait : CASE PROPRE (Slot) ; glow de rareté additif puis le rig reseaté ; « ? » si voilé.
-    local PS = 116
-    local px, py = math.floor(cx - PS / 2), DET_Y + 24
-    Slot.draw(px, py, PS, on and "selected" or "locked", (on and e.rank) and { tierCol = Rarity.tierColor(e.rank) } or nil)
-    if on then
-      if e.rank then
-        local rar = Rarity.get(e.rank)
-        if rar and rar.glow and rar.glow > 0 then
-          love.graphics.setBlendMode("add")
-          local g = Rarity.frame(e.rank)
-          for k = 3, 1, -1 do
-            love.graphics.setColor(g[1], g[2], g[3], rar.glow * 0.10 * k)
-            love.graphics.circle("fill", cx, py + PS / 2, 40 * (k / 3))
-          end
-          love.graphics.setBlendMode("alpha"); love.graphics.setColor(1, 1, 1, 1)
-        end
-      end
-      drawRigC(e.char, cx, py + PS - 8, 5)
-    else
-      Draw.textC("?", cx, py + PS / 2 - 28, C.lock, Theme.display(56))
-    end
-    -- Nom (Cinzel title) + type/rang (Space Mono dans la teinte de type).
-    Draw.textC(on and T("unit." .. e.id .. ".name") or T("grimoire.unknown"), cx, py + PS + 12,
-      on and C.ink or C.ink4, Theme.title(24))
-    if on then
-      local spec = Units[e.id] or {}
-      local tb = (e.rank and Rarity.tierBright(e.rank)) or col
-      Draw.textTrackedC((e.rank and T(Rarity.tierNameKey(e.rank)) or "") .. (e.rank and ("   ·   RANK " .. e.rank .. "/5") or ""),
-        cx, py + PS + 44, { tb[1], tb[2], tb[3], 1 }, Theme.label(11), 1.5)
-      -- Séparateur sang (cassure de section) + stats (Space Mono / valeurs).
-      Dividers.blood(DET_X + 150, DET_Y + 200, DET_W - 300)
-      Draw.textTrackedC(T("ui.unit_stats", { hp = spec.hp or 0, dmg = spec.dmg or 0, cd = spec.cd or 0 }),
-        cx, DET_Y + 216, C.ink2, Theme.value(15), 1)
-      -- Passif : nom Cinzel (heading) + prose Spectral.
-      Draw.textC(T("unit." .. e.id .. ".passive_name"), cx, DET_Y + 246, C.gold, Theme.heading(15))
-      Draw.textWrap(T("unit." .. e.id .. ".passive_desc"), DET_X + 70, DET_Y + 272, DET_W - 140, C.ink2, Theme.body(13), "center")
+    -- silhouette inconnue : grand « ? » sourd au centre (Pokédex « non rencontré »).
+    Draw.textC("?", cx, cy - 18, C.lock, Theme.display(40))
+  end
 
-      -- PALIERS de rareté : l'échelle PROPRE Badge.rarity (R1..R5, le rang réel gildé) + la même bête aux 5
-      -- rangs (échelle/glow croissants) RESEATÉE en cases propres, le rang réel surligné -> on lit le système
-      -- de rareté directement sur la créature sélectionnée.
-      local rk = e.rank or 1
-      Dividers.text(cx, DET_Y + 326, DET_W - 240, T("grimoire.tiers"))
-      Badge.rarity(cx - 180, DET_Y + 350, 360, rk, 5, 12)
-      local ly = DET_Y + 408
-      for k = 1, 5 do
-        local rar = Rarity.get(k)
-        local ccx = DET_X + DET_W * (k - 0.5) / 5
-        local TS = 66
-        local sx = math.floor(ccx - TS / 2)
-        Slot.draw(sx, ly, TS, (k == rk) and "selected" or "empty")
-        if rar.glow and rar.glow > 0 then
-          local fr = Rarity.frame(k)
-          love.graphics.setBlendMode("add")
-          for j = 2, 1, -1 do
-            love.graphics.setColor(fr[1], fr[2], fr[3], rar.glow * 0.12 * j)
-            love.graphics.circle("fill", ccx, ly + TS / 2 - 6, 15 * (j / 2))
-          end
-          love.graphics.setBlendMode("alpha"); love.graphics.setColor(1, 1, 1, 1)
-        end
-        drawRigC(e.char, ccx, ly + TS - 8, 1.9 * (rar.scale or 1))
-      end
-    else
-      Draw.textWrap(T("grimoire.beast_unknown"), DET_X + 70, DET_Y + 220, DET_W - 140, C.ink3, Theme.flavor(16), "center")
+  -- LABEL sous la vignette (lisible, tronqué à la largeur de case) : nom révélé OU « ? ? ? ».
+  local lf = Theme.label(10)
+  local labY = ty + TILE + 6
+  if on then
+    local nameKey = (self.tab == "relics") and ("relic." .. e.id .. ".name") or ("unit." .. e.id .. ".name")
+    local name = T(nameKey)
+    -- tronque proprement à la largeur de case (jamais couper mid-mot brutalement : ellipse).
+    if lf and lf:getWidth(name) > CELL_W - 8 then
+      while #name > 1 and lf:getWidth(name .. "…") > CELL_W - 8 do name = name:sub(1, #name - 1) end
+      name = name .. "…"
     end
+    local col = (tierC and C.ink) or C.ink2
+    Draw.textC(name, x + CELL_W / 2, labY, hov and C.ink or col, lf)
+    -- sous-label : palier de relique OU rang de monstre (couleur de tier), petit.
+    if bestiary and e.rank then
+      Draw.textC(T(Rarity.tierNameKey(e.rank)), x + CELL_W / 2, labY + 13, Rarity.tierBright(e.rank), Theme.labelSmall(9))
+    elseif self.tab == "relics" then
+      local bandStr = (e.band == "low" and T("grimoire.band_low")) or (e.band == "high" and T("grimoire.band_high")) or T("grimoire.band_mid")
+      local bandCol = RelicCard.bandAccent(e.band) or C.ink4
+      Draw.textC(bandStr, x + CELL_W / 2, labY + 13, bandCol, Theme.labelSmall(9))
+    end
+  else
+    Draw.textC(T("grimoire.unknown"), x + CELL_W / 2, labY, C.ink5, lf)
+  end
+end
+
+-- FICHE au survol (au curseur). La MÊME carte qu'en jeu : monstre -> MonsterCard (suit le curseur + rebond
+-- géré en interne) ; relique -> RelicCard (on calcule l'ancre au curseur + rebond ici, comme MonsterCard).
+function Screen:drawHoverCard(view)
+  local cell = self.cells and self.cells[self.hover]
+  if not (cell and cell.on) then return end
+  local e = cell.e
+  if self.tab == "bestiary" then
+    -- exactement le câblage du build : ancre = curseur (espace design), rig d'aperçu animé -> portrait qui respire.
+    MonsterCard.draw(view, self.palette, e.id, self.mx, self.my, self.t / 60, { rig = self.previewRigs[e.id] })
+  else
+    -- carte de relique IDENTIFIÉE (band -> couleur de carte ; fam -> gemme). Hauteur MESURÉE -> rien ne déborde.
+    local W = 300
+    local opts = {
+      state = "identified",
+      name = T("relic." .. e.id .. ".name"),
+      effect = T("relic." .. e.id .. ".effect"),
+      flavor = T("relic." .. e.id .. ".flavor"),
+      fam = RELIC_FAM[e.id] or "bone",
+      band = e.band,
+    }
+    local h = RelicCard.measure(W, opts)
+    -- placement au curseur, rebond sur les bords (calque de MonsterCard : décalé bas-droite, bascule si déborde).
+    local x, y = self.mx + 18, self.my + 10
+    if x + W > Draw.W then x = self.mx - W - 18 end
+    if x < 4 then x = 4 end
+    if y + h > Draw.H then y = Draw.H - h - 6 end
+    if y < 4 then y = 4 end
+    RelicCard.draw(math.floor(x), math.floor(y), W, h, opts)
   end
 end
 
@@ -443,33 +514,38 @@ end
 function Screen:setTab(id)
   if self.tab == id then return end
   self.tab = id
-  self.sel, self.scroll = 1, 0
-  self:rebuildRows()
+  self.hover, self.scroll = nil, 0
+  self:rebuildChips()
+  self:rebuildCells()
 end
 
-function Screen:cycleSort()
-  local modes = SORTS[self.tab]
-  local cur = self.sort[self.tab]
-  local idx = 1
-  for k, m in ipairs(modes) do if m == cur then idx = k end end
-  self.sort[self.tab] = modes[idx % #modes + 1]
-  self:rebuildRows()
+-- Sélectionne une valeur pour UNE facette (les autres facettes restent inchangées -> filtres combinés en ET).
+function Screen:setFilter(facet, key)
+  if self.filter[self.tab][facet] == key then return end
+  self.filter[self.tab][facet] = key
+  self.hover = nil
+  self:rebuildCells()
 end
 
-function Screen:rowAt(dx, dy)
-  if not ptIn(dx, dy, LIST_X, LIST_Y, LIST_W, listViewH()) then return nil end
-  local rel = dy - LIST_Y + self.scroll
-  local i = math.floor(rel / (ROW_H + ROW_GAP)) + 1
-  if i >= 1 and i <= #self.rows then
-    local within = rel - (i - 1) * (ROW_H + ROW_GAP)
-    if within <= ROW_H then return i end
+-- Index de case sous (dx,dy) en espace design (dans la grille clippée). nil hors grille / au-delà des cases.
+function Screen:cellAt(dx, dy)
+  if not ptIn(dx, dy, GRID_X0, self.gridTop, COLS * CELL_W, self:gridViewH()) then return nil end
+  local rel = dy - self.gridTop + self.scroll
+  local r = math.floor(rel / CELL_H)
+  local localX = dx - GRID_X0
+  local c = math.floor(localX / CELL_W)
+  if c < 0 or c >= COLS then return nil end
+  local i = r * COLS + c + 1
+  if i >= 1 and i <= #(self.cells or {}) then
+    -- hit la VIGNETTE (pas la gouttière de label) : on accepte toute la case (label inclus) pour un survol confortable.
+    return i
   end
   return nil
 end
 
 function Screen:mousemoved(vx, vy)
   self.mx, self.my = vx * 4, vy * 4
-  self.hover = self:rowAt(self.mx, self.my)
+  self.hover = self:cellAt(self.mx, self.my)
 end
 
 function Screen:mousepressed(vx, vy, button)
@@ -484,33 +560,22 @@ function Screen:mousepressed(vx, vy, button)
       if ptIn(dx, dy, r.x, r.y, r.w, r.h) then Feel.press("grim.tab." .. id); self:setTab(id); return end
     end
   end
-  if self.sortRect and ptIn(dx, dy, self.sortRect.x, self.sortRect.y, self.sortRect.w, self.sortRect.h) then
-    Feel.press("grim.sort"); self:cycleSort(); return
+  for _, r in ipairs(self.chipRects or {}) do
+    if ptIn(dx, dy, r.x, r.y, r.w, r.h) then Feel.press("grim.chip." .. r.facet .. "." .. r.key); self:setFilter(r.facet, r.key); return end
   end
-  local i = self:rowAt(dx, dy)
-  if i then self.sel = i end
 end
 
 function Screen:wheelmoved(_, dy)
-  self.scroll = self.scroll - (dy or 0) * 36
+  self.scroll = self.scroll - (dy or 0) * 48
   local m = self:maxScroll()
   if self.scroll < 0 then self.scroll = 0 elseif self.scroll > m then self.scroll = m end
+  -- met à jour le survol (le contenu sous le curseur a bougé).
+  self.hover = self:cellAt(self.mx, self.my)
 end
 
 function Screen:keypressed(key)
-  if key == "up" then self.sel = math.max(1, (self.sel or 1) - 1); self:ensureVisible()
-  elseif key == "down" then self.sel = math.min(#self.rows, (self.sel or 1) + 1); self:ensureVisible()
-  elseif key == "tab" or key == "left" or key == "right" then self:setTab(self.tab == "relics" and "bestiary" or "relics")
-  elseif key == "s" then self:cycleSort()
+  if key == "tab" or key == "left" or key == "right" then self:setTab(self.tab == "relics" and "bestiary" or "relics")
   elseif key == "g" or key == "escape" then self.host.goto("menu") end
-end
-
--- Garde la sélection dans le viewport (auto-scroll).
-function Screen:ensureVisible()
-  local top = (self.sel - 1) * (ROW_H + ROW_GAP)
-  local bot = top + ROW_H
-  if top < self.scroll then self.scroll = top
-  elseif bot > self.scroll + listViewH() then self.scroll = bot - listViewH() end
 end
 
 return Screen
