@@ -587,6 +587,44 @@ local ok, err = pcall(function()
 
   print("  surveillance#: cleave × multicast -> conclut (profondeur 1, pas de boucle) + déterministe OK")
 
+  -- ════ W2 — SUMMON × SCAVENGE (l'attrition INVERSÉE, plan §AXE 3) : un invocateur meurt → son token jaillit
+  -- à sa place ; un charognard allié enfle à chaque mort. On exige : le combat CONCLUT (engeance bornée :
+  -- 1 token/mort, tokens terminaux → pas de marée infinie) ET c'est DÉTERMINISTE (même seed → même issue/durée).
+  -- Couvre le cas dur §6.6 « summon×scavenge non-infinie ». ════
+  do
+    local function run(seed)
+      -- 2 invocateurs (rat_warren → ratling) + 1 charognard (carrion_choir) côté gauche, depth/row variés.
+      local left = {
+        U("rat_warren", nil, { depth = 0, row = 0, x = 130, y = 70, facing = 1 }),
+        U("rat_warren", nil, { depth = 0, row = 1, x = 130, y = 104, facing = 1 }),
+        U("carrion_choir", nil, { depth = 1, row = 0, x = 110, y = 70, facing = 1 }),
+      }
+      local right = {
+        U("marauder", nil, { depth = 0, row = 0, x = 190, y = 70, facing = -1 }),
+        U("templar", nil, { depth = 0, row = 1, x = 190, y = 104, facing = -1 }),
+      }
+      local a = Arena.new({ left = left, right = right, autoReset = false, seed = seed })
+      local sawToken = false
+      local n = 0
+      for i = 1, 8000 do
+        a:update(1.0, i * 1.0); n = i
+        for _, u in ipairs(a.units) do if u.isToken then sawToken = true end end
+        if a.over then break end
+      end
+      assert(a.over, "W2 summon×scavenge: le combat CONCLUT (engeance bornee, tokens terminaux)")
+      assert(n < 8000, "W2 summon×scavenge: conclu strictement sous le plafond (pas de maree infinie)")
+      return (a.win and "W" or "L"), n, sawToken, #a.units
+    end
+    local w1, n1, saw1 = run(123)
+    assert(saw1, "W2 summon×scavenge: au moins un token a jailli d'un invocateur mort")
+    local w2, n2 = run(123)
+    assert(w1 == w2 and n1 == n2, "W2 summon×scavenge: DETERMINISTE (meme seed -> meme issue + meme duree)")
+    -- borne dure : le nombre total d'unites nees reste fini (1 token/mort, terminal) -> pas d'explosion.
+    local _, _, _, finalN = run(777)
+    assert(finalN < 64, "W2 summon×scavenge: le nombre d'unites reste borne (anti-snowball d'engeance)")
+  end
+  print("  W2 engeance: summon × scavenge -> conclut (borne) + token jaillit + deterministe OK")
+
   print("  synergies : choc-decharge-allie / poison-multi-sources / weaken-reduit-output / bleed-ralentit-cadence / regen-contre-DoT")
   print("  synergies+: contagion / propagation-a-la-mort / aggravate / shieldEat (T2)")
   print("  synergies#: bleed->rot / poison->feu / festering-sans-cap (T3 croises) OK")

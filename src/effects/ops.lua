@@ -460,4 +460,53 @@ Effects.register("purge", function(ctx, p)
   if (not fam or fam == "shock") then d.shock = nil end
 end)
 
+-- ════════ AXE 3 — MORT & ENGEANCE (plan big-update §AXE 3). Deux verbes orthogonaux, GATED (aucune unité du
+-- scénario golden ne les porte : `summon` insère dans self.units → DOIT rester hors golden ; cf. tests/golden.lua).
+-- DÉCISION USER (override du plan A+C) : « 1 token, dans la case libérée du parent » — remplacement 1-pour-1
+-- STRICT (1 token à la position board exacte du mort, AUCUN remplissage d'adjacence, AUCUN débordement). La
+-- marée vient du NOMBRE d'invocateurs, pas du multi-spawn. ══════════════════════════════════════════════════
+
+-- ENGEANCE (on_death, sur le PORTEUR mourant) : à sa mort, l'invocateur fait jaillir UN sous-être (token) à SA
+-- place (depth/row/x/y/team hérités → même profil de ciblage que le cadavre). Déterministe (zéro RNG dans le
+-- choix : la position EST celle du mort), insertion DIFFÉRÉE (arena:queueSummon → flush APRÈS le broadcast de
+-- la frame, jamais une mutation de self.units en plein ipairs). ANTI-BOUCLE : les tokens sont IMPOSANCE 0 et
+-- ne portent aucun `summon` → un token ne ré-invoque JAMAIS (chaîne bornée profondeur 1, src/data/spawn.lua).
+-- ctx.source = le mort (cf. arena: pass self-death dédiée). `p.token` = id du sous-être (window.SPAWN).
+Effects.register("summon", function(ctx, p)
+  local dead = ctx.source
+  if not (dead and p.token) then return end
+  -- 1-pour-1 : exactement 1 token (le `count` du plan est IGNORÉ par la règle user). Garde-fou : un token ne
+  -- peut pas en invoquer (l'arène le sait aussi, mais on coupe court ici = double sécurité, golden-inerte).
+  ctx.arena:queueSummon(dead, p.token)
+end)
+
+-- FAINT-PAYOFF / Charognard (on_ally_death, STATS ONLY — conforme au contrat d'ordre §2.4.1 : on_ally_death ne
+-- pose JAMAIS de dégât immédiat). Quand un ALLIÉ tombe, le porteur enfle : +value en `stat` (dmg/atk ou hp),
+-- cumul BORNÉ (p.cap). « Plus la fosse se vide, plus il enfle » — l'attrition INVERSÉE (pendant des engeances :
+-- les tokens meurent → les charognards montent). INTRA-COMBAT (les stacks repartent à zéro au prochain combat,
+-- comme frenzy_gain : l'état combat-time n'est pas persisté). Mémorise la base → pas de dérive d'arrondi.
+Effects.register("scavenge_on_ally_death", function(ctx, p)
+  local me = ctx.source
+  if not (me and me.alive) then return end
+  local stat = p.stat or "dmg"
+  local val = p.value or 0
+  local cap = p.cap          -- plafond en VALEUR ABSOLUE cumulée (gouverneur lisible, affiché carte)
+  if stat == "hp" then
+    me._scavHp = (me._scavHp or 0)
+    local add = (cap and (me._scavHp + val > cap)) and max(0, cap - me._scavHp) or val
+    if add > 0 then
+      me._scavHp = me._scavHp + add
+      me.maxHp = me.maxHp + add
+      me.hp = min(me.maxHp, me.hp + add) -- le gain de PV max soigne d'autant (corps qui enfle)
+    end
+  else -- dmg/atk : enfle les dégâts d'attaque (le « Shark/Mammoth » SAP)
+    me._scavDmg = (me._scavDmg or 0)
+    local add = (cap and (me._scavDmg + val > cap)) and max(0, cap - me._scavDmg) or val
+    if add > 0 then
+      me._scavDmg = me._scavDmg + add
+      me.dmg = me.dmg + add
+    end
+  end
+end)
+
 return Effects

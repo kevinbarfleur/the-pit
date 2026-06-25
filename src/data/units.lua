@@ -751,6 +751,58 @@ local U = {
     effects = { { trigger = "combat_start", op = "aura_per_unique_type", params = { dmgPerType = 2, hpPerType = 4 } } },
     -- COMMANDANT : le prisme arme le cœur du board (empower role:center -> récompense le placement carry).
     commandBonus = { trigger = "combat_start", op = "aura_stat", target = "role:center", params = { stat = "atkInc", value = 0.12 } } },
+
+  -- ── W2 — AXE MORT & ENGEANCE (plan big-update §AXE 3). Décision user : « 1 token, dans la case libérée du
+  -- parent » (remplacement 1-pour-1 STRICT, op `summon` self-death). Le `count` du plan est IGNORÉ par la règle
+  -- (la marée vient du NOMBRE d'invocateurs, pas du multi-spawn). Le token hérite du `type` PARENT (plan Q2 :
+  -- mono-os qui invoque des boneling reste mono-os → les amps de type W1 touchent aussi l'engeance). Les tokens
+  -- sont TERMINAUX (imposance 0, aucun effet → ne ré-invoquent jamais : chaîne bornée profondeur 1). + 2
+  -- CHAROGNARDS faint-payoff (on_ally_death, stats-only, cap) = l'attrition INVERSÉE (les tokens meurent → les
+  -- charognards montent). GOLDEN-SAFE : aucune unité golden (templar/marauder/skeleton/witch/demon) ne porte
+  -- summon (qui insère dans self.units → changerait la trace). family/arch = combos primgen éprouvés (rendu
+  -- garanti). chiffres = PLACEHOLDERS (à tuner via tools/sim.lua). ──
+
+  -- INVOCATEURS (on_death summon → 1 token à leur place)
+  brood_mother = { -- ARACHNIDE/cocon : « le ventre crève, mille pattes courent » → spiderling
+    id = "brood_mother", type = "flesh", family = "arachnide", arch = "widow", rank = 3, cost = 3, hp = 54, dmg = 6, cd = 60, aggro = 12,
+    effects = { { trigger = "on_death", op = "summon", params = { token = "spiderling" } } },
+    -- COMMANDANT : la couvée arme l'avant-garde (empower role:front, 1 cible -> magnitude sûre).
+    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "role:front", params = { stat = "atkInc", value = 0.10 } } },
+  larval_host = { -- LARVE/os : un hôte qui éclôt à la mort → grubling (engeance d'os, croise l'axe type bone)
+    id = "larval_host", type = "bone", family = "larve", arch = "grub", rank = 2, cost = 2, hp = 50, dmg = 5, cd = 56,
+    effects = { { trigger = "on_death", op = "summon", params = { token = "grubling" } } },
+    -- COMMANDANT : sustain team (la chair se renouvelle ; regen 2, sans cap moteur).
+    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "team", params = { stat = "regen", value = 2 } } },
+  spore_sac = { -- SPORE/arcane : meurt en répandant la spore VIVANTE (croise l'axe 1) → poison on_hit + sporeling on_death
+    id = "spore_sac", type = "arcane", family = "spore", arch = "sporewalker", rank = 3, cost = 3, hp = 44, dmg = 4, cd = 54, aggro = 5,
+    effects = {
+      { trigger = "on_hit", op = "poison", params = { dps = 2, dur = 160 } },
+      { trigger = "on_death", op = "summon", params = { token = "sporeling" } },
+    },
+    -- COMMANDANT : ampli poison modéré (la spore enfle dans la fosse ; poisonInc team, TROU #1).
+    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "team", params = { stat = "poisonInc", value = 0.16 } } },
+  rat_warren = { -- RONGEUR/flesh : la marée du Puits → ratling (chaff cheap qui revient en token)
+    id = "rat_warren", type = "flesh", family = "rongeur", arch = "ratking", rank = 2, cost = 2, hp = 48, dmg = 4, cd = 50, aggro = 10,
+    effects = { { trigger = "on_death", op = "summon", params = { token = "ratling" } } },
+    -- COMMANDANT : tempo team (la marée déferle ; haste 0.05, sans cap moteur).
+    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "team", params = { stat = "haste", value = 0.05 } } },
+  pit_shepherd = { -- ENGEANCE-CARRY abyss : « le berger du Puits relève ses morts » → boneling (croise l'axe type)
+    id = "pit_shepherd", type = "abyss", family = "culte", arch = "hierophant", rank = 4, cost = 4, hp = 60, dmg = 6, cd = 62, aggro = 12,
+    effects = { { trigger = "on_death", op = "summon", params = { token = "boneling" } } },
+    -- COMMANDANT : relève le plafond d'invocation… non — varie : armure team (le troupeau se serre ; dmgReduce 0.06, sans cap).
+    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "team", params = { stat = "dmgReduce", value = 0.06 } } },
+
+  -- FAINT-PAYOFF / CHAROGNARDS (on_ally_death scavenge → +stat par allié tombé, cappé)
+  carrion_choir = { -- « plus la fosse se vide, plus il enfle » : +2 dmg par allié mort (cap +8)
+    id = "carrion_choir", type = "bone", family = "colosse", arch = "cyclops", rank = 3, cost = 3, hp = 64, dmg = 5, cd = 60, aggro = 15,
+    effects = { { trigger = "on_ally_death", op = "scavenge_on_ally_death", params = { stat = "dmg", value = 2, cap = 8 } } },
+    -- COMMANDANT : empower team (le chœur des charognes enfle ; atkInc 0.07, faible/cappé).
+    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "team", params = { stat = "atkInc", value = 0.07 } } },
+  bone_harvest = { -- bone : chaque mort allié l'épaissit : +3 PV max par allié tombé (cap +12)
+    id = "bone_harvest", type = "bone", family = "mortvivant", arch = "revenant", rank = 3, cost = 3, hp = 72, dmg = 4, cd = 64, aggro = 20,
+    effects = { { trigger = "on_ally_death", op = "scavenge_on_ally_death", params = { stat = "hp", value = 3, cap = 12 } } },
+    -- COMMANDANT : sustain team (la moisson d'os renforce ; regen 2, sans cap moteur).
+    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "team", params = { stat = "regen", value = 2 } } },
 }
 
 -- ══ FAMILLE DoT DÉCLARATIVE (M2/2.4 — « type » des synergies P1 + segmentation Grimoire). Porteur explicite,
@@ -771,11 +823,12 @@ U.dotFamily = {
   razorkin = "bleed", gash_fiend = "bleed", hookjaw = "bleed", leech_thorn = "bleed", bloodletter = "bleed",
   tendon_render = "bleed", vein_splitter = "bleed", slow_bleed = "bleed", wailing_shade = "bleed",
   byakhee = "bleed", gnaw_rat = "bleed", clot_mender = "bleed",
-  -- POISON (15)
+  -- POISON (16)
   witch = "poison", spore_tick = "poison", corruptor = "poison", bile_spitter = "poison", rot_grub = "poison",
   plague_bearer = "poison", acid_maw = "poison", festering = "poison", venom_censer = "poison",
   chitin_drone = "poison", coil_viper = "poison", web_recluse = "poison", ink_horror = "poison",
   deep_kraken = "poison", miasma_acolyte = "poison",
+  spore_sac = "poison", -- W2 : invocateur qui pose AUSSI du poison (croise l'axe 1) ; la spore vivante + le sporeling
   -- POURRITURE (12)
   rot_hound = "rot", carrion_pecker = "rot", maggot_king = "rot", necro_leech = "rot", patient_worm = "rot",
   hollow_gut = "rot", blight_spreader = "rot", marrow_drinker = "rot", pit_maw = "rot", wither_bloom = "rot",
@@ -821,9 +874,13 @@ U.order = { "marauder", "templar", "skeleton", "bandit", "witch", "demon",
   -- plancher rang-1 (PRD progression-economy)
   "husk", "gnaw_rat", "footman", "mire_thing",
   -- W1 — axe type-identité (mono-type amps + rainbow payoff ; plan big-update §AXE 2)
-  "flesh_warband", "bone_choir", "arcane_seer", "abyss_maw", "order_marshal", "prism_horror" }
+  "flesh_warband", "bone_choir", "arcane_seer", "abyss_maw", "order_marshal", "prism_horror",
+  -- W2 — axe mort & engeance (invocateurs on_death + charognards faint-payoff ; plan big-update §AXE 3)
+  "brood_mother", "larval_host", "spore_sac", "rat_warren", "pit_shepherd", "carrion_choir", "bone_harvest" }
 
 -- Pool d'unités ACHETABLES en boutique (cf. src/run/state.lua). Identique au roster pour l'instant.
+-- NB : les 9 TOKENS d'engeance (src/data/spawn.lua) sont VOLONTAIREMENT ABSENTS du pool ET de l'order :
+-- on n'en achète/affiche jamais — ils n'existent que comme engeance invoquée en combat (summon-only).
 U.pool = { "marauder", "templar", "skeleton", "bandit", "witch", "demon",
   "spore_tick", "corruptor", "emberling", "razorkin", "rot_hound", "stormcaller", "plague_doctor",
   "cinder_cur", "pyre_tender", "ash_moth",
@@ -850,7 +907,9 @@ U.pool = { "marauder", "templar", "skeleton", "bandit", "witch", "demon",
   -- plancher rang-1 (PRD progression-economy)
   "husk", "gnaw_rat", "footman", "mire_thing",
   -- W1 — axe type-identité (mono-type amps + rainbow payoff ; plan big-update §AXE 2)
-  "flesh_warband", "bone_choir", "arcane_seer", "abyss_maw", "order_marshal", "prism_horror" }
+  "flesh_warband", "bone_choir", "arcane_seer", "abyss_maw", "order_marshal", "prism_horror",
+  -- W2 — axe mort & engeance (invocateurs + charognards ; plan big-update §AXE 3). Tokens NON inclus (summon-only).
+  "brood_mother", "larval_host", "spore_sac", "rat_warren", "pit_shepherd", "carrion_choir", "bone_harvest" }
 
 -- Visuel : les 6 vanille ont un rig DESSINÉ main (src/data/creatures.lua) ; toutes les autres unités
 -- sont GÉNÉRÉES procéduralement (src/gen/creaturegen.lua, déterministe par id), résolu côté rendu

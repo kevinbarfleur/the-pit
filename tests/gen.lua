@@ -325,6 +325,49 @@ do
   if unpinned > 0 then fail(unpinned .. " unite(s) sans PIN arch= (verrouillage golden incomplet)") end
   print("  primgen PIN : OK (" .. #Units.order .. " unites pinnees, chaque forme resolue in-family)")
 
+  -- (a-bis) SOUS-ÊTRES (engeance, AXE 3) : les 9 tokens d'engeance (src/data/spawn.lua) rendent leur PROPRE
+  -- mini-corps de la famille `sousetres` (plus le placeholder famille-parent). On vérifie que chaque token PIN
+  -- bien son arch homonyme DANS sousetres, que CreatureGen.cachedLive (chemin EN JEU) le résout, et que le
+  -- mini-corps rend (grille non vide, A.mass présent). Les tokens NE sont PAS dans Units.order -> n'entrent
+  -- jamais dans le fold du golden de génération (golden-neutre par construction, cf. EXPECTED_GEN ci-dessous).
+  do
+    local Spawn = require("src.data.spawn")
+    for _, tid in ipairs(Spawn.tokenOrder) do
+      local tk = Spawn.token(tid)
+      if tk.family ~= "sousetres" then
+        fail("token '" .. tid .. "' : family='" .. tostring(tk.family) .. "' (attendu 'sousetres')")
+      end
+      -- l'arch du token DOIT exister dans la famille sousetres (PIN par nom).
+      local ai = Primgen.archIndexOf("sousetres", tk.arch)
+      if not ai then fail("token '" .. tid .. "' : arch='" .. tostring(tk.arch) .. "' absent de la famille sousetres") end
+      -- chemin EN JEU (cachedLive, via le pont Spawn) -> rend SON archetype, pas un placeholder parent.
+      local d = CreatureGen.cachedLive({ id = tid, type = tk.type, family = tk.family, arch = tk.arch, rank = tk.rank or 1 })
+      if d.family ~= "sousetres" then fail("token '" .. tid .. "' : cachedLive family='" .. tostring(d.family) .. "'") end
+      if d.arch ~= tk.arch then fail("token '" .. tid .. "' : cachedLive arch='" .. tostring(d.arch) .. "' != '" .. tk.arch .. "'") end
+      if not (d.A and d.A.mass and d.A.mass[1]) then fail("token '" .. tid .. "' : A.mass absent (mini-corps cassé)") end
+      local n = 0; for _ in pairs(d.grid) do n = n + 1 end
+      if n < 40 then fail("token '" .. tid .. "' : grille trop vide (" .. n .. " px) — mini-corps cassé ?") end
+    end
+    -- DISTINCTION inter-tokens : les 9 mini-corps doivent différer (un grubling != un boneling).
+    local tsigs = {}
+    for _, tid in ipairs(Spawn.tokenOrder) do
+      local tk = Spawn.token(tid)
+      local d = CreatureGen.cachedLive({ id = tid, type = tk.type, family = tk.family, arch = tk.arch, rank = tk.rank or 1 })
+      local keys = {}; for k in pairs(d.grid) do keys[#keys + 1] = k end
+      table.sort(keys)
+      local buf = { d.arch }
+      for _, k in ipairs(keys) do buf[#buf + 1] = k .. ":" .. d.grid[k] end
+      tsigs[tid] = table.concat(buf, ",")
+    end
+    for i = 1, #Spawn.tokenOrder do
+      for j = i + 1, #Spawn.tokenOrder do
+        local a, b = Spawn.tokenOrder[i], Spawn.tokenOrder[j]
+        if tsigs[a] == tsigs[b] then fail("tokens '" .. a .. "' == '" .. b .. "' (mini-corps identiques)") end
+      end
+    end
+    print("  primgen engeance : OK (9 sous-etres rendent leur mini-corps dedie, PIN in-family, 0 doublon)")
+  end
+
   -- Helper : grille primgen LIVE d'une unité (chemin EN JEU), sérialisée déterministe (clés numériques triées).
   local function primSig(id)
     local u = Units[id]
@@ -352,9 +395,11 @@ do
   -- (b) GOLDEN DE GÉNÉRATION : empreinte stable cross-process (hashId = FNV-1a 5.1-safe, IEEE déterministe).
   -- Re-baseline INTENTIONNEL au PIN (B.2 : la forme passe de hash-dérivée à ancrée-au-nom). Si tu changes un
   -- builder/une palette/un PIN VOLONTAIREMENT, regénère et colle la nouvelle valeur ici.
-  local EXPECTED_GEN = 541702824 -- re-baseline W1 (2026-06-25) : +6 unités type-identité APPEND-ONLY (flesh_warband/
-  -- bone_choir/arcane_seer/abyss_maw/order_marshal/prism_horror). PROUVÉ golden-neutre sur les 83 existantes (le
-  -- fold des 83 d'origine = 1150543352 inchangé) -> seul l'ajout des 6 nouvelles formes déplace l'empreinte. Antérieur : 1150543352.
+  local EXPECTED_GEN = 3256988032 -- re-baseline W2 (2026-06-25) : +7 unités mort&engeance APPEND-ONLY (brood_mother/
+  -- larval_host/spore_sac/rat_warren/pit_shepherd/carrion_choir/bone_harvest). PROUVÉ golden-neutre sur les 89
+  -- pré-W2 (le fold des 89 d'origine = 541702824 INCHANGÉ) -> seul l'ajout des 7 nouvelles formes déplace
+  -- l'empreinte (les 9 tokens d'engeance ne sont PAS dans Units.order -> n'entrent pas dans le fold). Antérieurs :
+  -- 541702824 (W1, +6 type-identité) puis 1150543352 (PIN).
   local function roll(acc, s) return CreatureGen.hashId(string.format("%d|", acc) .. s) end
   local acc = 0
   for _, id in ipairs(Units.order) do acc = roll(acc, id .. "=" .. sigs[id]) end

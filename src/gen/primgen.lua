@@ -2543,6 +2543,107 @@ function TREAT.treatRust(g, rnd, p, A)
   if rnd() < 0.5 then set(g, m[1], m[2], p.eye); set(g, m[2] + 1, m[2], p.hi) end
 end
 
+-- ═══════════════ SOUS-ÊTRES (engeance « Mort & Engeance », AXE 3) : 9 MINI-corps imposance-0 ═══════════════
+-- Portés FIDÈLEMENT du proto HTML (docs/generation/generateur-bestiaire.html, fns aGrubling..aSwarmling).
+-- Ce sont des ENFANTS miniatures (silhouette volontairement petite, centrée ~y46, ~14px de haut) qui jaillissent
+-- via l'op `summon` à la mort d'un invocateur (src/data/spawn.lua = pont window.SPAWN). UNE famille dédiée
+-- `sousetres` (pals = GRUB, treat = treatPod) les regroupe : ils restent visuellement SUBORDONNÉS au parent
+-- (palette terne larvaire + pousses d'œufs) tout en portant leur PROPRE corps (un boneling = mini-squelette,
+-- un mote = petit œil ailé, un slimelet = goutte…), PLUS le placeholder « sprite du parent ». Chaque token PIN
+-- son arch par NOM (Primgen.archIndexOf) -> ajout d'une famille neuve = golden des unités existantes inchangé
+-- (les tokens ne sont PAS dans Units.order, cf. tests/gen.lua : le fold ne les voit pas).
+function ARCH.aGrubling(g, rnd, p) -- larve : mini-grub recroquevillé en C, segments, œil + mandibule
+  local pts = {}
+  for i = 0, 4 do
+    local t = i / 4; local ang = 3.14 * 0.2 + t * 3.14 * 0.9
+    pts[#pts + 1] = { round(33 + cos(ang) * 7), round(46 + sin(ang) * 6) }
+  end
+  segChain(g, pts, 3, 2, p)
+  local hx, hy = pts[1][1], pts[1][2]
+  eyeP(g, hx, hy - 1, 1, p); maw(g, hx + 1, hy + 1, 1, p)
+  for i = 2, #pts - 1 do set(g, pts[i][1], pts[i][2] - 3, p.deep) end
+  return { head = { x = hx, y = hy, r = 3 }, faceDir = { 1, 0 }, spine = { { 33, 42 }, { 33, 50 } },
+    limbs = {}, belly = { x = 33, y = 48 }, mass = { { 33, 46, 7 } }, tailBase = nil, flesh = true }
+end
+function ARCH.aSpiderling(g, rnd, p) -- arachnide : petit corps + 8 pattes en arches fines + 2 yeux
+  mass(g, 33, 46, 4, 3, p)
+  local L = { { 28, 43, 23, 46 }, { 28, 45, 22, 50 }, { 29, 47, 24, 53 }, { 30, 48, 26, 55 } }
+  for i = 1, 4 do
+    tube(g, { { 31, 46 }, { L[i][1], L[i][2] }, { L[i][3], L[i][4] } }, 1, 1, p.sh)
+    tube(g, { { 35, 46 }, { 66 - L[i][1], L[i][2] }, { 66 - L[i][3], L[i][4] } }, 1, 1, p.sh)
+  end
+  eyeP(g, 31, 45, 1, p); eyeP(g, 35, 45, 1, p); set(g, 33, 44, p.eye)
+  polygon(g, { { 32, 49 }, { 31, 52 }, { 33, 50 } }, p.bone); polygon(g, { { 34, 49 }, { 35, 52 }, { 33, 50 } }, p.bone)
+  return { head = { x = 33, y = 46, r = 4 }, faceDir = { 0, 1 }, spine = { { 33, 43 }, { 33, 48 } },
+    limbs = {}, belly = { x = 33, y = 47 }, mass = { { 33, 46, 5 } }, tailBase = nil, flesh = true }
+end
+function ARCH.aSporeling(g, rnd, p) -- spore : petit chapeau + pied trapu + spores qui montent
+  for y = 40, 44 do
+    local w = round(6 * sin((y - 39) / 6 * 3.14))
+    for x = -w, w do set(g, 33 + x, y, math.abs(x) > w - 1 and p.sh or p.base) end
+  end
+  ellipse(g, 33, 40, 6, 2, p.hi)
+  for i = -4, 4, 2 do set(g, 33 + i, 44, p.deep) end
+  rect(g, 31, 44, 4, 8, p.base); rect(g, 31, 44, 1, 8, p.sh); eyeP(g, 33, 48, 1, p)
+  for i = 0, 2 do set(g, 28 + i * 5, 38 - i, p.eye) end
+  return { head = { x = 33, y = 42, r = 5 }, faceDir = { 0, -1 }, spine = { { 33, 42 }, { 33, 52 } },
+    limbs = {}, belly = { x = 33, y = 48 }, mass = { { 33, 44, 7 } }, tailBase = nil, flesh = true }
+end
+function ARCH.aRatling(g, rnd, p) -- rongeur : petit corps + museau + queue qui fouette + pattouilles
+  mass(g, 32, 47, 6, 4, p); mass(g, 40, 46, 3, 3, p); disc(g, 39, 43, 1, p.sh); disc(g, 42, 43, 1, p.sh)
+  set(g, 43, 46, p.bone); eyeP(g, 40, 45, 1, p); set(g, 43, 47, p.bone)
+  tube(g, { { 26, 48 }, { 20, 46 }, { 16, 50 } }, 1, 1, p.sh)
+  tube(g, { { 30, 51 }, { 29, 54 } }, 1, 1, p.sh); tube(g, { { 35, 51 }, { 36, 54 } }, 1, 1, p.sh)
+  return { head = { x = 40, y = 46, r = 3 }, faceDir = { 1, 0 }, spine = { { 28, 47 }, { 38, 46 } },
+    limbs = {}, belly = { x = 32, y = 50 }, mass = { { 32, 47, 7 } }, tailBase = { 26, 48 }, flesh = true }
+end
+function ARCH.aMote(g, rnd, p) -- œil : petit globe sclère + iris + couronne sombre + 3 cils pendants
+  disc(g, 33, 44, 5, p.bone); disc(g, 33, 44, 2, p.eye); set(g, 33, 44, p.out)
+  for i = 0, 7 do local a = i / 8 * 6.283; set(g, round(33 + cos(a) * 5), round(44 + sin(a) * 5), p.sh) end
+  for i = 0, 2 do tube(g, { { 31 + i * 2, 49 }, { 30 + i * 2, 53 } }, 1, 1, p.sh) end
+  eyeP(g, 33, 44, 2, p) -- mémorise l'œil pour l'overlay clignement (la grappe du proto n'utilisait que disc -> on ajoute l'ancrage)
+  return { head = { x = 33, y = 44, r = 5 }, faceDir = { 0, 1 }, spine = { { 33, 40 }, { 33, 48 } },
+    limbs = {}, belly = { x = 33, y = 46 }, mass = { { 33, 44, 6 } }, tailBase = nil, flesh = true }
+end
+function ARCH.aSlimelet(g, rnd, p) -- gélatine : petite goutte molle + reflet + œil + bouche
+  for y = 42, 52 do
+    local t = (y - 42) / 10; local w = round(7 * sin(t * 3.14 * 0.9) + 2)
+    for x = -w, w do set(g, 33 + x, y, math.abs(x) > w - 1 and p.sh or p.base) end
+  end
+  set(g, 30, 45, p.hi); set(g, 31, 45, p.hi); eyeP(g, 33, 47, 1, p)
+  set(g, 28, 52, p.base); set(g, 38, 52, p.base); maw(g, 33, 49, 1, p)
+  return { head = { x = 33, y = 47, r = 5 }, faceDir = { 0, -1 }, spine = { { 33, 44 }, { 33, 50 } },
+    limbs = {}, belly = { x = 33, y = 49 }, mass = { { 33, 47, 8 } }, tailBase = nil, flesh = true }
+end
+function ARCH.aImplet(g, rnd, p) -- démon : petit corps + tête cornue + 2 bras + 2 jambes + queue fléchée
+  mass(g, 33, 46, 4, 4, p); mass(g, 33, 41, 3, 2, p)
+  polygon(g, { { 31, 40 }, { 30, 37 }, { 32, 40 } }, p.bone); polygon(g, { { 35, 40 }, { 36, 37 }, { 34, 40 } }, p.bone)
+  eyeP(g, 32, 41, 1, p); eyeP(g, 34, 41, 1, p)
+  tube(g, { { 29, 45 }, { 26, 48 } }, 1, 1, p.sh); tube(g, { { 37, 45 }, { 40, 48 } }, 1, 1, p.sh)
+  tube(g, { { 31, 50 }, { 30, 54 } }, 1, 1, p.sh); tube(g, { { 35, 50 }, { 36, 54 } }, 1, 1, p.sh)
+  tube(g, { { 37, 48 }, { 42, 50 }, { 44, 47 } }, 1, 1, p.sh); polygon(g, { { 44, 47 }, { 46, 45 }, { 45, 48 } }, p.bone)
+  return { head = { x = 33, y = 41, r = 3 }, faceDir = { 0, -1 }, spine = { { 33, 40 }, { 33, 50 } },
+    limbs = {}, belly = { x = 33, y = 47 }, mass = { { 33, 46, 6 } }, tailBase = { 37, 48 }, flesh = true }
+end
+function ARCH.aBoneling(g, rnd, p) -- mortvivant : mini-crâne (orbites vives) + côtes + 2 bras d'os (flesh=false)
+  disc(g, 33, 44, 4, p.bone); set(g, 31, 44, p.out); set(g, 35, 44, p.out); eyeP(g, 31, 44, 1, p); eyeP(g, 35, 44, 1, p)
+  for i = -2, 2 do set(g, 33 + i, 48, p.bone) end
+  tube(g, { { 29, 46 }, { 25, 50 }, { 23, 53 } }, 1, 1, p.bone); tube(g, { { 37, 46 }, { 41, 50 }, { 43, 53 } }, 1, 1, p.bone)
+  for i = 0, 2 do line(g, 31, 50 + i * 2, 35, 50 + i * 2, p.sh) end
+  return { head = { x = 33, y = 44, r = 4 }, faceDir = { 0, -1 }, spine = { { 33, 44 }, { 33, 52 } },
+    limbs = {}, belly = { x = 33, y = 50 }, mass = { { 33, 46, 6 } }, tailBase = nil, flesh = false }
+end
+function ARCH.aSwarmling(g, rnd, p) -- essaim : petit amas de corpuscules + 1 œil (la grappe vrombissante)
+  local pts = { { 33, 44 }, { 30, 46 }, { 36, 46 }, { 31, 49 }, { 35, 49 }, { 33, 48 } }
+  for i = 1, #pts do
+    disc(g, pts[i][1], pts[i][2], 1, p.base); set(g, pts[i][1], pts[i][2], p.deep)
+    set(g, pts[i][1] - 1, pts[i][2] - 1, p.sh); set(g, pts[i][1] + 1, pts[i][2] - 1, p.sh)
+  end
+  eyeP(g, 33, 45, 1, p)
+  return { head = { x = 33, y = 46, r = 5 }, faceDir = { 0, 1 }, spine = { { 33, 43 }, { 33, 49 } },
+    limbs = {}, belly = { x = 33, y = 47 }, mass = { { 33, 46, 7 } }, tailBase = nil, flesh = true }
+end
+
 -- ─────────────────────────── Familles (palette + archetypes EXCLUSIFS + treat) ───────────────────────────
 local FAMILIES = {
   cauchemar = { pals = ELDRITCH, treat = TREAT.treatEldritch, archs = {
@@ -2637,13 +2738,21 @@ local FAMILIES = {
   automate = { pals = AUTOMATON, treat = TREAT.treatRust, archs = {
     { name = "automaton", fn = ARCH.aAutomaton }, { name = "reliquary", fn = ARCH.aReliquary },
     { name = "juggernaut", fn = ARCH.aJuggernaut } } }, -- ELDER imp 10
+  -- ── SOUS-ÊTRES (engeance, AXE 3) : 9 mini-corps imposance-0 (pals GRUB + treatPod, comme le proto HTML).
+  -- Chaque token (src/data/spawn.lua) PIN son arch par NOM -> rend son PROPRE mini-corps, plus le placeholder.
+  sousetres = { pals = GRUB, treat = TREAT.treatPod, archs = {
+    { name = "grubling", fn = ARCH.aGrubling }, { name = "spiderling", fn = ARCH.aSpiderling },
+    { name = "sporeling", fn = ARCH.aSporeling }, { name = "ratling", fn = ARCH.aRatling },
+    { name = "mote", fn = ARCH.aMote }, { name = "slimelet", fn = ARCH.aSlimelet },
+    { name = "implet", fn = ARCH.aImplet }, { name = "boneling", fn = ARCH.aBoneling },
+    { name = "swarmling", fn = ARCH.aSwarmling } } },
 }
 local FAMILY_ORDER = { "cauchemar", "mortvivant", "bete", "demon", "insecte",
   "cephalo", "gelatine", "oeil", "spore", "ombre", "essaim", "annelide",
   "golem", "spectre", "culte", "abyssal", "cristal", "aile", "colosse",
   "templier", "inquisiteur", "seraphin", "griffon", "bandit", "canide", "reptile", "rongeur",
   "arachnide", "crustace", "meduse", "echassier", "wendigo", "hydre", "kraken",
-  "pendu", "chimere", "cocon", "plante", "larve", "crane", "automate" }
+  "pendu", "chimere", "cocon", "plante", "larve", "crane", "automate", "sousetres" }
 
 -- ─────────────────────────── Noms (saveur par famille) ───────────────────────────
 local ROMAN = { "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII" }
@@ -2826,6 +2935,8 @@ local MOTION = {
   cristal     = { breathe = 0.020, breatheF = 0.023, sway = 0.005, swayF = 0.023 },
   golem       = { breathe = 0.012, breatheF = 0.037, sway = 0.008, swayF = 0.037 },
   automate    = { breathe = 0.010, breatheF = 0.043, sway = 0.007, swayF = 0.043 },
+  -- engeance (sous-êtres imposance-0) : petits, frais, nerveux — frétille vite et menu (lecture « vermine »)
+  sousetres   = { breathe = 0.035, breatheF = 0.055, sway = 0.012, swayF = 0.065 },
   -- segmentés / nerveux : balancement rapide et menu
   insecte     = { breathe = 0.015, breatheF = 0.050, sway = 0.009, swayF = 0.070 },
   arachnide   = { breathe = 0.025, breatheF = 0.040, sway = 0.011, swayF = 0.060 },

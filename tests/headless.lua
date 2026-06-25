@@ -220,6 +220,78 @@ local ok, err = pcall(function()
     print("  statuts : poison-stacks+weaken / burn-decroit / bleed-slow / rot-ampute / choc-decharge / regen OK")
   end
 
+  -- ════════ W2 — AXE MORT & ENGEANCE (plan big-update §AXE 3) : summon (1 token, case du parent) + faint-payoff.
+  -- Décision user : remplacement 1-pour-1 STRICT. On vérifie : (1) exactement 1 token à la mort, à la POSITION du
+  -- parent (depth/row/x/y) ; (2) le token est un combatant valide ; (3) la chaîne est BORNÉE (un token NE
+  -- ré-invoque PAS) ; (4) faint-payoff scale DÉTERMINISTE + cappé. ════════
+  do
+    local Spawn = require("src.data.spawn")
+    local function U2(id, eff) local u = Units[id]
+      return { id = id, hp = u.hp, dmg = u.dmg, cd = u.cd, effects = eff, shield = 0, depth = 0, row = 1, x = 130, y = 104, facing = 1 } end
+
+    do -- (1)+(2) SUMMON : 1 token à la case du parent quand il meurt ; token = combatant valide
+      local summoner = U2("marauder", { { trigger = "on_death", op = "summon", params = { token = "boneling" } } })
+      summoner.depth, summoner.row, summoner.x, summoner.y = 0, 2, 137, 138 -- position non triviale
+      local a = Arena.new({ left = { summoner }, right = { U2("witch") }, autoReset = false, seed = 5 })
+      local s = a.units[1]
+      local n0 = #a.units
+      a:damage(s, 9999, { cause = "attack", source = a.units[2] }) -- tue le summoner (source = ennemi)
+      assert(not s.alive, "W2: le summoner est mort")
+      a:update(1.0, 1) -- broadcast de mort + flushSummons (insertion différée)
+      assert(#a.units == n0 + 1, "W2 summon: EXACTEMENT 1 token insere (1-pour-1, pas de multi-spawn)")
+      local tok
+      for _, u in ipairs(a.units) do if u.isToken then tok = u end end
+      assert(tok and tok.id == "boneling", "W2 summon: le token est un boneling (window.SPAWN)")
+      assert(tok.team == s.team, "W2 summon: le token nait dans le camp du mort")
+      assert(tok.depth == s.depth and tok.row == s.row and tok.x == s.x and tok.y == s.y,
+        "W2 summon: le token prend la CASE du parent (depth/row/x/y herites)")
+      assert(tok.alive and tok.hp > 0 and tok.maxHp > 0 and tok.dmg > 0 and tok.cd > 0 and tok.dots and tok.dots.poison,
+        "W2 summon: le token est un combatant valide (stats mini + dots initialises)")
+      assert(tok.hp == math.floor(Spawn.token("boneling").hp * a.hpMult + 0.5), "W2 summon: PV du token = mini-stat x hpMult")
+    end
+
+    do -- (3) CHAÎNE BORNÉE : un TOKEN qui meurt ne ré-invoque PAS (terminal, imposance 0) — meme si on lui
+      -- colle un summon par erreur (double garde : op queueSummon refuse isToken). Pas d'explosion d'unites.
+      local a = Arena.new({ left = { U2("skeleton") }, right = { U2("witch") }, autoReset = false, seed = 5 })
+      -- fabrique un token directement et tente de le faire invoquer
+      local fakeDeadToken = a:makeToken(a.units[1], "boneling")
+      a.units[#a.units + 1] = fakeDeadToken
+      fakeDeadToken.effects = { { trigger = "on_death", op = "summon", params = { token = "ratling" } } } -- summon force (jamais en data reelle)
+      local n0 = #a.units
+      a:queueSummon(fakeDeadToken, "ratling") -- appel direct : doit etre refuse (isToken)
+      a:flushSummons()
+      assert(#a.units == n0, "W2 borne: queueSummon refuse une engeance (token terminal) -> aucune insertion")
+      assert(Spawn.isToken("boneling"), "W2: Spawn.isToken reconnait un token")
+      -- les 9 tokens sont SUMMON-ONLY : jamais dans le pool de boutique ni dans l'ordre du roster.
+      local inPool = false
+      for _, id in ipairs(Units.pool) do if Spawn.isToken(id) then inPool = true end end
+      assert(not inPool, "W2: aucun token dans le pool boutique (summon-only)")
+    end
+
+    do -- (4) FAINT-PAYOFF : +dmg par allié mort, cappe ; DÉTERMINISTE (valeurs exactes).
+      local scav = U2("marauder", { { trigger = "on_ally_death", op = "scavenge_on_ally_death", params = { stat = "dmg", value = 2, cap = 8 } } })
+      -- 5 alliés fragiles a sacrifier (1 PV) + le charognard ; un ennemi qui les fauche.
+      local allies = { scav }
+      for i = 1, 5 do local u = U2("skeleton"); u.hp = 1; u.x = 120 + i; allies[#allies + 1] = u end
+      local foe = U2("templar"); foe.dmg = 50; foe.x = 200; foe.facing = -1
+      local a = Arena.new({ left = allies, right = { foe }, autoReset = false, seed = 5 })
+      local sc = a.units[1]
+      local d0 = sc.dmg
+      -- tue les alliés un par un (source = ennemi) -> chaque mort declenche on_ally_death sur le charognard.
+      local killed = 0
+      for _, u in ipairs(a.units) do
+        if u.team == "left" and u ~= sc and u.alive then
+          a:damage(u, 9999, { cause = "attack", source = foe }); killed = killed + 1
+        end
+      end
+      a:update(1.0, 1) -- broadcast on_ally_death (les 5 morts de la frame)
+      -- cap 8 : 5 morts x2 = 10 -> cappe a +8. dmg = base + 8.
+      assert(sc.dmg == d0 + 8, "W2 scavenge: +2 dmg/allie-mort, CAPPE a +8 (5 morts -> +10 ecrete)")
+      assert(killed == 5, "W2 scavenge: 5 allies fauches dans la frame")
+    end
+    print("  W2 engeance : summon 1-token-case-parent + token valide + chaine bornee + faint-payoff cappe OK")
+  end
+
   -- Ciblage DÉTERMINISTE : les 4 couches (front/back par depth, tie-break haut->bas, aggro, taunt).
   do
     local function U(id, depth, row, aggro, taunt)
