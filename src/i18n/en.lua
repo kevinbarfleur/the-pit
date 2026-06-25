@@ -659,7 +659,9 @@ return {
   --    « At command » de la fiche au survol — feedback concrete-values-over-percentages). flavor grimdark canon. ──
   ["ui.command_prefix"] = "At command",      -- préfixe de la ligne « bonus de commandement » sur la fiche
   ["ui.command_none"] = "Cannot command",    -- unité sans commandBonus (sous-set curé, §2.4)
-  ["ui.commander_unlock"] = "CROWN A BEAST", -- appel à l'action du piédestal vide
+  ["ui.commander_unlock"] = "CROWN A BEAST", -- appel à l'action du piédestal vide (legacy ; CTA hérité)
+  ["ui.commander_header"] = "COMMANDER",     -- header de la CASE simple du commandant (refonte 2026-06)
+  ["ui.commander_hint"] = "Drop a unit to command", -- hint de la case VIDE (explique l'usage : fix « widget muet »)
   ["unit.bellows_priest.command_name"] = "THE WAR-DRUM",
   ["unit.bellows_priest.command_desc"] = "Your whole pit strikes 8% faster.",
   ["unit.bellows_priest.command_flavor"] = "It beats the skin of a drowned man; under that cadence, the whole pit strikes on one breath.",

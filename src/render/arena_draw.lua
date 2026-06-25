@@ -70,6 +70,9 @@ local function roleOf(u)
   return nil
 end
 
+-- C4 — (couronne du commandant RETIRÉE — retour user : « pas très joli ». Le chef est désormais signalé par sa
+-- CASE dorée distincte en combat, cf. drawGrid, et par le pédestal en build. Pas de glyphe couronne.)
+
 local ArenaDraw = {}
 ArenaDraw.__index = ArenaDraw
 
@@ -357,7 +360,26 @@ function ArenaDraw:drawGrid()
   love.graphics.setLineStyle("rough")
   love.graphics.setLineWidth(1)
   for _, u in ipairs(self.arena.units) do
-    if u.alive then
+    if u.alive and u.isCommander then
+      -- C4 — LE COMMANDANT (refonte 2026-06, retour user : les bordures dorées 3-bandes étaient jugées « contours
+      -- chelou ») : une case PLAIN, identique au panneau neutre des combattants côté joueur (teinte bleu très faible),
+      -- SANS or, SANS halo. Il se présente par sa plaque « COMMANDER » (dessinée plus haut) + l'ABSENCE de barre de
+      -- vie -> on comprend que c'est l'intouchable qui supervise, sans « contour chelou ».
+      local x = math.floor(u.x - W / 2)
+      local y = math.floor(u.y + 2 - H) -- la case ENCADRE le commandant, comme les combattants (cohérence)
+      local r1, g1, b1, r2, g2, b2 = 0.06, 0.09, 0.14, 0.03, 0.05, 0.09 -- panneau neutre (= côté joueur)
+      for i = 0, 2 do
+        local t = i / 2
+        love.graphics.setColor(r1 + (r2 - r1) * t, g1 + (g2 - g1) * t, b1 + (b2 - b1) * t, 0.40)
+        love.graphics.rectangle("fill", x, y + math.floor(i * H / 3), W, math.ceil(H / 3))
+      end
+      -- liseré MUET (fer teinté bleu, comme les combattants côté joueur) : aucune accentuation dorée.
+      love.graphics.setColor(0.24, 0.29, 0.39, 0.50)
+      love.graphics.rectangle("line", x, y, W, H)
+      love.graphics.setColor(0.30, 0.38, 0.52, 0.55)
+      love.graphics.line(x, y + H, x + W, y + H)
+      love.graphics.setColor(1, 1, 1, 1)
+    elseif u.alive then
       local left = (u.team == "left")
       local x = math.floor(u.x - W / 2)
       local y = math.floor(u.y + 2 - H) -- la carte ENCADRE le monstre (tête en haut, pieds en bas)
@@ -626,24 +648,42 @@ function ArenaDraw:drawOverlay(view)
     if u.alive then
       local ny = (u.y + (HealthBar.BAR_DY or -34)) * 4 - nameH - 1
       local name = (Units[u.id] and T("unit." .. u.id .. ".name")) or u.id
-      local role = roleOf(u)
-      if role and roleFont then
-        local pw = roleFont:getWidth(role.label) + 8
+      if u.isCommander then
+        -- C4 — LE COMMANDANT (« général ») : visiblement distinct, JAMAIS de barre de vie ni de rôle. Une plaque
+        -- « COMMANDER » (sa caste en doré, son nom dessous) prend la place de l'encadré de vie -> il se présente
+        -- comme l'intouchable qui supervise, pas comme un combattant à abattre. (Sa CASE est dorée, cf. drawGrid.)
+        local tag = T("ui.commander_tag")
+        local pw = (roleFont and roleFont:getWidth(tag) or #tag * 5) + 10
         local nw = nameFont:getWidth(name)
         local startX = u.x * 4 - (pw + 5 + nw) / 2
-        Draw.rect(startX, ny - 1, pw, nameH + 2, role.fill, role.border, 1)
-        Draw.textC(role.label, startX + pw / 2, ny - 1 + (nameH + 2 - roleFont:getHeight()) / 2, role.col, roleFont)
-        Draw.text(name, startX + pw + 5, ny, c.faint, nameFont)
+        if roleFont then
+          Draw.rect(startX, ny - 1, pw, nameH + 2, { 0.08, 0.06, 0.02, 0.92 }, c.brass, 1)
+          Draw.textC(tag, startX + pw / 2, ny - 1 + (nameH + 2 - roleFont:getHeight()) / 2, c.gold, roleFont)
+          Draw.text(name, startX + pw + 5, ny, c.brassL, nameFont)
+        else
+          Draw.textC(name, u.x * 4, ny, c.brassL, nameFont)
+        end
       else
-        Draw.textC(name, u.x * 4, ny, c.faint, nameFont)
+        local role = roleOf(u)
+        if role and roleFont then
+          local pw = roleFont:getWidth(role.label) + 8
+          local nw = nameFont:getWidth(name)
+          local startX = u.x * 4 - (pw + 5 + nw) / 2
+          Draw.rect(startX, ny - 1, pw, nameH + 2, role.fill, role.border, 1)
+          Draw.textC(role.label, startX + pw / 2, ny - 1 + (nameH + 2 - roleFont:getHeight()) / 2, role.col, roleFont)
+          Draw.text(name, startX + pw + 5, ny, c.faint, nameFont)
+        else
+          Draw.textC(name, u.x * 4, ny, c.faint, nameFont)
+        end
       end
     end
   end
 
   -- Barres de vie (encadré runique + segments + icônes) en espace design, grille fine ×2 -> finition d'UI.
-  -- Dessinées AVANT les nombres flottants pour que ces derniers restent au-dessus.
+  -- Dessinées AVANT les nombres flottants pour que ces derniers restent au-dessus. LE COMMANDANT (intouchable,
+  -- damage()=0) N'A PAS de barre de vie : il ne se lit jamais comme une cible à entamer (demande user).
   for _, u in ipairs(self.arena.units) do
-    if u.alive then HealthBar.draw(u, 2) end
+    if u.alive and not u.isCommander then HealthBar.draw(u, 2) end
   end
 
   -- Nombres flottants : couleur par CAUSE + ICÔNE d'affliction à gauche (poison/saignement/brûlure/

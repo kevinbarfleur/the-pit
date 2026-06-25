@@ -41,7 +41,7 @@ local Draw = require("src.ui.draw")
 local Panel = require("src.ui.panel")    -- surface propre (dégradé + liseré iron) : remplace Frame/Forge.uiPlate/uiCard
 local Button = require("src.ui.button")  -- boutons propres : primary (CTA + yeux) / eco (coût) / secondary
 local Slot = require("src.ui.slot")      -- cases du plateau (6 états) : remplace Forge.uiSocket
-local Pedestal = require("src.ui.pedestal") -- C4 : SOCLE/TRÔNE du commandant (carvé, hors-graphe, barre de cadence lente)
+local CommanderCell = require("src.ui.commandercell") -- C4 : CASE SIMPLE du commandant (refonte 2026-06 : header + case, hors-graphe)
 local Gauge = require("src.ui.gauge")    -- jauges vies/XP : remplace l'orbe forge baké
 local LifeOrb = require("src.render.lifeorb") -- GLOBE DE VIE nightmare-forge (pixel net + nageur + shader cosmardesque)
 local Badge = require("src.ui.badge")    -- coût (pièce+nombre) / pips de niveau / diamants : remplace Forge.coinAt/diamondAt/label
@@ -211,31 +211,45 @@ function Build:computeLayout()
       y = math.floor(oy + (c.y - my) * sp + 0.5),
     }
   end
-  -- C4 — PIÉDESTAL : 1 emplacement DISTINCT du graphe 3×3 (lisibilité « pas d'adjacence » : AUCUNE arête vers
-  -- le board). Un vrai SOCLE/TRÔNE carvé (src/ui/pedestal.lua), posé dans la MARGE LIBRE à gauche du board, à
-  -- hauteur de son centre. Le rect VIRTUEL (hit-test souris) = la NICHE où trône le commandant ; le label
-  -- (au-dessus) et la barre de cadence (dessous) débordent du hit-test (cosmétiques, non cliquables).
-  -- Géométrie : niche ~ 30×30 virtuel (= un peu plus grande qu'une case 20px -> le chef est plus imposant).
-  local PED_W, PED_H = 34, 44            -- boîte VIRTUELLE (niche + dais) ; ×4 = 136×176 design
-  local pedX = math.max(6, math.floor(ox - BOARD_HALF_W / 4 - PED_W - 6 + 0.5))
-  local pedY = math.floor(oy - PED_H * 0.38 + 0.5) -- niche calée à hauteur du centre du board
-  -- self.pedRect = la BOÎTE complète (design ×4) passée à Pedestal.draw. self.commanderRect = la NICHE
-  -- (hit-test souris, VIRTUEL) -> seule la niche est cliquable/droppable (le label/cadence ne le sont pas).
-  -- La niche est un SIÈGE (un peu plus large que haute) -> le chef « s'assied » sur le trône, pas dans un puits ;
-  -- un commandant bas-et-large (ex. ratking) remplit sans flotter dans un grand vide vertical.
+  -- C4 — CASE DU COMMANDANT (refonte 2026-06, retour user : l'ancien trône carvé était jugé « horrible / contours
+  -- chelou ») : 1 emplacement DISTINCT du graphe 3×3 (lisibilité « pas d'adjacence » : AUCUNE arête vers le board).
+  -- Une CASE SIMPLE (src/ui/commandercell.lua) — même langage que les cases du plateau — surmontée d'un header
+  -- texte « COMMANDER ». CENTRÉE dans la grande MARGE LIBRE à GAUCHE du board (le board occupe le centre de l'écran)
+  -- — « le chef se tient à côté de sa formation ». Le rect VIRTUEL (hit-test souris) = la case elle-même ; le header
+  -- (au-dessus) déborde du hit-test (cosmétique, non cliquable).
+  -- Géométrie : case un cran plus large qu'une case du board (le chef est un peu plus imposant que la piétaille),
+  -- mais carrée et SOBRE -> lisible d'un bloc, zéro fioriture.
+  local PED_W, PED_H = 38, 38            -- case VIRTUELLE (carrée) ; ×4 = 152×152 design
+  -- Bord GAUCHE du board (centre de la case la plus à gauche - demi-case) en virtuel : on centre la case dans la
+  -- bande libre [marge écran .. bord board], avec un VRAI air des deux côtés (jamais collée au board, fix « cramped »).
+  local boardLeftV = ox - BOARD_HALF_W / 4 - (SLOT_HALF / 4) -- = 160 - 32 - 10 = 118 (left-edge de la case gauche)
+  local pedCenterX = math.max(PED_W / 2 + 8, boardLeftV / 2) -- milieu de [0 .. boardLeft], borné pour ne pas sortir
+  local pedX = math.floor(pedCenterX - PED_W / 2 + 0.5)
+  local pedY = math.floor(oy - PED_H / 2 + 0.5) -- case centrée verticalement à hauteur du centre du board
+  -- self.pedRect = la CASE (design ×4) passée à CommanderCell.draw. self.commanderRect = la MÊME case (hit-test
+  -- souris, VIRTUEL) : la case EST la zone droppable (le header au-dessus ne l'est pas). Plus de niche imbriquée.
   self.pedRect = { x = pedX, y = pedY, w = PED_W, h = PED_H }
-  local nicheH = math.floor(PED_H * 0.58 + 0.5) -- niche ~30w × 26h (siège)
-  self.commanderRect = { x = pedX + 2, y = pedY, w = PED_W - 4, h = nicheH }
+  self.commanderRect = { x = pedX, y = pedY, w = PED_W, h = PED_H }
 end
 
--- Le piédestal sous le curseur (espace virtuel) -> true si la drop-zone est touchée. Inerte tant que le
--- piédestal n'est pas DÉBLOQUÉ (commanderUnlocked) -> aucun pickup/drop possible avant le grant accepté.
+-- La case de commandant est-elle AFFICHÉE (donc droppable) ? = débloquée OU offre en cours. C'est la clé du fix
+-- d'interaction (retour user) : pendant l'OFFRE (round 3), la case est visible mais `commanderUnlocked` est encore
+-- false -> si `commanderAt` se basait sur `commanderUnlocked` seul, le drop tombait dans le fallback VENTE et
+-- l'unité était PERDUE. On rend la case active dès qu'elle est VISIBLE ; déposer une unité dessus auto-accepte.
+function Build:commanderCellShown()
+  if self:commanderUnlocked() then return true end
+  local run = self.host and self.host.run
+  return run and run.pendingCommanderGrant == true
+end
+
+-- La case du commandant sous le curseur (espace virtuel) -> true si la drop-zone est touchée. Active dès que la
+-- case est AFFICHÉE (déverrouillée OU offre en cours) -> jamais de drop qui retombe en vente pendant l'offre.
 function Build:commanderAt(px, py)
-  if not self:commanderUnlocked() then return false end
+  if not self:commanderCellShown() then return false end
   return self.commanderRect and inRect(px, py, self.commanderRect)
 end
 
--- Le piédestal est-il débloqué cette run ? (sandbox sans run : toujours débloqué pour les tests/lab.)
+-- Le commandant est-il débloqué cette run ? (sandbox sans run : toujours débloqué pour les tests/lab.)
 function Build:commanderUnlocked()
   local run = self.host and self.host.run
   if not run then return true end
@@ -1066,14 +1080,20 @@ function Build:mousereleased(vx, vy, button)
   local bi = self:benchAt(vx, vy)   -- slot BANC sous le curseur
   local onPed = self:commanderAt(vx, vy) -- C3 : drop sur le PIÉDESTAL (débloqué uniquement)
 
-  -- ── C3 — DROP SUR LE PIÉDESTAL (promotion en commandant) ──────────────────────────────────────────
-  -- Une seule unité au piédestal ; seuls les porteurs de `commandBonus` y sont admis (refus propre sinon).
+  -- ── C3 — DROP SUR LA CASE DU COMMANDANT (promotion en commandant) ─────────────────────────────────
+  -- Une seule unité au commandant ; seuls les porteurs de `commandBonus` y sont admis (refus propre sinon).
   if onPed then
     if not canCommand(d.id) then -- refus : l'unité non-chef RETOURNE à son origine (jamais de crash/perte).
-      self.cmdShake = 0.32 -- C4 : SECOUSSE de refus (le socle tremble + liseré sang) ; décroît dans update.
+      self.cmdShake = 0.32 -- C4 : SECOUSSE de refus (la case clignote sang) ; décroît dans update.
       Feel.press("build.commander.refuse") -- petit feedback de press (squash/flash) au point de refus
       self:returnDrag(d)
       return
+    end
+    -- FIX d'interaction (retour user) : déposer une unité-chef sur la case PENDANT l'offre = AUTO-ACCEPTE le grant
+    -- AVANT de placer (plus de clic séparé requis ; plus jamais de vente accidentelle). Si l'offre n'est pas en
+    -- cours (cas refusé/déjà accepté), acceptCommanderGrant est no-op -> aucun effet de bord sur l'éco/les tests.
+    if run and run.pendingCommanderGrant and not run.commanderUnlocked then
+      run:acceptCommanderGrant()
     end
     if d.fromShop then -- ACHAT puis promotion directe au piédestal (l'or n'est débité qu'ICI).
       local id = run and run:buy(d.fromShop)
@@ -1204,6 +1224,37 @@ function Build:pickEncounter()
   local idx = math.max(1, math.min(#Encounters, math.floor((round - 1) / 2) + 1))
   local bump = (round >= ENEMY_LEVEL_START) and (1 + math.floor((round - ENEMY_LEVEL_START) / ENEMY_LEVEL_EVERY)) or 0
   return Encounters[idx], bump
+end
+
+-- C4 — POSITION DE COMBAT DU COMMANDANT (RENDER pur : x/y cosmétiques, jamais lus par la SIM -> golden-safe).
+-- Le commandant SUPERVISE depuis l'ARRIÈRE de SA formation : on se cale en VIRTUEL (espace u.x,u.y de l'arène,
+-- canvas 320×180) sur la convention de src/combat/place.lua (centre 160,96 ; front d'équipe à FRONT_GAP du
+-- centre ; les rangs reculent vers l'extérieur). On part du combattant le plus EN ARRIÈRE déjà placé dans `comp`
+-- (x le plus loin du centre, du bon côté) et on recule de COMMANDER_BACK px + un léger lift vertical -> le chef
+-- est nettement derrière la troupe, surélevé, sans chevaucher personne. Compo vide -> retrait depuis le front.
+local CMD_CENTER_X, CMD_CENTER_Y = 160, 96 -- = place.lua CENTER_X/Y (le commandant partage l'espace virtuel)
+local CMD_FRONT_GAP = 22                    -- = place.lua FRONT_GAP (front de chaque camp vs centre)
+local COMMANDER_BACK = 26                   -- recul DERRIÈRE la dernière ligne de troupe (px virtuels)
+local COMMANDER_LIFT = 16                   -- léger surélèvement (au-dessus du centre du champ) -> « il domine »
+function Build:commanderCombatPos(side, comp)
+  side = side or -1
+  -- x du combattant le plus en ARRIÈRE de ce camp = le plus éloigné du centre dans le sens -side (côté de retraite).
+  -- (side=-1 : équipe gauche, l'arrière est le x le plus PETIT ; side=+1 : équipe droite, le x le plus GRAND.)
+  local rearX = nil
+  for _, u in ipairs(comp or {}) do
+    if u.x then
+      if rearX == nil then rearX = u.x
+      elseif side < 0 then rearX = math.min(rearX, u.x)
+      else rearX = math.max(rearX, u.x) end
+    end
+  end
+  -- repli : aucune troupe placée -> on recule depuis le front théorique de ce camp.
+  rearX = rearX or (CMD_CENTER_X + side * CMD_FRONT_GAP)
+  local x = rearX + side * COMMANDER_BACK          -- side*back : recule vers le bord (loin du centre)
+  -- borne dans la moitié d'écran (jamais hors-canvas) : on garde une marge de 12px au bord.
+  if side < 0 then x = math.max(12, x) else x = math.min(308, x) end
+  local y = CMD_CENTER_Y + COMMANDER_LIFT          -- légèrement BAS du centre -> ses pieds posent au sol de fosse
+  return math.floor(x + 0.5), math.floor(y + 0.5)
 end
 
 -- Assemble la compo posée pour un CÔTÉ (side=-1 gauche / +1 droite), auras d'adjacence résolues.
@@ -1498,12 +1549,18 @@ function Build:buildComp(side)
     for _, e in ipairs(cu.effects or {}) do cEff[#cEff + 1] = e end
     if cb and cb.op == "grant_team" then cEff[#cEff + 1] = cb end
     -- depth volontairement HORS de la grille ennemie : le commandant n'a pas de colonne (il est intouchable).
-    -- x/y de rendu = le piédestal ; en combat le render le replace, mais on fournit une position cohérente.
+    -- POSITION DE RENDU (cosmétique : la SIM cible via depth/row, jamais x/y -> golden-safe) : le commandant
+    -- SUPERVISE sa formation depuis l'ARRIÈRE, en VIRTUEL (u.x,u.y), du côté JOUEUR. On le pose en retrait de la
+    -- dernière ligne de troupe (le combattant le plus en arrière de SON camp = x le plus loin du centre) +
+    -- COMMANDER_BACK px supplémentaires, et légèrement SURÉLEVÉ (au-dessus du centre du champ) -> il se lit
+    -- « le chef qui regarde de loin », distinct des combattants, jamais sur eux. (Ancien bug : commanderRect.x*4
+    -- = coord DESIGN passée comme VIRTUEL -> ré-×4 par arena_draw -> hors écran.)
+    local cmdX, cmdY = self:commanderCombatPos(side, comp)
     comp[#comp + 1] = { id = cmd.id, slot = nil, level = cmd.level or 1,
       hp = math.floor(cu.hp * m + 0.5), dmg = math.floor(cu.dmg * m + 0.5), cd = cu.cd,
       depth = -1, row = 0, effects = #cEff > 0 and cEff or nil,
       isCommander = true, untargetable = true, cdMult = COMMANDER_CD_MULT,
-      x = self.commanderRect and self.commanderRect.x * 4 or 0, y = self.commanderRect and self.commanderRect.y * 4 or 0,
+      x = cmdX, y = cmdY,
       facing = facing }
   end
   return comp
@@ -1857,23 +1914,22 @@ function Build:drawBack(view)
     end
   end
 
-  -- C4 — PIÉDESTAL (socle/trône carvé, src/ui/pedestal.lua) : DISTINCT du graphe, AUCUNE arête vers le board.
-  -- Visible quand débloqué OU pendant l'offre (le joueur doit voir où cliquer pour accepter). Le FOND du socle
-  -- (dais + niche + label + barre de cadence) se dessine ICI, DERRIÈRE le rig du commandant (drawWorld). Le rig
-  -- du commandant est rendu dans la niche par drawWorld ; le CTA texte + l'étiquette de portée vivent en overlay.
+  -- C4 — CASE DU COMMANDANT (case SIMPLE, src/ui/commandercell.lua) : DISTINCTE du graphe, AUCUNE arête vers le
+  -- board. Visible quand débloquée OU pendant l'offre (la case apparaît au round 3 ; déposer une unité dessus
+  -- l'auto-accepte). Le FOND de la case + le header « COMMANDER » se dessinent ICI, DERRIÈRE le rig du commandant
+  -- (rendu dans la case par drawWorld) ; le hint « vide » et l'étiquette de portée au drag vivent en overlay.
   local pedOffer = run and run.pendingCommanderGrant
-  if not self.locked and self.pedRect and (self:commanderUnlocked() or pedOffer) then
+  if not self.locked and self.pedRect and self:commanderCellShown() then
     local r = self.pedRect
     local sr = self.commanderSlot
     local hovering = ui.commanderHover or (pedOffer and inRect(self.mx, self.my, self.commanderRect))
     local validDrop = self.drag and canCommand(self.drag.id) and hovering -- drop valide = porteur de commandBonus survolant
-    -- SECOUSSE de refus : décale le socle horizontalement (sinusoïde amortie) tant que cmdShake > 0.
+    -- SECOUSSE de refus : décale la case horizontalement (sinusoïde amortie) tant que cmdShake > 0.
     local shakeX = 0
     if self.cmdShake > 0 then shakeX = math.sin(self.cmdShake * 60) * 3 * (self.cmdShake / 0.32) end
-    Pedestal.draw(r.x * 4 + shakeX, r.y * 4, r.w * 4, r.h * 4, {
-      filled = sr ~= nil, hover = hovering, validDrop = validDrop, offered = pedOffer and not sr,
-      danger = self.cmdShake > 0, accent = sr and Rarity.tierColor(Units[sr.id].rank) or nil,
-      t = self.t / 60, cadence = sr and self.cmdCadence or nil })
+    CommanderCell.draw(r.x * 4 + shakeX, r.y * 4, r.w * 4, r.h * 4, {
+      filled = sr ~= nil, hover = hovering, validDrop = validDrop,
+      danger = self.cmdShake > 0, t = self.t / 60 })
   end
 
   -- ── BARRE DU BAS (handoff « Bottom Bar ») : panneau ENCADRÉ + filet laiton gravé + filets iron + fonds de carte ──
@@ -2069,19 +2125,19 @@ function Build:drawWorld()
       end)
     end
   end
-  -- C4 — RIG DU COMMANDANT au piédestal : SURÉLEVÉ dans la NICHE du socle (un cran plus grand qu'un troupier
-  -- -> le chef trône). Calé sur les pieds au bas de la niche, AVEC une légère respiration (lift) — le commandant
-  -- est plus imposant que la piétaille. Visible seulement si débloqué. Le décor (socle/liseré/halo) = drawBack.
+  -- C4 — RIG DU COMMANDANT dans la case : box-fit dans la case simple (un cran plus grand qu'un troupier ->
+  -- le chef est un peu plus imposant), pieds calés au bas, AVEC une légère respiration (lift). Visible seulement
+  -- si la case est remplie (commanderSlot existe = grant accepté). Le décor (case + header) = drawBack.
   if self.commanderSlot and self.commanderRect and self:commanderUnlocked() then
     local sr = self.commanderSlot
     local r = self.commanderRect
     local lift = math.sin(self.t / 60 * 1.7) * 0.5 -- respiration douce (le chef « règne »), virtuel
-    -- CALÉ À LA NICHE (box-fit) : le commandant REMPLIT la niche (fill 0.9) quelle que soit la silhouette
-    -- native -> il TRÔNE (plus imposant qu'un troupier), pieds ancrés au bas du creux. -lift = il « respire ».
+    -- CALÉ À LA CASE (box-fit) : le commandant REMPLIT la case (fill 0.88) quelle que soit la silhouette native,
+    -- pieds ancrés au bas, avec une petite marge sous le liseré. -lift = il « respire ».
     local boxX, boxY = r.x + 2, r.y + 2 - lift
     local boxW, boxH = r.w - 4, r.h - 5
     -- RESSORT de drag : le commandant GLISSE en place (delta px,py vs son ancre de repos) quand on l'amène/swap
-    -- au piédestal ; au repos le delta est nul (box-fit inchangé). dx/dy translatent toute la niche.
+    -- dans la case ; au repos le delta est nul (box-fit inchangé). dx/dy translatent toute la case.
     local ax, ay = self:commanderAnchor()
     local sdx = sr.d and (sr.d.px - ax) or 0
     local sdy = sr.d and (sr.d.py - ay) or 0
@@ -2305,6 +2361,11 @@ function Build:drawOverlay(view)
   elseif run and self.xpBarRect and inRect(self.mx, self.my, self.xpBarRect) then
     -- Survol de la barre d'XP -> cotes par rang du tier courant (enseigne « à quoi sert monter »).
     self:drawOddsTooltip(run)
+  elseif self:commanderAt(self.mx, self.my) and self.commanderSlot and not self.drag then
+    -- C4 — SURVOL DU PIÉDESTAL (rempli) : la MÊME fiche de monstre qu'une unité du board (MonsterCard), qui
+    -- contient déjà le bandeau « AT COMMAND » détaillant l'aura -> on COMPREND ce que fait le commandant (fix du
+    -- retour user : « le hover ne marche pas dessus »). Les cases commandées pulsent en or en parallèle (drawBack).
+    self:drawTooltip(self.commanderSlot.id)
   else
     local id, boardSlot
     local oi = self:shopAt(self.mx, self.my)
@@ -2324,33 +2385,22 @@ function Build:drawOverlay(view)
   Draw.finish()
 end
 
--- ── C4 — OVERLAY DU PIÉDESTAL (texte net DEVANT le rig) : appel à l'action si vide + ÉTIQUETTE DE PORTÉE au
--- survol (spec §4.2 : « COMMANDS the whole pack / level-1 beasts / the vanguard »). Le socle/dais/cadence sont
--- dessinés en drawBack ; ici on ne pose que le TEXTE (lisibilité par-dessus la créature). PUR-RENDER. ──
+-- ── C4 — OVERLAY DE LA CASE DU COMMANDANT (texte net DEVANT le rig) : ÉTIQUETTE DE PORTÉE au drag (spec §4.2 :
+-- « COMMANDS the whole pack / level-1 beasts / the vanguard »). La case + le header + le hint « vide » sont dessinés
+-- en drawBack (CommanderCell) ; ici on ne pose que le cartouche de portée au DRAG. PUR-RENDER. ──
 function Build:drawPedestalOverlay(ui, run)
   if not self.pedRect then return end
-  local pedOffer = run and run.pendingCommanderGrant
-  if not (self:commanderUnlocked() or pedOffer) then return end
+  if not self:commanderCellShown() then return end
   local c = Theme.c
   local r = self.pedRect
   local cx = r.x * 4 + r.w * 2
   local sr = self.commanderSlot
 
-  -- (1) ÉTAT VIDE / OFFRE : appel à l'action « CROWN A BEAST » sous le socle (au-dessus de la barre de cadence,
-  -- absente quand vide). Court, capitales, Space Mono ; doré vif pendant l'offre (clique pour accepter).
-  if not sr then
-    local f = Theme.label(7)
-    local cta = T("ui.commander_unlock")
-    local ctaY = (r.y + r.h) * 4 + 3
-    local col = pedOffer and c.gold or c.brassL
-    -- léger pulse pendant l'offre (invite franche, jamais clignotant).
-    local a = pedOffer and (0.75 + 0.25 * (0.5 + 0.5 * math.sin(self.t / 60 * 2.4))) or 0.85
-    Draw.textC(cta, cx, ctaY, { col[1], col[2], col[3], a }, f)
-  end
-
-  -- (2) SURVOL (rempli) : ÉTIQUETTE DE PORTÉE — un petit cartouche laiton ancré sous le socle, « COMMANDS … ».
-  -- C'est la portée VISIBLE en mots (les cases touchées pulsent déjà en or en drawBack). Mesuré -> jamais coupé.
-  if ui and ui.commanderHover and sr and ui.cmdRangeLabel then
+  -- SURVOL (rempli) : ÉTIQUETTE DE PORTÉE — un petit cartouche laiton ancré sous la case, « COMMANDS … ». C'est la
+  -- portée VISIBLE en mots (les cases touchées pulsent déjà en or en drawBack). Mesuré -> jamais coupé. N'apparaît
+  -- QUE pendant un DRAG par-dessus la case : au survol simple, la FICHE complète (MonsterCard) est affichée (elle
+  -- porte déjà le bandeau « AT COMMAND ») -> on évite de doubler l'info (cartouche + fiche).
+  if ui and ui.commanderHover and sr and ui.cmdRangeLabel and self.drag then
     local f = Theme.label(8)
     local prefix = T("ui.command_word") .. " "
     local scope = T(ui.cmdRangeLabel, ui.cmdRangeVars)
@@ -2363,9 +2413,9 @@ function Build:drawPedestalOverlay(ui, run)
     local pad, hgt = 7, 15
     local pw = tw + pad * 2
     local px = math.floor(cx - pw / 2)
-    -- ancré sous le socle (sous la barre de cadence) ; rebond si ça sort du bas de l'écran -> au-dessus du label.
-    local py = (r.y + r.h) * 4 + 9
-    if py + hgt > Draw.H - 4 then py = r.y * 4 - Pedestal.LABEL_H * 1 - hgt - 4 end
+    -- ancré sous la case ; rebond si ça sort du bas de l'écran -> au-dessus du header.
+    local py = (r.y + r.h) * 4 + 6
+    if py + hgt > Draw.H - 4 then py = r.y * 4 - CommanderCell.HEADER_H - hgt - 4 end
     if px < 2 then px = 2 end
     if px + pw > Draw.W - 2 then px = Draw.W - 2 - pw end
     -- cartouche : panneau sombre + liseré laiton + le mot « COMMANDS » sourd, la PORTÉE en doré (hiérarchie).

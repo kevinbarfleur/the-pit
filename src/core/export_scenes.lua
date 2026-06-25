@@ -62,13 +62,19 @@ local function makeCommanderBuild(host, mode, opts)
     b.mx, b.my = r.x + r.w / 2, r.y + r.h / 2
   end
   if opts.dragNonChief then
-    -- drag d'un NON-chef survolant le piédestal -> refus visuel (le caller mousepressed/released le déclenche,
-    -- mais pour une CAPTURE statique on pose juste cmdShake + un drag par-dessus la niche).
-    b.drag = { id = "skeleton", level = 1, char = b:newRig("skeleton") }
+    -- drag d'un NON-chef survolant la case -> refus visuel (liseré sang + voile + shake). Depuis le rollout
+    -- « commandement à tout le roster », PLUS AUCUNE unité réelle n'est sans commandBonus -> on injecte un non-chef
+    -- SYNTHÉTIQUE (comme tests/headless.lua) pour que la capture montre VRAIMENT l'état de refus (sinon canCommand
+    -- renvoie true partout et on verrait un drop VALIDE/vert). L'id se rend via le fallback newRig (CreatureGen).
+    local Units = require("src.data.units")
+    Units.__noncmd_shot = { id = "__noncmd_shot", type = "bone", family = "mortvivant", rank = 1, hp = 40, dmg = 6, cd = 44, effects = {} } -- SANS commandBonus
+    b.drag = { id = "__noncmd_shot", level = 1, char = b:newRig("__noncmd_shot") }
     local r = b.commanderRect
     b.mx, b.my = r.x + r.w / 2, r.y + r.h / 2
     b.drag.char.x, b.drag.char.y = b.mx, b.my
-    b.cmdShake = 0.30
+    -- cmdShake décroît de ~1/60 par tick de warm (20 ticks ≈ 0.33) -> on part HAUT pour que l'état de refus
+    -- (liseré sang + voile) soit encore actif au moment du shot (sinon il serait déjà retombé à 0).
+    b.cmdShake = 0.90
   end
   return b
 end
@@ -118,6 +124,21 @@ function Builders.combat(host)
   local b = makeBuild(host)
   -- mi-partie pour montrer l'adversaire GÉNÉRÉ scalé (A4) : round 7, tier 3, 7 slots.
   host.run.round, host.run.shopTier, host.run.slots = 7, 3, 7
+  local left = b:buildLeftComp()
+  local enc = OppGen.generate({ round = host.run.round, tier = host.run.shopTier, slots = host.run.slots,
+    rng = love.math.newRandomGenerator(7), odds = host.run.ODDS })
+  local right = b:buildRightComp(enc)
+  return Combat.new(Palette, VW, VH, host, { left = left, right = right, enemyKey = b:encounterKeyFor(#enc.units), seed = 7 })
+end
+
+-- C4 — COMBAT AVEC COMMANDANT (revue : le chef VISIBLE en retrait + AUCUNE barre de vie). Identique à
+-- Builders.combat, mais on couronne un galvanizer côté JOUEUR avant le bake -> le commandant entre au comp
+-- (isCommander/untargetable) et arena_draw le replace en VIRTUEL derrière la formation (commanderCombatPos).
+function Builders.combat_commander(host)
+  local b = makeBuild(host)
+  host.run.round, host.run.shopTier, host.run.slots = 7, 3, 7
+  host.run.commanderUnlocked = true
+  b.commanderSlot = { id = "galvanizer", level = 1, char = b:newRig("galvanizer") } -- Le Roi des Rats : commandant
   local left = b:buildLeftComp()
   local enc = OppGen.generate({ round = host.run.round, tier = host.run.shopTier, slots = host.run.slots,
     rng = love.math.newRandomGenerator(7), odds = host.run.ODDS })
@@ -303,6 +324,7 @@ M.names = { "menu", "build", "combat", "combat_react", "summary", "relicpick", "
   "grimoire_bestiary",
   "gallery", "designsystem", "build_relic_hover",
   "anim_attack", "anim_death", "anim_hurt",
+  "combat_commander",
   "commander_empty", "commander_filled", "commander_hover", "commander_offer", "commander_refuse",
   "commander_fiche", "commander_fiche_none" }
 

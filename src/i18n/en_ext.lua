@@ -184,4 +184,5 @@ return {
   ["ui.command_none_short"] = "none in range", -- aura qui ne touche aucune unité posée (portée vide)
   ["ui.pedestal_label"] = "WARLORD",         -- libellé gravé du socle (au-dessus du piédestal)
   ["ui.pedestal_cadence"] = "SLOW CADENCE",  -- légende de la barre de cadence lente (sous le piédestal)
+  ["ui.commander_tag"] = "COMMANDER",        -- repère de combat AU-DESSUS du chef qui supervise (sans barre de vie)
 }

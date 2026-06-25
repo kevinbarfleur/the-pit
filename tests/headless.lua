@@ -523,6 +523,62 @@ local ok, err = pcall(function()
     print("  e2e C3 : piédestal (grant+drag-drop+refus non-chef) + aura level:1 build-résolue + défaite-par-board OK")
   end
 
+  -- ════════ C3bis — FIX D'INTERACTION : DROP SUR LA CASE PENDANT L'OFFRE = ACCEPTE + PLACE (jamais VENDRE) ════════
+  -- RÉGRESSION (retour user) : avant le fix, déposer une unité sur la case du commandant PENDANT l'offre (case
+  -- visible mais grant non encore accepté) tombait dans le fallback VENTE -> l'unité était PERDUE et l'or montait.
+  -- Le fix : la case est droppable dès qu'elle est AFFICHÉE (commanderCellShown), et un drop d'unité-chef
+  -- AUTO-ACCEPTE le grant avant de placer. On prouve : l'unité devient commandant, l'or NE BAISSE PAS (pas de
+  -- vente), commanderUnlocked devient vrai. Puis : drop d'une OFFRE de boutique sur la case pending -> achat + accept + place.
+  do
+    local RunState = require("src.run.state")
+    -- (A) DROP D'UNE UNITÉ DU BOARD sur la case pending : accepte + couronne, ZÉRO vente.
+    do
+      local run = RunState.new(101)
+      local host = { goto = function() end, run = run, finishCombat = function() end }
+      local eb = Build.new(Palette, 320, 180, host)
+      eb.board:unlock(9)
+      while run.round < RunState.COMMANDER_GRANT_ROUND do run:startRound() end
+      assert(run.pendingCommanderGrant and not run.commanderUnlocked, "C3bis: offre en cours, pas encore acceptée")
+      -- la case DOIT déjà être droppable (le coeur du bug) MÊME si commanderUnlocked est encore false.
+      assert(eb:commanderCellShown(), "C3bis: la case est affichée/droppable pendant l'offre")
+      local pr = eb.commanderRect
+      assert(eb:commanderAt(pr.x + pr.w / 2, pr.y + pr.h / 2), "C3bis: commanderAt=true pendant l'offre (pas inerte)")
+      -- pose un CHEF (galvanizer porte un commandBonus) sur le board, puis le glisse sur la case pending.
+      eb:placeId(1, "galvanizer", 1)
+      local goldBefore = run.gold
+      eb:mousepressed(eb.pos[1].x, eb.pos[1].y, 1)              -- ramasse le chef (board)
+      eb:mousereleased(pr.x + pr.w / 2, pr.y + pr.h / 2, 1)     -- lâche sur la case pending
+      -- ASSERTIONS DU FIX : couronné, grant accepté, AUCUNE vente (or strictement inchangé), case board vidée.
+      assert(eb.commanderSlot and eb.commanderSlot.id == "galvanizer", "C3bis: le chef est DEVENU commandant (pas vendu)")
+      assert(run.commanderUnlocked, "C3bis: déposer une unité a AUTO-ACCEPTÉ le grant")
+      assert(not run.pendingCommanderGrant, "C3bis: l'offre est consommée")
+      assert(run.gold == goldBefore, "C3bis: l'or est INCHANGÉ (pas de vente accidentelle) : " .. run.gold .. " vs " .. goldBefore)
+      assert(eb.slotRigs[1] == nil and eb.board.slots[1].unit == nil, "C3bis: la case board source est libérée")
+    end
+    -- (B) DROP D'UNE OFFRE DE BOUTIQUE sur la case pending : achat (or débité une fois) + accept + couronne.
+    do
+      local run = RunState.new(202)
+      local host = { goto = function() end, run = run, finishCombat = function() end }
+      local eb = Build.new(Palette, 320, 180, host)
+      eb.board:unlock(9)
+      while run.round < RunState.COMMANDER_GRANT_ROUND do run:startRound() end
+      assert(run.pendingCommanderGrant and not run.commanderUnlocked, "C3bis(B): offre en cours")
+      -- injecte une offre-chef abordable en slot 1 de boutique.
+      run.gold = 99
+      run.shop[1] = { id = "deep_kraken", cost = 5, sold = false }
+      local pr = eb.commanderRect
+      local rc = eb.shopSlots[1]
+      local goldBefore = run.gold
+      eb:mousepressed(rc.x + rc.w / 2, rc.y + rc.h / 2, 1)      -- prend l'offre (chef)
+      eb:mousereleased(pr.x + pr.w / 2, pr.y + pr.h / 2, 1)     -- lâche sur la case pending
+      assert(eb.commanderSlot and eb.commanderSlot.id == "deep_kraken", "C3bis(B): l'offre-chef est couronnée")
+      assert(run.commanderUnlocked and not run.pendingCommanderGrant, "C3bis(B): grant AUTO-ACCEPTÉ par le drop d'offre")
+      assert(run.gold == goldBefore - 5, "C3bis(B): or débité UNE fois (achat), pas vendu : " .. run.gold)
+      assert(run.shop[1].sold, "C3bis(B): l'offre est consommée (sold)")
+    end
+    print("  e2e C3bis : drop sur la case pending = ACCEPTE + PLACE (chef board ET offre boutique), ZÉRO vente OK")
+  end
+
   -- E2E ACHAT AU CLIC + ÉTATS DÉSACTIVÉS (retour user 2026-06) : un CLIC (presse+relâche au même point) sur une
   -- offre l'achète et la place TOUTE SEULE ; la carte est GRISÉE/inerte si pas d'or OU (board+banc pleins ET pas
   -- de trio à compléter) ; plein + trio -> l'achat FUSIONNE direct (level-up auto). On pilote la VRAIE scène.
