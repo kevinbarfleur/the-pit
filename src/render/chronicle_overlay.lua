@@ -15,6 +15,7 @@ local Panel = require("src.ui.panel")       -- plaque propre du bouton X (rempla
 local Button = require("src.ui.button")     -- boutons-icône PROPRES (‹ › du carrousel) : remplace Forge.uiButton
 local Dividers = require("src.ui.dividers")  -- filet laiton sous le titre (chrome propre)
 local Feel = require("src.ui.feel")          -- JUICE : survol lissé des boutons (glow/lift), RENDER pur
+local OverlayFx = require("src.ui.overlay")   -- CHORÉGRAPHIE d'entrée unifiée (voile qui monte + groupe back-ease)
 local Chronicle = require("src.render.chronicle")
 local ChronicleDraw = require("src.render.chronicle_draw")
 local MonsterCard = require("src.render.monstercard") -- fiche TCG flottante au survol d'un nom (J4)
@@ -73,6 +74,10 @@ end
 function Overlay:draw(view)
   local c = Theme.c
   self.t = self.t + 1 / 60 -- horloge locale (overlay modal sans boucle update) : respiration de la fiche au survol
+  -- ENTRÉE CHORÉGRAPHIÉE (anim 0→1) : cet overlay n'a pas de boucle update (host fige le jeu et appelle draw
+  -- directement) -> on avance l'anim ICI, au pas fixe 1/60 s (cohérent avec self.t et Feel.update(1)).
+  self._anim = OverlayFx.advance(self._anim, 1 / 60)
+  local anim = self._anim
   Feel.update(1)           -- JUICE : avance le survol lissé des boutons (overlay modal -> pas de boucle update)
 
   -- Survol des boutons (lissé) — résolu avant le draw pour piloter glow/lift via Feel.state.
@@ -81,7 +86,13 @@ function Overlay:draw(view)
   Feel.hover("chron.ov.close", inR(self.mx, self.my, self._close))
 
   Draw.begin(view)
-  Draw.rect(0, 0, Draw.W, Draw.H, { 0.02, 0.012, 0.03, 0.93 }) -- voile : le jeu derrière est figé
+  -- VOILE qui MONTE (·anim) : il cache le jeu derrière (figé) mais se POSE au lieu de « poper » (cohérence
+  -- avec les autres overlays). 0.93 = opacité cible (chronique = on masque vraiment le combat derrière).
+  Draw.rect(0, 0, Draw.W, Draw.H, { 0.02, 0.012, 0.03, 0.93 * anim })
+  -- ENROBAGE de la CHROME (titre + carrousel + boutons) : back-ease subtil autour du centre écran. Le PANNEAU
+  -- journal (scrollable, scissor en px écran) reste HORS de l'enrobage (un scale désynchroniserait son clip) ;
+  -- son entrée est portée par le voile qui monte + le fade-up final. À anim=1 -> transform identité.
+  OverlayFx.pushContent(Draw.W / 2, Draw.H / 2, anim)
   -- Titre Cinzel gravé (capitales, interlettrage) + hint clavier en Space Mono ; filet laiton dessous.
   Draw.textTrackedL(T("chronicle.title"):upper(), 24, 16, c.ink, Theme.heading(24), 2)
   Draw.textR(T("chronicle.close_hint"), Draw.W - 24 - 26 - 12, 26, c.ink4, Theme.label(11)) -- hint clavier (complément)
@@ -109,9 +120,18 @@ function Overlay:draw(view)
   end
   -- bouton X (close) : plaque propre + croix nette (toujours présent).
   self:_drawClose(self._close, inR(self.mx, self.my, self._close))
+  OverlayFx.popContent() -- fin de l'enrobage de la chrome (back-ease)
   Draw.finish()
 
   self.panel:draw(view, 24, 96, Draw.W - 48, Draw.H - 112)
+
+  -- FADE-UP : un wash sombre par-dessus chrome + panneau, alpha = (1-anim)·force, qui s'efface à l'entrée ->
+  -- l'overlay « remonte du noir » d'un bloc (chrome ET journal entrent ensemble). À anim=1 -> rien (rendu d'avant).
+  if anim < 1 then
+    Draw.begin(view)
+    Draw.rect(0, 0, Draw.W, Draw.H, { 0.02, 0.012, 0.03, (1 - anim) * 0.6 })
+    Draw.finish()
+  end
 
   -- FICHE de monstre au SURVOL d'un nom (J4) : dessinée AU NIVEAU OVERLAY, PAR-DESSUS la liste et HORS de
   -- son clip (la carte déborde volontairement du panneau). Ancrée au curseur (en design), rebond sur les

@@ -23,6 +23,7 @@ local Banner = require("src.ui.banner")   -- VERDICT cérémonial (Jacquard) : l
 local Button = require("src.ui.button")   -- CTA propre PRIMARY (sang + yeux) : la relance
 local Dividers = require("src.ui.dividers") -- filet laiton propre entre verdict et CTA
 local Feel = require("src.ui.feel")       -- JUICE propre (survol/press) — RENDER pur, headless-safe
+local Overlay = require("src.ui.overlay")  -- CHORÉGRAPHIE d'entrée unifiée (voile modéré qui monte + verdict back-ease)
 local Ambient = require("src.fx.ambient")
 local SFX = require("src.audio.sfx")      -- SON (Oniric grave) : ASCENSION (success) / CHUTE (defeat). No-op headless.
 local T = require("src.core.i18n").t
@@ -73,6 +74,7 @@ end
 
 function Runover:update(frameDt)
   self.t = self.t + frameDt
+  self._anim = Overlay.advance(self._anim, frameDt / 60) -- ENTRÉE chorégraphiée (voile modéré + verdict back-ease)
   self.ambient:update(frameDt)
   Feel.update(frameDt) -- avance le JUICE du CTA (survol/press) ; aucune action différée en file ici
   Feel.hover("runover.again", ptIn(self.mx, self.my, self.cta))
@@ -100,6 +102,15 @@ function Runover:drawOverlay(view)
 
   Draw.begin(view)
 
+  -- VOILE MODÉRÉ qui MONTE (≈0,5·anim) : assombrit l'ambiance (drawBack) pour détacher le verdict, mais la
+  -- laisse RESPIRER dessous (oniric préservé). Cohérent avec relicpick et le bilan de combat.
+  local anim = self._anim or 1
+  Draw.rect(0, 0, Draw.W, Draw.H, { 0.02, 0.012, 0.03, 0.5 * anim })
+
+  -- ENROBAGE du GROUPE (bannière + filet + CTA) : back-ease subtil autour du centre écran -> le verdict ENTRE
+  -- au lieu de « poper » (apparié au son success/defeat). À anim=1 -> transform identité (rendu d'avant).
+  Overlay.pushContent(Draw.W / 2, Draw.H / 2, anim)
+
   -- ── 1) VERDICT cérémonial : BANNIÈRE (kind ascension/defeat). Le récap de run est porté par la bannière
   --       elle-même (subtitle = kicker, score = wins/losses, hint = progression) -> un seul centre lisible. ──
   local kind = won and "ascension" or "defeat"
@@ -117,6 +128,11 @@ function Runover:drawOverlay(view)
   Button.draw(self.cta.x, self.cta.y, self.cta.w, self.cta.h, "primary", T("runover.descend"),
     { hover = self.ctaHover, feel = Feel.state("runover.again"), id = "runover.again",
       mouse = { mx = self.mx, my = self.my }, t = tt })
+
+  Overlay.popContent() -- fin de l'enrobage du groupe (back-ease)
+  -- FADE-UP : wash sombre par-dessus, alpha = (1-anim)·force, qui s'efface à l'entrée -> le verdict « remonte
+  -- du noir » d'un bloc. À anim=1 -> rien (rendu d'avant).
+  if anim < 1 then Draw.rect(0, 0, Draw.W, Draw.H, { 0.02, 0.012, 0.03, (1 - anim) * 0.5 }) end
 
   Draw.finish()
 end

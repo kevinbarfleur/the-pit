@@ -30,6 +30,7 @@ local Draw = require("src.ui.draw")
 local Button = require("src.ui.button")  -- boutons propres (CHRONICLE secondary / CONTINUE primary)
 local Feel = require("src.ui.feel")      -- JUICE : survol (glow/lift) + press (squash/flash)
 local Panel = require("src.ui.panel")    -- surfaces propres (résumé post-combat : ruban, cartes)
+local Overlay = require("src.ui.overlay") -- CHORÉGRAPHIE d'entrée unifiée (voile qui monte + groupe en back-ease)
 local Units = require("src.data.units")  -- type d'unité (pip de portrait) + noms
 local MiniRig = require("src.render.minirig") -- frimousse de créature (portraits MVP / 1re perte du résumé)
 local Run = require("src.run.state")     -- WIN_TARGET (descente) pour le ruban de stats
@@ -88,6 +89,7 @@ function Combat:restart()
     { left = self.payload.left, right = self.payload.right, autoReset = false, seed = self.payload.seed })
   self.renderer = ArenaDraw.new(self.arena, self.palette)
   self._verdictPlayed = nil -- SON : un REPLAY rejoue son verdict (le bilan se ré-affiche)
+  self._sumAnim = nil       -- ENTRÉE : un REPLAY rejoue la chorégraphie d'apparition du bilan
   self:_track()
 end
 
@@ -178,6 +180,12 @@ function Combat:update(frameDt)
   if self.arena.over then self.skipping = false end
   if self.arena.over then
     self.hintKey = "ui.hint_combat_end"
+    -- ENTRÉE CHORÉGRAPHIÉE du bilan (cohérence avec les autres overlays) : le `_sumAnim` 0→1 monte une fois
+    -- que l'écran de fin s'affiche (overAge >= 20, comme drawOverlay) -> le voile MONTE + le groupe entre en
+    -- back-ease subtil au lieu de « poper ». frameDt @60 -> /60 = secondes (approche framerate-correcte).
+    if self.arena.overAge >= 20 then
+      self._sumAnim = Overlay.advance(self._sumAnim, frameDt / 60)
+    end
     -- survol des deux boutons de fin (glow/lift lissés) — n'a d'effet visible qu'une fois l'écran affiché.
     Feel.hover("combat.chron", inBtn(self.mx, self.my, self._btnChron))
     Feel.hover("combat.cont", inBtn(self.mx, self.my, self._btnCont))
@@ -418,11 +426,19 @@ function Combat:_drawSummary(view)
   elseif self.biome then self.biome:draw(0, 0, W, H)
   else Panel.vgrad(0, 0, W, H, { 0x10 / 255, 0x0c / 255, 0x16 / 255, 1 }, { 0x05 / 255, 0x03 / 255, 0x08 / 255, 1 }) end
   -- (0b) VOILE de lisibilité : un peu plus CLAIR en VICTOIRE (laisse respirer la lumière) sans nuire au texte.
-  Draw.setColor({ 0x05 / 255, 0x03 / 255, 0x09 / 255, won and 0.40 or 0.52 })
+  -- ENTRÉE CHORÉGRAPHIÉE (anim 0→1, avancé dans Combat:update) : le voile MONTE avec l'entrée (·anim) comme
+  -- pour les autres overlays -> il ne « pope » plus, il se POSE. À anim=1 -> exactement l'alpha d'avant.
+  local anim = self._sumAnim or 1
+  Draw.setColor({ 0x05 / 255, 0x03 / 255, 0x09 / 255, (won and 0.40 or 0.52) * anim })
   love.graphics.rectangle("fill", 0, 0, W, H)
   Draw.reset()
   -- (0c) YEUX par-dessus le voile (PROMINENTS) : défaite = plusieurs ouverts/tremblants/sanglants ; victoire = se ferment.
   if self.nightmareBg then self.nightmareBg:drawEyes(0, 0, W, H, vopts) end
+
+  -- (0d) ENROBAGE du GROUPE de contenu : scale SUBTIL autour du centre écran (range 0,025 -> entrée discrète,
+  -- PAS un rétrécissement de petite modale ; c'est un écran plein). Le fond cauchemardesque/voile/yeux restent
+  -- HORS de l'enrobage (ils vivent, ils ne « zooment » pas). À anim=1 -> transform identité (pose = rendu d'avant).
+  Overlay.pushContent(W / 2, H / 2, anim, 0.025)
 
   -- (1) HEADER : kicker + verdict (Jacquard, casse de titre) + flavor. PAS de cercle/halo derrière le mot
   -- (retour user : « j'aime pas le cercle ») -> le verdict tient seul sur le fond cauchemardesque + voile.
@@ -546,6 +562,16 @@ function Combat:_drawSummary(view)
 
   -- séparateur entre colonnes : hauteur = celle du contenu réel (jamais un trait qui pend dans le vide).
   Draw.rect(divX, colTop, 1, math.max(leftBottom, actionsBottom) - colTop, c.iron)
+
+  -- (fin de l'enrobage du groupe) + FADE-UP : un wash sombre PAR-DESSUS le contenu, alpha = (1-anim)·force,
+  -- qui s'efface à mesure que l'entrée se pose -> le bilan « remonte du noir » (le fade qui appaire la
+  -- chorégraphie aux autres overlays + au son success/defeat). À anim=1 -> wash transparent (rendu d'avant).
+  Overlay.popContent()
+  if anim < 1 then
+    Draw.setColor({ 0x05 / 255, 0x03 / 255, 0x09 / 255, (1 - anim) * 0.55 })
+    love.graphics.rectangle("fill", 0, 0, W, H)
+    Draw.reset()
+  end
   Draw.finish()
 end
 

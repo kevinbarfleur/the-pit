@@ -751,6 +751,42 @@ local ok, err = pcall(function()
     local ro2 = Runover.new(Palette, 320, 180, { newRun = function() end }, { result = "lose" })
     ro2:keypressed("r")
   end
+
+  -- ── src/ui/overlay.lua : CHORÉGRAPHIE d'entrée UNIFIÉE des overlays flottants (transplant modalstack). On
+  -- vérifie la LOGIQUE PURE (advance framerate-correct + monotone + bornes ; backEase ancré ; scaleOf/alphaOf
+  -- bornés et = 1 à la pose) + le smoke RENDER (backdrop/pushContent/popContent no-op sous le mock). ──
+  do
+    local OverlayFx = require("src.ui.overlay")
+    -- advance : 0 -> monte vers 1 sans jamais le dépasser, et CONVERGE (framerate-correct).
+    local a = 0
+    for _ = 1, 200 do a = OverlayFx.advance(a, 1 / 60) end
+    assert(a > 0.99 and a <= 1.0, "overlay.advance : converge vers 1 (borné)")
+    -- monotone croissant sur une frame ; dt nil/<=0 -> figé (pose headless reproductible).
+    local a0 = OverlayFx.advance(0.2, 1 / 60)
+    assert(a0 > 0.2, "overlay.advance : monte d'une frame")
+    assert(OverlayFx.advance(0.5, nil) == 0.5 and OverlayFx.advance(0.5, 0) == 0.5,
+      "overlay.advance : dt nil/0 -> anim inchangé (pose figée)")
+    assert(OverlayFx.advance(nil, 1 / 60) >= 0, "overlay.advance : anim nil -> part de 0 (pas de crash)")
+    -- backEase : ancré (0->0, 1->1) + dépasse 1 au milieu (le « claquement » en place).
+    assert(math.abs(OverlayFx.backEase(0)) < 1e-6 and math.abs(OverlayFx.backEase(1) - 1) < 1e-6,
+      "overlay.backEase : ancré en 0 et 1")
+    assert(OverlayFx.backEase(0.85) > 1, "overlay.backEase : overshoot (claque en place)")
+    assert(OverlayFx.backEase(2) == OverlayFx.backEase(1), "overlay.backEase : clampé [0,1]")
+    -- scaleOf : <1 à l'entrée, == 1 à la pose ; range resserre l'amplitude (entrée subtile du plein écran).
+    assert(OverlayFx.scaleOf(0) < 1 and math.abs(OverlayFx.scaleOf(1) - 1) < 1e-6,
+      "overlay.scaleOf : <1 à l'entrée, =1 à la pose")
+    assert(OverlayFx.scaleOf(0, 0.025) > OverlayFx.scaleOf(0, 0.06),
+      "overlay.scaleOf : range resserré -> entrée plus subtile (scale de départ plus proche de 1)")
+    -- alphaOf : borné [0,1], 0 à l'entrée, 1 à la pose, monotone.
+    assert(OverlayFx.alphaOf(0) == 0 and OverlayFx.alphaOf(1) == 1, "overlay.alphaOf : 0 à l'entrée, 1 à la pose")
+    assert(OverlayFx.alphaOf(0.5) > 0 and OverlayFx.alphaOf(0.5) < 1, "overlay.alphaOf : borné en cours d'entrée")
+    -- smoke RENDER : backdrop + push/pop ne crashent pas (no-op sous le mock LÖVE).
+    OverlayFx.backdrop(view, 0.5, 0.4)
+    OverlayFx.backdrop(view, 0.5, 0) -- alpha 0 -> court-circuit (no draw)
+    local al = OverlayFx.pushContent(640, 360, 0.6, 0.025)
+    assert(al >= 0 and al <= 1, "overlay.pushContent : renvoie un alpha borné")
+    OverlayFx.popContent()
+  end
 end)
 
 if ok then

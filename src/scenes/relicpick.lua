@@ -30,6 +30,7 @@ local Ambient = require("src.fx.ambient")
 local Button = require("src.ui.button")      -- boutons propres : primary (BIND) / eco (REFUSE)
 local Dividers = require("src.ui.dividers")  -- filets laiton/sang propres (cassure d'en-tête)
 local Feel = require("src.ui.feel")          -- JUICE : survol (glow/lift) + press (squash/flash)
+local Overlay = require("src.ui.overlay")    -- CHORÉGRAPHIE d'entrée unifiée (voile modéré qui monte + cartes back-ease)
 local SFX = require("src.audio.sfx")         -- SON (Oniric grave) : BIND d'une relique = payoff (success). No-op headless.
 local RelicCard = require("src.ui.relic_card") -- MOLÉCULE carte de relique (fond + icône animée + nom + effet + flavor)
 local Relics = require("src.data.relics")    -- pour le PALIER de nature (band -> couleur de carte Argent/Or/Prismatique)
@@ -124,6 +125,7 @@ local function ptIn(px, py, r) return px >= r.x and px <= r.x + r.w and py >= r.
 
 function Relicpick:update(frameDt)
   self.t = self.t + frameDt
+  self._anim = Overlay.advance(self._anim, frameDt / 60) -- ENTRÉE chorégraphiée (voile modéré + cartes back-ease)
   self.ambient:update(frameDt)
   Feel.update(frameDt) -- avance easings + respiration (les actions sont SYNCHRONES ici, cf. confirm/decline)
   -- cibles de survol des boutons (glow/lift montent en ease-out).
@@ -167,6 +169,15 @@ end
 function Relicpick:drawOverlay(view)
   Draw.begin(view)
 
+  -- VOILE MODÉRÉ qui MONTE (≈0,5·anim) : assombrit l'ambiance onirique (drawBack) pour détacher l'offre, mais
+  -- la laisse RESPIRER dessous (pas un masque opaque comme la chronique). Cohérent avec les autres overlays.
+  local anim = self._anim or 1
+  Draw.rect(0, 0, Draw.W, Draw.H, { 0.02, 0.012, 0.03, 0.5 * anim })
+
+  -- ENROBAGE du GROUPE (en-tête + 3 cartes + BIND/REFUSE) : back-ease subtil autour du centre écran -> les
+  -- cartes ENTRENT au lieu de « poper ». À anim=1 -> transform identité (pose finale = rendu d'avant).
+  Overlay.pushContent(Draw.W / 2, Draw.H / 2, anim)
+
   -- ── EN-TÊTE (voix cérémoniale, kit propre) : kicker (Spectral italique, ink-3) + titre Jacquard gravé
   -- (PRÉSERVÉ : Theme.display) + filet laiton orné dessous (Dividers.brass). Hiérarchie par CASSE/COULEUR. ──
   -- KICKER = SOURCE de l'offre (dit POURQUOI on a la relique) : level-up doré (mis en avant) vs marchand sourd.
@@ -191,6 +202,11 @@ function Relicpick:drawOverlay(view)
     T("relic.decline_label"),
     { cost = RunState.DECLINE_RELIC_GOLD, hover = self.declineHover, feel = Feel.state("relicpick.decline"),
       id = "relicpick.decline" })
+
+  Overlay.popContent() -- fin de l'enrobage du groupe (back-ease)
+  -- FADE-UP : wash sombre par-dessus, alpha = (1-anim)·force, qui s'efface à l'entrée -> l'offre « remonte du
+  -- noir » d'un bloc (appaire la chorégraphie au son du reveal). À anim=1 -> rien (rendu d'avant).
+  if anim < 1 then Draw.rect(0, 0, Draw.W, Draw.H, { 0.02, 0.012, 0.03, (1 - anim) * 0.5 }) end
 
   Draw.finish()
 end
