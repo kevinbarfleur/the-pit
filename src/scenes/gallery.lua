@@ -114,7 +114,7 @@ function Gallery.new(palette, vw, vh, host)
     local spec = Units[id] or {}
     local handmade = Creatures[id] ~= nil
     local def = handmade and Creatures[id]
-      or CreatureGen.cached({ id = id, type = spec.type, family = spec.family, effects = spec.effects, bodyplan = spec.bodyplan, rank = spec.rank })
+      or CreatureGen.cached({ id = id, type = spec.type, family = spec.family, arch = spec.arch, effects = spec.effects, bodyplan = spec.bodyplan, rank = spec.rank })
     local char = Rig.new(def, palette)
     char.facing = 1
     -- rank/bodyplan portés sur l'item -> cadre+pips+glow de rareté visibles sur les VRAIES unités

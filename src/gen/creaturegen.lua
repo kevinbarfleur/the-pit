@@ -1070,8 +1070,10 @@ function CreatureGen.cached(opts)
     local Primgen = require("src.gen.primgen")
     local fam = opts.family or deriveFamily(opts.type, opts.effects, id)
     local nArch, nPal = Primgen.familyShape(fam)
-    -- index DANS la famille, dérivés de l'id (un hash distinct par axe) -> variété par unité sans table dédiée.
-    local archIndex = bucket(hashId("arch." .. id), nArch)
+    -- FORME CANONIQUE PINNÉE (opts.arch = nom de forme du dico) -> index STABLE par NOM. Sinon (réserve,
+    -- démos, hand-drawn sans unité) : index dérivé de l'id par hash. Le PIN rend le sprite immunisé à la
+    -- croissance de nArch (ajouter une ELDER ne rebinde plus les unités) -> golden de gén verrouillé par unité.
+    local archIndex = (opts.arch and Primgen.archIndexOf(fam, opts.arch)) or bucket(hashId("arch." .. id), nArch)
     local palIndex  = bucket(hashId("palette." .. id), nPal)
     local rar = Rarity.get(rank)
     def = Primgen.def({
@@ -1099,7 +1101,9 @@ function CreatureGen.cachedLive(opts)
     local Primgen = require("src.gen.primgen")
     local fam = opts.family or deriveFamily(opts.type, opts.effects, id)
     local nArch, nPal = Primgen.familyShape(fam)
-    local archIndex = bucket(hashId("arch." .. id), nArch)
+    -- (cf. cached) FORME PINNÉE par nom (opts.arch) -> index stable ; sinon hash de l'id. MÊME résolution
+    -- que `cached` (sinon le vivant divergerait du baké) -> critter == sprite board.
+    local archIndex = (opts.arch and Primgen.archIndexOf(fam, opts.arch)) or bucket(hashId("arch." .. id), nArch)
     local palIndex  = bucket(hashId("palette." .. id), nPal)
     d = Primgen.live({
       id = id, family = fam, archIndex = archIndex, paletteIndex = palIndex,

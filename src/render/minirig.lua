@@ -41,7 +41,7 @@ function MiniRig.rig(id, palette)
   if not def then
     local spec = Units[id] or {}
     def = CreatureGen.cached({
-      id = id, type = spec.type, family = spec.family,
+      id = id, type = spec.type, family = spec.family, arch = spec.arch,
       effects = spec.effects, bodyplan = spec.bodyplan, rank = spec.rank,
     })
   end

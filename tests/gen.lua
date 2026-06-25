@@ -282,4 +282,85 @@ if os.getenv("GEN_PREVIEW") then
   ascii("plague_doctor")  -- order
 end
 
+-- ─────────────────────────── 4. CHEMIN PRIMGEN (cachedLive) : PIN de forme + golden de génération ───────────────────────────
+-- Les sections 1-3 testent le LEGACY `CreatureGen.build` (masks/Forge), jamais le chemin EN JEU (primgen via
+-- cachedLive). Ici on verrouille le chemin réel : (a) PIN -> chaque unité reçoit sa forme CANONIQUE (Units[id].arch),
+-- (b) cross-process via hashId (snapshot-safe), (c) distinction (aucune paire au même sprite généré), (d) smoke des
+-- 10 nouvelles formes (4 cocon + 6 ELDER). Le PIN A CHANGÉ les sprites (hash-dérivé -> ancré au nom) -> EXPECTED
+-- ci-dessous est un RE-BASELINE INTENTIONNEL (B.2). Le golden SIM (tests/golden.lua) reste, lui, INCHANGÉ (firewall).
+do
+  local Primgen = require("src.gen.primgen")
+
+  -- (d') Les 10 nouvelles formes : rendent via Primgen.live, grille non vide, A.mass présent (anatomie valide).
+  local NEW_FORMS = {
+    { fam = "cocon", arch = "broodsac" }, { fam = "cocon", arch = "bilesac" },
+    { fam = "cocon", arch = "chrysalis" }, { fam = "cocon", arch = "embersac" },
+    { fam = "ombre", arch = "voidtyrant" }, { fam = "larve", arch = "devourer" },
+    { fam = "crane", arch = "skulltitan" }, { fam = "automate", arch = "juggernaut" },
+    { fam = "spectre", arch = "veiledking" }, { fam = "arachnide", arch = "broodmother" },
+  }
+  for _, t in ipairs(NEW_FORMS) do
+    local ai = Primgen.archIndexOf(t.fam, t.arch)
+    if not ai then fail("forme NEW '" .. t.arch .. "' absente de la famille '" .. t.fam .. "'") end
+    local d = Primgen.live({ seed = 4242, family = t.fam, archIndex = ai, paletteIndex = 1 })
+    if d.arch ~= t.arch then fail("archName '" .. tostring(d.arch) .. "' != '" .. t.arch .. "'") end
+    if not (d.A and d.A.mass and d.A.mass[1]) then fail(t.arch .. " : A.mass absent (anatomie invalide)") end
+    local n = 0; for _ in pairs(d.grid) do n = n + 1 end
+    if n < 100 then fail(t.arch .. " : grille trop vide (" .. n .. " px) — builder cassé ?") end
+  end
+  print("  primgen NEW : OK (10 formes 4 cocon + 6 ELDER -> live() rend, A.mass present, >=100px)")
+
+  -- (a) Toute unité PINnée (Units[id].arch) résout son index DANS sa famille (sinon retombe en hash = régression).
+  local unpinned = 0
+  for _, id in ipairs(Units.order) do
+    local u = Units[id]
+    if u.arch then
+      if not Primgen.archIndexOf(u.family, u.arch) then
+        fail(id .. " : PIN arch='" .. u.arch .. "' introuvable dans family='" .. tostring(u.family) .. "'")
+      end
+    else
+      unpinned = unpinned + 1
+    end
+  end
+  if unpinned > 0 then fail(unpinned .. " unite(s) sans PIN arch= (verrouillage golden incomplet)") end
+  print("  primgen PIN : OK (" .. #Units.order .. " unites pinnees, chaque forme resolue in-family)")
+
+  -- Helper : grille primgen LIVE d'une unité (chemin EN JEU), sérialisée déterministe (clés numériques triées).
+  local function primSig(id)
+    local u = Units[id]
+    local d = CreatureGen.cachedLive({ id = id, type = u.type, family = u.family, arch = u.arch, effects = u.effects, rank = u.rank })
+    local keys = {}
+    for k in pairs(d.grid) do keys[#keys + 1] = k end
+    table.sort(keys)
+    local buf = { tostring(d.family), tostring(d.arch), "w" .. d.w .. "h" .. d.h, "n" .. #keys }
+    for _, k in ipairs(keys) do buf[#buf + 1] = k .. ":" .. d.grid[k] end
+    return table.concat(buf, ",")
+  end
+
+  -- (c) DISTINCTION : aucune paire d'unités ne partage exactement la même grille générée (lisibilité du roster).
+  local sigs, collisions = {}, 0
+  for _, id in ipairs(Units.order) do sigs[id] = primSig(id) end
+  for i = 1, #Units.order do
+    for j = i + 1, #Units.order do
+      local a, b = Units.order[i], Units.order[j]
+      if sigs[a] == sigs[b] then print("  PRIMGEN COLLISION : " .. a .. " == " .. b); collisions = collisions + 1 end
+    end
+  end
+  if collisions > 0 then fail(collisions .. " paire(s) au sprite GENERE identique (chemin primgen)") end
+  print("  primgen distinct : OK (" .. #Units.order .. " unites, 0 sprite genere en double)")
+
+  -- (b) GOLDEN DE GÉNÉRATION : empreinte stable cross-process (hashId = FNV-1a 5.1-safe, IEEE déterministe).
+  -- Re-baseline INTENTIONNEL au PIN (B.2 : la forme passe de hash-dérivée à ancrée-au-nom). Si tu changes un
+  -- builder/une palette/un PIN VOLONTAIREMENT, regénère et colle la nouvelle valeur ici.
+  local EXPECTED_GEN = 1150543352
+  local function roll(acc, s) return CreatureGen.hashId(string.format("%d|", acc) .. s) end
+  local acc = 0
+  for _, id in ipairs(Units.order) do acc = roll(acc, id .. "=" .. sigs[id]) end
+  if acc ~= EXPECTED_GEN then
+    fail("empreinte de generation " .. acc .. " != attendu " .. EXPECTED_GEN
+      .. " (regression visuelle OU re-baseline a valider : maj EXPECTED_GEN)")
+  end
+  print("  primgen golden : OK (empreinte de generation stable = " .. acc .. ")")
+end
+
 print("=> GEN OK.")

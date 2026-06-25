@@ -74,7 +74,7 @@ function Export.bestiary(opts)
   for _, id in ipairs(order) do
     local spec = Units[id] or {}
     local def = CreatureGen.cached({
-      id = id, type = spec.type, family = spec.family,
+      id = id, type = spec.type, family = spec.family, arch = spec.arch,
       effects = spec.effects, bodyplan = spec.bodyplan, rank = spec.rank,
     })
     local char = Rig.new(def, Palette)

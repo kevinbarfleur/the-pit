@@ -153,7 +153,7 @@ function Build:newRig(id)
   local def = Creatures[id]
   if not def then
     local spec = Units[id] or {}
-    def = CreatureGen.cached({ id = id, type = spec.type, family = spec.family, effects = spec.effects, bodyplan = spec.bodyplan, rank = spec.rank })
+    def = CreatureGen.cached({ id = id, type = spec.type, family = spec.family, arch = spec.arch, effects = spec.effects, bodyplan = spec.bodyplan, rank = spec.rank })
   end
   local c = Rig.new(def, self.palette)
   c.facing = 1

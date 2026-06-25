@@ -682,7 +682,7 @@ local function info(id)
   if c then return c end
   local spec = Units[id] or {}
   local ok, d = pcall(CreatureGen.cachedLive,
-    { id = id, type = spec.type, family = spec.family, effects = spec.effects, rank = spec.rank })
+    { id = id, type = spec.type, family = spec.family, arch = spec.arch, effects = spec.effects, rank = spec.rank })
   if not ok or not d or not d.grid then return nil end
   local data, W, H = d.grid, d.w, d.h
   local cells, n, minX, maxX, minY, maxY = {}, 0, W, 0, H, 0

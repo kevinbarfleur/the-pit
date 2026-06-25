@@ -1,5 +1,5 @@
 -- tests/primgen.lua
--- GARDE DE RÉGRESSION du générateur de bestiaire v7 (src/gen/primgen.lua, 41 familles / 93 formes).
+-- GARDE DE RÉGRESSION du générateur de bestiaire v7 (src/gen/primgen.lua, 41 familles / 102 formes).
 -- Comble le trou de couverture : tests/gen.lua teste le LEGACY `CreatureGen.build` (masks/Forge), JAMAIS
 -- primgen. Ici on vérifie que CHAQUE famille de FAMILY_ORDER × chaque archétype génère une image 64×64 NON
 -- VIDE (un archétype mal porté dessine 0 px ou plante), et que le rendu est DÉTERMINISTE (snapshot-safe).
@@ -38,4 +38,4 @@ local B = P.generate({ seed = 777, family = "mortvivant", archIndex = 1, palette
 assert(A.arch == B.arch and A.name == B.name, "primgen NON déterministe (même seed -> sortie différente)")
 print("  primgen : determinisme (meme seed -> meme arch/nom) OK")
 
-print("=> PRIMGEN OK : bestiaire v7 (41 familles / 93 formes) genere sans regression.")
+print("=> PRIMGEN OK : bestiaire v7 (41 familles / 102 formes) genere sans regression.")

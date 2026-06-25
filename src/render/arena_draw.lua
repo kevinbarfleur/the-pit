@@ -185,7 +185,7 @@ function ArenaDraw:rigFor(u)
     local def = Creatures[u.id]
     if not def then
       local spec = Units[u.id] or {}
-      def = CreatureGen.cached({ id = u.id, type = spec.type, family = spec.family, effects = spec.effects, bodyplan = spec.bodyplan, rank = spec.rank })
+      def = CreatureGen.cached({ id = u.id, type = spec.type, family = spec.family, arch = spec.arch, effects = spec.effects, bodyplan = spec.bodyplan, rank = spec.rank })
     end
     c = Rig.new(def, self.palette)
     c.x, c.y, c.facing = u.x, u.y, u.facing

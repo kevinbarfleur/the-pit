@@ -289,10 +289,18 @@ function Builders.designsystem(host)
   return DesignSystem.new(Palette, VW, VH, host)
 end
 
+-- GRIMOIRE_BESTIARY (B.2) : planche-bestiaire COMPLÈTE — tout le roster groupé par famille (jumeaux adjacents)
+-- à l'échelle ~combat + bande RÉSERVE des ELDER non mécanisées. Idéale pour repérer les doublons visuels au shot.
+function Builders.grimoire_bestiary(host)
+  local BestiaryBoard = require("src.scenes.bestiary_board")
+  return BestiaryBoard.new(Palette, VW, VH, host)
+end
+
 local M = {}
 
 -- Liste des noms de scènes capturables (ordre stable, pour --shoot=all et les messages d'erreur).
 M.names = { "menu", "build", "combat", "combat_react", "summary", "relicpick", "runover", "grimoire", "grimoire_relics",
+  "grimoire_bestiary",
   "gallery", "designsystem", "build_relic_hover",
   "anim_attack", "anim_death", "anim_hurt",
   "commander_empty", "commander_filled", "commander_hover", "commander_offer", "commander_refuse",

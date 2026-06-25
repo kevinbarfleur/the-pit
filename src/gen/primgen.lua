@@ -512,6 +512,11 @@ function ARCH.aPendu(g, rnd, p)
   return { head = { x = 32, y = cy - round(ry * 0.4), r = 5 }, faceDir = { 0, -1 }, spine = { { 32, cy - ry }, { 32, cy }, { 32, cy + ry } },
     limbs = { { 32 - rx, baseY + 8 }, { 32 + rx, baseY + 8 } }, belly = { x = 32, y = cy + round(ry * 0.4) }, mass = { { 32, cy, rx } }, tailBase = nil, flesh = true }
 end
+-- ── BUILDERS LEGACY (RÉCONCILIATION B.2) : aTisserand/aBrute/aHellhound/aSwarmflyer/aCentaur ne sont
+-- référencés par AUCUNE entrée de FAMILIES (les familles utilisent les builders CANON spider/widow/ogre/
+-- wolf/byakhee). Donc `Primgen.archName` ne renvoie JAMAIS ces noms : les noms exposés sont déjà ceux du
+-- dictionnaire. On les GARDE (code mort inerte, séquence RNG des autres unités intacte) plutôt que de les
+-- supprimer (gain nul, risque de churn). Ils servent de réserve de silhouettes si une future famille les câble.
 function ARCH.aTisserand(g, rnd, p)
   local br = 6 + floor(rnd() * 4)         -- rayon du corps 6..9
   local cy = 32 + floor(rnd() * 5)        -- 32..36
@@ -2155,7 +2160,9 @@ function ARCH.aChimera(g, rnd, p)
   return { head = { x = 30, y = 12, r = 4 }, faceDir = { 0, -1 }, spine = { { 32, 30 }, { 32, 40 } },
     limbs = { { 12, 36 }, { 24, 55 }, { 40, 55 } }, belly = { x = 32, y = 40 }, mass = { { 32, 38, 10 } }, tailBase = nil, flesh = true }
 end
--- archetypes : COCON (ovoïde vertical fibreux, fente lumineuse)
+-- archetypes : COCON générique (ovoïde vertical fibreux, fente lumineuse).
+-- ⚠️ SUPERSÉDÉ (B.2) : la famille `cocon` utilise désormais 4 formes distinctes (broodsac/bilesac/chrysalis/
+-- embersac, cf. aCocoonBrood…). aCocoon n'est plus dans FAMILIES (code mort inerte, gardé en réserve).
 function ARCH.aCocoon(g, rnd, p)
   for y = 14, 54 do
     local t = (y - 14) / 40
@@ -2270,6 +2277,225 @@ function ARCH.aReliquary(g, rnd, p)
   return { head = { x = 33, y = 17, r = 4 }, faceDir = { 0, -1 }, spine = { { 33, 24 }, { 33, 40 } },
     limbs = { { 20, 42 }, { 46, 42 } }, belly = { x = 33, y = 38 }, mass = { { 33, 36, 9 } }, tailBase = nil, flesh = false, halo = true }
 end
+-- ═══════════════════ B.2 : 4 VARIANTES COCON + 6 PIÈCES ELDER (port direct du HTML v3) ═══════════════════
+-- Portées 1:1 depuis docs/generation/generateur-bestiaire.html (l.264-366). RNG INTERNE au builder (n'altère
+-- pas la séquence des autres). Anatomie `A` IDENTIQUE à la source. eye() HTML -> eyeP() Lua ; arrays 0-idx JS
+-- -> 1-idx Lua ; ternaire JS -> and/or. Les 4 cocon REMPLACENT le `aCocoon` générique (formes distinctes par
+-- unité : witch/miasma/plague_bearer/venom_censer). Les 6 ELDER (imp 10) = pièces maîtresses de leur famille.
+
+-- ── COCON : broodsac (sac d'œufs, fente lumineuse, bosses) ──
+function ARCH.aCocoonBrood(g, rnd, p)
+  for y = 16, 52 do
+    local t = (y - 16) / 36
+    local w = round(10 * sin(t * 3.14) * 0.78 + 3 + t * 2)
+    for x = -w, w do set(g, 33 + x, y, math.abs(x) > w - 1 and p.sh or p.base) end
+  end
+  mass(g, 27, 40, 3, 3, p); mass(g, 39, 44, 3, 3, p); mass(g, 36, 26, 2, 2, p)
+  for s = 0, 4 do local sy = 20 + s * 7; line(g, 24, sy, 42, sy - 3, p.deep) end
+  for y = 28, 38 do
+    set(g, 33, y, p.deep)
+    if y % 3 == 0 then set(g, 32, y, p.eyeDim); set(g, 34, y, p.eyeDim) end
+  end
+  eyeP(g, 33, 32, 1, p)
+  return { head = { x = 33, y = 32, r = 5 }, faceDir = { 0, -1 }, spine = { { 33, 22 }, { 33, 46 } },
+    limbs = {}, belly = { x = 33, y = 36 }, mass = { { 33, 36, 11 } }, tailBase = nil, flesh = true }
+end
+-- ── COCON : bilesac (sac de bile, gouttes pendantes, gueule) ──
+function ARCH.aCocoonBile(g, rnd, p)
+  for y = 14, 50 do
+    local t = (y - 14) / 36
+    local w = round(5 + 9 * sin(min(1, t * 1.15) * 2.4)); if w < 2 then w = 2 end
+    for x = -w, w do set(g, 33 + x, y, math.abs(x) > w - 1 and p.sh or p.base) end
+  end
+  for d = 0, 3 do
+    local dx = 26 + d * 5
+    tube(g, { { dx, 49 }, { dx - 1, 53 + (d % 2) * 2 } }, 2, 1, p.sh); disc(g, dx - 1, 55 + (d % 2), 1, p.eye)
+  end
+  maw(g, 33, 46, 3, p)
+  for y = 20, 42 do
+    set(g, 33, y, p.deep)
+    if y % 2 == 0 then set(g, 32, y, p.eye); set(g, 34, y, p.eye) end
+  end
+  eyeP(g, 28, 28, 2, p); eyeP(g, 38, 28, 2, p); line(g, 25, 24, 41, 22, p.deep); line(g, 24, 34, 42, 33, p.deep)
+  return { head = { x = 33, y = 30, r = 6 }, faceDir = { 0, -1 }, spine = { { 33, 20 }, { 33, 44 } },
+    limbs = {}, belly = { x = 33, y = 40 }, mass = { { 33, 34, 12 } }, tailBase = nil, flesh = true }
+end
+-- ── COCON : chrysalis (chrysalide nervurée sur tige, bec percé) ──
+function ARCH.aCocoonChrysalis(g, rnd, p)
+  tube(g, { { 33, 3 }, { 33, 12 } }, 1, 1, p.sh)
+  for y = 12, 50 do
+    local t = (y - 12) / 38
+    local w = round(9 * sin(t * 3.14 * 0.92) * (1 - t * 0.35) + 2); if w < 1 then w = 1 end
+    for x = -w, w do set(g, 33 + x, y, math.abs(x) > w - 1 and p.sh or p.base) end
+  end
+  for s = 0, 6 do
+    local sy = 22 + s * 4
+    for x = -8, 8 do
+      local yy = sy + round(math.abs(x) * 0.25)
+      if g.data[yy * g.w + (33 + x)] ~= nil then set(g, 33 + x, yy, p.deep) end
+    end
+  end
+  for y = 14, 22 do set(g, 33, y, p.deep); set(g, 32, y, p.eyeDim); set(g, 34, y, p.eyeDim) end
+  eyeP(g, 31, 18, 1, p); eyeP(g, 35, 18, 1, p); polygon(g, { { 33, 16 }, { 37, 13 }, { 35, 18 } }, p.bone)
+  for w2 = 0, 2 do
+    local xx = 28 + w2 * 5
+    for y = 28, 46 do
+      if g.data[y * g.w + xx] ~= nil then set(g, xx, y, (y % 4 == 0) and p.eye or p.eyeDim) end
+    end
+  end
+  return { head = { x = 33, y = 18, r = 5 }, faceDir = { 0, -1 }, spine = { { 33, 16 }, { 33, 40 } },
+    limbs = {}, belly = { x = 33, y = 34 }, mass = { { 33, 32, 10 } }, tailBase = nil, flesh = true }
+end
+-- ── COCON : embersac (cocon-brasier, runes en pointillé `gl`, bras épineux + tentacules) — pièce maîtresse imp 9 ──
+function ARCH.aCocoonEmber(g, rnd, p)
+  for y = 12, 54 do
+    local t = (y - 12) / 42
+    local w = round(12 * sin(t * 3.14) * 0.92 + 3)
+    for x = -w, w do set(g, 33 + x, y, math.abs(x) > w - 1 and p.sh or p.base) end
+  end
+  for s = 0, 7 do local sy = 16 + s * 5; line(g, 21, sy, 45, sy - 3, p.deep); line(g, 21, sy + 2, 45, sy + 5, p.deep) end
+  -- `gl` : trace une rune en pointillé eye/eyeDim, UNIQUEMENT sur les pixels déjà plein (closure du HTML l.289).
+  local function gl(x0, y0, x1, y1)
+    local dxx, dyy = math.abs(x1 - x0), math.abs(y1 - y0)
+    local sx = x0 < x1 and 1 or -1; local sy2 = y0 < y1 and 1 or -1
+    local err, n = dxx - dyy, 0
+    while true do
+      if g.data[y0 * g.w + x0] ~= nil then set(g, x0, y0, (n % 2 == 0) and p.eye or p.eyeDim) end
+      if x0 == x1 and y0 == y1 then break end
+      local e2 = 2 * err
+      if e2 > -dyy then err = err - dyy; x0 = x0 + sx end
+      if e2 < dxx then err = err + dxx; y0 = y0 + sy2 end
+      n = n + 1
+    end
+  end
+  gl(33, 18, 33, 48)
+  local br = { { 33, 24, 24, 18 }, { 33, 30, 43, 26 }, { 33, 36, 23, 40 }, { 33, 42, 43, 46 }, { 33, 28, 40, 34 } }
+  for b = 1, #br do gl(br[b][1], br[b][2], br[b][3], br[b][4]) end
+  for y = 26, 40, 2 do set(g, 33, y, p.hi) end
+  eyeP(g, 28, 26, 2, p); eyeP(g, 38, 28, 2, p); eyeP(g, 33, 38, 1, p); eyeP(g, 30, 44, 1, p)
+  tube(g, { { 22, 34 }, { 16, 30 }, { 12, 24 } }, 2, 1, p.sh); polygon(g, { { 12, 24 }, { 8, 22 }, { 11, 20 } }, p.bone); polygon(g, { { 12, 24 }, { 9, 26 }, { 13, 27 } }, p.bone)
+  tube(g, { { 44, 36 }, { 50, 32 }, { 54, 26 } }, 2, 1, p.sh); polygon(g, { { 54, 26 }, { 58, 24 }, { 55, 22 } }, p.bone); polygon(g, { { 54, 26 }, { 57, 28 }, { 53, 29 } }, p.bone)
+  tentacle(g, 26, 52, 10, -0.4, 3, 2, 1, p.sh); tentacle(g, 33, 53, 12, 0, 2, 2, 1, p.sh); tentacle(g, 40, 52, 10, 0.4, 3, 2, 1, p.sh)
+  polygon(g, { { 28, 12 }, { 33, 8 }, { 33, 14 } }, p.sh); polygon(g, { { 38, 12 }, { 33, 8 }, { 33, 14 } }, p.sh)
+  return { head = { x = 33, y = 32, r = 8 }, faceDir = { 0, -1 }, spine = { { 33, 16 }, { 33, 34 }, { 33, 48 } },
+    limbs = { { 12, 24 }, { 54, 26 }, { 26, 58 }, { 40, 58 } }, belly = { x = 33, y = 38 }, mass = { { 33, 34, 13 } }, tailBase = nil, flesh = true }
+end
+
+-- ── OMBRE : voidtyrant (silhouette noire massive, bouquet de tentacules, banc d'yeux flottants) — imp 10 ──
+function ARCH.aVoidTyrant(g, rnd, p)
+  for i = 0, 4 do local ta = (i - 2) * 0.5; tentacle(g, 32 + (i - 2) * 3, 40, 16, ta, 4, 3, 1, p.base) end
+  tentacle(g, 24, 28, 16, -1.3, 5, 3, 1, p.base); tentacle(g, 40, 28, 16, 1.3, 5, 3, 1, p.base)
+  for y = 12, 42 do
+    local t = (y - 12) / 30
+    local w = round(5 + 9 * sin(t * 3.14 * 0.92))
+    for x = -w, w do set(g, 32 + x, y, math.abs(x) > w - 1 and p.sh or p.base) end
+  end
+  polygon(g, { { 18, 30 }, { 23, 24 }, { 24, 34 } }, p.base); polygon(g, { { 46, 30 }, { 41, 24 }, { 40, 34 } }, p.base)
+  polygon(g, { { 32, 5 }, { 25, 18 }, { 39, 18 } }, p.base); polygon(g, { { 32, 7 }, { 28, 16 }, { 36, 16 } }, p.sh)
+  set(g, 24, 26, p.bone); set(g, 40, 26, p.bone); set(g, 27, 20, p.bone); set(g, 37, 20, p.bone)
+  disc(g, 32, 30, 6, p.out); disc(g, 32, 30, 4, p.deep)
+  for an = 0, 9 do local a2 = an / 10 * 6.283; set(g, round(32 + cos(a2) * 6), round(30 + sin(a2) * 6), p.eyeDim) end
+  maw(g, 32, 31, 4, p)
+  local es = { { 27, 22 }, { 37, 22 }, { 32, 15 }, { 24, 28 }, { 40, 28 }, { 29, 36 }, { 35, 36 }, { 20, 20 }, { 44, 22 } }
+  for i = 1, #es do eyeP(g, es[i][1], es[i][2], i <= 4 and 2 or 1, p) end
+  for i = 0, 5 do local cx2 = 21 + i * 4; polygon(g, { { cx2, 41 }, { cx2 + 2, 41 }, { cx2 + 1, 45 + ((i * 5) % 4) } }, p.base) end
+  return { head = { x = 32, y = 18, r = 7 }, faceDir = { 0, -1 }, spine = { { 32, 14 }, { 32, 28 }, { 32, 40 } },
+    limbs = { { 10, 32 }, { 54, 32 } }, belly = { x = 32, y = 34 }, mass = { { 32, 30, 11 }, { 32, 16, 5 } }, tailBase = nil, flesh = false }
+end
+-- ── LARVE : devourer (grub colossal en C segmenté, gueule latérale, pattes) — imp 10 ──
+function ARCH.aGrubElder(g, rnd, p)
+  local pts = {}
+  for i = 0, 9 do
+    local t = i / 9; local ang = 3.14 * 0.12 + t * 3.14 * 1.15
+    pts[#pts + 1] = { round(33 + cos(ang) * 16), round(38 + sin(ang) * 14) }
+  end
+  segChain(g, pts, 7, 4, p)
+  for i = 2, #pts do line(g, pts[i][1], pts[i][2] - 4, pts[i][1], pts[i][2] + 4, p.deep) end
+  for i = 2, #pts - 1 do
+    tube(g, { { pts[i][1], pts[i][2] + 4 }, { pts[i][1] - 2, pts[i][2] + 8 } }, 1, 1, p.sh)
+    tube(g, { { pts[i][1], pts[i][2] + 4 }, { pts[i][1] + 2, pts[i][2] + 8 } }, 1, 1, p.sh)
+  end
+  for i = 2, #pts - 1 do tube(g, { { pts[i][1], pts[i][2] - 5 }, { pts[i][1] + 1, pts[i][2] - 9 } }, 1, 1, p.deep) end
+  maw(g, pts[4][1], pts[4][2], 2, p); maw(g, pts[7][1], pts[7][2], 2, p)
+  local hx, hy = pts[1][1], pts[1][2]
+  mass(g, hx, hy, 6, 5, p)
+  polygon(g, { { hx + 3, hy - 3 }, { hx + 9, hy - 6 }, { hx + 5, hy - 1 } }, p.bone); polygon(g, { { hx + 3, hy + 3 }, { hx + 9, hy + 6 }, { hx + 5, hy + 1 } }, p.bone)
+  maw(g, hx + 2, hy, 3, p); eyeP(g, hx, hy - 2, 1, p); eyeP(g, hx + 2, hy - 3, 1, p); eyeP(g, hx - 1, hy + 1, 1, p); eyeP(g, hx + 3, hy, 1, p)
+  return { head = { x = hx, y = hy, r = 6 }, faceDir = { 1, 0 }, spine = { { 33, 28 }, { 33, 42 } },
+    limbs = {}, belly = { x = 33, y = 42 }, mass = { { 33, 40, 14 } }, tailBase = nil, flesh = true }
+end
+-- ── CRÂNE : skulltitan (crâne titanesque, cornes, orbites-rayon, mâchoire dentée) — imp 10 ──
+function ARCH.aSkullTitan(g, rnd, p)
+  for y = -18, 12 do
+    local w = round(18 * sqrt(max(0, 1 - (y * y) / (y < 0 and 324 or 160))))
+    for x = -w, w do set(g, 33 + x, 30 + y, math.abs(x) > w - 1 and p.deep or (y < -8 and p.hi or p.base)) end
+  end
+  tube(g, { { 18, 16 }, { 12, 6 }, { 10, -2 } }, 3, 1, p.bone); tube(g, { { 48, 16 }, { 54, 6 }, { 56, -2 } }, 3, 1, p.bone)
+  for i = 0, 4 do local cxp = 22 + i * 5; polygon(g, { { cxp, 14 }, { cxp + 2, 14 }, { cxp + 1, 8 - ((i % 2) * 3) } }, p.bone) end
+  ellipse(g, 25, 26, 5, 6, p.out); ellipse(g, 41, 26, 5, 6, p.out); eyeP(g, 25, 26, 2, p); eyeP(g, 41, 26, 2, p); eyeP(g, 24, 29, 1, p); eyeP(g, 42, 29, 1, p)
+  polygon(g, { { 30, 34 }, { 36, 34 }, { 33, 42 } }, p.out)
+  rect(g, 24, 42, 18, 6, p.deep); for i = 0, 6 do line(g, round(26 + i * 2.4), 42, round(26 + i * 2.4), 47, p.bone) end
+  for i = 0, 5 do set(g, round(27 + i * 2.5), 40, p.eye) end
+  for i = 0, 5 do rstreak(g, 18 + i * 6, 16, 5, p.eye, rnd) end
+  polygon(g, { { 14, 30 }, { 12, 28 }, { 15, 27 } }, p.bone); polygon(g, { { 52, 32 }, { 55, 30 }, { 53, 34 } }, p.bone)
+  return { head = { x = 33, y = 24, r = 9 }, faceDir = { 0, -1 }, spine = { { 33, 18 }, { 33, 36 } },
+    limbs = {}, belly = { x = 33, y = 38 }, mass = { { 33, 26, 16 } }, tailBase = nil, flesh = false }
+end
+-- ── AUTOMATE : juggernaut (carcasse mécanique lourde, noyau, bras-pistons) — imp 10 ──
+function ARCH.aJuggernaut(g, rnd, p)
+  rect(g, 24, 46, 7, 10, p.sh); rect(g, 36, 46, 7, 10, p.sh); rect(g, 23, 55, 9, 2, p.deep); rect(g, 35, 55, 9, 2, p.deep)
+  for i = 0, 1 do set(g, 26, 48 + i * 4, p.eyeDim); set(g, 40, 48 + i * 4, p.eyeDim) end
+  rect(g, 21, 24, 24, 22, p.base); rect(g, 21, 24, 24, 3, p.hi); rect(g, 21, 24, 4, 22, p.sh); rect(g, 21, 43, 24, 3, p.deep)
+  for i = 0, 4 do set(g, 24 + i * 4, 27, p.bone); set(g, 24 + i * 4, 42, p.bone) end
+  disc(g, 33, 35, 6, p.deep); disc(g, 33, 35, 4, p.eye); disc(g, 33, 35, 2, p.hi)
+  for an = 0, 7 do local a2 = an / 8 * 6.283; set(g, round(33 + cos(a2) * 6), round(35 + sin(a2) * 6), p.bone) end
+  tube(g, { { 21, 28 }, { 14, 32 }, { 10, 38 } }, 3, 2, p.sh); polygon(g, { { 10, 38 }, { 6, 40 }, { 9, 42 } }, p.bone); polygon(g, { { 10, 38 }, { 7, 36 }, { 6, 34 } }, p.bone)
+  tube(g, { { 45, 28 }, { 52, 32 }, { 56, 38 } }, 3, 2, p.sh); polygon(g, { { 56, 38 }, { 60, 40 }, { 57, 42 } }, p.bone); polygon(g, { { 56, 38 }, { 59, 36 }, { 60, 34 } }, p.bone)
+  tube(g, { { 22, 38 }, { 16, 42 }, { 14, 48 } }, 2, 2, p.sh); tube(g, { { 44, 38 }, { 50, 42 }, { 52, 48 } }, 2, 2, p.sh)
+  rect(g, 28, 14, 10, 10, p.base); rect(g, 28, 14, 10, 2, p.hi); rect(g, 30, 18, 6, 3, p.eye)
+  tube(g, { { 29, 14 }, { 26, 8 } }, 1, 1, p.sh); tube(g, { { 37, 14 }, { 40, 8 } }, 1, 1, p.sh)
+  for i = 0, 2 do set(g, 26, 30 + i * 3, p.eye); set(g, 40, 30 + i * 3, p.eye) end
+  return { head = { x = 33, y = 19, r = 5 }, faceDir = { 0, -1 }, spine = { { 33, 24 }, { 33, 40 } },
+    limbs = { { 10, 38 }, { 56, 38 }, { 14, 48 }, { 52, 48 } }, belly = { x = 33, y = 35 }, mass = { { 33, 35, 12 } }, tailBase = nil, flesh = false }
+end
+-- ── SPECTRE : veiledking (roi voilé, couronne, voile qui se dissout en bas, mains spectrales) — imp 10 ──
+function ARCH.aVeiledKing(g, rnd, p)
+  for y = 12, 50 do
+    local t = (y - 12) / 38
+    local w = round(4 + 8 * sin(min(1, t) * 3.14 * 0.8) + (t > 0.7 and (t - 0.7) * 6 or 0))
+    for x = -w, w do
+      if not (t > 0.78 and ((x + y) % 2 == 0)) then set(g, 32 + x, y, math.abs(x) > w - 1 and p.sh or p.base) end
+    end
+  end
+  polygon(g, { { 32, 8 }, { 23, 22 }, { 41, 22 } }, p.base); polygon(g, { { 32, 8 }, { 26, 20 }, { 38, 20 } }, p.sh)
+  for i = 0, 4 do local cxp = 24 + i * 4; polygon(g, { { cxp, 12 }, { cxp + 2, 12 }, { cxp + 1, 7 - ((i % 2) * 2) } }, p.bone) end
+  ellipse(g, 28, 22, 3, 4, p.out); ellipse(g, 36, 22, 3, 4, p.out); eyeP(g, 28, 22, 2, p); eyeP(g, 36, 22, 2, p)
+  tube(g, { { 24, 28 }, { 16, 30 }, { 10, 36 } }, 3, 1, p.sh); tube(g, { { 40, 28 }, { 48, 30 }, { 54, 36 } }, 3, 1, p.sh)
+  for i = 0, 2 do tube(g, { { 10, 36 }, { 7 + i, 40 + i } }, 1, 1, p.hi); tube(g, { { 54, 36 }, { 57 - i, 40 + i } }, 1, 1, p.hi) end
+  for i = 0, 3 do set(g, 26 + i * 4, 10 - ((i * 3) % 5), p.hi) end
+  for i = 0, 5 do local bx = 22 + i * 4; tube(g, { { bx, 48 }, { bx + ((i % 2 == 1) and 1 or -1), 54 + ((i * 3) % 4) } }, 1, 1, p.sh) end
+  return { head = { x = 32, y = 22, r = 6 }, faceDir = { 0, -1 }, spine = { { 32, 16 }, { 32, 32 }, { 32, 46 } },
+    limbs = { { 10, 36 }, { 54, 36 } }, belly = { x = 32, y = 34 }, mass = { { 32, 26, 10 } }, tailBase = nil, flesh = false }
+end
+-- ── ARACHNIDE : broodmother (abdomen + céphalothorax, 8 pattes en arches, banc d'yeux, chélicères, œufs) — imp 10 ──
+function ARCH.aBroodmother(g, rnd, p)
+  mass(g, 33, 26, 11, 10, p)
+  for i = 0, 5 do local ang = i / 6 * 6.283; set(g, round(33 + cos(ang) * 5), round(26 + sin(ang) * 5), p.eyeDim) end
+  disc(g, 33, 26, 2, p.deep); mass(g, 33, 42, 8, 6, p)
+  local legY = { { 40, 33, 42 }, { 42, 37, 48 }, { 44, 41, 53 }, { 46, 45, 56 } }
+  local legX = { { 27, 16, 7 }, { 27, 15, 6 }, { 28, 16, 8 }, { 28, 18, 11 } }
+  for i = 1, 4 do
+    tube(g, { { legX[i][1], legY[i][1] }, { legX[i][2], legY[i][2] }, { legX[i][3], legY[i][3] } }, 2, 1, p.sh)
+    tube(g, { { 66 - legX[i][1], legY[i][1] }, { 66 - legX[i][2], legY[i][2] }, { 66 - legX[i][3], legY[i][3] } }, 2, 1, p.sh)
+  end
+  local es = { { 30, 40 }, { 36, 40 }, { 28, 42 }, { 38, 42 }, { 31, 43 }, { 35, 43 }, { 33, 39 } }
+  for i = 1, #es do eyeP(g, es[i][1], es[i][2], 1, p) end
+  polygon(g, { { 30, 47 }, { 28, 52 }, { 32, 49 } }, p.bone); polygon(g, { { 36, 47 }, { 38, 52 }, { 34, 49 } }, p.bone)
+  for i = 0, 4 do set(g, round(28 + i * 2.5), 20, p.deep) end
+  return { head = { x = 33, y = 42, r = 6 }, faceDir = { 0, 1 }, spine = { { 33, 34 }, { 33, 44 } },
+    limbs = { { 8, 46 }, { 58, 46 }, { 10, 50 }, { 56, 50 } }, belly = { x = 33, y = 44 }, mass = { { 33, 30, 12 }, { 33, 42, 6 } }, tailBase = nil, flesh = true }
+end
+
 -- traitements V6b
 function TREAT.treatHung(g, rnd, p, A)
   local lim = A.limbs
@@ -2339,7 +2565,8 @@ local FAMILIES = {
   spore = { pals = SPORE, treat = TREAT.treatSpore, archs = {
     { name = "sporewalker", fn = ARCH.aSporeWalker }, { name = "myconid", fn = ARCH.aMyconid }, { name = "infectedhost", fn = ARCH.aInfectedHost } } },
   ombre = { pals = SHADOW, treat = TREAT.treatShadow, archs = {
-    { name = "shade", fn = ARCH.aShade }, { name = "voidmaw", fn = ARCH.aVoidMaw } } },
+    { name = "shade", fn = ARCH.aShade }, { name = "voidmaw", fn = ARCH.aVoidMaw },
+    { name = "voidtyrant", fn = ARCH.aVoidTyrant } } }, -- ELDER imp 10 (append-only ; PIN par nom -> golden-safe)
   essaim = { pals = SWARM, treat = TREAT.treatSwarm, archs = {
     { name = "swarm", fn = ARCH.aSwarm }, { name = "hive", fn = ARCH.aHive } } },
   annelide = { pals = WORM, treat = TREAT.treatWorm, archs = {
@@ -2348,7 +2575,8 @@ local FAMILIES = {
   golem = { pals = GOLEM, treat = TREAT.treatGolem, archs = {
     { name = "golem", fn = ARCH.aGolem }, { name = "sentinel", fn = ARCH.aSentinel }, { name = "idol", fn = ARCH.aIdol } } },
   spectre = { pals = SPECTRE, treat = TREAT.treatSpectre, archs = {
-    { name = "wraith", fn = ARCH.aWraith }, { name = "veiledlady", fn = ARCH.aVeiledLady } } },
+    { name = "wraith", fn = ARCH.aWraith }, { name = "veiledlady", fn = ARCH.aVeiledLady },
+    { name = "veiledking", fn = ARCH.aVeiledKing } } }, -- ELDER imp 10
   culte = { pals = CULT, treat = TREAT.treatCult, archs = {
     { name = "cultist", fn = ARCH.aCultist }, { name = "hierophant", fn = ARCH.aHierophant }, { name = "possessed", fn = ARCH.aPossessed } } },
   abyssal = { pals = ABYSSAL, treat = TREAT.treatAbyssal, archs = {
@@ -2379,7 +2607,8 @@ local FAMILIES = {
     { name = "ratgiant", fn = ARCH.aRatGiant }, { name = "ratking", fn = ARCH.aRatKing } } },
   -- ── V6 vivier ──
   arachnide = { pals = SPIDER, treat = TREAT.treatChitin, archs = {
-    { name = "spider", fn = ARCH.aSpider }, { name = "widow", fn = ARCH.aWidow } } },
+    { name = "spider", fn = ARCH.aSpider }, { name = "widow", fn = ARCH.aWidow },
+    { name = "broodmother", fn = ARCH.aBroodmother } } }, -- ELDER imp 10
   crustace = { pals = CRUST, treat = TREAT.treatChitin, archs = {
     { name = "crab", fn = ARCH.aCrab }, { name = "mantisshrimp", fn = ARCH.aMantisShrimp } } },
   meduse = { pals = JELLY, treat = TREAT.treatDrift, archs = {
@@ -2396,16 +2625,18 @@ local FAMILIES = {
     { name = "marionette", fn = ARCH.aMarionette }, { name = "hanged", fn = ARCH.aHanged } } },
   chimere = { pals = CHIMERA, treat = TREAT.treatMany, archs = {
     { name = "chimera", fn = ARCH.aChimera } } },
-  cocon = { pals = COCOON, treat = TREAT.treatPod, archs = {
-    { name = "cocoon", fn = ARCH.aCocoon } } },
+  cocon = { pals = COCOON, treat = TREAT.treatPod, archs = { -- 4 formes distinctes (remplacent aCocoon générique) :
+    { name = "broodsac", fn = ARCH.aCocoonBrood }, { name = "bilesac", fn = ARCH.aCocoonBile },
+    { name = "chrysalis", fn = ARCH.aCocoonChrysalis }, { name = "embersac", fn = ARCH.aCocoonEmber } } },
   plante = { pals = FLORA, treat = TREAT.treatFlora, archs = {
     { name = "maweed", fn = ARCH.aMaweed }, { name = "vinemaw", fn = ARCH.aVinemaw } } },
   larve = { pals = GRUB, treat = TREAT.treatFeral, archs = {
-    { name = "grub", fn = ARCH.aGrub } } },
+    { name = "grub", fn = ARCH.aGrub }, { name = "devourer", fn = ARCH.aGrubElder } } }, -- devourer = ELDER imp 10
   crane = { pals = SKULL, treat = TREAT.treatBone, archs = {
-    { name = "skullking", fn = ARCH.aSkullking } } },
+    { name = "skullking", fn = ARCH.aSkullking }, { name = "skulltitan", fn = ARCH.aSkullTitan } } }, -- ELDER imp 10
   automate = { pals = AUTOMATON, treat = TREAT.treatRust, archs = {
-    { name = "automaton", fn = ARCH.aAutomaton }, { name = "reliquary", fn = ARCH.aReliquary } } },
+    { name = "automaton", fn = ARCH.aAutomaton }, { name = "reliquary", fn = ARCH.aReliquary },
+    { name = "juggernaut", fn = ARCH.aJuggernaut } } }, -- ELDER imp 10
 }
 local FAMILY_ORDER = { "cauchemar", "mortvivant", "bete", "demon", "insecte",
   "cephalo", "gelatine", "oeil", "spore", "ombre", "essaim", "annelide",
@@ -2512,6 +2743,15 @@ function Primgen.archName(famKey, archIndex)
   local f = FAMILIES[famKey] or FAMILIES.cauchemar
   local a = f.archs[archIndex]
   return a and a.name or "?"
+end
+-- PIN : nom de forme CANONIQUE -> index dans `archs` (ou nil si le nom n'est pas dans la famille). Sert au
+-- VERROUILLAGE par unité (creaturegen.cached pose `archIndex` depuis Units[id].arch) : ajouter une forme à
+-- une famille NE rebinde plus les unités déjà pinnées (leur index est résolu par NOM, pas par hash de nArch).
+function Primgen.archIndexOf(famKey, name)
+  local f = FAMILIES[famKey]
+  if not f then return nil end
+  for i = 1, #f.archs do if f.archs[i].name == name then return i end end
+  return nil
 end
 
 -- opts = { seed, size?=64, family?, archIndex?, paletteIndex? } -> { image, w, h, name, arch, family }
