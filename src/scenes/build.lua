@@ -48,6 +48,7 @@ local Badge = require("src.ui.badge")    -- coût (pièce+nombre) / pips de nive
 local Dividers = require("src.ui.dividers") -- séparateurs laiton/sang propres
 local Feel = require("src.ui.feel")      -- JUICE : survol (glow/lift) + press (squash/flash) + action différée
 local Juice = require("src.ui.juice")    -- MOUVEMENT « candy » : number-roll de l'or (scale-punch + valeur lissée)
+local Drag = require("src.ui.drag")      -- RESSORT de drag « Balatro » (lab) : pièce traînée glisse+s'incline ; pose/swap glissés
 local Layout = require("src.ui.layout") -- MOTEUR de layout flex (alignement parfait, fill-to-container)
 local Keywords = require("src.ui.keywords") -- registre afflictions (mini-chips de carte)
 local Chip = require("src.ui.chip") -- pastilles keyword (icône d'affliction)
@@ -418,6 +419,71 @@ end
 function Build:fxCenterOf(kind, i)
   if kind == "board" then return self.pos[i].x * 4, self.pos[i].y * 4 end
   local br = self.benchSlots[i]; return br.x * 4 + br.w * 2, br.y * 4 + br.h * 2
+end
+
+-- ── ANCRES DE DESSIN (espace VIRTUEL 320×180) du SPRITE d'une pièce, par lieu logique ──────────────────────
+-- = le point « pieds au sol » où drawWorld cale la créature (board / banc / piédestal). Le RESSORT de drag
+-- (src/ui/drag.lua) fait GLISSER le sprite vers cette ancre au lieu de l'y téléporter : c'est purement VISUEL
+-- (la pièce est DÉJÀ logiquement dans sa case). Source unique partagée par update (cible du ressort) et
+-- drawWorld (position de secours si pas de ressort). Renvoie (x, y) en VIRTUEL.
+function Build:boardAnchor(i) local p = self.pos[i]; return p.x, p.y + 10 end
+function Build:benchAnchor(i) local r = self.benchSlots[i]; return r.x + r.w / 2, r.y + r.h - 1 end
+function Build:commanderAnchor()
+  local r = self.commanderRect
+  return r.x + r.w / 2, r.y + r.h - 1
+end
+
+-- Cible de REPOS (ancre de dessin VIRTUEL) d'une pièce selon son lieu logique courant. nil si introuvable.
+function Build:pieceRestTarget(where, i)
+  if where == "board" then return self:boardAnchor(i)
+  elseif where == "bench" then return self:benchAnchor(i)
+  elseif where == "commander" then return self:commanderAnchor() end
+end
+
+-- Garantit (lazy) le ressort de drag `.d` d'une pièce, posé AU REPOS sur sa cible (pas de glisse au montage/
+-- au premier passage). `seedX,seedY` = ancre courante. Centralisé -> aucun site de création de pièce à toucher.
+function Build:ensureSpring(sr, seedX, seedY)
+  if not sr.d then sr.d = {}; Drag.snap(sr.d, seedX, seedY) end
+  return sr.d
+end
+
+-- PICKUP : initialise le ressort du jeton qu'on SAISIT. On REPREND le ressort de la pièce d'origine (`srcD`)
+-- s'il existe -> la pièce se SOULÈVE depuis où elle est (pas de saut sous le curseur) ; le GRAB est l'écart
+-- souris↔sprite courant (la pièce suit le curseur en gardant ce décalage). Convention d'ANCRE = pieds au sol
+-- (my + 9, comme le repos board/banc et mousemoved) -> cohérence parfaite begin/move. RENDER pur : aucune
+-- mutation logique. Si pas de ressort source, on amorce sous le curseur (lift immédiat, sans glisse parasite).
+function Build:beginDrag(srcD)
+  local d = srcD or {}
+  local ay = self.my + 9
+  if d.px == nil then d.px, d.py = self.mx, ay end
+  Drag.begin(d, self.mx, ay, self.mx - d.px, ay - d.py)
+  self.drag.d = d
+end
+
+-- RESSORT de drag (dt en SECONDES murales) : chaque pièce AU REPOS (board/banc/piédestal) voit sa cible logique
+-- = l'ancre de dessin de sa case et GLISSE vers elle (pose/swap fluides) ; la pièce TRAÎNÉE suit la souris (sa
+-- cible posée par Drag.move/beginDrag). 100% VISUEL : on n'écrit JAMAIS l'état logique (qui-est-où) — seul px,py
+-- bouge. Les pièces in-containers sont toutes au repos (la traînée est sortie de son container au pickup).
+function Build:updateSprings(dtSec)
+  for i, sr in pairs(self.slotRigs) do
+    if self.board.slots[i].unlocked then
+      local ax, ay = self:boardAnchor(i)
+      self:ensureSpring(sr, ax, ay); Drag.setTarget(sr.d, ax, ay); Drag.apply(sr.d, dtSec)
+    end
+  end
+  for i = 1, BENCH_SIZE do
+    local sr = self.bench[i]
+    if sr then
+      local ax, ay = self:benchAnchor(i)
+      self:ensureSpring(sr, ax, ay); Drag.setTarget(sr.d, ax, ay); Drag.apply(sr.d, dtSec)
+    end
+  end
+  if self.commanderSlot and self.commanderRect then
+    local sr = self.commanderSlot
+    local ax, ay = self:commanderAnchor()
+    self:ensureSpring(sr, ax, ay); Drag.setTarget(sr.d, ax, ay); Drag.apply(sr.d, dtSec)
+  end
+  if self.drag and self.drag.d then Drag.apply(self.drag.d, dtSec) end -- la traînée : cible = souris (Drag.move)
 end
 
 -- ANIM DE FUSION (retour user 2026-06, « clean & polish ») : les ÂMES des copies consommées FILENT vers le
@@ -794,6 +860,9 @@ end
 
 function Build:mousemoved(vx, vy)
   self.mx, self.my = vx, vy
+  -- RESSORT de drag : la cible suit la souris (la pièce GLISSE vers ce point, avec son décalage de grab).
+  -- L'ancre de dessin = pieds au sol (my + 9, comme le repos board/banc) -> le sprite ne « monte » pas d'un cran.
+  if self.drag and self.drag.d then Drag.move(self.drag.d, vx, vy + 9) end
 end
 
 function Build:mousepressed(vx, vy, button)
@@ -844,6 +913,7 @@ function Build:mousepressed(vx, vy, button)
       local o = run.shop[oi] -- carte désactivée (pas d'or / plein sans level-up) est INERTE -> pas de pickup.
       if o and self:offerPlayable(o) then
         self.drag = { id = o.id, level = 1, char = self:newRig(o.id), fromShop = oi, pressX = vx, pressY = vy }
+        self:beginDrag(nil) -- offre neuve : pas de ressort source -> démarre sous le curseur (lift immédiat)
         SFX.play("pickup") -- DRAG : on saisit une offre (achat confirmé au lâcher -> coin)
       end
       return
@@ -853,6 +923,7 @@ function Build:mousepressed(vx, vy, button)
   if self:commanderAt(vx, vy) and self.commanderSlot then
     local c = self.commanderSlot
     self.drag = { id = c.id, level = c.level or 1, char = c.char, fromCommander = true }
+    self:beginDrag(c.d) -- reprend son ressort -> il se soulève du piédestal, pas de saut
     self.commanderSlot = nil
     SFX.play("pickup") -- DRAG : on retire le commandant du piédestal
     return
@@ -860,6 +931,7 @@ function Build:mousepressed(vx, vy, button)
   local si = self:slotAt(vx, vy)
   if si and self.slotRigs[si] then -- ramasse une unité du PLATEAU (réarrangement / vente / vers banc)
     self.drag = { id = self.slotRigs[si].id, level = self.slotRigs[si].level or 1, char = self.slotRigs[si].char, fromSlot = si }
+    self:beginDrag(self.slotRigs[si].d) -- reprend son ressort -> elle se soulève de sa case
     self.slotRigs[si] = nil
     self.board.slots[si].unit = nil
     SFX.play("pickup") -- DRAG : on soulève une unité du plateau
@@ -868,6 +940,7 @@ function Build:mousepressed(vx, vy, button)
   local bi = self:benchAt(vx, vy)
   if bi and self.bench[bi] then -- ramasse une unité du BANC (réarrangement / vente / vers plateau)
     self.drag = { id = self.bench[bi].id, level = self.bench[bi].level or 1, char = self.bench[bi].char, fromBench = bi }
+    self:beginDrag(self.bench[bi].d) -- reprend son ressort -> elle se soulève du banc
     self.bench[bi] = nil
     SFX.play("pickup") -- DRAG : on soulève une unité du banc
   end
@@ -877,6 +950,7 @@ function Build:mousereleased(vx, vy, button)
   if button ~= 1 or not self.drag then return end
   local d = self.drag
   self.drag = nil
+  if d.d then Drag.stop(d.d) end -- relâche le ressort : le sprite GLISSE désormais vers sa case finale (tilt -> plat)
   local run = self.host.run
   local si = self:slotAt(vx, vy)    -- case PLATEAU sous le curseur
   local bi = self:benchAt(vx, vy)   -- slot BANC sous le curseur
@@ -896,7 +970,7 @@ function Build:mousereleased(vx, vy, button)
       if id then
         SFX.play("coin") -- ACHAT (promotion directe au piédestal)
         local occ = self.commanderSlot
-        self.commanderSlot = { id = id, level = 1, char = d.char }
+        self.commanderSlot = { id = id, level = 1, char = d.char, d = d.d } -- ressort repris -> glisse au piédestal
         if occ then -- piédestal occupé : l'ancien commandant repart au banc (sinon disparaît en sandbox).
           self:stowUnit(occ)
         end
@@ -909,7 +983,7 @@ function Build:mousereleased(vx, vy, button)
     -- Unité EXISTANTE (board/banc/piédestal) -> piédestal. L'occupant repart vers l'ORIGINE du drag (swap propre).
     local occ = self.commanderSlot
     if occ then self:returnDragOrigin(d, occ) end
-    self.commanderSlot = { id = d.id, level = d.level or 1, char = d.char }
+    self.commanderSlot = { id = d.id, level = d.level or 1, char = d.char, d = d.d } -- ressort repris -> glisse au piédestal
     return
   end
 
@@ -923,10 +997,10 @@ function Build:mousereleased(vx, vy, button)
       if id then
         SFX.play("coin") -- ACHAT par drag sur une case/banc
         if toBoard then
-          self.slotRigs[si] = { id = id, level = 1, char = d.char }; self.board.slots[si].unit = id
+          self.slotRigs[si] = { id = id, level = 1, char = d.char, d = d.d }; self.board.slots[si].unit = id -- ressort repris -> glisse dans la case
           self:spawnFx("buy", self.pos[si].x * 4, self.pos[si].y * 4)
         else
-          self.bench[bi] = { id = id, level = 1, char = d.char }
+          self.bench[bi] = { id = id, level = 1, char = d.char, d = d.d } -- ressort repris -> glisse au banc
           local br = self.benchSlots[bi]; self:spawnFx("buy", br.x * 4 + br.w * 2, br.y * 4 + br.h * 2)
         end
         self:checkMerges() -- 3 copies (même id+niveau, plateau OU banc) -> fusion niveau+1 (arme pendingLevelRelic 1×/round)
@@ -947,14 +1021,14 @@ function Build:mousereleased(vx, vy, button)
     -- -> CASE PLATEAU : place / swap (l'occupant repart vers l'ORIGINE du drag : plateau ou banc).
     local occ = self.slotRigs[si]
     if occ then self:returnDragOrigin(d, occ) end
-    self.slotRigs[si] = { id = d.id, level = d.level or 1, char = d.char }
+    self.slotRigs[si] = { id = d.id, level = d.level or 1, char = d.char, d = d.d } -- ressort repris -> glisse dans la case
     self.board.slots[si].unit = d.id
     SFX.play("drop") -- DROP : on POSE l'unité sur une case (doux, grave, aucun bruit)
   elseif bi then
     -- -> SLOT BANC : place / swap.
     local occ = self.bench[bi]
     if occ then self:returnDragOrigin(d, occ) end
-    self.bench[bi] = { id = d.id, level = d.level or 1, char = d.char }
+    self.bench[bi] = { id = d.id, level = d.level or 1, char = d.char, d = d.d } -- ressort repris -> glisse au banc
     SFX.play("drop") -- DROP : on range l'unité au banc
   else
     -- Lâché HORS plateau ET banc : VENTE (remboursement) si run ; sinon l'unité disparaît (sandbox).
@@ -983,7 +1057,7 @@ end
 
 -- Repose un drag à SON origine SANS swap (refus de drop : non-chef sur le piédestal). Reconstruit l'entrée.
 function Build:returnDrag(d)
-  local u = { id = d.id, level = d.level or 1, char = d.char }
+  local u = { id = d.id, level = d.level or 1, char = d.char, d = d.d } -- ressort repris -> glisse de retour à l'origine
   if d.fromSlot then
     self.slotRigs[d.fromSlot] = u; self.board.slots[d.fromSlot].unit = d.id
   elseif d.fromBench then
@@ -1447,6 +1521,7 @@ function Build:update(frameDt)
   end
   if self.cmdShake > 0 then self.cmdShake = math.max(0, self.cmdShake - frameDt / 60) end -- décroît la secousse de refus
   if self.host.run and self.board.activeCount ~= self.host.run.slots then self:syncSlots() end
+  self:updateSprings(frameDt / 60) -- RESSORT de drag : pièces au repos GLISSENT vers leur case ; la traînée suit la souris
   for i, sr in pairs(self.slotRigs) do
     local p = self.pos[i]
     sr.char.x, sr.char.y = p.x, p.y + 9
@@ -1463,7 +1538,11 @@ function Build:update(frameDt)
   for _, c in pairs(self.previewRigs) do Rig.update(c, self.t, frameDt) end
   self:updateFx(frameDt)
   if self.drag then
-    self.drag.char.x, self.drag.char.y = self.mx, self.my + 9
+    -- POSITION du sprite traîné = le RESSORT (drag.d.px/py), pas un snap dur sous le curseur (updateSprings l'a
+    -- ciblé sur la souris + intégré ce frame) ; on RÉPERCUTE sur char.x/y pour le fallback rig (Rig.draw lit char).
+    local d = self.drag.d
+    if d then self.drag.char.x, self.drag.char.y = d.px or self.mx, d.py or (self.my + 9)
+    else self.drag.char.x, self.drag.char.y = self.mx, self.my + 9 end
     Rig.update(self.drag.char, self.t, frameDt)
   end
 end
@@ -1743,6 +1822,44 @@ function Build:drawBack(view)
   Draw.finish()
 end
 
+-- LIFT du sprite traîné en VIRTUEL (≈ 3px, échelle du sautillement de fusion bounceLift) : le lab travaille en
+-- design ~11px, le board en virtuel 320×180 -> on passe ~3px à Drag.fx pour une amplitude juste sur un sprite ~18px.
+local DRAG_LIFT_V = 3
+
+-- Position de DESSIN (pieds au sol, VIRTUEL) d'une pièce = son RESSORT s'il existe, sinon l'ancre fournie en
+-- secours (1re frame avant ensureSpring). Renvoie (x, y) ENTIERS (pixel-perfect).
+local function springGround(d, fbx, fby)
+  local px = (d and d.px) or fbx
+  local py = (d and d.py) or fby
+  return math.floor(px + 0.5), math.floor(py + 0.5)
+end
+
+-- Enrobe un dessin de pièce du JUS de drag (lift + scale + tilt autour de l'ancre + OMBRE portée au pickup).
+-- fx = Drag.fx(d, DRAG_LIFT_V) ; au repos c'est un no-op (dy=0, scale=1, rot=0, shadow=false). `body(gx, gy)`
+-- dessine la créature à l'ancre transformée. shadowW = côté approx de l'ombre (virtuel). RENDER pur.
+local function withDragFx(d, gx, gy, shadowW, body)
+  local fx = d and Drag.fx(d, DRAG_LIFT_V) or nil
+  if fx and fx.shadow then
+    -- ombre portée (le sprite est SOULEVÉ -> son ombre reste au sol, un peu décalée) : galette sombre douce.
+    love.graphics.setColor(0, 0, 0, 0.30)
+    love.graphics.ellipse("fill", gx, gy + 1, shadowW * 0.5, shadowW * 0.22)
+    love.graphics.setColor(1, 1, 1, 1)
+  end
+  local dy = fx and fx.dy or 0
+  local ay = gy + dy
+  if fx and (fx.scale ~= 1 or (fx.rot or 0) ~= 0 or dy ~= 0) then
+    love.graphics.push()
+    love.graphics.translate(gx, ay)
+    love.graphics.rotate(fx.rot or 0)
+    love.graphics.scale(fx.scale or 1, fx.scale or 1)
+    love.graphics.translate(-gx, -ay)
+    body(gx, ay)
+    love.graphics.pop()
+  else
+    body(gx, gy)
+  end
+end
+
 -- ── Rendu monde (canvas virtuel, pixel-perfect) : UNIQUEMENT les rigs (unités/aperçus/drag) ──
 -- Toutes les créatures sont AJUSTÉES À LEUR CONTENEUR (fit-to-box, cf. rigFitScale) -> aucune ne déborde
 -- ni n'est coupée par le bord de sa case / carte. update() pose char.x,char.y ; on les SCALE à l'affichage.
@@ -1757,26 +1874,30 @@ function Build:drawWorld()
   for i, sr in pairs(self.slotRigs) do
     if b.slots[i].unlocked then
       local c = sr.char
-      -- on cale les pieds au SOL de la case : char.y = p.y+9 ; le sol visé est ~le bas de la case (p.y + ~9).
-      local groundX = math.floor(c.x + 0.5)
-      local groundY = math.floor(c.y + 0.5) + 1 - math.floor(bounceLift(sr) + 0.5) -- C3 : sautillement de fusion
-      if Critter.has(sr.id) then
-        -- RENDU VIVANT : cadre natif (taille relative + mouvement par famille), pieds calés au sol.
-        Critter.drawAt(nil, sr.id, groundX, groundY, SLOT_SCALE, self.t / 60, c.facing or 1)
-      else
-        -- fallback rig baké (créatures dessinées-main) : fit-silhouette historique, pieds (bnd.bot) au sol.
-        local s = self:rigFitScale(sr.id, CELL_FIT_W, CELL_FIT_H, 0.94, 1.5)
-        local bnd = self:rigBounds(sr.id)
-        love.graphics.push()
-        love.graphics.translate(groundX, groundY)
-        love.graphics.scale(s, s)
-        love.graphics.translate(0, -bnd.bot)
-        local sx, sy = c.x, c.y
-        c.x, c.y = 0, 0
-        Rig.draw(c)
-        c.x, c.y = sx, sy
-        love.graphics.pop()
-      end
+      -- POSITION = le RESSORT de drag (sr.d.px/py) : la pièce GLISSE dans sa case (pose/swap fluides) au lieu de
+      -- s'y téléporter ; au repos px,py == l'ancre de la case (aucun changement visuel). Pieds calés au sol.
+      local ax, ay = self:boardAnchor(i)
+      local groundX, groundY = springGround(sr.d, ax, ay)
+      groundY = groundY - math.floor(bounceLift(sr) + 0.5) -- C3 : sautillement de fusion
+      withDragFx(sr.d, groundX, groundY, 16, function(gx, gy)
+        if Critter.has(sr.id) then
+          -- RENDU VIVANT : cadre natif (taille relative + mouvement par famille), pieds calés au sol.
+          Critter.drawAt(nil, sr.id, gx, gy, SLOT_SCALE, self.t / 60, c.facing or 1)
+        else
+          -- fallback rig baké (créatures dessinées-main) : fit-silhouette historique, pieds (bnd.bot) au sol.
+          local s = self:rigFitScale(sr.id, CELL_FIT_W, CELL_FIT_H, 0.94, 1.5)
+          local bnd = self:rigBounds(sr.id)
+          love.graphics.push()
+          love.graphics.translate(gx, gy)
+          love.graphics.scale(s, s)
+          love.graphics.translate(0, -bnd.bot)
+          local sx, sy = c.x, c.y
+          c.x, c.y = 0, 0
+          Rig.draw(c)
+          c.x, c.y = sx, sy
+          love.graphics.pop()
+        end
+      end)
     end
   end
   -- RIGS du BANC (réserve) : créatures stockées, rendu vivant à échelle réduite, pieds calés au bas du slot.
@@ -1784,21 +1905,23 @@ function Build:drawWorld()
   for i = 1, BENCH_SIZE do
     local sr = self.bench[i]
     if sr then
-      local r = self.benchSlots[i]
-      -- ⚠ drawWorld dessine sur le canvas VIRTUEL (320×180) : les coords sont en VIRTUEL (comme le board p.x et
-      -- l'aperçu shop rect.x), PAS en design. (bug corrigé : r.x*4 dessinait les rigs hors-canvas = invisibles.)
-      local gx = math.floor(r.x + r.w / 2 + 0.5)         -- centre X du slot (virtuel)
-      local gy = math.floor(r.y + r.h - 1 + 0.5) - math.floor(bounceLift(sr) + 0.5) -- pieds (virtuel) ; -bounce de fusion (C3)
-      if Critter.has(sr.id) then
-        Critter.drawAt(nil, sr.id, gx, gy, BENCH_SCALE, self.t / 60, 1)
-      else
-        local s = self:rigFitScale(sr.id, 13, 13, 0.9, 1.4)
-        local bnd = self:rigBounds(sr.id)
-        love.graphics.push(); love.graphics.translate(gx, gy); love.graphics.scale(s, s); love.graphics.translate(0, -bnd.bot)
-        sr.char.x, sr.char.y, sr.char.facing = 0, 0, 1
-        Rig.draw(sr.char)
-        love.graphics.pop()
-      end
+      -- ⚠ drawWorld dessine sur le canvas VIRTUEL (320×180) : les coords sont en VIRTUEL. POSITION = le RESSORT
+      -- de drag (sr.d.px/py) -> la pièce GLISSE dans le slot de banc (pose/swap fluides) ; au repos = l'ancre.
+      local ax, ay = self:benchAnchor(i)
+      local gx0, gy0 = springGround(sr.d, ax, ay)
+      gy0 = gy0 - math.floor(bounceLift(sr) + 0.5) -- -bounce de fusion (C3)
+      withDragFx(sr.d, gx0, gy0, 13, function(gx, gy)
+        if Critter.has(sr.id) then
+          Critter.drawAt(nil, sr.id, gx, gy, BENCH_SCALE, self.t / 60, 1)
+        else
+          local s = self:rigFitScale(sr.id, 13, 13, 0.9, 1.4)
+          local bnd = self:rigBounds(sr.id)
+          love.graphics.push(); love.graphics.translate(gx, gy); love.graphics.scale(s, s); love.graphics.translate(0, -bnd.bot)
+          sr.char.x, sr.char.y, sr.char.facing = 0, 0, 1
+          Rig.draw(sr.char)
+          love.graphics.pop()
+        end
+      end)
     end
   end
   -- C4 — RIG DU COMMANDANT au piédestal : SURÉLEVÉ dans la NICHE du socle (un cran plus grand qu'un troupier
@@ -1812,6 +1935,12 @@ function Build:drawWorld()
     -- native -> il TRÔNE (plus imposant qu'un troupier), pieds ancrés au bas du creux. -lift = il « respire ».
     local boxX, boxY = r.x + 2, r.y + 2 - lift
     local boxW, boxH = r.w - 4, r.h - 5
+    -- RESSORT de drag : le commandant GLISSE en place (delta px,py vs son ancre de repos) quand on l'amène/swap
+    -- au piédestal ; au repos le delta est nul (box-fit inchangé). dx/dy translatent toute la niche.
+    local ax, ay = self:commanderAnchor()
+    local sdx = sr.d and (sr.d.px - ax) or 0
+    local sdy = sr.d and (sr.d.py - ay) or 0
+    boxX, boxY = boxX + sdx, boxY + sdy
     if Critter.has(sr.id) then
       Critter.drawFit(nil, sr.id, boxX, boxY, boxW, boxH, self.t / 60, 1, 0.88, 2.4)
     elseif sr.char then
@@ -1859,11 +1988,22 @@ function Build:drawWorld()
     end
   end
   if self.drag then
-    if Critter.has(self.drag.id) then
-      Critter.drawAt(nil, self.drag.id, self.drag.char.x, self.drag.char.y, DRAG_SCALE, self.t / 60, self.drag.char.facing or 1)
-    else
-      Rig.draw(self.drag.char)
-    end
+    -- PIÈCE TRAÎNÉE (dessinée EN DERNIER = au-dessus de tout) : position = le RESSORT (suit la souris en glissant),
+    -- + le JUS de pickup (lift + scale + tilt par vélocité + OMBRE portée). Au lâcher, la pièce a déjà filé dans
+    -- son container -> ce bloc ne dessine que pendant le drag actif.
+    local d = self.drag.d
+    local gx, gy = springGround(d, self.mx, self.my + 9)
+    withDragFx(d, gx, gy, 16, function(bx, by)
+      if Critter.has(self.drag.id) then
+        Critter.drawAt(nil, self.drag.id, bx, by, DRAG_SCALE, self.t / 60, self.drag.char.facing or 1)
+      else
+        local c = self.drag.char
+        local sx, sy = c.x, c.y
+        c.x, c.y = bx, by
+        Rig.draw(c)
+        c.x, c.y = sx, sy
+      end
+    end)
   end
   love.graphics.setColor(1, 1, 1, 1)
 end
