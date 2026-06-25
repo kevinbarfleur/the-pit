@@ -27,6 +27,7 @@ local Dev = require("src.core.dev") -- MODE DEV (cheat) : toggle full-unlock du 
 local Bestiary = require("src.core.bestiary") -- codex des créatures rencontrées (persistant, full-unlock-aware)
 local Theme = require("src.ui.theme")
 local Juice = require("src.ui.juice") -- MOUVEMENT « candy » : screen-shake trauma² + hitstop, piloté au dt MURAL (RENDER pur)
+local Particles = require("src.ui.particles") -- PARTICULES PIXEL bakées (transplant Feel Lab) : explosion de level-up/fusion ; no-op headless
 local SFX = require("src.audio.sfx") -- SON PROCÉDURAL (identité Oniric grave) : bake + câble les hooks Feel ; no-op headless
 local Music = require("src.audio.music") -- MUSIQUE EN STEMS : directeur dynamique (2 morceaux, crossfade menu<->run) ; no-op headless
 local T = require("src.core.i18n").t
@@ -268,6 +269,7 @@ function love.load(args)
   Theme.load() -- charge polices + DA une fois (pré-chauffe les tailles courantes ; fallback si TTF absent)
   pcall(SFX.load) -- SON : bake les SFX (Oniric grave) UNE fois + câble Feel.onHover/onPress -> tout l'UI sonne (no-op si pas de device)
   pcall(Music.load) -- MUSIQUE : crée les Sources STREAM des 2 morceaux (volume 0, bouclés, sans jouer) ; no-op si pas de device
+  pcall(Particles.load) -- PARTICULES : bake l'atlas pixel (ember/shard/ash/spark/mote) UNE fois ; no-op headless (guard love.graphics)
   Grimoire.load() -- charge le codex persistant (reliques identifiées, méta-progression cross-run)
   Dev.load()      -- MODE DEV : restaure l'état du toggle full-unlock (inerte si Dev.ENABLED = false)
   Bestiary.load() -- codex des créatures rencontrées (méta cross-run)
