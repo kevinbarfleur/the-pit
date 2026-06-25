@@ -58,6 +58,22 @@ local SCENE_TRACK = {
   runover      = "arming-the-squad",
 }
 
+-- ════════════════════ PROFIL DE COUCHE PAR-SCÈNE (percussions de combat) ════════════════════
+-- Demande user (validée à l'oreille) : sur le morceau de RUN `arming-the-squad`, le stem `drums` est
+-- COUPÉ pendant la préparation (build/relicpick/runover/inspect) et DÉBARQUE (fade in) quand le COMBAT
+-- commence. Le reste du lit (bass + other) ne coupe JAMAIS sur build<->combat. Effet : « le combat
+-- démarre -> les percussions arrivent ». Le morceau de menu (`the-pit-main`) n'est PAS bridé.
+--
+-- Réglable d'un coup d'œil :
+--   • LAYER_TRACK   : le seul morceau soumis à ce profil (les autres jouent leurs drums normalement).
+--   • COMBAT_SCENES : l'ensemble des scènes où les drums entrent (set scène->true).
+--   • DRUMS_FADE_IN / DRUMS_FADE_OUT : durée des fondus d'entrée/sortie des drums (secondes).
+local LAYER_TRACK = "arming-the-squad"
+local COMBAT_SCENES = { combat = true }
+local DRUMS_FADE_IN  = 0.8  -- entrée des percussions au lancement du combat (~0.6-1 s, doux)
+local DRUMS_FADE_OUT = 0.9  -- sortie des percussions au retour en préparation (légèrement plus lent = naturel)
+-- (sceneDrumsTarget est défini APRÈS profileFor, plus bas, car il l'utilise pour suivre la tension.)
+
 -- COUCHES DE TENSION (le but des stems). On exprime un niveau 0..1 -> un gain CIBLE par stem.
 -- Convention de base : tension 0 = le morceau « comme mixé » (TOUS les stems à plein), c'est le repos.
 -- Quand ça chauffe (tension ^), on ne fait que MODULER quelques pistes signifiantes :
@@ -85,10 +101,25 @@ local function profileFor(track, level)
   return p
 end
 
+-- Cible de gain du stem `drums` imposée par la SCÈNE pour le morceau de RUN, ou nil si la scène ne contraint
+-- pas (autre morceau, ou morceau sans drums). En COMBAT -> niveau « plein » du profil de tension courant
+-- (setTension peut donc continuer à moduler par-dessus) ; HORS combat (préparation) -> 0 (percussions muettes).
+-- On passe par profileFor pour que, si la tension fait varier le « plein » des drums, le combat le suive.
+local function sceneDrumsTarget(track, scene)
+  if track ~= LAYER_TRACK then return nil end               -- seul arming-the-squad est bridé
+  local prof = profileFor(track, Music.tension)
+  if prof.drums == nil then return nil end                  -- morceau sans stem drums : rien à imposer
+  if COMBAT_SCENES[scene] then
+    return prof.drums                                       -- combat : drums à leur plein (modulable par tension)
+  end
+  return 0                                                  -- préparation (build/relicpick/runover/inspect) : muet
+end
+
 -- ════════════════════════════════════ État runtime ════════════════════════════════════
 Music.master  = 0.6   -- volume MUSIQUE global, SÉPARÉ du master SFX. Défaut raisonnable (la musique reste un fond).
 Music.tension = 0     -- niveau 0..1 courant
 Music.current = nil   -- id du morceau actif (nil = rien ne joue)
+Music.scene   = nil   -- nom de la DERNIÈRE scène vue (pour ré-appliquer le profil drums après une modulation de tension)
 Music.loaded  = false
 
 -- Pour chaque morceau : { sources = {stem->Source}, gains = {stem->{cur,target,rate}}, base = volume morceau 0..1 (pour le crossfade) }
@@ -169,6 +200,21 @@ local function applyTension(id, level, fade)
   end
 end
 
+-- Applique la cible drums imposée par la SCÈNE sur le morceau `id` (override du profil de tension pour le
+-- seul stem `drums`). No-op si la scène ne contraint pas (autre morceau / pas de drums). `fade` nil =>
+-- choisit fade-in/out selon le sens. `id` est passé EXPLICITEMENT car au crossfade Music.current n'est posé
+-- qu'à la fin de setScene. Appelé même quand le morceau ne change PAS (build<->combat continu).
+local function applySceneDrums(id, scene, fade)
+  if not id then return end
+  local target = sceneDrumsTarget(id, scene)
+  if target == nil then return end                          -- scène non concernée : on ne touche pas aux drums
+  local g = tracks[id] and tracks[id].gains.drums
+  if not g then return end
+  local f = fade
+  if f == nil then f = (target > g.cur) and DRUMS_FADE_IN or DRUMS_FADE_OUT end
+  setEnv(g, target, f)
+end
+
 -- ════════════════════════════════════ API publique ════════════════════════════════════
 
 -- Résout le morceau d'une scène et bascule SI ET SEULEMENT SI le morceau change (sinon : continuité totale).
@@ -176,11 +222,19 @@ function Music.setScene(name)
   if not haveAudio() then return end
   local want = SCENE_TRACK[name]
   if not want or not tracks[want] then return end  -- scène non mappée (ex. overlay) : on ne touche à rien
-  if want == Music.current then return end          -- MÊME morceau -> NE FAIT RIEN (build<->combat<->relicpick continu)
+  Music.scene = name                                -- mémorisé pour que setTension réimpose le profil drums de scène
+  if want == Music.current then
+    -- MÊME morceau -> on ne change PAS de musique (build<->combat<->relicpick : continuité totale du lit),
+    -- MAIS on met QUAND MÊME à jour la cible drums selon la scène : build<->combat fait monter/descendre
+    -- les percussions du morceau de run en fondu, sans jamais couper bass/other. (No-op pour the-pit-main.)
+    applySceneDrums(Music.current, name, nil)
+    return
+  end
 
   if Music.current then fadeOutTrack(Music.current, CROSSFADE) end -- fond sortant
   startTrack(want, CROSSFADE)                                       -- play + fond entrant
   applyTension(want, Music.tension, 0)                             -- pose le profil de tension courant d'emblée
+  applySceneDrums(want, name, 0)                                    -- drums démarrent À LEUR CIBLE DE SCÈNE (0 si on entre par build), pas à plein
   Music.current = want
 end
 
@@ -212,7 +266,12 @@ end
 function Music.setTension(level, fade)
   Music.tension = math.max(0, math.min(1, level or 0))
   if not haveAudio() then return end
-  if Music.current then applyTension(Music.current, Music.tension, fade or LAYERFADE) end
+  if Music.current then
+    applyTension(Music.current, Music.tension, fade or LAYERFADE)
+    -- applyTension a remis drums au « plein » du profil : si la SCÈNE courante les veut muets (préparation),
+    -- on RÉIMPOSE la cible de scène par-dessus (en combat, target == plein -> la modulation de tension passe).
+    applySceneDrums(Music.current, Music.scene, fade or LAYERFADE)
+  end
 end
 
 -- Réglage MANUEL d'une couche du morceau actif (override ponctuel : ex. couper vocals dès un moment clé).
