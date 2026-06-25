@@ -127,6 +127,9 @@ luajit tests/golden.lua
 echo "== lab (banc d'essai : catalogue compos + pont auras + runner partage + cout) =="
 luajit tests/lab.lua
 
+echo "== bands (harnais d'equilibrage de masse : bandes + courbe de cout + injection relique/commandant) =="
+luajit tests/bands.lua
+
 echo "== ui (fondation visuelle : Frame bevel/gilded/etats + Chip + Keywords afflictions + Theme.state) =="
 luajit tests/ui.lua
 

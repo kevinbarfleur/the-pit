@@ -19,6 +19,9 @@ local STUB_HOST = { goto = function() end } -- Build.new exige un host avec goto
 
 -- Construit un Build headless avec la compo posée sur son sigil (slots 1..boardLevel débloqués = fidèle
 -- au vrai plateau à ce niveau). Renvoie le Build (utile pour lire board/slots côté preview).
+-- opts.commander : id d'unité-commandant (porteur de commandBonus) à poser au PIÉDESTAL -> son aura est
+--   BUILD-RÉSOLUE par buildComp comme en jeu (team/role/tier/level/grant_team), via STUB_HOST sans run
+--   (commanderUnlocked() -> true en sandbox). C'est la voie FIDÈLE : on ne ré-implémente pas resolveCommanderAura.
 function Compbuild.build(comp, opts)
   local palette = (opts and opts.palette) or Palette
   local b = Build.new(palette, 320, 180, STUB_HOST)
@@ -28,17 +31,21 @@ function Compbuild.build(comp, opts)
   for _, u in ipairs(comp.units) do
     b:placeId(u.slot, u.id, u.level or 1)
   end
+  local cmd = (opts and opts.commander) or comp.commander
+  if cmd then b.commanderSlot = { id = cmd, level = (opts and opts.commanderLevel) or 1 } end
   return b
 end
 
 -- Compo d'arène prête (auras résolues, stats×niveau, positions front/back). side : -1 gauche / 1 droite.
--- Reliques : si la compo en déclare, on applique leur effet RÉEL à la compo résolue (au build, comme le run).
+-- Reliques : si la compo en déclare (ou opts.relics), on applique leur effet RÉEL à la compo résolue (au
+-- build, comme le run). opts.commander : pose un commandant au piédestal (cf. Compbuild.build).
 function Compbuild.toComp(comp, side, opts)
   local b = Compbuild.build(comp, opts)
   local arenaComp = b:buildComp(side or -1)
-  if comp.relics and #comp.relics > 0 then
+  local relics = (opts and opts.relics) or comp.relics
+  if relics and #relics > 0 then
     local Relics = require("src.data.relics")
-    for _, rid in ipairs(comp.relics) do
+    for _, rid in ipairs(relics) do
       if Relics[rid] then Relics.apply(arenaComp, Relics[rid]) end
     end
   end
