@@ -28,6 +28,7 @@ local Bestiary = require("src.core.bestiary") -- codex des créatures rencontré
 local Theme = require("src.ui.theme")
 local Juice = require("src.ui.juice") -- MOUVEMENT « candy » : screen-shake trauma² + hitstop, piloté au dt MURAL (RENDER pur)
 local SFX = require("src.audio.sfx") -- SON PROCÉDURAL (identité Oniric grave) : bake + câble les hooks Feel ; no-op headless
+local Music = require("src.audio.music") -- MUSIQUE EN STEMS : directeur dynamique (2 morceaux, crossfade menu<->run) ; no-op headless
 local T = require("src.core.i18n").t
 
 local VW, VH = 320, 180           -- résolution virtuelle (×4 = 1280×720 pile)
@@ -100,6 +101,10 @@ function host.goto(name, payload)
     if host.build and host.build.onEnter then host.build:onEnter() end -- repart au repos (anti hover collé post-combat)
   end
   host.name = name
+  -- MUSIQUE : on notifie le directeur à CHAQUE changement de scène. Il ne change réellement de morceau (crossfade)
+  -- que si la scène cible relève d'un AUTRE morceau ; sinon (build<->combat<->relicpick) il ne fait RIEN -> la
+  -- musique de la run continue SANS coupure. Toute la continuité par-morceau est gérée DANS Music.setScene.
+  Music.setScene(name)
 end
 
 -- Fin d'un combat : la méta de run résout l'issue (vies/victoires/streaks), puis ouvre le round
@@ -262,6 +267,7 @@ function love.load(args)
 
   Theme.load() -- charge polices + DA une fois (pré-chauffe les tailles courantes ; fallback si TTF absent)
   pcall(SFX.load) -- SON : bake les SFX (Oniric grave) UNE fois + câble Feel.onHover/onPress -> tout l'UI sonne (no-op si pas de device)
+  pcall(Music.load) -- MUSIQUE : crée les Sources STREAM des 2 morceaux (volume 0, bouclés, sans jouer) ; no-op si pas de device
   Grimoire.load() -- charge le codex persistant (reliques identifiées, méta-progression cross-run)
   Dev.load()      -- MODE DEV : restaure l'état du toggle full-unlock (inerte si Dev.ENABLED = false)
   Bestiary.load() -- codex des créatures rencontrées (méta cross-run)
@@ -314,6 +320,9 @@ function love.draw()
   do
     local wallDt = (love.timer and love.timer.getDelta and love.timer.getDelta()) or 0
     Juice.update(wallDt)
+    -- MUSIQUE : crossfades/fondus avancés au dt MURAL RÉEL, 1×/frame (love.draw tourne une fois par frame, là où
+    -- love.update est appelée au PAS-FIXE seedé 1/60 -> inadaptée au temps réel). RENDER pur, jamais la SIM.
+    Music.update(wallDt)
   end
   local shx, shy, shr = Juice.shake()
   local shaking = (shx ~= 0 or shy ~= 0 or shr ~= 0)
