@@ -508,8 +508,10 @@ function ArenaDraw:drawCritter(u, rig)
   -- dont l'anim death est retombée, s'efface). En death, alpha=1 est déjà posé ci-dessus (désagrégation autonome).
   if opts.alpha == nil then opts.alpha = rig.alpha or 1 end
   -- ANCRAGE : pieds (grille 32,57) sur (u.x, u.y), échelle WORLD_FIT = MÊME empreinte que le Rig baké (pivot 32,58).
-  -- t en SECONDES (self.t est en frames @60fps -> /60) pour l'idle/yeux de critter. facing = miroir d'équipe.
-  Critter.drawAt(nil, u.id, u.x, u.y, WORLD_FIT, (self.t or 0) / 60, u.facing or 1, opts)
+  -- t en SECONDES (self.t est en frames @60fps -> /60) pour l'idle/yeux de critter. facing = SENS D'ÉQUIPE (wantDir :
+  -- joueur=+1 regarde à droite / adverse=-1 regarde à gauche) NORMALISÉ par le sens inhérent de la créature
+  -- (facingFor) -> tout le monde se fait face quel que soit le faceDir natif de l'unité.
+  Critter.drawAt(nil, u.id, u.x, u.y, WORLD_FIT, (self.t or 0) / 60, Critter.facingFor(u.id, u.facing or 1), opts)
 end
 
 -- ───────────────────────── Rendu monde (canvas virtuel) ─────────────────────────

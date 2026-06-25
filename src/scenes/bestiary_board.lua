@@ -58,7 +58,10 @@ function BestiaryBoard.new(palette, vw, vh, host, opts)
     if ai then
       local ok, gen = pcall(Primgen.generate, { seed = 99, family = r.family, archIndex = ai, paletteIndex = 1 })
       if ok and gen and gen.image then
-        self.reserve[#self.reserve + 1] = { img = gen.image, w = gen.w, h = gen.h, arch = r.arch, family = r.family }
+        -- sens inhérent (faceDir[1]) -> flip d'IMAGE pour présenter à GAUCHE comme les vignettes vivantes.
+        local fx = gen.A and gen.A.faceDir and gen.A.faceDir[1] or 0
+        self.reserve[#self.reserve + 1] = { img = gen.image, w = gen.w, h = gen.h, arch = r.arch, family = r.family,
+          flip = (fx > 0) and -1 or 1 }
       end
     end
   end
@@ -89,7 +92,8 @@ function BestiaryBoard:drawWorld()
   for i, it in ipairs(self.items) do
     local cx, cy = cellXY(i)
     local scale = (CH - 4) / 64 * 1.4 -- ~hauteur de case (cadre natif 64), léger boost de lisibilité
-    Critter.drawAt(nil, it.id, cx, cy, scale, ts, 1, { shadow = true })
+    -- carte/portrait : tout le monde regarde à GAUCHE (wantDir=-1) normalisé par le sens inhérent.
+    Critter.drawAt(nil, it.id, cx, cy, scale, ts, Critter.facingFor(it.id, -1), { shadow = true })
   end
   -- BANDE RÉSERVE (ELDER sans unité) : sprites statiques, plus gros (pièces maîtresses), sous le roster.
   local rows = math.ceil(#self.items / COLS)
@@ -97,9 +101,10 @@ function BestiaryBoard:drawWorld()
   local rscale = 0.5              -- ×2 entier (WORLD_FIT) : net
   for i, r in ipairs(self.reserve) do
     local cx = 40 + (i - 1) * 90
-    -- pivot (32,58) du sprite primgen posé aux pieds (cx, ry).
+    -- pivot (32,58) du sprite primgen posé aux pieds (cx, ry) via ORIGINE intégrée -> le flip (r.flip=±1, miroir
+    -- pour regarder à GAUCHE selon faceDir) garde le pivot fixe quel que soit le signe (scale négatif vérifié 11.5).
     love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.draw(r.img, cx - 32 * rscale, ry - 58 * rscale, 0, rscale, rscale)
+    love.graphics.draw(r.img, cx, ry, 0, (r.flip or 1) * rscale, rscale, 32, 58)
   end
 end
 

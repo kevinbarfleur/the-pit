@@ -2021,7 +2021,8 @@ function Build:drawWorld()
         withMergeScale(sr, gx, gy, function() -- squash-stretch du survivant pendant la fusion (pivot = pieds)
         if Critter.has(sr.id) then
           -- RENDU VIVANT : cadre natif (taille relative + mouvement par famille), pieds calés au sol.
-          Critter.drawAt(nil, sr.id, gx, gy, SLOT_SCALE, self.t / 60, c.facing or 1)
+          -- portrait de build : regarde à GAUCHE (wantDir=-1) normalisé par le sens inhérent de l'unité.
+          Critter.drawAt(nil, sr.id, gx, gy, SLOT_SCALE, self.t / 60, Critter.facingFor(sr.id, -1))
         else
           -- fallback rig baké (créatures dessinées-main) : fit-silhouette historique, pieds (bnd.bot) au sol.
           local s = self:rigFitScale(sr.id, CELL_FIT_W, CELL_FIT_H, 0.94, 1.5)
@@ -2054,7 +2055,8 @@ function Build:drawWorld()
       withDragFx(sr.d, gx0, gy0, 13, function(gx, gy)
         withMergeScale(sr, gx, gy, function() -- squash-stretch du survivant pendant la fusion (pivot = pieds)
         if Critter.has(sr.id) then
-          Critter.drawAt(nil, sr.id, gx, gy, BENCH_SCALE, self.t / 60, 1)
+          Critter.drawAt(nil, sr.id, gx, gy, BENCH_SCALE, self.t / 60, Critter.facingFor(sr.id, -1)) -- banc : à gauche
+
         else
           local s = self:rigFitScale(sr.id, 13, 13, 0.9, 1.4)
           local bnd = self:rigBounds(sr.id)
@@ -2085,7 +2087,8 @@ function Build:drawWorld()
     local sdy = sr.d and (sr.d.py - ay) or 0
     boxX, boxY = boxX + sdx, boxY + sdy
     if Critter.has(sr.id) then
-      Critter.drawFit(nil, sr.id, boxX, boxY, boxW, boxH, self.t / 60, 1, 0.88, 2.4)
+      -- commandant au piédestal (portrait) : regarde à GAUCHE (wantDir=-1) normalisé par le sens inhérent.
+      Critter.drawFit(nil, sr.id, boxX, boxY, boxW, boxH, self.t / 60, Critter.facingFor(sr.id, -1), 0.88, 2.4)
     elseif sr.char then
       local s = self:rigFitScale(sr.id, boxW, boxH, 0.92, 2.0)
       local bnd = self:rigBounds(sr.id)
@@ -2112,7 +2115,8 @@ function Build:drawWorld()
           local artX, artY, artW, artH = rect.x + 1, rect.y, rect.w - 2, artHv
           if self.view then Draw.scissor(self.view, artX * 4, artY * 4, artW * 4, artH * 4) end
           if Critter.has(o.id) then
-            Critter.draw(nil, o.id, artX, artY, artW, artH, self.t / 60, 1, 0.92)
+            -- carte de boutique (portrait) : regarde à GAUCHE (wantDir=-1) normalisé par le sens inhérent.
+            Critter.draw(nil, o.id, artX, artY, artW, artH, self.t / 60, Critter.facingFor(o.id, -1), 0.92)
           else
             -- fallback rig baké (6 créatures dessinées-main) : fit-silhouette dans la zone d'art.
             local s = self:rigFitScale(o.id, artW, artH * 0.9, 0.9, 2.2)
@@ -2138,7 +2142,8 @@ function Build:drawWorld()
     local gx, gy = springGround(d, self.mx, self.my + 9)
     withDragFx(d, gx, gy, 16, function(bx, by)
       if Critter.has(self.drag.id) then
-        Critter.drawAt(nil, self.drag.id, bx, by, DRAG_SCALE, self.t / 60, self.drag.char.facing or 1)
+        -- pièce traînée (portrait) : regarde à GAUCHE (wantDir=-1) normalisé par le sens inhérent.
+        Critter.drawAt(nil, self.drag.id, bx, by, DRAG_SCALE, self.t / 60, Critter.facingFor(self.drag.id, -1))
       else
         local c = self.drag.char
         local sx, sy = c.x, c.y

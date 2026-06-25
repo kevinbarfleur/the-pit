@@ -434,7 +434,8 @@ function Screen:drawCell(view, i, cell, x, y)
     else
       -- créature VIVANTE (comme le board/galerie) si générée ; repli rig baké (6 dédiées). Clip à la case.
       if Critter.has(e.id) then
-        Critter.draw(view, e.id, tx + 6, ty + 4, TILE - 12, TILE - 14, self.t / 60, 1)
+        -- vignette de codex : tout le monde regarde à GAUCHE (wantDir=-1) normalisé par le sens inhérent.
+        Critter.draw(view, e.id, tx + 6, ty + 4, TILE - 12, TILE - 14, self.t / 60, Critter.facingFor(e.id, -1))
       else
         love.graphics.push()
         love.graphics.translate(cx, ty + TILE - 10)

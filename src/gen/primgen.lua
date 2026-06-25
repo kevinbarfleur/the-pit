@@ -2773,9 +2773,12 @@ local function buildGrid(opts)
 end
 
 function Primgen.generate(opts)
-  local g, _, p, famKey, archName, rnd = buildGrid(opts)
+  local g, A, p, famKey, archName, rnd = buildGrid(opts)
   local img, w, h = bake(g)
-  return { image = img, w = w, h = h, name = genName(rnd, famKey), arch = archName, family = famKey }
+  -- A (anatomie, dont faceDir) exposée pour la NORMALISATION D'ORIENTATION côté caller (ex. bande réserve du
+  -- bestiaire qui dessine l'Image bakée : elle miroite selon faceDir[1] pour présenter tout le monde à gauche).
+  -- N'affecte ni la grille ni l'Image -> golden de génération inchangé.
+  return { image = img, w = w, h = h, A = A, name = genName(rnd, famKey), arch = archName, family = famKey }
 end
 
 -- Données BRUTES pour le rendu VIVANT (src/render/critter.lua) : grille (cellules packées) + yeux + anatomie A

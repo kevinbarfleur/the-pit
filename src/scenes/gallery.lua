@@ -225,7 +225,8 @@ function Gallery:drawWorld()
     -- RENDU VIVANT pour les vraies unités générées en idle (cadre natif 64 -> tailles relatives + mouvement
     -- par famille). Démos/échelles/dédiées + anims attack/hurt restent sur le rig baké (Rig.draw).
     if self.mode == "idle" and it.gen and not it.demo and Critter.has(it.id) then
-      Critter.draw(nil, it.id, cx - CELL_W / 2, cy - CELL_H, CELL_W, CELL_H, self.t / 60, 1, 1.0)
+      -- vignette de revue : tout le monde regarde à GAUCHE (wantDir=-1) normalisé par le sens inhérent.
+      Critter.draw(nil, it.id, cx - CELL_W / 2, cy - CELL_H, CELL_W, CELL_H, self.t / 60, Critter.facingFor(it.id, -1), 1.0)
     else
       Rig.draw(it.char)
     end

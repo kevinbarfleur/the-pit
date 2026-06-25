@@ -143,7 +143,8 @@ local function drawCardPortrait(view, palette, id, rigc, region, rank, rarCol, r
   if love.graphics.getScissor then px, py, pw, ph = love.graphics.getScissor() end
   if view then Draw.scissor(view, region.x, region.y, region.w, region.h) end
   if useCritter then
-    Critter.drawAt(nil, id, math.floor(cx), math.floor(feet), region.h * 0.95 / 64, t or 0, 1)
+    -- carte d'unité (portrait) : regarde à GAUCHE (wantDir=-1) normalisé par le sens inhérent de la créature.
+    Critter.drawAt(nil, id, math.floor(cx), math.floor(feet), region.h * 0.95 / 64, t or 0, Critter.facingFor(id, -1))
   else
     rigc = rigc or MiniRig.rig(id, palette)
     local bnd = MiniRig.bounds(id, palette)

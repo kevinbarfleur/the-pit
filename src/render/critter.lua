@@ -730,6 +730,27 @@ local function info(id)
   return c
 end
 
+-- ── Normalisation d'ORIENTATION (cohérence visuelle inter-écrans) ──
+-- Problème racine : le sens INHÉRENT d'une créature varie (primgen `A.faceDir[1]` vaut +1=regarde-droite,
+-- -1=regarde-gauche, ou 0=de face) — donc passer `facing=1` partout fait pointer les unités directionnelles
+-- TANTÔT à droite TANTÔT à gauche. On corrige au RENDER (jamais à la génération : golden gen intact) en
+-- composant le sens VOULU par le contexte (`wantDir`) avec le sens inhérent lu dans le cache info().
+--   wantDir : +1 = la créature doit regarder à DROITE de l'écran ; -1 = à GAUCHE.
+-- Rappel transform (drawAt) : `scale(facing, …)` ; facing=+1 = grille telle quelle (regarde vers `faceDir`),
+-- facing=-1 = miroir horizontal (regarde vers `-faceDir`). Donc pour viser `wantDir` quand inherent≠0 :
+--   inherent * facing = wantDir  ⟹  facing = wantDir * inherent (inherent = ±1).
+-- inherent=0 (créature de face/symétrique) : le miroir est sans effet visuel -> on renvoie wantDir (signe stable).
+-- Headless/mock-safe : info() nil -> on retombe sur wantDir (aucune grille à miroiter de toute façon).
+function Critter.facingFor(id, wantDir)
+  wantDir = (wantDir == -1) and -1 or 1
+  local c = cache[id] or info(id)
+  local fd = c and c.A and c.A.faceDir
+  local fx = fd and fd[1] or 0
+  if fx > 0 then return wantDir         -- inhérent = droite (+1) -> facing = wantDir
+  elseif fx < 0 then return -wantDir    -- inhérent = gauche (-1) -> facing = -wantDir (on inverse)
+  else return wantDir end               -- de face -> peu importe, signe stable = wantDir
+end
+
 -- Remplit le SpriteBatch (espace GRILLE : chaque cellule à (gx+dx, gy+dy)).
 -- SOMME des couches (comme `disp` du proto, l.91-106) : idle + atkDisp + hurtDisp, puis deathPix À PART (il porte
 -- aussi un alpha PAR CELLULE, multiplié sur la couleur via b:setColor(r,g,b,a) — per-sprite, floats 0..1, vérifié 11.5).
