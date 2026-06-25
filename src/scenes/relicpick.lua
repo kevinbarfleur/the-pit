@@ -30,6 +30,7 @@ local Ambient = require("src.fx.ambient")
 local Button = require("src.ui.button")      -- boutons propres : primary (BIND) / eco (REFUSE)
 local Dividers = require("src.ui.dividers")  -- filets laiton/sang propres (cassure d'en-tête)
 local Feel = require("src.ui.feel")          -- JUICE : survol (glow/lift) + press (squash/flash)
+local SFX = require("src.audio.sfx")         -- SON (Oniric grave) : BIND d'une relique = payoff (success). No-op headless.
 local RelicCard = require("src.ui.relic_card") -- MOLÉCULE carte de relique (fond + icône animée + nom + effet + flavor)
 local Relics = require("src.data.relics")    -- pour le PALIER de nature (band -> couleur de carte Argent/Or/Prismatique)
 local RunState = require("src.run.state")    -- pour DECLINE_RELIC_GOLD (or accordé au refus)
@@ -237,7 +238,10 @@ end
 
 function Relicpick:confirm()
   local id = self.choices[self.sel]
-  if id and self.host.finishRelicPick then self.host.finishRelicPick(id) end
+  if id and self.host.finishRelicPick then
+    SFX.play("success") -- BIND : on scelle une relique (pad maj7 grave, rêveur) — payoff sémantique
+    self.host.finishRelicPick(id)
+  end
 end
 
 -- REFUSE : on renonce à la relique contre de l'or (host.finishRelicPickDecline -> declineRelic + round suivant).

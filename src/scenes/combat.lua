@@ -33,6 +33,7 @@ local Panel = require("src.ui.panel")    -- surfaces propres (résumé post-comb
 local Units = require("src.data.units")  -- type d'unité (pip de portrait) + noms
 local MiniRig = require("src.render.minirig") -- frimousse de créature (portraits MVP / 1re perte du résumé)
 local Run = require("src.run.state")     -- WIN_TARGET (descente) pour le ruban de stats
+local SFX = require("src.audio.sfx")     -- SON (Oniric grave) : verdict VICTOIRE/DEFAITE — RENDER pur, no-op headless
 local T = require("src.core.i18n").t
 
 local Combat = {}
@@ -86,6 +87,7 @@ function Combat:restart()
   self.arena = Arena.new(
     { left = self.payload.left, right = self.payload.right, autoReset = false, seed = self.payload.seed })
   self.renderer = ArenaDraw.new(self.arena, self.palette)
+  self._verdictPlayed = nil -- SON : un REPLAY rejoue son verdict (le bilan se ré-affiche)
   self:_track()
 end
 
@@ -170,6 +172,9 @@ function Combat:update(frameDt)
     self:_step(frameDt)
     if self.arena.over then break end
   end
+  -- SON (RENDER pur) : 1 cue de coup lourd + 1 cue de mort par FRAME (le renderer a agrégé tous les events de
+  -- ces `steps`). Hors du loop -> jamais multiplié par SKIP/2×. No-op headless ; ne touche pas la SIM.
+  self.renderer:flushAudio()
   if self.arena.over then self.skipping = false end
   if self.arena.over then
     self.hintKey = "ui.hint_combat_end"
@@ -392,6 +397,13 @@ function Combat:_drawSummary(view)
   if not self.summary then self.summary = self:_computeSummary() end
   local s, why = self.full, self.summary
   local W, H, won = Draw.W, Draw.H, self.full.win
+
+  -- SON (verdict) : UNE fois, au 1er affichage du bilan. VICTOIRE -> pad maj7 grave et rêveur (success) ;
+  -- DEFAITE -> la chute, grave et longue (defeat). RENDER pur (no-op headless) ; ne touche pas la SIM.
+  if not self._verdictPlayed then
+    self._verdictPlayed = true
+    SFX.play(won and "success" or "defeat")
+  end
 
   -- (0) FOND = le MÊME fond que le combat (cauchemardesque champ + yeux, ou biome si réactivé), plein écran
   -- et VIVANT -> cohérence avec l'arène (retour user : plus de halos/cercles d'ambiance hétéroclites). Il

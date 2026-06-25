@@ -58,6 +58,7 @@ local RelicCard = require("src.ui.relic_card") -- FICHE de relique au survol (ic
 local RelicsData = require("src.data.relics") -- band/palier de la relique (couleur de carte Argent/Or/Prismatique)
 local I18n = require("src.core.i18n")
 local T = I18n.t
+local SFX = require("src.audio.sfx") -- SON (Oniric grave) : cues SÉMANTIQUES des évènements de build (achat/vente/drag/fusion). No-op headless.
 
 local Build = {}
 Build.__index = Build
@@ -406,7 +407,8 @@ local MERGE_FLY_DUR = 0.33 -- durée du vol des « âmes » vers le survivant av
 function Build:spawnFx(kind, x, y, opts)
   opts = opts or {}
   self.fx[#self.fx + 1] = { kind = kind, x = x, y = y, t = 0, dur = opts.dur or 0.55,
-    gold = opts.gold, level = opts.level, fromX = opts.fromX, fromY = opts.fromY, delay = opts.delay or 0 }
+    gold = opts.gold, level = opts.level, fromX = opts.fromX, fromY = opts.fromY, delay = opts.delay or 0,
+    sfxClimax = opts.sfxClimax }
 end
 
 -- Centre (espace DESIGN) d'une position de jeu {kind, i} (case board ou slot banc) -> ancre des FX de fusion.
@@ -419,8 +421,16 @@ end
 -- survivant (froms = liste {x,y} en design), puis un BURST éclate (levelup différé) et le rig SAUTILLE (bounce
 -- posé sur le rig promu par le caller). Séquence : ~0,33s de convergence -> impact -> ~0,5s de rebond/burst.
 function Build:spawnMergeFx(sx, sy, froms, lvl)
-  for _, f in ipairs(froms) do self:spawnFx("merge_fly", sx, sy, { fromX = f[1], fromY = f[2], dur = MERGE_FLY_DUR }) end
-  self:spawnFx("levelup", sx, sy, { level = lvl, delay = MERGE_FLY_DUR, dur = MERGE_FLY_DUR + 0.55 })
+  -- SON (fusion) : « ta-ta-ta-TAAA ». Échelle montante (ladder) RÉINITIALISÉE au début de la convergence, puis
+  -- 1 degré qui monte par âme qui file vers le survivant ; le CLIMAX (success) est joué à l'IMPACT (souls
+  -- arrivées) -> on le porte par le FX `levelup` (flag sfxClimax, déclenché dans updateFx au franchissement du
+  -- délai, EXACTEMENT à la pose de son burst visuel). RENDER pur (SFX.play est no-op headless) -> golden-safe.
+  SFX.ladder(true) -- reset de l'échelle (premier degré ne sonne pas : la 1re âme jouera le degré 2, etc.)
+  for _, f in ipairs(froms) do
+    self:spawnFx("merge_fly", sx, sy, { fromX = f[1], fromY = f[2], dur = MERGE_FLY_DUR })
+    SFX.ladder() -- un cran plus haut par âme (1, 2, … -> tension qui grimpe pendant le vol)
+  end
+  self:spawnFx("levelup", sx, sy, { level = lvl, delay = MERGE_FLY_DUR, dur = MERGE_FLY_DUR + 0.55, sfxClimax = true })
 end
 
 -- Décalage vertical (px VIRTUELS, vers le HAUT) du SAUTILLEMENT de fusion (C3) : une bosse amortie déclenchée à
@@ -438,7 +448,11 @@ function Build:updateFx(frameDt)
   local n, w = #self.fx, 0
   for i = 1, n do
     local f = self.fx[i]
+    local was = f.t
     f.t = f.t + dt
+    -- SON (climax de fusion) : le « TAAA » tombe à l'IMPACT (souls convergées = franchissement du délai du
+    -- burst `levelup`), une seule fois. Joué ICI plutôt qu'au spawn -> calé sur l'apparition du burst visuel.
+    if f.sfxClimax and was < f.delay and f.t >= f.delay then SFX.play("success") end
     if f.t < f.dur then w = w + 1; self.fx[w] = f end
   end
   for i = w + 1, n do self.fx[i] = nil end
@@ -695,6 +709,7 @@ function Build:autoBuy(offerIndex)
   if bslot or benchSlot then
     local id = run:buy(offerIndex)
     if not id then return false end
+    SFX.play("coin") -- ACHAT : pièce qui tombe (cloche grave Oniric)
     if bslot then
       self.slotRigs[bslot] = { id = id, level = 1, char = self:newRig(id) }; self.board.slots[bslot].unit = id
       self:spawnFx("buy", self.pos[bslot].x * 4, self.pos[bslot].y * 4)
@@ -722,6 +737,7 @@ function Build:buyMergeWhenFull(offerIndex)
   if #copies < 2 then return false end
   local id = run:buy(offerIndex)
   if not id then return false end
+  SFX.play("coin") -- ACHAT (catalyseur de fusion) : la pièce de l'achat (le « ta-ta-ta-TAAA » suit via spawnMergeFx)
   local keep, drop = copies[1], copies[2]
   local sx, sy = self:fxCenterOf(keep.kind, keep.i)        -- survivant
   local dxp, dyp = self:fxCenterOf(drop.kind, drop.i)      -- copie retirée (âme qui file)
@@ -818,13 +834,14 @@ function Build:mousepressed(vx, vy, button)
     -- s'appliquent au prochain reroll/round -> préserve l'arbitrage XP-vs-reroll-vs-unités).
     -- BUY XP / REROLL : feedback de press IMMÉDIAT (Feel.press sans action) + action TOUT DE SUITE (l'e2e
     -- headless asserte l'or débité juste après le clic -> on ne diffère PAS ces actions de boutique).
-    if inRect(vx, vy, self.raiseBtn) then Feel.press("build.raise"); if run:canBuyXp() then run:buyXp() end; return end
-    if inRect(vx, vy, self.rerollBtn) then Feel.press("build.reroll"); run:reroll(); return end
+    if inRect(vx, vy, self.raiseBtn) then Feel.press("build.raise"); if run:canBuyXp() then run:buyXp(); SFX.play("coin") end; return end -- LEVEL/XP : pièce (achat d'XP)
+    if inRect(vx, vy, self.rerollBtn) then Feel.press("build.reroll"); run:reroll(); SFX.play("pop"); return end -- REROLL : « pop » (les offres se re-tirent)
     local oi = self:shopAt(vx, vy)
     if oi then -- prend une offre JOUABLE (achat consommé au lâcher sur une case, ou au CLIC via autoBuy) ; une
       local o = run.shop[oi] -- carte désactivée (pas d'or / plein sans level-up) est INERTE -> pas de pickup.
       if o and self:offerPlayable(o) then
         self.drag = { id = o.id, level = 1, char = self:newRig(o.id), fromShop = oi, pressX = vx, pressY = vy }
+        SFX.play("pickup") -- DRAG : on saisit une offre (achat confirmé au lâcher -> coin)
       end
       return
     end
@@ -834,6 +851,7 @@ function Build:mousepressed(vx, vy, button)
     local c = self.commanderSlot
     self.drag = { id = c.id, level = c.level or 1, char = c.char, fromCommander = true }
     self.commanderSlot = nil
+    SFX.play("pickup") -- DRAG : on retire le commandant du piédestal
     return
   end
   local si = self:slotAt(vx, vy)
@@ -841,12 +859,14 @@ function Build:mousepressed(vx, vy, button)
     self.drag = { id = self.slotRigs[si].id, level = self.slotRigs[si].level or 1, char = self.slotRigs[si].char, fromSlot = si }
     self.slotRigs[si] = nil
     self.board.slots[si].unit = nil
+    SFX.play("pickup") -- DRAG : on soulève une unité du plateau
     return
   end
   local bi = self:benchAt(vx, vy)
   if bi and self.bench[bi] then -- ramasse une unité du BANC (réarrangement / vente / vers plateau)
     self.drag = { id = self.bench[bi].id, level = self.bench[bi].level or 1, char = self.bench[bi].char, fromBench = bi }
     self.bench[bi] = nil
+    SFX.play("pickup") -- DRAG : on soulève une unité du banc
   end
 end
 
@@ -871,6 +891,7 @@ function Build:mousereleased(vx, vy, button)
     if d.fromShop then -- ACHAT puis promotion directe au piédestal (l'or n'est débité qu'ICI).
       local id = run and run:buy(d.fromShop)
       if id then
+        SFX.play("coin") -- ACHAT (promotion directe au piédestal)
         local occ = self.commanderSlot
         self.commanderSlot = { id = id, level = 1, char = d.char }
         if occ then -- piédestal occupé : l'ancien commandant repart au banc (sinon disparaît en sandbox).
@@ -897,6 +918,7 @@ function Build:mousereleased(vx, vy, button)
     if toBoard or toBench then
       local id = run and run:buy(d.fromShop)
       if id then
+        SFX.play("coin") -- ACHAT par drag sur une case/banc
         if toBoard then
           self.slotRigs[si] = { id = id, level = 1, char = d.char }; self.board.slots[si].unit = id
           self:spawnFx("buy", self.pos[si].x * 4, self.pos[si].y * 4)
@@ -924,16 +946,19 @@ function Build:mousereleased(vx, vy, button)
     if occ then self:returnDragOrigin(d, occ) end
     self.slotRigs[si] = { id = d.id, level = d.level or 1, char = d.char }
     self.board.slots[si].unit = d.id
+    SFX.play("drop") -- DROP : on POSE l'unité sur une case (doux, grave, aucun bruit)
   elseif bi then
     -- -> SLOT BANC : place / swap.
     local occ = self.bench[bi]
     if occ then self:returnDragOrigin(d, occ) end
     self.bench[bi] = { id = d.id, level = d.level or 1, char = d.char }
+    SFX.play("drop") -- DROP : on range l'unité au banc
   else
     -- Lâché HORS plateau ET banc : VENTE (remboursement) si run ; sinon l'unité disparaît (sandbox).
     if run and (d.fromSlot or d.fromBench or d.fromCommander) then
       local before = run.gold
       run:sell(d.id)
+      SFX.play("back") -- VENTE : reflux grave (l'unité quitte le plateau, l'or revient)
       self:spawnFx("sell", self.mx * 4, self.my * 4, { gold = run.gold - before })
     end
   end

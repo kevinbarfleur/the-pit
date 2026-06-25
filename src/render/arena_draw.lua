@@ -20,6 +20,7 @@ local Theme = require("src.ui.theme")
 local Draw = require("src.ui.draw")
 local HealthBar = require("src.render.healthbar")
 local AfflictionFx = require("src.render.affliction_fx") -- feedback visuel des afflictions (particules + contour bouclier)
+local SFX = require("src.audio.sfx") -- SON (Oniric grave) : cues de COMBAT (gros coup/mort) — RENDER pur, no-op headless. NE touche JAMAIS la SIM.
 local T = require("src.core.i18n").t
 
 -- Échelle-monde des sprites générés en combat = MÊME que le Rig baké (def.scale = Primgen.WORLD_FIT) : critter
@@ -89,6 +90,11 @@ function ArenaDraw.new(arena, palette)
     dparts = {},     -- P2.3 : particules de mort (sang/débris sombres) {x,y,vx,vy,ay,age,life,col,size}
     fxN = 0,         -- compteur Weyl (dispersion cosmétique déterministe)
     t = 0,           -- horloge de combat (mémorisée en update -> lue en draw pour les anims VFX)
+    -- SON (RENDER pur, no-op headless) : on AGRÈGE l'intention de cue pendant les events bus (qui peuvent
+    -- arriver par centaines/frame en SKIP) puis on joue AU PLUS UN « thud » + UN « death » par frame RENDER
+    -- (throttle dans update). Évite le spam ET garde le coût audio borné. cf. firewall (audio = RENDER only).
+    sndThud = 0,     -- plus grosse magnitude de coup vue cette frame (>0 -> on jouera 1 thud, pitch ∝ poids)
+    sndDeaths = 0,   -- nb de morts vues cette frame (>0 -> on jouera 1 cue de mort, throttlé)
   }, ArenaDraw)
   self.fx = AfflictionFx.new() -- couche d'afflictions (créée avant rebuild, qui peut la reset)
   self:rebuild()
@@ -116,6 +122,10 @@ function ArenaDraw.new(arena, palette)
       local mag = math.min(SHAKE_MAX, n * SHAKE_PER_HP)
       if mag > self.shake.mag then self.shake.mag = mag end -- garde le plus gros choc en cours
     end
+    -- SON : seuls les coups un peu LOURDS « thud » (>= 8 PV) -> les tics de DoT ne sonnent jamais. On ne fait
+    -- qu'AGRÉGER l'intention (la plus grosse magnitude de la frame) ; le cue réel est joué dans update (throttle
+    -- 1/frame). Aucun appel love.* ici autre que via SFX (no-op headless). RENDER pur -> golden inchangé.
+    if n >= 8 and n > self.sndThud then self.sndThud = n end
     if rec.target then self.flash[rec.target] = 0 end -- (re)arme le flash blanc sur la cible
     local tgt, src, cause = rec.target, rec.source, rec.cause or "attack"
     -- REGROUPEMENT : additionne dans un nombre RÉCENT de même (cible, auteur, cause) plutôt que d'empiler
@@ -142,6 +152,7 @@ function ArenaDraw.new(arena, palette)
   arena.bus:on("death", function(u)
     if not u then return end
     self:setAnim(u, "death") -- B.1b : latch — la créature générée se désagrège (deathPix), priorité absolue
+    self.sndDeaths = self.sndDeaths + 1 -- SON : agrège (throttle 1 cue de mort/frame, joué dans update)
     self.deathFx[#self.deathFx + 1] = { x = u.x, y = u.y, age = 0 }
     -- éclat de sang : ~10 fragments éjectés du torse (gravité), couleur sang/sang-séché, dispersion Weyl.
     local cx, cy = u.x, u.y - 12
@@ -305,6 +316,25 @@ function ArenaDraw:update(frameDt, t)
   end
 
   self.fx:update(self.arena.units, frameDt, t) -- émission + intégration des particules d'affliction
+end
+
+-- SON (throttle 1/frame RÉELLE) : à appeler UNE fois par frame de la scène (PAS par pas de SIM ; en SKIP il y
+-- a jusqu'à 240 pas/frame, mais on ne joue qu'UN « thud » + UN cue de mort par frame). Les compteurs sont
+-- agrégés dans les callbacks bus (damage/death) puis CONSOMMÉS ici. RENDER pur : SFX.play est no-op headless
+-- (pas de device audio) -> aucune empreinte SIM/golden. Le pitch du thud descend pour les coups plus lourds
+-- (registre Oniric grave : plus c'est gros, plus c'est profond), borné pour rester doux.
+function ArenaDraw:flushAudio()
+  if self.sndThud > 0 then
+    -- coups 8..~30 PV -> pitch ~1.0 → 0.82 (plus grave = plus lourd). jitter par défaut du bank (anti-répétition).
+    local heavy = math.min(1, (self.sndThud - 8) / 22)
+    SFX.play("thud", { pitch = 1.0 - heavy * 0.18 })
+    self.sndThud = 0
+  end
+  if self.sndDeaths > 0 then
+    -- une mort « compte » : cue grave et discret (drop pitché en bas). Une seule fois même si plusieurs morts/frame.
+    SFX.play("drop", { pitch = 0.85 })
+    self.sndDeaths = 0
+  end
 end
 
 -- GRILLE de combat : un SLOT sous chaque unité vivante, teinté par équipe (bleu = gauche/joueur, rouge =

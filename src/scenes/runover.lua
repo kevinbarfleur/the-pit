@@ -24,6 +24,7 @@ local Button = require("src.ui.button")   -- CTA propre PRIMARY (sang + yeux) : 
 local Dividers = require("src.ui.dividers") -- filet laiton propre entre verdict et CTA
 local Feel = require("src.ui.feel")       -- JUICE propre (survol/press) — RENDER pur, headless-safe
 local Ambient = require("src.fx.ambient")
+local SFX = require("src.audio.sfx")      -- SON (Oniric grave) : ASCENSION (success) / CHUTE (defeat). No-op headless.
 local T = require("src.core.i18n").t
 
 local Runover = {}
@@ -89,6 +90,13 @@ function Runover:drawOverlay(view)
   local r = self.run
   local won = self.result == "win"
   local tt = self.t / 60 -- horloge en SECONDES (pulse de la bannière + yeux du CTA)
+
+  -- SON (fin de run) : UNE fois, au 1er affichage. ASCENSION -> pad rêveur (success) ; CHUTE -> la descente,
+  -- grave et longue (defeat). RENDER pur (no-op headless). Cohérent avec le verdict de combat (même vocabulaire).
+  if not self._verdictPlayed then
+    self._verdictPlayed = true
+    SFX.play(won and "success" or "defeat")
+  end
 
   Draw.begin(view)
 
