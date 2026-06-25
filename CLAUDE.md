@@ -321,11 +321,30 @@ bandeau VICTOIRE/DEFAITE → round suivant (or/boutique renouvelés, **plateau c
 
 ## 8. Agents du projet
 
-- **love2d-engineer** — implémente/maintient le code Lua/LÖVE. Vérifie *toujours* les APIs.
-- **autobattler-designer** — game design, mécaniques, async-snapshots, reliques cryptiques.
+- **love2d-engineer** — implémente/maintient le code Lua/LÖVE (boucle, sim, rendu, perf). Vérifie *toujours* les APIs.
+- **game-feel-engineer** — **game feel / juice / feedback** : hover/press/drag, screen-shake trauma², hitstop,
+  ressort+swap, level-up, transitions, modales. Possède la couche FEEL (`src/ui/feel.lua`, juice, behaviors).
+- **sound-designer** — **son / SFX procédural** (identité *Oniric grave*) : synthèse, reverb, packs, câblage des
+  cues. Possède `src/audio/`.
+- **ui-artisan** — composants & intégration d'interface (Frame pierre/rune, boutons, panneaux, cartes, chrome).
+  Possède `src/ui/`.
+- **asset-forge** — génération procédurale d'assets (créatures, body-plans, rangs, reliques). Possède `src/gen/`.
+- **autobattler-designer** — game design, mécaniques, async-snapshots, reliques.
 - **pixel-art-master** (global) — création/animation pixel art, rigging, biomes, palettes.
 - **git-warden** — versionnement : branches (`main`/`dev`/`<type>/<slug>`), commits conventionnels,
   jalons taggés. Branche un nouveau chantier depuis `dev`, commit quand `check.sh` est vert.
+
+### Invocation SYSTÉMATIQUE (NON négociable)
+Le réflexe « chercher l'existant + le TOP du top » (§1.b) impose de **toujours** passer par le spécialiste du
+domaine — jamais d'impro hors-domaine, jamais une version au rabais d'un truc qui existe :
+- Toute tâche qui touche au **game feel / juice / feedback / animation d'interaction / transition / level-up**
+  ⟹ **game-feel-engineer** (obligatoire).
+- Toute tâche qui touche au **son / audio / SFX / ambiance** ⟹ **sound-designer** (obligatoire).
+- Toute tâche qui touche à un **composant ou à l'intégration d'UI** (boutons, cases, cartes, panneaux, chrome
+  d'un écran) ⟹ **ui-artisan** (obligatoire).
+- **Le feedback = mouvement + son ENSEMBLE** : dès qu'une interaction est en jeu, **game-feel-engineer ET
+  sound-designer sont co-invoqués**, et **ui-artisan** dès que la surface visuelle est touchée. « Un shake sans
+  son est creux » ; un bouton qui ne réagit/ne sonne pas n'est **pas fini** (§1.b).
 
 Lancer plusieurs agents en parallèle pour du travail indépendant.
 
