@@ -39,6 +39,7 @@ local Relics = require("src.data.relics")
 local Grimoire = require("src.core.grimoire")
 local Bestiary = require("src.core.bestiary")
 local RelicGen = require("src.gen.relicgen")
+local RelicAnim = require("src.render.relic_anim") -- rendu ANIMÉ des icônes de reliques (grille + fiche)
 local Rig = require("src.core.rig")
 local Creatures = require("src.data.creatures")
 local Units = require("src.data.units")
@@ -290,14 +291,6 @@ end
 
 function Screen:drawWorld() end
 
--- Blit d'une icône bakée centrée sur (cx, cy) à scale entier (pixel-perfect).
-local function drawIconC(baked, cx, cy, s)
-  if not baked or not baked.image then return false end
-  love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.draw(baked.image, math.floor(cx - 8 * s), math.floor(cy - 8 * s), 0, s, s)
-  return true
-end
-
 function Screen:drawOverlay(view)
   Draw.begin(view)
 
@@ -433,7 +426,11 @@ function Screen:drawCell(view, i, cell, x, y)
   -- Contenu de la case.
   if on then
     if self.tab == "relics" then
-      drawIconC(RelicGen.cached(e.id, self.palette), cx, cy, 4) -- 16×16 -> 64 design (tient dans la case 92)
+      -- icône ANIMÉE (le vrai objet maudit qui luit) — 40×40 ×2 = 80 design, centrée dans la case (TILE 92).
+      -- Comme les créatures du bestiaire respirent dans leur case, la relique s'anime (déformation + overlays).
+      local s = 2
+      local sz = (RelicGen.SIZE or 40) * s
+      RelicAnim.draw(view, e.id, math.floor(cx - sz / 2), math.floor(cy - sz / 2), s, self.t / 60)
     else
       -- créature VIVANTE (comme le board/galerie) si générée ; repli rig baké (6 dédiées). Clip à la case.
       if Critter.has(e.id) then
@@ -489,7 +486,8 @@ function Screen:drawHoverCard(view)
     -- exactement le câblage du build : ancre = curseur (espace design), rig d'aperçu animé -> portrait qui respire.
     MonsterCard.draw(view, self.palette, e.id, self.mx, self.my, self.t / 60, { rig = self.previewRigs[e.id] })
   else
-    -- carte de relique IDENTIFIÉE (band -> couleur de carte ; fam -> gemme). Hauteur MESURÉE -> rien ne déborde.
+    -- carte de relique IDENTIFIÉE (band -> couleur de carte). L'ICÔNE ANIMÉE (id + t) remplit l'écrin.
+    -- Hauteur MESURÉE -> rien ne déborde.
     local W = 300
     local opts = {
       state = "identified",
@@ -498,6 +496,7 @@ function Screen:drawHoverCard(view)
       flavor = T("relic." .. e.id .. ".flavor"),
       fam = RELIC_FAM[e.id] or "bone",
       band = e.band,
+      id = e.id, t = self.t / 60,
     }
     local h = RelicCard.measure(W, opts)
     -- placement au curseur, rebond sur les bords (calque de MonsterCard : décalé bas-droite, bascule si déborde).

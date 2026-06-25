@@ -35,6 +35,8 @@ local Panel = require("src.ui.panel")
 local Badge = require("src.ui.badge")
 local Dividers = require("src.ui.dividers")
 local Chip = require("src.ui.chip")
+local RelicGen = require("src.gen.relicgen")        -- icône procédurale (40×40) : bake STATIQUE
+local RelicAnim = require("src.render.relic_anim")  -- rendu ANIMÉ de l'icône (SpriteBatch + overlays)
 local C = Theme.c
 
 local RelicCard = {}
@@ -254,13 +256,18 @@ function RelicCard.draw(x, y, w, h, opts)
 
   if cryptic then
     crypticGem(cx, gy, gr)
+  elseif opts.id then
+    -- ICÔNE PROCÉDURALE (le vrai objet maudit, 40×40) à la place de la gemme : c'est désormais le point
+    -- focal du reveal. ANIMÉE si `opts.t` est fourni (déformation per-pixel + overlays via RelicAnim) ;
+    -- STATIQUE sinon (RelicGen.bake blité). Dimensionnée pour remplir l'écrin (disque de rayon gr) à
+    -- SCALE ENTIER (net) -> 40px -> ~gr*2. Headless-safe : RelicAnim no-op + bake mock -> golden neutre.
+    RelicCard._drawRelicIcon(opts.id, cx, gy, gr, opts.t)
   else
-    -- gemme de FAMILLE : losange teinté (Badge.diamond — atome propre, fill/edge/spec en couleurs Theme).
+    -- FALLBACK historique (aucun id fourni) : gemme de FAMILLE — losange teinté (Badge.diamond, atome
+    -- propre). Préserve le comportement des appelants legacy qui ne passent pas d'id de relique.
     local ty = Theme.type(opts.fam or "bone")
-    -- éclat plus vif si sélectionnée (la gemme « rayonne »).
     local spec = selected and C.brassS or { 1, 1, 1, 1 }
     Badge.diamond(cx, gy, gr, ty.color, ty.dark, spec)
-    -- petit losange intérieur clair (le « cœur » de la gemme, §2.13 inner gem).
     Badge.diamond(cx, gy, max(2, floor(gr * 0.32 + 0.5)),
       selected and C.bloodL or { ty.color[1], ty.color[2], ty.color[3], 1 }, ty.color, nil)
   end
@@ -338,6 +345,29 @@ function RelicCard.draw(x, y, w, h, opts)
   end
 
   return ix, iy, iw, ih
+end
+
+-- _drawRelicIcon : pose l'icône procédurale de la relique `id`, centrée sur (cx,cy), dimensionnée pour
+-- remplir l'écrin (disque de rayon gr). SCALE ENTIER (net, pixel-perfect). Si `t` est fourni -> version
+-- ANIMÉE (RelicAnim : déformation per-pixel + overlays) ; sinon STATIQUE (RelicGen.bake blité). No-op
+-- headless (RelicAnim sans SpriteBatch + bake.image absent sous le mock -> rien dessiné, golden neutre).
+function RelicCard._drawRelicIcon(id, cx, cy, gr, t)
+  if not (love and love.graphics and love.graphics.draw) then return end
+  local S = RelicGen.SIZE or 40
+  -- l'icône (S px) doit tenir dans l'écrin de demi-largeur gr -> côté visé ≈ 2*gr ; scale ENTIER >=1.
+  local scale = max(1, floor((gr * 2) / S + 0.5))
+  local iw = S * scale
+  local ox, oy = floor(cx - iw / 2), floor(cy - iw / 2)
+  if t then
+    RelicAnim.draw(nil, id, ox, oy, scale, t) -- ANIMÉ (le caller passe t en secondes)
+  else
+    local baked = RelicGen.cached(id) -- STATIQUE (mémoïsé)
+    if baked and baked.image then
+      love.graphics.setColor(1, 1, 1, 1)
+      love.graphics.draw(baked.image, ox, oy, 0, scale, scale)
+      Draw.reset()
+    end
+  end
 end
 
 -- _drawEffect : pose le texte d'effet en Spectral `ink2`, mais chaque MOT qui contient un CHIFFRE (« +15% »,

@@ -1,106 +1,125 @@
 -- tests/relics_icons.lua
--- Tests des ICÔNES DE RELIQUES (src/gen/relicgen.lua). Tourne headless (mock_love) : on valide les
--- GRILLES (strings) avant tout baking — comme tests/gen.lua pour les créatures. Garde check.sh vert.
+-- Tests du GÉNÉRATEUR VISUEL DES RELIQUES (src/gen/relicgen.lua, refonte 40×40 + moteur de motifs) et de
+-- son RENDU ANIMÉ (src/render/relic_anim.lua). Tourne headless (mock_love) : on valide la GRILLE COLORÉE
+-- (data pure) avant tout baking, puis le bake (smoke) et le chemin animé (no-op headless). Garde check.sh vert.
 --   Lancement : luajit tests/relics_icons.lua   (depuis la racine du projet)
 --
 -- Invariants vérifiés pour CHAQUE relique de RelicGen.order :
---   (a) grille EXACTEMENT 16×16 (largeur cohérente -> pas de pixel décalé),
---   (b) chaque caractère ∈ Palette (ou ' ' = transparent) : zéro pixel-trou,
---   (c) au moins un contour 'K' (silhouette lisible, jamais 0x000000 ailleurs),
---   (d) un « point de focus lumineux » présent (≥1 highlight : q/Q/T/W/S/I/B), signature « objet qui luit »,
---   (e) RelicGen.bake / cached produisent un objet {image,w,h} sous mock (smoke, sans crash ni écran),
---   (f) cache déterministe : .cached(id) renvoie deux fois la MÊME table.
+--   (a) grille EXACTEMENT 40×40 (format { w, h, data }) — la taille du nouveau moteur,
+--   (b) chaque pixel posé = une couleur { r, g, b } de 3 floats DANS [0,1] (zéro NaN, zéro hors-borne),
+--   (c) silhouette DENSE (≥ 80 pixels posés) et NON triviale (pas un seul point) : un vrai objet,
+--   (d) RelicGen.bake / cached produisent un { image, w, h } 40×40 sous mock (smoke, sans crash ni écran),
+--   (e) cache déterministe : .cached(id) et .view(id) renvoient deux fois la MÊME table,
+--   (f) RÉCONCILIATION : tout id de src/data/relics.lua est mappé (RelicGen.order == Relics.order, set),
+--   (g) RelicAnim.draw ne CRASHE pas headless (mock sans newSpriteBatch -> no-op) sur tous les ids/t.
 package.path = "./?.lua;" .. package.path
 love = require("tests.mock_love")
 
-local Palette = require("src.core.palette")
 local RelicGen = require("src.gen.relicgen")
+local RelicAnim = require("src.render.relic_anim")
+local Relics = require("src.data.relics")
 
 local function fail(msg) print("=> RELIC-ICONS FAIL : " .. msg); os.exit(1) end
 
 local SIZE = RelicGen.SIZE
--- Caractères « lumineux » admissibles comme focus (clairs de chaque famille). Au moins UN par icône.
-local FOCUS = { q = true, Q = true, T = true, W = true, S = true, I = true, B = true, z = true }
+if SIZE ~= 40 then fail("RelicGen.SIZE = " .. tostring(SIZE) .. " (attendu 40)") end
 
--- 1. Toutes les icônes de l'ordre existent + structure valide.
+-- 1. Toutes les icônes de l'ordre existent + grille colorée valide (taille, couleurs, densité).
 do
-  local count = 0
+  local count, totalPix = 0, 0
   for _, id in ipairs(RelicGen.order) do
     local g = RelicGen.grid(id)
-    if not g then fail(id .. " : grille absente (présente dans .order mais pas dans ICONS)") end
+    if not g then fail(id .. " : grille absente (présente dans .order mais buildRelic a échoué)") end
 
-    -- (a) 16 lignes de 16 colonnes exactement.
-    if #g ~= SIZE then fail(id .. " : " .. #g .. " lignes (attendu " .. SIZE .. ")") end
-    for y = 1, #g do
-      if #g[y] ~= SIZE then
-        fail(id .. " : ligne " .. y .. " fait " .. #g[y] .. " colonnes (attendu " .. SIZE .. ")")
-      end
-    end
+    -- (a) format { w, h, data } 40×40.
+    if g.w ~= SIZE or g.h ~= SIZE then fail(id .. " : grille " .. tostring(g.w) .. "x" .. tostring(g.h) .. " (attendu " .. SIZE .. "x" .. SIZE .. ")") end
+    if type(g.data) ~= "table" then fail(id .. " : data n'est pas une table") end
 
-    -- (b)(c)(d) palette + contour + focus, en un seul passage.
-    local hasOutline, hasFocus, hasPixel = false, false, false
-    for y = 1, #g do
-      local row = g[y]
-      for x = 1, #row do
-        local ch = row:sub(x, x)
-        if ch ~= " " then
-          if not Palette[ch] then
-            fail(id .. " : char '" .. ch .. "' (l" .. y .. " c" .. x .. ") hors palette (pixel-trou)")
-          end
-          hasPixel = true
-          if ch == "K" then hasOutline = true end
-          if FOCUS[ch] then hasFocus = true end
+    -- (b)(c) chaque pixel posé = { r, g, b } floats DANS [0,1] ; densité suffisante.
+    local pix = 0
+    for i = 1, g.w * g.h do
+      local c = g.data[i]
+      if c ~= nil then
+        if type(c) ~= "table" or #c ~= 3 then fail(id .. " : pixel " .. i .. " n'est pas {r,g,b}") end
+        for k = 1, 3 do
+          local v = c[k]
+          if type(v) ~= "number" or v ~= v then fail(id .. " : couleur NaN/non-nombre au pixel " .. i) end
+          if v < 0 or v > 1 then fail(id .. " : couleur " .. v .. " hors [0,1] au pixel " .. i .. " (floats requis)") end
         end
+        pix = pix + 1
       end
     end
-    if not hasPixel then fail(id .. " : icône totalement transparente") end
-    if not hasOutline then fail(id .. " : aucun contour 'K' (silhouette illisible)") end
-    if not hasFocus then fail(id .. " : aucun point de focus lumineux (objet sans éclat)") end
-
+    if pix < 80 then fail(id .. " : seulement " .. pix .. " pixels posés (silhouette trop pauvre, attendu >=80)") end
+    totalPix = totalPix + pix
     count = count + 1
   end
-  print("  structure : OK (" .. count .. " icônes : 16x16 + palette + contour + focus lumineux)")
+  print("  structure : OK (" .. count .. " icônes : 40x40 + couleurs floats [0,1] + densité, " ..
+    string.format("%.0f", totalPix / count) .. " px/icône en moyenne)")
 end
 
--- 2. Bake (smoke) : Sprite.bake via RelicGen.bake produit {image,w,h} sans crash (mock LÖVE).
+-- 2. Bake (smoke) : RelicGen.bake produit { image, w, h } 40×40 sans crash (mock LÖVE).
 do
   for _, id in ipairs(RelicGen.order) do
-    local baked = RelicGen.bake(id, Palette)
+    local baked = RelicGen.bake(id)
     if not baked or not baked.image then fail(id .. " : bake a renvoyé nil/sans image") end
     if baked.w ~= SIZE or baked.h ~= SIZE then
       fail(id .. " : bake dimensions " .. tostring(baked.w) .. "x" .. tostring(baked.h) .. " (attendu " .. SIZE .. ")")
     end
   end
-  print("  bake : OK (" .. #RelicGen.order .. " icônes bakées sous mock, dimensions 16x16)")
+  print("  bake : OK (" .. #RelicGen.order .. " icônes bakées sous mock, dimensions 40x40)")
 end
 
--- 3. Cache déterministe : .cached(id) renvoie deux fois la même table (mémoïsation par id).
+-- 3. Caches déterministes : .cached(id) et .view(id) renvoient deux fois la même table ; id inconnu -> nil.
 do
-  local a = RelicGen.cached("bloodstone", Palette)
-  local b = RelicGen.cached("bloodstone", Palette)
+  local a = RelicGen.cached("bloodstone")
+  local b = RelicGen.cached("bloodstone")
   if a ~= b then fail("cache : .cached('bloodstone') renvoie deux objets différents") end
+  local va = RelicGen.view("bloodstone")
+  local vb = RelicGen.view("bloodstone")
+  if va ~= vb then fail("cache : .view('bloodstone') renvoie deux objets différents") end
+  if not (va.g and va.anim) then fail("view('bloodstone') doit porter g + anim") end
   if RelicGen.grid("does_not_exist") ~= nil then fail("grid(id inconnu) devrait être nil") end
-  if RelicGen.bake("does_not_exist", Palette) ~= nil then fail("bake(id inconnu) devrait être nil") end
-  print("  cache : OK (mémoïsation par id + id inconnu -> nil)")
+  if RelicGen.bake("does_not_exist") ~= nil then fail("bake(id inconnu) devrait être nil") end
+  print("  cache : OK (mémoïsation view/bake par id + id inconnu -> nil)")
 end
 
--- 4. Intégrité de l'ORDRE (append-only) : aucun doublon, et chaque vague livrée y est listée.
---    (Une icône absente de .order ne s'afficherait jamais dans le cabinet alors que les tests
---     1-3 passeraient : on verrouille donc explicitement la présence des ajouts récents.)
+-- 4. Intégrité de l'ORDRE (append-only) : aucun doublon + RÉCONCILIATION avec src/data/relics.lua.
+--    Chaque id présent en jeu (Relics.order) DOIT avoir un visuel (présent dans RelicGen.order), et
+--    inversement aucune icône orpheline (un id de RelicGen.order absent des données = jamais affiché).
 do
   local seen = {}
   for _, id in ipairs(RelicGen.order) do
     if seen[id] then fail("order : id en double '" .. id .. "'") end
     seen[id] = true
   end
-  local mustHave = {
-    "second_breath", "thornguard", "forked_tongue",
-    "everburn", "plague_communion", "open_wounds",
-  }
-  for _, id in ipairs(mustHave) do
-    if not seen[id] then fail("order : '" .. id .. "' livré mais absent de RelicGen.order (invisible au cabinet)") end
+  local relset = {}
+  for _, id in ipairs(Relics.order) do relset[id] = true end
+  for _, id in ipairs(Relics.order) do
+    if not seen[id] then fail("réconciliation : relique de données '" .. id .. "' SANS visuel (absente de RelicGen.order)") end
   end
-  print("  ordre : OK (" .. #RelicGen.order .. " ids, sans doublon, vagues 3-4 présentes)")
+  for _, id in ipairs(RelicGen.order) do
+    if not relset[id] then fail("réconciliation : icône orpheline '" .. id .. "' (dans RelicGen.order mais pas dans Relics.order)") end
+  end
+  -- vagues récentes explicitement listées (verrou anti-régression).
+  local mustHave = { "second_breath", "thornguard", "forked_tongue", "everburn", "plague_communion",
+    "open_wounds", "blood_banner", "seers_mark", "splitting_maw" }
+  for _, id in ipairs(mustHave) do
+    if not seen[id] then fail("order : '" .. id .. "' livré mais absent de RelicGen.order") end
+  end
+  print("  ordre : OK (" .. #RelicGen.order .. " ids, sans doublon, réconcilié 1:1 avec Relics.order)")
+end
+
+-- 5. RENDU ANIMÉ headless-safe : RelicAnim.draw ne crashe pas (mock sans newSpriteBatch -> no-op).
+do
+  local n = 0
+  for _, id in ipairs(RelicGen.order) do
+    for _, t in ipairs({ 0, 0.37, 1.5, 3.14, 9.9 }) do
+      RelicAnim.draw(nil, id, 100, 100, 3, t) -- no-op attendu (mock) ; on vérifie l'absence de crash
+    end
+    n = n + 1
+  end
+  RelicAnim.clear()
+  print("  anim : OK (" .. n .. " icônes × 5 instants -> no-op headless sans crash)")
 end
 
 print("=> RELIC-ICONS OK.")

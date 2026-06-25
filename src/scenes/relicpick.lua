@@ -27,12 +27,10 @@ local Theme = require("src.ui.theme")
 local Draw = require("src.ui.draw")
 local Layout = require("src.ui.layout")
 local Ambient = require("src.fx.ambient")
-local Panel = require("src.ui.panel")        -- surface propre (dégradé + liseré iron) : socle d'en-tête
 local Button = require("src.ui.button")      -- boutons propres : primary (BIND) / eco (REFUSE)
 local Dividers = require("src.ui.dividers")  -- filets laiton/sang propres (cassure d'en-tête)
 local Feel = require("src.ui.feel")          -- JUICE : survol (glow/lift) + press (squash/flash)
-local RelicCard = require("src.ui.relic_card") -- MOLÉCULE carte de relique (fond + gemme + nom + effet + flavor)
-local RelicGen = require("src.gen.relicgen") -- icones bakees des reliques (le vrai artefact, posé en coeur)
+local RelicCard = require("src.ui.relic_card") -- MOLÉCULE carte de relique (fond + icône animée + nom + effet + flavor)
 local Relics = require("src.data.relics")    -- pour le PALIER de nature (band -> couleur de carte Argent/Or/Prismatique)
 local RunState = require("src.run.state")    -- pour DECLINE_RELIC_GOLD (or accordé au refus)
 local T = require("src.core.i18n").t
@@ -65,10 +63,6 @@ local CARD_TOP = 196               -- haut de la bande de cartes (sous l'en-têt
 local BIND_W, BIND_H = 320, 60     -- BIND THE FRAGMENT (Button primary)
 local DECLINE_W, DECLINE_GAP = 168, 24 -- REFUSE (Button eco) à DROITE du BIND, même ligne
 local FOOTER_BOTTOM = 696          -- la ligne de boutons s'ancre au-dessus de ce bord (safe zone)
-
--- L'artefact baké (16×16) posé en COEUR de carte, DANS la gemme (= son écrin). Scale entier (net). La gemme
--- de RelicCard a un rayon ~w*0.14 ; on dimensionne l'icône pour s'asseoir dedans sans déborder le losange.
-local ICON_SCALE = 3 -- 16×16 -> 48×48 design (tient dans une gemme de demi-diagonale ~42px)
 
 function Relicpick.new(palette, vw, vh, host, payload)
   payload = payload or {}
@@ -114,9 +108,7 @@ function Relicpick.new(palette, vw, vh, host, payload)
     for i = 1, n do self.cards[i] = cols[i] end
   end
 
-  -- Artefacts bakés (le vrai objet maudit) par choix — posés en coeur de carte (dans la gemme).
-  self.icons = {}
-  for i = 1, n do self.icons[i] = RelicGen.cached(self.choices[i], palette) end
+  -- (l'icône — le vrai objet maudit — est désormais portée/animée par RelicCard via opts.id + opts.t.)
 
   -- BIND (primary, centré) + REFUSE (eco, à droite) sur la même ligne, ancrés au pied (safe zone).
   local bindY = FOOTER_BOTTOM - BIND_H
@@ -156,30 +148,18 @@ function Relicpick:drawCard(i)
 
   -- état de la carte : sélectionnée = "selected" (liseré doré) ; sinon "identified". Le PALIER (band) teinte
   -- le liseré (Argent/Or/Prismatique) ET pose un label de palier -> la nature se lit d'un coup d'œil.
+  -- L'ICÔNE ANIMÉE (le vrai objet maudit) est portée par la carte elle-même : on passe `id` + `t` (secondes)
+  -- -> RelicCard pose l'icône en cœur (déformation per-pixel + overlays via RelicAnim). Plus de blit séparé.
   local state = sel and "selected" or "identified"
   RelicCard.draw(card.x, card.y, card.w, card.h, {
     state = state, name = opts.name, effect = opts.effect, flavor = opts.flavor, fam = opts.fam,
-    band = opts.band,
+    band = opts.band, id = self.choices[i], t = self.t / 60,
   })
 
   -- AFFORDANCE de survol (carte non sélectionnée) : fin liseré laiton, pour signaler la cible cliquable
   -- sans imiter la lueur doré de la sélection (héros). RENDER pur, par-dessus le liseré iron de Panel.
   if not sel and self.hover == i then
     Draw.rect(card.x, card.y, card.w, card.h, nil, C.brass, 1)
-  end
-
-  -- ARTEFACT baké (le vrai objet) posé en COEUR de carte, centré sur la GEMME de RelicCard. On RECALCULE la
-  -- géométrie de la gemme à l'identique de relic_card.lua (gr ~= w*0.14, gemCy = PAD_TOP(12) + gr) -> l'icône
-  -- s'assoit DANS son écrin. Scale entier (net). Sous le mock, baked.image est absent -> no-op (golden neutre).
-  local baked = self.icons[i]
-  if baked and baked.image then
-    local gr = math.max(8, math.floor(card.w * 0.14 + 0.5))
-    local gemCx = card.x + card.w / 2
-    local gemCy = card.y + 12 + gr -- PAD_TOP de RelicCard = 12
-    local iw, ih = baked.w * ICON_SCALE, baked.h * ICON_SCALE
-    love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.draw(baked.image, math.floor(gemCx - iw / 2), math.floor(gemCy - ih / 2), 0, ICON_SCALE, ICON_SCALE)
-    Draw.reset()
   end
 end
 

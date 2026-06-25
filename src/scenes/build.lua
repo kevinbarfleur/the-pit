@@ -54,6 +54,8 @@ local Ambient = require("src.fx.ambient")
 local Rarity = require("src.gen.rarity") -- rang -> couleur de cadre + glow (accent de rareté de la fiche)
 local MiniRig = require("src.render.minirig") -- mesure OPAQUE mutualisée des rigs (bounds/fit) : seule source de vérité
 local MonsterCard = require("src.render.monstercard") -- FICHE de monstre (extraite de drawTooltip) : réutilisée ici + Chronique
+local RelicCard = require("src.ui.relic_card") -- FICHE de relique au survol (icône ANIMÉE + band + fam) : pop-up HUD
+local RelicsData = require("src.data.relics") -- band/palier de la relique (couleur de carte Argent/Or/Prismatique)
 local I18n = require("src.core.i18n")
 local T = I18n.t
 
@@ -2606,52 +2608,28 @@ end
 -- Infobulle de relique (survol de la rangée) = Panel propre (même langage que src/scenes/relicpick.lua) :
 -- dégradé + liseré d'accent de famille + gem (Badge.diamond) + nom (Cinzel) + effet clair (or) + flavor (Spectral).
 -- Suit le curseur, rebond sur les bords. PUR-RENDER (golden inchangé).
+-- Pop-up de survol d'une relique du HUD : la MÊME carte qu'au Grimoire / choix (RelicCard), avec l'ICÔNE
+-- ANIMÉE (id + t en secondes) en cœur d'écrin. Placement au curseur + rebond sur les bords (calque exact
+-- de grimoire:drawHoverCard). Hauteur MESURÉE -> aucun texte ne déborde. (Remplace l'ancienne tooltip
+-- main-roulée -> on lit la relique du bandeau exactement comme partout ailleurs : zéro doublon de DA.)
 function Build:drawRelicTooltip(id)
-  local c = Theme.c
-  local fam = RELIC_TYPE[id] or "bone"
-  local emblem = Theme.type(fam)
-  local fontE, fontF = Theme.body(13), Theme.flavor(13)
-  local W, PAD = 300, 20
-  local contentW = W - PAD * 2
-
-  -- MESURE : header (gem+nom) + effet enroulé + flavor enroulé -> hauteur exacte (jamais cramé).
-  local effStr, flavStr = T("relic." .. id .. ".effect"), T("relic." .. id .. ".flavor")
-  local _, eLines = fontE:getWrap(effStr, contentW)
-  local _, fLines = fontF:getWrap(flavStr, contentW)
-  local headH, effH = 26, #eLines * (fontE:getHeight() + 2)
-  local flavH = #fLines * (fontF:getHeight() + 1)
-  local h = PAD + headH + 10 + effH + 10 + flavH + PAD
-
-  -- POSITION : suit le curseur, rebond sur les bords.
+  local opts = {
+    state = "identified",
+    name = T("relic." .. id .. ".name"),
+    effect = T("relic." .. id .. ".effect"),
+    flavor = T("relic." .. id .. ".flavor"),
+    fam = RELIC_TYPE[id] or "bone",
+    band = RelicsData[id] and RelicsData[id].band,
+    id = id, t = self.t / 60,
+  }
+  local W = 300
+  local h = RelicCard.measure(W, opts)
   local x, y = self.mx * 4 + 18, self.my * 4 + 10
   if x + W > Draw.W then x = self.mx * 4 - W - 18 end
   if x < 4 then x = 4 end
   if y + h > Draw.H then y = Draw.H - h - 6 end
   if y < 4 then y = 4 end
-  x, y = math.floor(x), math.floor(y)
-
-  -- FOND PROPRE (Panel : dégradé sombre + liseré iron + liseré d'accent de la famille). Panel marque la box.
-  Panel.draw(x, y, W, h, { fill1 = c.stone800, fill2 = c.stone900, border = c.iron, accent = emblem.color })
-
-  -- CONTENU posé par-dessus, en colonne Layout.
-  local inner = Layout.inset({ x = x, y = y, w = W, h = h }, PAD)
-  local rows = Layout.column(inner, {
-    { size = headH },         -- 1 gem + nom
-    { size = effH + 10 },     -- 2 effet clair (or)
-    { flex = 1 },             -- 3 flavor (pied)
-  }, { gap = 0, align = "stretch" })
-  local rHead, rEff, rFlav = rows[1], rows[2], rows[3]
-
-  -- (1) HEADER : gem de famille (Badge.diamond) + nom (Cinzel, police de NOM du système 4-voix).
-  local midH = rHead.y + rHead.h / 2
-  Badge.diamond(rHead.x + 5, midH, 4, emblem.color, emblem.dark, c.brassS)
-  Draw.text(T("relic." .. id .. ".name"), rHead.x + 16, rHead.y + 1, c.title, Theme.heading(15))
-
-  -- (2) EFFET CLAIR (or vif) : le coeur du modèle lisible.
-  Draw.textWrap(effStr, rEff.x, rEff.y, rEff.w, c.goldBright, fontE)
-
-  -- (3) FLAVOR (serif d'ambiance, éteint).
-  Draw.textWrap(flavStr, rFlav.x, rFlav.y, rFlav.w, c.dim, fontF)
+  RelicCard.draw(math.floor(x), math.floor(y), W, h, opts)
 end
 
 return Build

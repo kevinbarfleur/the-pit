@@ -140,12 +140,27 @@ function Builders.summary(host)
   return cs
 end
 
--- RELICPICK : offre 1-parmi-3 (run seedé -> choix déterministes).
+-- RELICPICK : offre 1-parmi-3 (run seedé -> choix déterministes). Les 3 cartes portent l'ICÔNE ANIMÉE
+-- (RelicAnim via RelicCard) : le warm-up d'Export.shoot fait avancer t -> les icônes sont déformées au shot.
 function Builders.relicpick(host)
   host.run = RunState.new(SEED)
   local choices = host.run:rollRelicChoices(3)
   -- capture le cas LEVEL-UP (midRound) : kicker doré « LEVEL-UP REWARD » -> montre la source de l'offre.
   return Relicpick.new(Palette, VW, VH, host, { choices = choices, midRound = true })
+end
+
+-- BUILD_RELIC_HOVER : board peuplé + 3 reliques au HUD + curseur posé sur une miniature -> POP-UP de la
+-- carte de relique ANIMÉE (RelicCard avec icône RelicAnim). Prouve au screenshot la pop-up de survol HUD.
+-- On choisit 3 reliques de PALIERS variés (Argent/Or/Prismatique) pour montrer la couleur de carte, et on
+-- survole la 2e (au centre de son socle, en VIRTUEL : relicAt teste mx*4/my*4 contre les rects design).
+function Builders.build_relic_hover(host)
+  local b = makeBuild(host)
+  -- trois reliques de bandes différentes (low=bloodstone, mid=kings_bowl, high=splitting_maw) -> liserés variés.
+  for _, id in ipairs({ "bloodstone", "kings_bowl", "splitting_maw" }) do host.run:grantRelic(id) end
+  -- socle de la relique #2 (design) : RELIC_B_X0=16, RELIC_B_Y=23, pas 30, côté 24 -> centre ≈ (58, 35).
+  -- curseur en VIRTUEL = design/4 (relicAt multiplie par 4) : (14.5, 8.75) tombe au centre du 2e socle.
+  b.mx, b.my = 58 / 4, 35 / 4
+  return b
 end
 
 -- RUNOVER : écran de fin (ascension). On feed un run seedé + résultat.
@@ -184,6 +199,31 @@ function Builders.grimoire(host)
   return s
 end
 
+-- GRIMOIRE_RELICS : même codex, onglet RELIQUES -> grille d'ICÔNES ANIMÉES (RelicAnim) + fiche de relique
+-- ANIMÉE au survol. Force le full-unlock (toutes révélées) pour juger TOUTES les icônes 40×40 dans la grille.
+-- On pose le curseur sur une case relique révélée -> fiche RelicCard animée au curseur.
+function Builders.grimoire_relics(host)
+  local Dev = require("src.core.dev")
+  Dev._fullUnlock = true -- read-time full-unlock (révèle toutes les reliques pour la revue visuelle)
+  local s = GrimoireS.new(Palette, VW, VH, host)
+  if s.setTab then s:setTab("relics") end
+  if s.refresh then s:refresh() end
+  -- survole la 1re case révélée (espace design) -> fiche relique animée au curseur.
+  if s.cells and #s.cells > 0 then
+    for i = 1, #s.cells do
+      local c = s.cells[i]
+      local _, cy = s:cellOrigin(i)
+      if c.on and cy >= s.gridTop and (cy + 92) <= 690 then
+        local x, y = s:cellOrigin(i)
+        s.hover = i
+        s.mx, s.my = x + 138 / 2, y + 92 / 2
+        break
+      end
+    end
+  end
+  return s
+end
+
 -- GALLERY : revue visuelle de tout le roster (écran [g]).
 function Builders.gallery(host)
   return Gallery.new(Palette, VW, VH, host)
@@ -198,7 +238,8 @@ end
 local M = {}
 
 -- Liste des noms de scènes capturables (ordre stable, pour --shoot=all et les messages d'erreur).
-M.names = { "menu", "build", "combat", "summary", "relicpick", "runover", "grimoire", "gallery", "designsystem",
+M.names = { "menu", "build", "combat", "summary", "relicpick", "runover", "grimoire", "grimoire_relics",
+  "gallery", "designsystem", "build_relic_hover",
   "commander_empty", "commander_filled", "commander_hover", "commander_offer", "commander_refuse",
   "commander_fiche", "commander_fiche_none" }
 
