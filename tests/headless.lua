@@ -486,7 +486,11 @@ local ok, err = pcall(function()
       if u.id == "marauder" then mar = u end
       if u.isCommander then cmd = u end
     end
-    assert(mar and mar.hp == math.floor(hp0 * 1.40 + 0.5), "C3: marauder (level 1) reçoit +40% PV de L'Aïeul (hp " .. tostring(mar and mar.hp) .. ")")
+    -- L'aura de L'Aïeul (statInc level:1) est une VALEUR D'ÉQUILIBRAGE (tunée via balancematrix) : on la LIT depuis
+    -- la data (pas une constante figée) -> ce test reste vert à chaque re-tuning. cappée STAT_INC_CAP (build.lua) = 1.0.
+    local kStatInc = Units.deep_kraken.commandBonus.params.value -- 2026-06-25 : 0.40 -> 0.15 (tuning EARLY/END)
+    assert(mar and mar.hp == math.floor(hp0 * (1 + kStatInc) + 0.5),
+      "C3: marauder (level 1) reçoit +" .. tostring(kStatInc * 100) .. "% PV de L'Aïeul (hp " .. tostring(mar and mar.hp) .. ")")
     assert(mar.statInc == nil, "C3: statInc absorbé (jamais transmis à l'arène)")
     assert(cmd and cmd.id == "deep_kraken" and cmd.untargetable and cmd.cdMult and cmd.cdMult > 1,
       "C3: le commandant est au comp (isCommander + untargetable + cdMult)")

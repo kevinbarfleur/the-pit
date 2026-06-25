@@ -226,8 +226,8 @@ local ok, err = pcall(function()
     local expected = {
       bellows_priest = { op = "aura_stat", target = "team",       stat = "haste",     value = 0.08 },
       demon          = { op = "aura_stat", target = "team",       stat = "lifesteal", value = 0.05 },
-      deep_kraken    = { op = "aura_stat", target = "level:1",    stat = "statInc",   value = 0.40 },
-      galvanizer     = { op = "aura_stat", target = "tier:1",     stat = "statInc",   value = 0.50 },
+      deep_kraken    = { op = "aura_stat", target = "level:1",    stat = "statInc",   value = 0.15 }, -- tuning 2026-06-25 : 0.40 -> 0.15
+      galvanizer     = { op = "aura_stat", target = "tier:1",     stat = "statInc",   value = 0.14 }, -- tuning 2026-06-25 : 0.50 -> 0.14
       maggot_king    = { op = "aura_stat", target = "role:front", stat = "multicast", value = 1 },
       siege_breaker  = { op = "grant_team", stripEnemyShield = 0.5 },
     }

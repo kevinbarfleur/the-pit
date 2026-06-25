@@ -363,9 +363,11 @@ local U = {
       { trigger = "on_attack", op = "bonus_first", params = { value = 6 } },
       { trigger = "on_hit", op = "shock", params = { add = 2, cap = 6, dur = 180 } },
     },
-    -- COMMANDANT (LE ROI DES RATS) : conditionnel tier-1 — la piétaille (rank==1) enfle (+50% PV & dmg, baké, cappé
+    -- COMMANDANT (LE ROI DES RATS) : conditionnel tier-1 — la piétaille (rank==1) enfle (baké, cappé
     -- STAT_INC_CAP). Six gueules, une couronne : la marée du Puits. cf. commanders-plan §2.2 (#4).
-    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "tier:1", params = { stat = "statInc", value = 0.50 } },
+    -- TUNING ÉQUILIBRAGE (2026-06-25) : 0.50 -> 0.28 -> 0.18 -> 0.14. À 0.50/0.28/0.18 il restait >+2σ EARLY
+    -- (tier-1 partout) -> intention = payoff TARDIF quand seuls les top-tiers restent tier-1, pas un buff d'équipe early.
+    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "tier:1", params = { stat = "statInc", value = 0.14 } },
   },
   stormlord = { -- T2 : add 2 + volt fort + cap max — marque une proie, les alliés font sauter la charge
     id = "stormlord", bodyplan = "eye", rank = 3, type = "arcane", family = "cristal", cost = 3, hp = 50, dmg = 6, cd = 54, aggro = 5,
@@ -513,8 +515,10 @@ local U = {
     id = "deep_kraken", type = "abyss", family = "kraken", rank = 5, cost = 5, hp = 84, dmg = 12, cd = 78,
     effects = { { trigger = "on_hit", op = "poison", params = { dps = 4, dur = 200 } } },
     -- COMMANDANT (L'AÏEUL) : conditionnel level-1 — ce qui n'a jamais grandi sous sa coupe (level==1, donc tes
-    -- plus GROSSES bêtes non-fusionnées) enfle d'un coup (+40% PV & dmg, baké, cappé STAT_INC_CAP). cf. §2.2 (#3).
-    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "level:1", params = { stat = "statInc", value = 0.40 } },
+    -- plus GROSSES bêtes non-fusionnées) enfle d'un coup (baké, cappé STAT_INC_CAP). cf. §2.2 (#3).
+    -- TUNING ÉQUILIBRAGE (2026-06-25) : 0.40 -> 0.22 -> 0.15. À 0.40/0.22 il buffait encore TOUT le board early
+    -- (tout est level 1) -> +3.0σ EARLY (intention = payoff TARDIF quand seuls les top-tiers restent level 1).
+    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "level:1", params = { stat = "statInc", value = 0.15 } },
   },
 
   -- ── PLANCHER RANG-1 (PRD progression-economy §4) : stat-sticks « grok-ables ». Zéro op neuf : 3 brutes

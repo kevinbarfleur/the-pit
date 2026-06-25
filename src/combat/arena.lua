@@ -57,7 +57,7 @@ local HP_MULT = 2
 --     dps/les frappes finissent. La maturité du rot compte déjà via son dps + l'anti-heal (pas besoin de la doubler).
 --   · ANTI-HEAL : la chair pourrie ne guérit pas -> étouffe la régén de la cible (le contre désigné du mur-regen).
 -- Magnitudes = placeholders tunés par sim (scenariosim rot-vs-tank + matrice). Golden-safe (le golden n'a pas de rot).
-local ROT_NECROSIS = 0.037 -- fraction des PV MAX rongée /s (au-dessus du seuil : atteint le plafond de façon fiable)
+local ROT_NECROSIS = 0.041 -- fraction des PV MAX rongée /s (TUNING 2026-06-25 : 0.037->0.041 ; rot quasi-mort (50% vs tank) -> on accélère l'érosion-de-mur, le THÈME même du rot, ∝ maxHp donc cible les TANKS sans buffer le rot vs squishies. NOTE : ce levier RÉSOUT l'identité anti-mur (rot favorisé vs tanks) mais PAS la présence-méta (rot perd la COURSE vs DoT/burst rapides — poison/shock le tuent en ~12-16 s avant la maturation de l'attrition ; cf. rapport tuning : besoin d'une passe de DÉBIT rot front-load, multi-unités, hors de ce levier conservateur ; 0.052 surtirait à 100% vs tank)
 local ROT_NECRO_CAP = 0.45 -- BOUTON DE RÉGLAGE FIN : la nécrose ronge jusqu'à -CAP% des PV max d'origine (haut = mur plus battable)
 local ROT_HEAL_CUT = 0.80 -- part de la régén ANNULÉE tant que la cible pourrit (0 = aucun anti-heal)
 
