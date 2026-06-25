@@ -406,13 +406,29 @@ end
 -- Petit système d'effets transitoires : data { kind, x, y, t, dur, ... } en ESPACE DESIGN, avancés par
 -- update, dessinés en overlay PAR-DESSUS tout. Le SPAWN est PUR (data) -> sans danger headless ; le DRAW
 -- vit en overlay (love.graphics). Render-only -> golden inchangé.
-local MERGE_FLY_DUR = 0.33 -- durée du vol des « âmes » vers le survivant avant le burst + le sautillement (C3)
+--
+-- CHORÉGRAPHIE DE FUSION (transplantée de feel-lab/lib/levelup.lua, source de vérité du « ta-ta-ta-TAAA ») :
+-- anticipation -> convergence STAGGERÉE des âmes (en ARC + traînée) -> impacts RYTHMÉS (chaque arrivée = un
+-- micro-shake + le degré de `ladder` déjà joué) -> CLIMAX (flash + onde de choc + squash-stretch + trauma² +
+-- hitstop, synchro <50 ms avec le `success`) -> settle. Le MOUVEMENT est posé ici ; le SON (ladder/success)
+-- est déjà câblé (increment 2). 100% RENDER, dt MURAL, ne touche JAMAIS la SIM (firewall) ; headless-safe.
+local MERGE_FLY_DUR = 0.34   -- durée de VOL d'UNE âme vers le survivant (convergence)
+local MERGE_ANTICIP = 0.12   -- creux d'anticipation du survivant avant la 1re arrivée (le lab pose ANTICIP=0.12)
+local MERGE_STAGGER = 0.13   -- espacement des DÉPARTS des âmes -> arrivées rythmées (« ta. ta. »)
+local MERGE_CLIMAX  = 0.50   -- fenêtre de climax (burst + onde) après la DERNIÈRE arrivée
+local MERGE_SETTLE  = 0.30   -- détente finale (overshoot doux du ressort)
+
+-- Bézier quadratique scalaire (p0 -> contrôle c -> p1 ; e ∈ 0..1) — arc des âmes de fusion (cf. Feel Lab).
+local function bez2(p0, cc, p1, e)
+  local u = 1 - e
+  return u * u * p0 + 2 * u * e * cc + e * e * p1
+end
 
 function Build:spawnFx(kind, x, y, opts)
   opts = opts or {}
   self.fx[#self.fx + 1] = { kind = kind, x = x, y = y, t = 0, dur = opts.dur or 0.55,
     gold = opts.gold, level = opts.level, fromX = opts.fromX, fromY = opts.fromY, delay = opts.delay or 0,
-    sfxClimax = opts.sfxClimax }
+    sfxClimax = opts.sfxClimax, idx = opts.idx, n = opts.n, big = opts.big, cx = opts.cx, cy = opts.cy }
 end
 
 -- Centre (espace DESIGN) d'une position de jeu {kind, i} (case board ou slot banc) -> ancre des FX de fusion.
@@ -486,31 +502,87 @@ function Build:updateSprings(dtSec)
   if self.drag and self.drag.d then Drag.apply(self.drag.d, dtSec) end -- la traînée : cible = souris (Drag.move)
 end
 
--- ANIM DE FUSION (retour user 2026-06, « clean & polish ») : les ÂMES des copies consommées FILENT vers le
--- survivant (froms = liste {x,y} en design), puis un BURST éclate (levelup différé) et le rig SAUTILLE (bounce
--- posé sur le rig promu par le caller). Séquence : ~0,33s de convergence -> impact -> ~0,5s de rebond/burst.
+-- ANIM DE FUSION — chorégraphie multi-étapes du Feel Lab (le « ta-ta-ta-TAAA »). Les ÂMES des copies consommées
+-- FILENT en ARC (Bézier, décalées dans le temps = stagger) vers le survivant (froms = liste {x,y} en design),
+-- chaque ARRIVÉE étant un impact rythmé (micro-shake + un degré de `ladder`) ; puis le CLIMAX (burst + onde de
+-- choc + squash-stretch + trauma² + hitstop) tombe à la DERNIÈRE arrivée, et le rig se DÉTEND (bounce/ressort).
+-- `lvl == MAX_LEVEL` (niveau 3 / fin de cascade) -> climax PLEINE PUISSANCE (big), façon rank-up TFT.
 function Build:spawnMergeFx(sx, sy, froms, lvl)
+  local n = #froms
+  local big = (lvl or 2) >= MAX_LEVEL
   -- SON (fusion) : « ta-ta-ta-TAAA ». Échelle montante (ladder) RÉINITIALISÉE au début de la convergence, puis
-  -- 1 degré qui monte par âme qui file vers le survivant ; le CLIMAX (success) est joué à l'IMPACT (souls
-  -- arrivées) -> on le porte par le FX `levelup` (flag sfxClimax, déclenché dans updateFx au franchissement du
+  -- 1 degré qui monte par âme qui file vers le survivant ; le CLIMAX (success) est joué à l'IMPACT (dernière âme
+  -- arrivée) -> on le porte par le FX `levelup` (flag sfxClimax, déclenché dans updateFx au franchissement du
   -- délai, EXACTEMENT à la pose de son burst visuel). RENDER pur (SFX.play est no-op headless) -> golden-safe.
   SFX.ladder(true) -- reset de l'échelle (premier degré ne sonne pas : la 1re âme jouera le degré 2, etc.)
-  for _, f in ipairs(froms) do
-    self:spawnFx("merge_fly", sx, sy, { fromX = f[1], fromY = f[2], dur = MERGE_FLY_DUR })
-    SFX.ladder() -- un cran plus haut par âme (1, 2, … -> tension qui grimpe pendant le vol)
+  -- une âme par copie consommée, DÉPART décalé (stagger) -> ARRIVÉES rythmées (le ladder par-âme suit le départ).
+  for i, f in ipairs(froms) do
+    -- point de contrôle de l'ARC : milieu décalé PERPENDICULAIREMENT (alterné gauche/droite) + soulevé vers le haut.
+    local mx, my = (f[1] + sx) / 2, (f[2] + sy) / 2
+    local dx, dy = sx - f[1], sy - f[2]
+    local len = math.max(1, math.sqrt(dx * dx + dy * dy))
+    local side = (i % 2 == 0) and 1 or -1
+    local cx = mx + (-dy / len) * len * 0.18 * side
+    local cy = my + (dx / len) * len * 0.18 * side - len * 0.10
+    local depart = MERGE_ANTICIP + (i - 1) * MERGE_STAGGER
+    self:spawnFx("merge_fly", sx, sy, { fromX = f[1], fromY = f[2], cx = cx, cy = cy,
+      delay = depart, dur = depart + MERGE_FLY_DUR, idx = i, n = n, big = big })
+    SFX.ladder() -- un cran plus haut par âme (1, 2, … -> tension qui grimpe pendant la convergence)
   end
-  self:spawnFx("levelup", sx, sy, { level = lvl, delay = MERGE_FLY_DUR, dur = MERGE_FLY_DUR + 0.55, sfxClimax = true })
+  -- CLIMAX différé : posé à la DERNIÈRE arrivée (depart de la dernière âme + son vol) -> le « TAAA » coïncide
+  -- exactement avec l'impact final. dur englobe la fenêtre de climax (burst/onde) + la détente (settle).
+  local climaxAt = MERGE_ANTICIP + (n - 1) * MERGE_STAGGER + MERGE_FLY_DUR
+  self:spawnFx("levelup", sx, sy, { level = lvl, big = big, sfxClimax = true,
+    delay = climaxAt, dur = climaxAt + MERGE_CLIMAX + MERGE_SETTLE })
 end
 
--- Décalage vertical (px VIRTUELS, vers le HAUT) du SAUTILLEMENT de fusion (C3) : une bosse amortie déclenchée à
--- l'IMPACT (bounce.t devient positif une fois les âmes arrivées). Lu dans drawWorld (canvas 320×180 -> px virtuels,
--- ~3px = un vrai petit saut sur un sprite ~18px). 0 si pas de bounce ou encore en délai (âmes en vol).
-local function bounceLift(sr)
-  local b = sr.bounce
-  if not b or b.t < 0 then return 0 end
-  local bp = math.min(1, b.t / b.dur)
-  return math.sin(bp * math.pi) * 3 * (1 - bp * 0.4)
+-- ── CHORÉGRAPHIE DE FUSION côté SURVIVANT (squash-stretch + lift + glow) ──────────────────────────────────
+-- Le rig promu porte `bounce` = état de l'animation. `t` court depuis la pose (négatif au sens de l'horloge de
+-- l'ancien bounce : on garde le nom de champ pour ne PAS toucher la logique de fusion). `climaxAt` = instant de
+-- la DERNIÈRE arrivée d'âme (= le « TAAA »). Avant : ANTICIPATION (léger creux + glow qui monte). Au climax :
+-- punch de scale (squash-stretch) + lift + glow plein. Après : SETTLE (overshoot doux qui revient au repos).
+-- Transplante le ressort de la cible du Feel Lab (lib/levelup.lua tspring/_pulse) en formule fermée, dt-mural.
+-- `t`/`dur` avancés dans update() (frameDt/60) ; lus au DRAW. Tout est COSMÉTIQUE (golden-safe).
+local function newMergeAnim(n, big)
+  -- climaxAt = MERGE_ANTICIP + (n-1)*MERGE_STAGGER + MERGE_FLY_DUR (cf. spawnMergeFx) ; dur englobe le settle.
+  local climaxAt = MERGE_ANTICIP + (math.max(1, n) - 1) * MERGE_STAGGER + MERGE_FLY_DUR
+  return { t = 0, climaxAt = climaxAt, dur = climaxAt + MERGE_CLIMAX + MERGE_SETTLE, big = big or false }
 end
+
+-- Enveloppe 0..1 de la chorégraphie -> (lift px VIRTUELS vers le haut, facteur de scale autour de 1, glow 0..1).
+-- Anticipation : creux léger (scale<1) qui se charge. Climax (au franchissement de climaxAt) : pic de scale +
+-- saut + glow plein, puis amortissement (overshoot). Tout dérivé de b.t -> aucune mutation, pur DRAW.
+local function mergeEnv(b)
+  if not b then return 0, 1, 0 end
+  local ca = b.climaxAt or MERGE_FLY_DUR
+  local t = b.t or 0
+  -- phase d'ANTICIPATION (avant la dernière arrivée) : creux progressif + glow qui monte.
+  if t < ca then
+    local e = math.max(0, math.min(1, t / math.max(0.001, ca)))
+    local dip = math.sin(e * math.pi) * 0.06           -- creux doux (squash d'inspiration), revient à 0 au climax
+    return 0, 1 - dip, e * 0.5
+  end
+  -- phase de CLIMAX -> SETTLE : impulsion amortie (ressort) après le « TAAA ».
+  local a = t - ca                                       -- temps écoulé DEPUIS le climax
+  local decay = math.exp(-a / 0.16)                      -- enveloppe d'amortissement (~0,16 s de tau)
+  local osc = math.cos(a * 26)                           -- oscillation du ressort (overshoot organique)
+  local big = b.big
+  local amp = big and 0.42 or 0.30
+  local punch = amp * decay * (0.5 + 0.5 * osc)          -- pic à a=0 (stretch), puis revient en oscillant
+  local lift = math.sin(math.min(1, a / 0.42) * math.pi) * (big and 4 or 3) * decay  -- saut amorti
+  local glow = decay
+  return lift, 1 + punch, glow
+end
+
+-- Décalage vertical (px VIRTUELS, vers le HAUT) du saut de fusion. 0 hors animation. (Compat : nom historique.)
+local function bounceLift(sr)
+  local lift = mergeEnv(sr.bounce)
+  return lift
+end
+-- Facteur de scale (squash-stretch) du survivant pendant la fusion (1 au repos).
+local function mergeScale(sr) local _, sc = mergeEnv(sr.bounce); return sc end
+-- Lueur 0..1 du survivant pendant la fusion (halo additif au climax).
+local function mergeGlow(sr) local _, _, g = mergeEnv(sr.bounce); return g end
 
 function Build:updateFx(frameDt)
   local dt = frameDt / 60 -- frames -> secondes
@@ -519,9 +591,20 @@ function Build:updateFx(frameDt)
     local f = self.fx[i]
     local was = f.t
     f.t = f.t + dt
-    -- SON (climax de fusion) : le « TAAA » tombe à l'IMPACT (souls convergées = franchissement du délai du
-    -- burst `levelup`), une seule fois. Joué ICI plutôt qu'au spawn -> calé sur l'apparition du burst visuel.
-    if f.sfxClimax and was < f.delay and f.t >= f.delay then SFX.play("success") end
+    -- IMPACT RYTHMÉ d'une âme (« ta ») : au franchissement de SON arrivée (delay+vol = f.dur pour merge_fly),
+    -- micro screen-shake (trauma²) + petit punch-glow local. Le degré de `ladder` correspondant est DÉJÀ joué
+    -- (spawnMergeFx) ; ici on apporte le MOUVEMENT apparié. Juice = RENDER pur (dt mural) -> firewall respecté.
+    if f.kind == "merge_fly" and was < f.dur and f.t >= f.dur then
+      Juice.addTrauma(0.10)
+    end
+    -- CLIMAX (« TAAA ») : à l'IMPACT final (franchissement du delay du burst `levelup`), une seule fois —
+    -- trauma² PLEIN + hitstop (gel bref) + SON success/thud, synchro <50 ms avec le burst/onde visuels (drawFx).
+    if f.kind == "levelup" and was < f.delay and f.t >= f.delay then
+      local big = f.big
+      Juice.addTrauma(big and 0.85 or 0.55)
+      Juice.freeze(big and 0.12 or 0.08)
+      if f.sfxClimax then SFX.play("success"); SFX.play("thud", { vol = 0.8 }) end
+    end
     if f.t < f.dur then w = w + 1; self.fx[w] = f end
   end
   for i = w + 1, n do self.fx[i] = nil end
@@ -542,33 +625,59 @@ function Build:drawFx()
       -- VENTE : « +N » d'or qui monte et s'estompe.
       Draw.textC("+" .. tostring(f.gold or 0), f.x, f.y - p * 26, { c.gold[1], c.gold[2], c.gold[3], a }, Theme.value(16))
     elseif f.kind == "merge_fly" then
-      -- ÂME qui FILE de la copie consommée vers le survivant (ease-in : accélère en arrivant) + traînée + étincelle.
-      local fx0, fy0 = f.fromX or f.x, f.fromY or f.y
-      local e = p * p
-      local mx = fx0 + (f.x - fx0) * e
-      local my = fy0 + (f.y - fy0) * e
-      local r = 4.5 * (1 - p) + 1.5
-      Draw.setColor({ c.brassS[1], c.brassS[2], c.brassS[3], 0.22 * (1 - p) }) -- traînée (un cran en arrière)
-      love.graphics.circle("fill", fx0 + (f.x - fx0) * (e * 0.82), fy0 + (f.y - fy0) * (e * 0.82), r * 0.8)
-      Draw.setColor({ c.gold[1], c.gold[2], c.gold[3], 0.9 - 0.3 * p }) -- coeur d'or
-      love.graphics.circle("fill", mx, my, r)
-      Draw.setColor({ 1, 1, 1, 0.55 * (1 - p) }) -- étincelle blanche
-      love.graphics.circle("fill", mx, my, r * 0.45)
-      Draw.reset()
-    elseif f.kind == "levelup" then
-      -- LEVEL-UP : burst DIFFÉRÉ (joué quand les âmes ont convergé, cf. spawnMergeFx). Éclair + double anneau
-      -- laiton expansif + « LVL n » qui pop. Le rig, lui, SAUTILLE (bounce) au même instant (cf. drawWorld).
+      -- ÂME qui FILE en ARC (Bézier quadratique) de la copie consommée vers le survivant, DÉCALÉE dans le temps
+      -- (delay = départ staggeré). Convergence en ease-IN (accélère en arrivant) + TRAÎNÉE additive multi-échantillon
+      -- + noyau braise / halo or / étincelle blanche (look du Feel Lab). Invisible tant qu'elle n'est pas partie.
       if f.t >= f.delay then
+        local fx0, fy0 = f.fromX or f.x, f.fromY or f.y
+        local cx, cy = f.cx or ((fx0 + f.x) / 2), f.cy or ((fy0 + f.y) / 2)
+        local lp = math.min(1, (f.t - f.delay) / math.max(0.001, f.dur - f.delay)) -- 0..1 LOCAL à cette âme
+        local e = lp * lp -- ease-in
+        local mx, my = bez2(fx0, cx, f.x, e), bez2(fy0, cy, f.y, e)
+        local r = 4.5 * (1 - lp) + 1.5
+        -- TRAÎNÉE : 4 échantillons en arrière sur l'arc, additifs, fondant (look « comète » du lab).
+        love.graphics.setBlendMode("add")
+        for s = 1, 4 do
+          local ee = math.max(0, e - s * 0.06)
+          local px, py = bez2(fx0, cx, f.x, ee), bez2(fy0, cy, f.y, ee)
+          Draw.setColor({ c.gold[1], c.gold[2], c.gold[3], 0.18 * (1 - s / 5) * (1 - lp * 0.5) })
+          love.graphics.circle("fill", px, py, (r - s * 0.6) * 0.9)
+        end
+        love.graphics.setBlendMode("alpha")
+        Draw.setColor({ c.ember and c.ember[1] or c.blood[1], c.ember and c.ember[2] or c.blood[2], c.ember and c.ember[3] or c.blood[3], 0.5 * (1 - lp * 0.4) }) -- noyau braise
+        love.graphics.circle("fill", mx, my, r * 1.4)
+        Draw.setColor({ c.gold[1], c.gold[2], c.gold[3], 0.95 - 0.25 * lp }) -- coeur d'or
+        love.graphics.circle("fill", mx, my, r)
+        Draw.setColor({ 1, 1, 1, 0.7 * (1 - lp) }) -- étincelle blanche
+        love.graphics.circle("fill", mx, my, r * 0.45)
+        Draw.reset()
+      end
+    elseif f.kind == "levelup" then
+      -- CLIMAX (« TAAA ») : burst DIFFÉRÉ (à la DERNIÈRE arrivée d'âme, cf. spawnMergeFx). Éclair + DOUBLE onde de
+      -- choc expansive (laiton + or si big) + « LVL n » qui pop. Le rig, lui, fait son squash-stretch (mergeEnv) au
+      -- même instant (drawWorld) + le screen-shake/hitstop (updateFx). big = climax PLEINE PUISSANCE (niveau 3/cascade).
+      if f.t >= f.delay then
+        local big = f.big
         local lp = math.min(1, (f.t - f.delay) / math.max(0.01, f.dur - f.delay))
         local la = 1 - lp
-        Draw.setColor({ 1, 1, 1, 0.55 * (1 - math.min(1, lp * 4)) }) -- éclair blanc bref à l'impact
-        love.graphics.circle("fill", f.x, f.y, 6 + lp * 10)
-        Draw.setColor({ c.brassS[1], c.brassS[2], c.brassS[3], 0.5 * la })
-        love.graphics.circle("fill", f.x, f.y, 5 + lp * 14)
-        Draw.setColor({ c.brassS[1], c.brassS[2], c.brassS[3], 0.75 * la })
-        love.graphics.setLineWidth(3 * la + 1); love.graphics.circle("line", f.x, f.y, 10 + lp * 46); love.graphics.setLineWidth(1)
+        local R = big and 1.5 or 1.0
+        love.graphics.setBlendMode("add")
+        Draw.setColor({ 1, 0.95, 0.78, 0.7 * (1 - math.min(1, lp * 3.5)) }) -- flash blanc-or bref à l'impact
+        love.graphics.circle("fill", f.x, f.y, (8 + lp * 14) * R)
+        love.graphics.setBlendMode("alpha")
+        Draw.setColor({ c.brassS[1], c.brassS[2], c.brassS[3], 0.55 * la })
+        love.graphics.circle("fill", f.x, f.y, (5 + lp * 16) * R)
+        -- onde de choc primaire (laiton) — easeOut pour un « pop » net qui ralentit
+        local eo = 1 - (1 - lp) * (1 - lp)
+        Draw.setColor({ c.brassS[1], c.brassS[2], c.brassS[3], 0.8 * la })
+        love.graphics.setLineWidth(3 * la + 1); love.graphics.circle("line", f.x, f.y, (10 + eo * 52) * R); love.graphics.setLineWidth(1)
+        if big then -- onde secondaire (or, décalée) pour le rank-up plein
+          local eo2 = 1 - (1 - math.min(1, lp * 1.3)) * (1 - math.min(1, lp * 1.3))
+          Draw.setColor({ c.gold[1], c.gold[2], c.gold[3], 0.6 * la })
+          love.graphics.setLineWidth(2 * la + 1); love.graphics.circle("line", f.x, f.y, (6 + eo2 * 70) * R); love.graphics.setLineWidth(1)
+        end
         Draw.reset()
-        Draw.textC("LVL " .. tostring(f.level or 2), f.x, f.y - 30 - lp * 12, { c.gold[1], c.gold[2], c.gold[3], la }, Theme.value(15))
+        Draw.textC("LVL " .. tostring(f.level or 2), f.x, f.y - 30 - lp * 14, { c.gold[1], c.gold[2], c.gold[3], la }, Theme.value(big and 17 or 15))
       end
     end
   end
@@ -714,8 +823,9 @@ function Build:checkMerges()
           if p.kind == "board" then self.slotRigs[p.i] = nil; self.board.slots[p.i].unit = nil
           else self.bench[p.i] = nil end
         end
-        -- promeut la 1re copie + lui pose un `bounce` (sautillement déclenché à l'IMPACT, après le vol des âmes).
-        local promoted = { id = id, level = lvl, char = self:newRig(id), bounce = { t = -MERGE_FLY_DUR, dur = 0.5 } }
+        -- promeut la 1re copie + lui pose un `bounce` = état de chorégraphie (anticipation -> climax -> settle),
+        -- timé sur la DERNIÈRE arrivée d'âme (#froms copies, 2 ici) ; lu par mergeLift/mergeScale/mergeGlow au DRAW.
+        local promoted = { id = id, level = lvl, char = self:newRig(id), bounce = newMergeAnim(#froms, lvl >= MAX_LEVEL) }
         if keep.kind == "board" then self.slotRigs[keep.i] = promoted; self.board.slots[keep.i].unit = id
         else self.bench[keep.i] = promoted end
         self:spawnMergeFx(sx, sy, froms, lvl) -- âmes -> burst -> sautillement (« clean & polish », retour user)
@@ -811,7 +921,7 @@ function Build:buyMergeWhenFull(offerIndex)
   local sx, sy = self:fxCenterOf(keep.kind, keep.i)        -- survivant
   local dxp, dyp = self:fxCenterOf(drop.kind, drop.i)      -- copie retirée (âme qui file)
   if drop.kind == "board" then self.slotRigs[drop.i] = nil; self.board.slots[drop.i].unit = nil else self.bench[drop.i] = nil end
-  local promoted = { id = id, level = 2, char = self:newRig(id), bounce = { t = -MERGE_FLY_DUR, dur = 0.5 } }
+  local promoted = { id = id, level = 2, char = self:newRig(id), bounce = newMergeAnim(2) }
   if keep.kind == "board" then self.slotRigs[keep.i] = promoted; self.board.slots[keep.i].unit = id
   else self.bench[keep.i] = promoted end
   -- 1 âme de la copie retirée + 1 « achetée » qui tombe d'en haut sur le survivant (le catalyseur, jamais posé).
@@ -1860,6 +1970,33 @@ local function withDragFx(d, gx, gy, shadowW, body)
   end
 end
 
+-- SQUASH-STRETCH du survivant pendant la fusion (mergeEnv) : SCALE autour des PIEDS (pivot = gx,gy = sol),
+-- pour que la pièce « se charge » à l'anticipation puis « éclate » au climax (cf. Feel Lab targetScale). No-op
+-- (scale==1) hors animation -> aucun coût ni transform parasite. RENDER pur.
+local function withMergeScale(sr, gx, gy, body)
+  local s = mergeScale(sr)
+  if math.abs(s - 1) < 0.002 then return body() end
+  love.graphics.push()
+  love.graphics.translate(gx, gy)
+  love.graphics.scale(s, s)
+  love.graphics.translate(-gx, -gy)
+  body()
+  love.graphics.pop()
+end
+
+-- HALO additif du survivant au climax (mergeGlow) : disque doré doux DERRIÈRE le sprite (le rig « s'illumine »).
+-- 0 hors animation -> rien dessiné. Centre RELEVÉ vers le torse (gy = pieds) pour cadrer le corps. RENDER pur.
+local function mergeHalo(sr, gx, gy, rise)
+  local g = mergeGlow(sr)
+  if g < 0.02 then return end
+  local cc = Theme.c
+  love.graphics.setBlendMode("add")
+  love.graphics.setColor(cc.gold[1], cc.gold[2], cc.gold[3], 0.30 * g)
+  love.graphics.circle("fill", gx, gy - (rise or 10), 13 + g * 5)
+  love.graphics.setBlendMode("alpha")
+  love.graphics.setColor(1, 1, 1, 1)
+end
+
 -- ── Rendu monde (canvas virtuel, pixel-perfect) : UNIQUEMENT les rigs (unités/aperçus/drag) ──
 -- Toutes les créatures sont AJUSTÉES À LEUR CONTENEUR (fit-to-box, cf. rigFitScale) -> aucune ne déborde
 -- ni n'est coupée par le bord de sa case / carte. update() pose char.x,char.y ; on les SCALE à l'affichage.
@@ -1878,8 +2015,10 @@ function Build:drawWorld()
       -- s'y téléporter ; au repos px,py == l'ancre de la case (aucun changement visuel). Pieds calés au sol.
       local ax, ay = self:boardAnchor(i)
       local groundX, groundY = springGround(sr.d, ax, ay)
-      groundY = groundY - math.floor(bounceLift(sr) + 0.5) -- C3 : sautillement de fusion
+      groundY = groundY - math.floor(bounceLift(sr) + 0.5) -- C3 : saut de fusion (chorégraphie)
+      mergeHalo(sr, groundX, groundY, 11) -- lueur additive du survivant au climax (DERRIÈRE le sprite)
       withDragFx(sr.d, groundX, groundY, 16, function(gx, gy)
+        withMergeScale(sr, gx, gy, function() -- squash-stretch du survivant pendant la fusion (pivot = pieds)
         if Critter.has(sr.id) then
           -- RENDU VIVANT : cadre natif (taille relative + mouvement par famille), pieds calés au sol.
           Critter.drawAt(nil, sr.id, gx, gy, SLOT_SCALE, self.t / 60, c.facing or 1)
@@ -1897,6 +2036,7 @@ function Build:drawWorld()
           c.x, c.y = sx, sy
           love.graphics.pop()
         end
+        end) -- /withMergeScale
       end)
     end
   end
@@ -1909,8 +2049,10 @@ function Build:drawWorld()
       -- de drag (sr.d.px/py) -> la pièce GLISSE dans le slot de banc (pose/swap fluides) ; au repos = l'ancre.
       local ax, ay = self:benchAnchor(i)
       local gx0, gy0 = springGround(sr.d, ax, ay)
-      gy0 = gy0 - math.floor(bounceLift(sr) + 0.5) -- -bounce de fusion (C3)
+      gy0 = gy0 - math.floor(bounceLift(sr) + 0.5) -- -saut de fusion (chorégraphie)
+      mergeHalo(sr, gx0, gy0, 8) -- lueur additive du survivant au climax (banc)
       withDragFx(sr.d, gx0, gy0, 13, function(gx, gy)
+        withMergeScale(sr, gx, gy, function() -- squash-stretch du survivant pendant la fusion (pivot = pieds)
         if Critter.has(sr.id) then
           Critter.drawAt(nil, sr.id, gx, gy, BENCH_SCALE, self.t / 60, 1)
         else
@@ -1921,6 +2063,7 @@ function Build:drawWorld()
           Rig.draw(sr.char)
           love.graphics.pop()
         end
+        end) -- /withMergeScale
       end)
     end
   end
