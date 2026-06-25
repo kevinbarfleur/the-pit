@@ -41,6 +41,12 @@ local ATK_INC_CAP = 1.5      -- empower cumulé (K2) : +150% dégâts d'attaque 
 local VULN_INC_CAP = 0.5     -- vulnérabilité cumulée (K2) : +50% dégâts entrants max
 local HIT_DMG_CAP_MULT = 7   -- backstop : UNE frappe ne dépasse jamais ×7 le `dmg` de base de l'attaquant
 local MULTICAST_MAX = 3      -- K3 : cap DUR du nombre de sous-coups par swing (async-vérifiable, anti-boucle)
+-- COMMANDEMENT (rollout § command-auras V0) : `haste` et `dmgReduce` n'avaient AUCUN cap de lecture -> le cumul
+-- aura-commandant + relique + aura-d'adjacence pouvait atteindre haste≥1.0 (timer ≤0 = NON-TERMINAISON) ou
+-- dmgReduce→1 (mur infranchissable = gate all-tank). On borne CHAQUE à la lecture (miroir d'ATK_INC_CAP). Caps
+-- choisis AU-DESSUS du max actuel -> nil/petit reste sous le seuil -> golden-safe (le scénario golden ne stacke pas).
+local HASTE_CAP = 0.40       -- cadence (timer d'attaque) : -40% du rechargement max (anti-non-terminaison, priorité)
+local DMG_REDUCE_CAP = 0.60  -- défense (damage cause="attack") : -60% des dégâts d'attaque subis max (anti-gate)
 
 -- BOUTON GLOBAL DE DURÉE DE COMBAT (levier d'équilibrage) : multiplie les PV de TOUTE unité à la création
 -- (makeUnit, sur la COPIE -> jamais le spec d'entrée). Tout le reste (dégâts, dps de DoT, boucliers, regen,
@@ -208,6 +214,20 @@ function Arena:spawn()
       end
     end
   end
+  -- MARQUE DE VULN D'OUVERTURE (commandant, TROU #2) : un drapeau `markEnemiesVuln` (posé par grant_team au
+  -- combat_start) marque TOUTE l'équipe ENNEMIE en `vulnInc` FLAT, SANS durée -> la marque tient tout le combat
+  -- (débuff d'ouverture, intra-combat). Cumul avec les marques on_hit (grant_vuln, qui prend le max) BORNÉ à la
+  -- LECTURE dans damage() (VULN_INC_CAP=0.5). Gated : flag nil -> aucune mutation -> golden inchangé. Zéro RNG.
+  for _, team in ipairs({ "left", "right" }) do
+    local frac = self.teamFlags[team] and self.teamFlags[team].markEnemiesVuln
+    if frac and frac > 0 then
+      for _, u in ipairs(self.units) do
+        if u.team ~= team and not u.isCommander then -- jamais sur le commandant ennemi (intouchable : vuln inerte sur lui)
+          u.vulnInc = (u.vulnInc or 0) + frac -- additif (le cap VULN_INC_CAP s'applique à la LECTURE) ; pas de vulnRemaining -> permanent au combat
+        end
+      end
+    end
+  end
   -- BOUCLIERS PÉRIODIQUES : résout les cibles (slots figés au build) en réfs d'unités de la MÊME équipe.
   for _, u in ipairs(self.units) do
     local sc = u.shieldCaster
@@ -350,7 +370,7 @@ function Arena:damage(target, amount, opts)
   -- DÉFENSE (relique Aegis) : réduit les dégâts d'ATTAQUE subis (pas les DoT ni la fatigue). Gated -> nil =
   -- inerte (golden-safe). Arrondi au plus proche : le chip à 1 n'est pas annulé, les gros coups sont amputés.
   if opts.cause == "attack" and target.dmgReduce and target.dmgReduce > 0 then
-    amount = math.floor(amount * (1 - target.dmgReduce) + 0.5)
+    amount = math.floor(amount * (1 - math.min(DMG_REDUCE_CAP, target.dmgReduce)) + 0.5) -- cap à la lecture (anti-gate)
   end
   local raw = math.max(0, amount)
   local absorbed = 0
@@ -756,8 +776,9 @@ function Arena:update(frameDt, t)
       u.atkTimer = u.atkTimer - frameDt
       if not u.swinging and u.target and u.atkTimer <= 0 then
         u.swinging = true; u.swingAge = 0; u.swingHit = false
-        -- bleed ralentit ; WHETSTONE/aura haste accélère ; cdMult (commandant K4) ralentit (≥1, nil->1). Tous gated.
-        u.atkTimer = u.cd * (1 + u.atkSlow) * (1 - (u.haste or 0)) * (u.cdMult or 1)
+        -- bleed ralentit ; WHETSTONE/aura haste accélère (CAPPÉ à la lecture HASTE_CAP : anti-timer≤0 = non-terminaison) ;
+        -- cdMult (commandant K4) ralentit (≥1, nil->1). Tous gated (nil/0 -> facteur 1).
+        u.atkTimer = u.cd * (1 + u.atkSlow) * (1 - math.min(HASTE_CAP, u.haste or 0)) * (u.cdMult or 1)
         u.target = self:chooseTarget(u)
         self.bus:emit("attack", u) -- le render joue l'anim d'attaque
         local blz = u.dots.bleed -- BLOODLETTER : le saignement ÉCLATE quand la cible agit (aggravate)
@@ -882,5 +903,7 @@ Arena.MULTICAST_MAX = MULTICAST_MAX
 Arena.ATK_INC_CAP = ATK_INC_CAP
 Arena.VULN_INC_CAP = VULN_INC_CAP
 Arena.HIT_DMG_CAP_MULT = HIT_DMG_CAP_MULT
+Arena.HASTE_CAP = HASTE_CAP             -- V0 : cap de cadence (anti-non-terminaison sous haste cumulé)
+Arena.DMG_REDUCE_CAP = DMG_REDUCE_CAP   -- V0 : cap de défense (anti-gate all-tank)
 
 return Arena

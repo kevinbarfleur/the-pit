@@ -159,6 +159,71 @@ local ok, err = pcall(function()
     restore()
   end
 
+  -- ════════ TROU #1 — amplis d'ÉCOLE en aura_stat (rollout § command-auras V4) ════════
+  -- poisonInc/burnInc/bleedInc/rotInc sont désormais dans STAT_FIELDS et ROUTÉS vers leurs buffers dédiés
+  -- (lus par la pose de DoT, cappés DOT_CAP_MULT=3), PAS dans statBuf. Un commandant « mono-école » (aura_stat
+  -- poisonInc team) pose donc bien `poisonInc` sur le board (et JAMAIS un champ générique parasite).
+
+  -- 13) aura_stat poisonInc team 0.18 : chaque unité reçoit poisonInc (additif), et l'ampli est lu à la pose
+  -- (resolve cappé ×3). On vérifie team-wide + que ça N'a PAS atterri dans un statBuf (haste/atkInc/… restent nil).
+  do
+    local restore = withAura("soot_acolyte", { stat = "poisonInc", target = "team", value = 0.18 })
+    local b = fresh()
+    for s = 1, 4 do b:placeId(s, s == 1 and "soot_acolyte" or "witch") end -- witch porte un poison de base
+    local comp = b:buildComp(-1)
+    local n = 0
+    for _, s in ipairs(comp) do
+      if s.poisonInc and math.abs(s.poisonInc - 0.18) < 1e-9 then n = n + 1 end
+      -- l'ampli d'école ne doit PAS fuir vers les champs génériques (il a son propre buffer).
+      assert((s.atkInc or 0) == 0 and (s.haste or 0) == 0, "TROU#1: poisonInc ne pollue pas statBuf (atkInc/haste nil)")
+    end
+    assert(n == 4, "TROU#1: aura_stat poisonInc team pose poisonInc sur les 4 unités (obtenu " .. n .. ")")
+    -- effet RÉEL : la pose d'un poison de 2 dps sous +0.18 increased -> 2*(1.18)=2.36 -> floor 2 (arrondi nearest = 2).
+    assert(Stats.resolve(10, { Stats.increased(0.18) }, { round = "nearest" }) == 12,
+      "TROU#1: pose renforcée 10 -> 12 dps (increased +18%)")
+    restore()
+  end
+
+  -- 14) bleedInc / rotInc en aura_stat role:front : la cible role:front (slot 3 au carré, cf. test #4) reçoit
+  -- l'ampli sur SON buffer dédié, unique. Prouve que les deux NOUVEAUX buffers (bleedInc/rotInc) sont câblés.
+  do
+    local rb = withAura("soot_acolyte", { stat = "bleedInc", target = "role:front", value = 0.20 })
+    local b = fresh()
+    for s = 1, 9 do b:placeId(s, s == 5 and "soot_acolyte" or "razorkin") end -- razorkin saigne
+    local comp = b:buildComp(-1)
+    local hits = {}
+    for _, s in ipairs(comp) do if s.bleedInc and s.bleedInc > 0 then hits[#hits + 1] = s.slot end end
+    assert(#hits == 1 and hits[1] == 3, "TROU#1: bleedInc role:front = slot 3 unique (n=" .. #hits .. ")")
+    rb()
+    local rr = withAura("soot_acolyte", { stat = "rotInc", target = "team", value = 0.18 })
+    local b2 = fresh()
+    for s = 1, 3 do b2:placeId(s, s == 1 and "soot_acolyte" or "rot_hound") end
+    local comp2 = b2:buildComp(-1)
+    local m = 0
+    for _, s in ipairs(comp2) do if s.rotInc and math.abs(s.rotInc - 0.18) < 1e-9 then m = m + 1 end end
+    assert(m == 3, "TROU#1: rotInc team pose sur les 3 unités (obtenu " .. m .. ")")
+    rr()
+  end
+
+  -- 15) ADDITIVITÉ avec l'adjacence : un soot_acolyte (aura burn d'adjacence +0.50 sur le voisin) ET un
+  -- aura_stat burnInc team +0.20 sur la MÊME unité -> les deux SOMMENT sur burnInc (0.70). Prouve que le routage
+  -- réutilise le buffer existant (cumul aura-adjacence + ampli-école), pas un buffer séparé.
+  do
+    local restore = withAura("decay_tender", { stat = "burnInc", target = "team", value = 0.20 })
+    local b = fresh()
+    local center = 5
+    local nb = b.board:neighbors(center)[1]
+    b:placeId(center, "soot_acolyte") -- aura_burn_dps +0.50 sur ses voisins (adjacence)
+    b:placeId(nb, "decay_tender")     -- porte l'aura_stat burnInc team +0.20 (synthétique) ET est voisin du soot
+    local comp = b:buildComp(-1)
+    local nbInc
+    for _, s in ipairs(comp) do if s.slot == nb then nbInc = s.burnInc end end
+    -- decay_tender (slot nb) reçoit : +0.50 (adjacence soot) + 0.20 (sa propre aura team, qui se ré-applique au board y compris à elle) = 0.70.
+    assert(nbInc and math.abs(nbInc - 0.70) < 1e-9,
+      "TROU#1: burnInc adjacence(0.50)+aura_stat team(0.20) SOMMENT sur le buffer (obtenu " .. tostring(nbInc) .. ")")
+    restore()
+  end
+
   -- ════════ C0 — COMMANDANT `statInc` (baké au build, consommé dans hp/dmg ; plan §1.5) ════════
   -- `aura_stat {stat=statInc}` n'est PLUS un champ inerte transmis à l'arène : il est ABSORBÉ dans hp/dmg
   -- au bake du comp (increased additif, cappé STAT_INC_CAP). On vérifie la portée (level:1 / tier:1) +
@@ -251,6 +316,7 @@ local ok, err = pcall(function()
 
   print("  auras : ampli increased sur voisin (lu a la pose) / grant d'effet / isolé = base (golden-safe) OK")
   print("  auras K1: role front/back/center sur carré (unique+stable) / team / tier:N (spec §6.2.1) OK")
+  print("  auras TROU#1: amplis d'école en aura_stat (poison/burn/bleed/rot team|role, routés+additifs, sans fuite) OK")
   print("  auras C0: commandant statInc baké (level:1 / tier:1 / cap, absorbé dans hp/dmg) OK")
   print("  auras C2: 6 commandBonus bien formés (haste/lifesteal/statInc×2/multicast/stripShield) OK")
 end)

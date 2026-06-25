@@ -115,9 +115,44 @@ local ok, err = pcall(function()
     assert(concluded == 40, "commandant des 2 cotes: 40/40 combats conclus")
   end
 
+  -- 4) TERMINAISON sous HASTE CUMULÉ MAX (rollout § command-auras V0) : le cap de lecture HASTE_CAP borne la
+  -- cadence -> même un `haste` ABSURDE (cumul aura-commandant + relique + adjacence, voire >1.0) ne donne JAMAIS
+  -- un timer ≤0 (qui ferait une frappe instantanée -> boucle infinie / non-terminaison). On force un haste démesuré
+  -- sur CHAQUE unité des deux camps et on exige : terminaison sous le plafond + timer toujours > 0 à chaque swing.
+  do
+    local Arena2 = require("src.combat.arena")
+    assert(Arena2.HASTE_CAP and Arena2.HASTE_CAP < 1, "HASTE_CAP exposé et < 1 (sinon timer peut atteindre 0)")
+    local fuzzH = love.math.newRandomGenerator(909090)
+    local concluded = 0
+    for _ = 1, 60 do
+      local b = randomBuild()
+      local left = b:buildLeftComp()
+      if #left == 0 then b:placeId(5, "marauder"); left = b:buildLeftComp() end
+      local right = b:buildRightComp(Encounters[fuzzH:random(1, #Encounters)])
+      -- haste ABSURDE sur tout le monde (≥1 sans cap = swing instantané). Le cap doit le neutraliser.
+      for _, s in ipairs(left) do s.haste = 5.0 end
+      for _, s in ipairs(right) do s.haste = 5.0 end
+      local arena = Arena2.new({ left = left, right = right, autoReset = false, seed = fuzzH:random(1, 2147483647) })
+      local n = 0
+      for i = 1, TICK_CAP do
+        arena:update(1.0, i * 1.0); n = i
+        for _, u in ipairs(arena.units) do assert(u.hp >= 0, "haste-max: PV>=0") end
+        if arena.over then break end
+      end
+      -- TERMINAISON = la propriété que HASTE_CAP garantit : sans cap, atkTimer se re-arme à cd*(1-5)<0 -> le
+      -- swing « ne se re-positive jamais » (frappe chaque frame, état dégénéré) ; avec cap, atkTimer >= cd*(1-0.40)>0
+      -- (cd>=1) -> cadence saine et combat conclu. On exige la conclusion sous le plafond.
+      assert(arena.over, "haste-max: terminaison sous le plafond malgré haste=5.0 (cap HASTE_CAP actif)")
+      assert(n < TICK_CAP, "haste-max: conclu strictement sous TICK_CAP")
+      concluded = concluded + 1
+    end
+    assert(concluded == 60, "haste-max: 60/60 combats conclus sous haste cumulé absurde")
+  end
+
   print(string.format("  props : %d/%d combats fuzz + invariants (PV/terminaison/1-vainqueur/determinisme) OK",
     played, N))
   print("  props K4: commandant des 2 cotes (intouchable + exclu du decompte) -> 40/40 termines")
+  print("  props V0: terminaison sous haste cumule absurde (HASTE_CAP borne le timer) -> 60/60 conclus")
 end)
 
 if ok then

@@ -148,7 +148,11 @@ R.order = { "bloodstone", "carapace", "aegis", "kings_bowl", "ember_heart", "wee
 -- réellement lu par makeUnit (arena.lua:120-151) : atkInc/multicast/dmgReduce/haste -> identité ; lifesteal ->
 -- `lifestealAura` (le nom que makeUnit lit ; cf. arena.lua:151). multicast = ENTIER, borné à la LECTURE (MULTICAST_MAX).
 local STAT_FIELD = { atkInc = "atkInc", multicast = "multicast", dmgReduce = "dmgReduce",
-  haste = "haste", lifesteal = "lifestealAura" }
+  haste = "haste", lifesteal = "lifestealAura",
+  -- TROU #1 (rollout § command-auras) : amplis d'école aussi accessibles en relic_aura_stat team/role (miroir
+  -- de build.lua DOT_INC), bakés DIRECT sur le champ que makeUnit lit (arena.lua:130-131) ; additifs comme
+  -- relic_affliction_inc. Cohérence aura/relique : une relique peut désormais poser un ampli sur team/role.
+  poisonInc = "poisonInc", burnInc = "burnInc", bleedInc = "bleedInc", rotInc = "rotInc" }
 
 -- Résout le rôle "front"/"back" sur le comp (post-buildComp : chaque spec porte depth/row/slot). Tie-break
 -- IDENTIQUE à chooseTarget (arena.lua:225-226) et à buildComp:resolveExtreme (build.lua:932) : depth extrême,

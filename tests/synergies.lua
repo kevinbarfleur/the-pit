@@ -192,6 +192,33 @@ local ok, err = pcall(function()
     assert(#tgt.dots.poison == 12, ("SYNERGIE festering: cap leve, 12 stacks tiennent >8 (obtenu %d)"):format(#tgt.dots.poison))
   end
 
+  -- SYNERGIE 13 — MARQUE DE VULN D'ÉQUIPE (TROU #2, rollout § command-auras) : un grant_team `markEnemiesVuln`
+  -- posé à combat_start marque TOUTE l'équipe ENNEMIE en vulnInc FLAT (calque de slowEnemies/rotEnemies). Lu dans
+  -- arena:spawn, sans durée (tient le combat), cappé à la LECTURE (VULN_INC_CAP). On vérifie : (1) les ennemis
+  -- sont marqués ; (2) le commandant ennemi (intouchable) ne l'est PAS ; (3) cumul avec on_hit grant_vuln ≤ cap.
+  do
+    local cmdEff = { { trigger = "combat_start", op = "grant_team", params = { markEnemiesVuln = 0.12 } } }
+    local a = Arena.new({
+      left = { U("bandit", cmdEff) }, -- porte le drapeau (combat_start le pose sur l'équipe ennemie = right)
+      right = { U("marauder", {}, { row = 0 }), U("skeleton", {}, { row = 1 }),
+                U("witch", {}, { depth = -1, row = 0, isCommander = true, untargetable = true }) },
+      autoReset = false, seed = 81 })
+    local e0, e1, ecmd = a.units[2], a.units[3], a.units[4]
+    assert(math.abs((e0.vulnInc or 0) - 0.12) < 1e-9, "TROU#2: l'ennemi 1 est marqué vulnInc 0.12 a l'ouverture")
+    assert(math.abs((e1.vulnInc or 0) - 0.12) < 1e-9, "TROU#2: l'ennemi 2 est marqué vulnInc 0.12")
+    assert((ecmd.vulnInc or 0) == 0, "TROU#2: le commandant ennemi (intouchable) n'est PAS marqué")
+    -- la marque tient (pas de vulnRemaining -> pas d'expiration au tick).
+    a:update(1.0, 1)
+    assert(math.abs((e0.vulnInc or 0) - 0.12) < 1e-9, "TROU#2: la marque d'équipe persiste (débuff d'ouverture, pas de durée)")
+    -- CUMUL on_hit grant_vuln + flat : reste BORNÉ. grant_vuln pose en max() ; une marque on_hit 0.50 -> max(0.12,0.50).
+    e0.vulnInc = math.max(e0.vulnInc or 0, 0.50)
+    local hitter = a.units[1]
+    local h0 = e0.hp; a:hit(hitter, e0); local d = h0 - e0.hp
+    -- la LECTURE dans damage() clampe à VULN_INC_CAP=0.5 -> jamais +99% : la frappe reste bornée.
+    assert(d <= math.floor(hitter.dmg * (1 + Arena.VULN_INC_CAP)) + 1,
+      ("TROU#2: cumul flat+on_hit borné à la lecture VULN_INC_CAP (degats %d)"):format(d))
+  end
+
   -- ════════ KEYSTONES — contrats MULTICAST (§2.1.1) + EMPOWER/VULN caps (§8.1 step 2) ════════
 
   -- K3-A — MULTICAST × PORTE-ÉPINES (§2.1.1) : un multicast×3 sur un skeleton (épines 3) prend 3× les épines
@@ -563,6 +590,7 @@ local ok, err = pcall(function()
   print("  synergies : choc-decharge-allie / poison-multi-sources / weaken-reduit-output / bleed-ralentit-cadence / regen-contre-DoT")
   print("  synergies+: contagion / propagation-a-la-mort / aggravate / shieldEat (T2)")
   print("  synergies#: bleed->rot / poison->feu / festering-sans-cap (T3 croises) OK")
+  print("  synergies TROU#2: grant_team markEnemiesVuln -> vulnInc sur l'equipe ennemie (cmd epargne, cumul <= cap) OK")
   print("  keystones : multicast×epines (borne) / multicast×choc (idempotence) / empower+vuln caps / determinisme OK")
   print("  new-ops   : crit(seedé) / execute / grant_vuln(expire) / cleave / heal_on_kill / purge / convert_dot / grant_if_absent OK")
   print("  pire-combo: multicast×empower×vuln×crit conclut SANS one-shot (caps+backstop tiennent) OK")

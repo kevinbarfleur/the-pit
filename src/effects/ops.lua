@@ -287,6 +287,7 @@ Effects.register("grant_team", function(ctx, p)
     if p.bleedNoExpire then tf.bleedNoExpire = true end                                 -- OPEN WOUNDS : saignements éternels
     if p.plagueAmp then tf.plagueAmp = math.max(tf.plagueAmp or 0, p.plagueAmp) end     -- PLAGUE COMMUNION : 2+ afflictions -> +dmg
     if p.stripEnemyShield then tf.stripEnemyShield = math.max(tf.stripEnemyShield or 0, p.stripEnemyShield) end -- BRIS-SIÈGE (commandant) : ampute les boucliers ennemis d'ouverture (lu dans arena:spawn)
+    if p.markEnemiesVuln then tf.markEnemiesVuln = math.max(tf.markEnemiesVuln or 0, p.markEnemiesVuln) end -- MARQUE DE VULN (commandant, TROU #2) : marque l'équipe ENNEMIE d'ouverture en `vulnInc` (lu dans arena:spawn, cappé à la lecture VULN_INC_CAP). max() = idempotent (re-pose).
   end
   if p.slowEnemies then -- THE SLOW BLEED : aura de slow sur TOUTE l'équipe ennemie (immédiate)
     for _, w in ipairs(arena.units) do

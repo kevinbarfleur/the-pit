@@ -1016,6 +1016,11 @@ function Build:buildComp(side)
   -- (axe rampe = son identité ; son ampli passe quand même au spread via le `load`). cf. payoff-framework.md §4.
   local shield = {}
   local burnInc, poisonInc, rotGrowth, grantBleed = {}, {}, {}, {}
+  -- TROU #1 (rollout § command-auras) : `bleedInc`/`rotInc` n'avaient PAS de buffer ici (l'adjacence
+  -- bleed/rot passe par grantBleed/rotGrowth, pas par un *Inc). Pour qu'un commandant « ampli d'école »
+  -- (aura_stat bleedInc/rotInc team/role) puisse les poser, on ouvre leurs buffers — sommés comme burnInc/
+  -- poisonInc et lus par la pose de DoT (arena.lua:130-131, ampDps, cappé DOT_CAP_MULT=3). nil = inerte.
+  local bleedInc, rotInc = {}, {}
   for _, p in ipairs(placed) do
     local sm = LEVEL_MULT[p.level] or 1.0 -- l'aura scale avec le NIVEAU de la source (duplicatas) ; cap appliqué à la LECTURE
     for _, e in ipairs(Units[p.id].effects or {}) do
@@ -1158,13 +1163,19 @@ function Build:buildComp(side)
     end
     return nil
   end
-  -- Stats numériques additives (les seules clés bakées par aura_stat ; focusWith = cas à part, ci-dessous).
+  -- Stats numériques additives bakées par aura_stat. focusWith = cas à part (ci-dessous). Les amplis d'école
+  -- (poisonInc/burnInc/bleedInc/rotInc, TROU #1) sont dans la whitelist MAIS ne vont PAS dans statBuf : ils
+  -- sont ROUTÉS vers leurs buffers dédiés (déjà lus par la pose de DoT), via addStat (mapping ci-dessous).
+  local DOT_INC = { poisonInc = poisonInc, burnInc = burnInc, bleedInc = bleedInc, rotInc = rotInc }
   local STAT_FIELDS = { haste = true, atkInc = true, dmgReduce = true, regen = true,
-    multicast = true, lifesteal = true, statInc = true }
-  local statBuf = {}    -- [slot] = { haste=…, atkInc=…, … } (sommes additives)
+    multicast = true, lifesteal = true, statInc = true,
+    poisonInc = true, burnInc = true, bleedInc = true, rotInc = true } -- TROU #1 : amplis d'école accessibles en aura_stat
+  local statBuf = {}    -- [slot] = { haste=…, atkInc=…, … } (sommes additives ; HORS amplis d'école)
   local focusWith = {}  -- [slot] = slot de l'allié dont on copie la cible (effet faible, tie-break)
   local function addStat(slot, stat, value)
     if not (slot and byCell[slot]) then return end -- cible vide -> aura inerte (jamais de crash)
+    local dot = DOT_INC[stat]
+    if dot then dot[slot] = (dot[slot] or 0) + value; return end -- ampli d'école -> buffer dédié (additif avec l'adjacence)
     local sb = statBuf[slot]; if not sb then sb = {}; statBuf[slot] = sb end
     sb[stat] = (sb[stat] or 0) + value
   end
@@ -1244,6 +1255,8 @@ function Build:buildComp(side)
       hp = math.floor(u.hp * m * sf + 0.5), dmg = math.floor(u.dmg * m * sf + 0.5), cd = u.cd,
       depth = b.maxC - p.col, row = p.row, effects = auraEffects(p.id, p.slot),
       shield = shield[p.slot] or 0, poisonInc = poisonInc[p.slot], burnInc = burnInc[p.slot],
+      bleedInc = bleedInc[p.slot], rotInc = rotInc[p.slot], -- TROU #1 : amplis bleed/rot (aura_stat team/role), lus par la pose de DoT
+
       -- K1 : auras agnostiques bakées (haste/atkInc/dmgReduce/regen/multicast/lifesteal) + focusWith.
       -- `statInc` n'est PLUS transmis (absorbé dans hp/dmg ci-dessus) : il ne sert plus rien en combat.
       haste = sb and sb.haste, atkInc = sb and sb.atkInc, dmgReduce = sb and sb.dmgReduce,
