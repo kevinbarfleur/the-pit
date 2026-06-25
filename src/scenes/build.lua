@@ -2021,8 +2021,8 @@ function Build:drawWorld()
         withMergeScale(sr, gx, gy, function() -- squash-stretch du survivant pendant la fusion (pivot = pieds)
         if Critter.has(sr.id) then
           -- RENDU VIVANT : cadre natif (taille relative + mouvement par famille), pieds calés au sol.
-          -- portrait de build : regarde à GAUCHE (wantDir=-1) normalisé par le sens inhérent de l'unité.
-          Critter.drawAt(nil, sr.id, gx, gy, SLOT_SCALE, self.t / 60, Critter.facingFor(sr.id, -1))
+          -- plateau de build = formation de combat : regarde à DROITE / vers l'adversaire (wantDir=1), comme en combat.
+          Critter.drawAt(nil, sr.id, gx, gy, SLOT_SCALE, self.t / 60, Critter.facingFor(sr.id, 1))
         else
           -- fallback rig baké (créatures dessinées-main) : fit-silhouette historique, pieds (bnd.bot) au sol.
           local s = self:rigFitScale(sr.id, CELL_FIT_W, CELL_FIT_H, 0.94, 1.5)
@@ -2087,8 +2087,8 @@ function Build:drawWorld()
     local sdy = sr.d and (sr.d.py - ay) or 0
     boxX, boxY = boxX + sdx, boxY + sdy
     if Critter.has(sr.id) then
-      -- commandant au piédestal (portrait) : regarde à GAUCHE (wantDir=-1) normalisé par le sens inhérent.
-      Critter.drawFit(nil, sr.id, boxX, boxY, boxW, boxH, self.t / 60, Critter.facingFor(sr.id, -1), 0.88, 2.4)
+      -- commandant au piédestal = ta formation : regarde à DROITE / vers l'adversaire (wantDir=1), comme en combat.
+      Critter.drawFit(nil, sr.id, boxX, boxY, boxW, boxH, self.t / 60, Critter.facingFor(sr.id, 1), 0.88, 2.4)
     elseif sr.char then
       local s = self:rigFitScale(sr.id, boxW, boxH, 0.92, 2.0)
       local bnd = self:rigBounds(sr.id)
@@ -2142,8 +2142,8 @@ function Build:drawWorld()
     local gx, gy = springGround(d, self.mx, self.my + 9)
     withDragFx(d, gx, gy, 16, function(bx, by)
       if Critter.has(self.drag.id) then
-        -- pièce traînée (portrait) : regarde à GAUCHE (wantDir=-1) normalisé par le sens inhérent.
-        Critter.drawAt(nil, self.drag.id, bx, by, DRAG_SCALE, self.t / 60, Critter.facingFor(self.drag.id, -1))
+        -- pièce traînée vers le plateau : regarde à DROITE / vers l'adversaire (wantDir=1), évite le flip au lâcher.
+        Critter.drawAt(nil, self.drag.id, bx, by, DRAG_SCALE, self.t / 60, Critter.facingFor(self.drag.id, 1))
       else
         local c = self.drag.char
         local sx, sy = c.x, c.y
