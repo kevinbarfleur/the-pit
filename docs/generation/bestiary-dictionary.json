@@ -1,0 +1,204 @@
+{
+  "projet": "GRIMOIRE — bestiaire final",
+  "indice_imposance": "1..10, indice de potentiel haut-tier (PAS une assignation de tier)",
+  "total_familles": 41,
+  "total_creatures": 102,
+  "note": "Source visuelle autoritaire = docs/generation/generateur-bestiaire.html. Ce JSON = index familles/formes + imposance + attaque + flesh + hurt/death par famille.",
+  "pieces_maitresses_imp_9_10": [
+    {"form": "veiledking", "famille": "spectre", "imposance": 10},
+    {"form": "voidtyrant", "famille": "ombre", "imposance": 10},
+    {"form": "broodmother", "famille": "arachnide", "imposance": 10},
+    {"form": "devourer", "famille": "larve", "imposance": 10},
+    {"form": "skulltitan", "famille": "crane", "imposance": 10},
+    {"form": "juggernaut", "famille": "automate", "imposance": 10},
+    {"form": "kraken", "famille": "kraken", "imposance": 9},
+    {"form": "chimera", "famille": "chimere", "imposance": 9},
+    {"form": "embersac", "famille": "cocon", "imposance": 9}
+  ],
+  "familles": [
+    {"famille": "cauchemar", "nom": "Cauchemar", "nb_formes": 3, "hurt": "waver", "death": "disintegrate", "formes": [
+      {"form": "bouffi", "imposance": 6, "attaque": "bite", "flesh": true},
+      {"form": "pendu", "imposance": 6, "attaque": "lash", "flesh": true},
+      {"form": "fleshcrawler", "imposance": 8, "attaque": "bite", "flesh": true}
+    ]},
+    {"famille": "mortvivant", "nom": "Mort-vivant", "nb_formes": 3, "hurt": "recoil", "death": "gib", "formes": [
+      {"form": "skeleton", "imposance": 1, "attaque": "swing", "flesh": false},
+      {"form": "skeletonquad", "imposance": 2, "attaque": "pounce", "flesh": false},
+      {"form": "revenant", "imposance": 2, "attaque": "claw", "flesh": true}
+    ]},
+    {"famille": "bete", "nom": "Grande Bête", "nb_formes": 3, "hurt": "recoil", "death": "gib", "formes": [
+      {"form": "dragon", "imposance": 8, "attaque": "bite", "flesh": true},
+      {"form": "behemoth", "imposance": 7, "attaque": "pounce", "flesh": true},
+      {"form": "direcat", "imposance": 4, "attaque": "pounce", "flesh": true}
+    ]},
+    {"famille": "demon", "nom": "Démon", "nb_formes": 3, "hurt": "recoil", "death": "gib", "formes": [
+      {"form": "fiend", "imposance": 5, "attaque": "claw", "flesh": true},
+      {"form": "serpent", "imposance": 4, "attaque": "bite", "flesh": true},
+      {"form": "imp", "imposance": 3, "attaque": "claw", "flesh": true}
+    ]},
+    {"famille": "insecte", "nom": "Insectoïde", "nb_formes": 2, "hurt": "jolt", "death": "gib", "formes": [
+      {"form": "insectoid", "imposance": 3, "attaque": "bite", "flesh": true},
+      {"form": "mantis", "imposance": 4, "attaque": "claw", "flesh": true}
+    ]},
+    {"famille": "cephalo", "nom": "Céphalopode", "nb_formes": 3, "hurt": "clench", "death": "burstLimp", "formes": [
+      {"form": "octopus", "imposance": 6, "attaque": "lash", "flesh": true},
+      {"form": "squid", "imposance": 5, "attaque": "lash", "flesh": true},
+      {"form": "reef", "imposance": 5, "attaque": "lash", "flesh": true}
+    ]},
+    {"famille": "gelatine", "nom": "Gélatineux", "nb_formes": 3, "hurt": "jelly", "death": "splatter", "formes": [
+      {"form": "slime", "imposance": 2, "attaque": "lunge", "flesh": true},
+      {"form": "ooze", "imposance": 2, "attaque": "lunge", "flesh": true},
+      {"form": "blobmonster", "imposance": 4, "attaque": "lunge", "flesh": true}
+    ]},
+    {"famille": "oeil", "nom": "Œil ailé", "nb_formes": 3, "hurt": "recoil", "death": "gib", "formes": [
+      {"form": "eyeball", "imposance": 4, "attaque": "gaze", "flesh": true},
+      {"form": "eyecluster", "imposance": 5, "attaque": "gaze", "flesh": true},
+      {"form": "eyeswarm", "imposance": 3, "attaque": "gaze", "flesh": true}
+    ]},
+    {"famille": "golem", "nom": "Golem runique", "nb_formes": 3, "hurt": "jolt", "death": "crumble", "formes": [
+      {"form": "golem", "imposance": 5, "attaque": "slam", "flesh": false},
+      {"form": "sentinel", "imposance": 5, "attaque": "shard", "flesh": false},
+      {"form": "idol", "imposance": 6, "attaque": "cast", "flesh": false}
+    ]},
+    {"famille": "spectre", "nom": "Spectre voilé", "nb_formes": 3, "hurt": "waver", "death": "disintegrate", "formes": [
+      {"form": "wraith", "imposance": 3, "attaque": "phase", "flesh": false},
+      {"form": "veiledlady", "imposance": 4, "attaque": "phase", "flesh": false},
+      {"form": "veiledking", "imposance": 10, "attaque": "cast", "flesh": false}
+    ]},
+    {"famille": "culte", "nom": "Culte & héraut", "nb_formes": 3, "hurt": "recoil", "death": "gib", "formes": [
+      {"form": "cultist", "imposance": 3, "attaque": "cast", "flesh": true},
+      {"form": "hierophant", "imposance": 5, "attaque": "cast", "flesh": true},
+      {"form": "possessed", "imposance": 8, "attaque": "lash", "flesh": true}
+    ]},
+    {"famille": "spore", "nom": "Engeance fongique", "nb_formes": 3, "hurt": "recoil", "death": "splatter", "formes": [
+      {"form": "sporewalker", "imposance": 3, "attaque": "spew", "flesh": true},
+      {"form": "myconid", "imposance": 2, "attaque": "spew", "flesh": true},
+      {"form": "infectedhost", "imposance": 4, "attaque": "spew", "flesh": true}
+    ]},
+    {"famille": "abyssal", "nom": "Profond abyssal", "nb_formes": 3, "hurt": "clench", "death": "burstLimp", "formes": [
+      {"form": "anglerfish", "imposance": 4, "attaque": "bite", "flesh": true},
+      {"form": "deepone", "imposance": 5, "attaque": "claw", "flesh": true},
+      {"form": "moray", "imposance": 5, "attaque": "bite", "flesh": true}
+    ]},
+    {"famille": "cristal", "nom": "Engeance cristalline", "nb_formes": 3, "hurt": "jolt", "death": "shatter", "formes": [
+      {"form": "crystalcluster", "imposance": 6, "attaque": "shard", "flesh": false},
+      {"form": "shardwalker", "imposance": 6, "attaque": "shard", "flesh": false},
+      {"form": "prism", "imposance": 6, "attaque": "shard", "flesh": false}
+    ]},
+    {"famille": "aile", "nom": "Byakhee ailé", "nb_formes": 2, "hurt": "flinchfly", "death": "gib", "formes": [
+      {"form": "byakhee", "imposance": 5, "attaque": "wing", "flesh": true},
+      {"form": "harpy", "imposance": 4, "attaque": "claw", "flesh": true}
+    ]},
+    {"famille": "colosse", "nom": "Colosse difforme", "nb_formes": 2, "hurt": "recoil", "death": "gib", "formes": [
+      {"form": "ogre", "imposance": 7, "attaque": "slam", "flesh": true},
+      {"form": "cyclops", "imposance": 6, "attaque": "slam", "flesh": true}
+    ]},
+    {"famille": "ombre", "nom": "Ombre du néant", "nb_formes": 3, "hurt": "waver", "death": "disintegrate", "formes": [
+      {"form": "shade", "imposance": 4, "attaque": "phase", "flesh": false},
+      {"form": "voidmaw", "imposance": 8, "attaque": "engulf", "flesh": false},
+      {"form": "voidtyrant", "imposance": 10, "attaque": "lash", "flesh": false}
+    ]},
+    {"famille": "essaim", "nom": "Essaim vermine", "nb_formes": 2, "hurt": "scatter", "death": "disintegrate", "formes": [
+      {"form": "swarm", "imposance": 4, "attaque": "surge", "flesh": true},
+      {"form": "hive", "imposance": 5, "attaque": "surge", "flesh": true}
+    ]},
+    {"famille": "annelide", "nom": "Annélide foreur", "nb_formes": 2, "hurt": "kink", "death": "unravel", "formes": [
+      {"form": "graboid", "imposance": 5, "attaque": "bite", "flesh": true},
+      {"form": "leech", "imposance": 3, "attaque": "bite", "flesh": true}
+    ]},
+    {"famille": "templier", "nom": "Templier", "nb_formes": 3, "hurt": "recoil", "death": "gib", "formes": [
+      {"form": "crusader", "imposance": 5, "attaque": "swing", "flesh": true},
+      {"form": "sentinelshield", "imposance": 5, "attaque": "lunge", "flesh": true},
+      {"form": "paladin", "imposance": 7, "attaque": "swing", "flesh": true}
+    ]},
+    {"famille": "inquisiteur", "nom": "Inquisiteur", "nb_formes": 3, "hurt": "recoil", "death": "gib", "formes": [
+      {"form": "inquisitor", "imposance": 5, "attaque": "smite", "flesh": true},
+      {"form": "zealot", "imposance": 5, "attaque": "cast", "flesh": true},
+      {"form": "confessor", "imposance": 5, "attaque": "smite", "flesh": true}
+    ]},
+    {"famille": "seraphin", "nom": "Séraphin", "nb_formes": 2, "hurt": "flinchfly", "death": "gib", "formes": [
+      {"form": "seraph", "imposance": 7, "attaque": "smite", "flesh": true},
+      {"form": "throne", "imposance": 7, "attaque": "smite", "flesh": true}
+    ]},
+    {"famille": "griffon", "nom": "Griffon", "nb_formes": 2, "hurt": "flinchfly", "death": "gib", "formes": [
+      {"form": "gryphon", "imposance": 6, "attaque": "pounce", "flesh": true},
+      {"form": "hippogriff", "imposance": 5, "attaque": "pounce", "flesh": true}
+    ]},
+    {"famille": "bandit", "nom": "Gredins", "nb_formes": 3, "hurt": "recoil", "death": "gib", "formes": [
+      {"form": "cutthroat", "imposance": 3, "attaque": "claw", "flesh": true},
+      {"form": "brigand", "imposance": 3, "attaque": "claw", "flesh": true},
+      {"form": "cutpurse", "imposance": 3, "attaque": "lunge", "flesh": true}
+    ]},
+    {"famille": "canide", "nom": "Canidé", "nb_formes": 3, "hurt": "recoil", "death": "gib", "formes": [
+      {"form": "wolf", "imposance": 4, "attaque": "pounce", "flesh": true},
+      {"form": "hound", "imposance": 3, "attaque": "pounce", "flesh": true},
+      {"form": "jackal", "imposance": 3, "attaque": "pounce", "flesh": true}
+    ]},
+    {"famille": "reptile", "nom": "Reptile", "nb_formes": 3, "hurt": "kink", "death": "unravel", "formes": [
+      {"form": "coilserpent", "imposance": 4, "attaque": "bite", "flesh": true},
+      {"form": "cobra", "imposance": 4, "attaque": "bite", "flesh": true},
+      {"form": "lizard", "imposance": 3, "attaque": "bite", "flesh": true}
+    ]},
+    {"famille": "rongeur", "nom": "Rongeur", "nb_formes": 2, "hurt": "recoil", "death": "gib", "formes": [
+      {"form": "ratgiant", "imposance": 3, "attaque": "bite", "flesh": true},
+      {"form": "ratking", "imposance": 5, "attaque": "surge", "flesh": true}
+    ]},
+    {"famille": "arachnide", "nom": "Arachnide", "nb_formes": 3, "hurt": "jolt", "death": "gib", "formes": [
+      {"form": "spider", "imposance": 3, "attaque": "skitter", "flesh": true},
+      {"form": "widow", "imposance": 4, "attaque": "skitter", "flesh": true},
+      {"form": "broodmother", "imposance": 10, "attaque": "lunge", "flesh": true}
+    ]},
+    {"famille": "crustace", "nom": "Crustacé", "nb_formes": 2, "hurt": "jolt", "death": "gib", "formes": [
+      {"form": "crab", "imposance": 3, "attaque": "claw", "flesh": true},
+      {"form": "mantisshrimp", "imposance": 3, "attaque": "lunge", "flesh": true}
+    ]},
+    {"famille": "meduse", "nom": "Méduse", "nb_formes": 2, "hurt": "clench", "death": "burstLimp", "formes": [
+      {"form": "jelly", "imposance": 3, "attaque": "lash", "flesh": true},
+      {"form": "siphon", "imposance": 5, "attaque": "lash", "flesh": true}
+    ]},
+    {"famille": "echassier", "nom": "Échassier", "nb_formes": 2, "hurt": "recoil", "death": "gib", "formes": [
+      {"form": "strider", "imposance": 4, "attaque": "bite", "flesh": true},
+      {"form": "heron", "imposance": 3, "attaque": "bite", "flesh": true}
+    ]},
+    {"famille": "wendigo", "nom": "Wendigo", "nb_formes": 2, "hurt": "recoil", "death": "gib", "formes": [
+      {"form": "wendigo", "imposance": 7, "attaque": "claw", "flesh": true},
+      {"form": "stag", "imposance": 6, "attaque": "lunge", "flesh": true}
+    ]},
+    {"famille": "hydre", "nom": "Hydre", "nb_formes": 1, "hurt": "kink", "death": "unravel", "formes": [
+      {"form": "hydra", "imposance": 8, "attaque": "bite", "flesh": true}
+    ]},
+    {"famille": "kraken", "nom": "Kraken", "nb_formes": 1, "hurt": "clench", "death": "burstLimp", "formes": [
+      {"form": "kraken", "imposance": 9, "attaque": "lash", "flesh": true}
+    ]},
+    {"famille": "pendu", "nom": "Pendu", "nb_formes": 2, "hurt": "recoil", "death": "gib", "formes": [
+      {"form": "marionette", "imposance": 5, "attaque": "phase", "flesh": true},
+      {"form": "hanged", "imposance": 5, "attaque": "phase", "flesh": true}
+    ]},
+    {"famille": "chimere", "nom": "Chimère", "nb_formes": 1, "hurt": "recoil", "death": "gib", "formes": [
+      {"form": "chimera", "imposance": 9, "attaque": "multi", "flesh": true}
+    ]},
+    {"famille": "cocon", "nom": "Cocon", "nb_formes": 4, "hurt": "jelly", "death": "splatter", "formes": [
+      {"form": "broodsac", "imposance": 3, "attaque": "engulf", "flesh": true},
+      {"form": "bilesac", "imposance": 5, "attaque": "spew", "flesh": true},
+      {"form": "chrysalis", "imposance": 7, "attaque": "lash", "flesh": true},
+      {"form": "embersac", "imposance": 9, "attaque": "multi", "flesh": true}
+    ]},
+    {"famille": "plante", "nom": "Plante-Gueule", "nb_formes": 2, "hurt": "kink", "death": "gib", "formes": [
+      {"form": "maweed", "imposance": 4, "attaque": "bite", "flesh": true},
+      {"form": "vinemaw", "imposance": 5, "attaque": "lash", "flesh": true}
+    ]},
+    {"famille": "larve", "nom": "Larve", "nb_formes": 2, "hurt": "jelly", "death": "splatter", "formes": [
+      {"form": "grub", "imposance": 2, "attaque": "bite", "flesh": true},
+      {"form": "devourer", "imposance": 10, "attaque": "bite", "flesh": true}
+    ]},
+    {"famille": "crane", "nom": "Crâne Colossal", "nb_formes": 2, "hurt": "jolt", "death": "crumble", "formes": [
+      {"form": "skullking", "imposance": 6, "attaque": "bite", "flesh": false},
+      {"form": "skulltitan", "imposance": 10, "attaque": "gaze", "flesh": false}
+    ]},
+    {"famille": "automate", "nom": "Automate", "nb_formes": 3, "hurt": "jolt", "death": "crumble", "formes": [
+      {"form": "automaton", "imposance": 4, "attaque": "cast", "flesh": false},
+      {"form": "reliquary", "imposance": 5, "attaque": "smite", "flesh": false},
+      {"form": "juggernaut", "imposance": 10, "attaque": "slam", "flesh": false}
+    ]}
+  ]
+}

@@ -1,0 +1,295 @@
+<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Reliques — GRIMOIRE</title>
+<style>
+  :root{--bg:#0c0a12;--panel:#14101a;--ink:#e8e2d0;--dim:#9a90a8;}
+  *{box-sizing:border-box;}
+  body{margin:0;background:radial-gradient(1200px 600px at 50% -10%,#1a1426,#0c0a12);color:var(--ink);
+    font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;padding:28px 20px 60px;}
+  h1{font-weight:700;letter-spacing:.06em;margin:0 0 4px;font-size:22px;}
+  .sub{color:var(--dim);font-size:13px;margin:0 0 22px;}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:18px;max-width:1400px;}
+  .card{position:relative;border-radius:12px;padding:16px;display:flex;gap:14px;align-items:flex-start;
+    border:2px solid transparent;background:linear-gradient(var(--panel),var(--panel)) padding-box,linear-gradient(135deg,#3a3450,#221c30) border-box;}
+  .card.silver{background-image:linear-gradient(var(--panel),var(--panel)),linear-gradient(135deg,#b6c0cc,#566370);box-shadow:0 0 18px rgba(150,170,190,.12);}
+  .card.gold{background-image:linear-gradient(var(--panel),var(--panel)),linear-gradient(135deg,#ffe35a,#8a6a14);box-shadow:0 0 18px rgba(210,170,60,.16);}
+  .card.prismatic{background-image:linear-gradient(var(--panel),var(--panel)),linear-gradient(135deg,#ff6b7a,#ffe35a,#7affb0,#46c7ff,#b48aff,#ff6b7a);background-size:auto,300% 300%;animation:prism 7s linear infinite;box-shadow:0 0 22px rgba(160,90,220,.20);}
+  @keyframes prism{0%{background-position:0 0,0% 50%}100%{background-position:0 0,300% 50%}}
+  .art{flex:0 0 auto;display:flex;flex-direction:column;align-items:center;gap:8px;}
+  canvas{image-rendering:pixelated;display:block;}
+  .big{width:144px;height:144px;border-radius:8px;background:radial-gradient(circle at 50% 42%,#1c1726,#0e0b15);}
+  .invwrap{display:flex;flex-direction:column;align-items:center;gap:3px;}
+  .inv{width:48px;height:48px;border-radius:5px;background:#0e0b15;border:1px solid #2a2438;}
+  .invlbl{font-size:9px;color:var(--dim);letter-spacing:.08em;text-transform:uppercase;}
+  .meta{flex:1 1 auto;min-width:0;}
+  .name{font-weight:700;letter-spacing:.04em;font-size:14px;margin-bottom:3px;}
+  .badge{display:inline-block;font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);
+    border:1px solid #2e2840;border-radius:99px;padding:1px 8px;margin-bottom:8px;}
+  .silver .name{color:#cfd8e2;} .gold .name{color:#ffd766;} .prismatic .name{color:#e9c4ff;}
+  .eff{font-size:12.5px;line-height:1.5;color:#d6cebc;margin-bottom:8px;}
+  .flav{font-size:11.5px;line-height:1.45;color:#8a8098;font-style:italic;}
+</style></head>
+<body>
+  <h1>RELIQUES — LE GRIMOIRE</h1>
+  <p class="sub">Icône statique (inventaire) + version animée (carte de choix). Cadre selon la rareté : argent · or · prismatique.</p>
+  <div class="grid" id="grid"></div>
+<script>
+(function(){
+  /* ---------- données ---------- */
+  var RELICS=[
+    {"id":"bloodstone","name":"BLOODSTONE","effect":"Vos unités frappent +20% plus fort.","flavor":"Un cœur de meurtre comprimé, encore tiède.","tier":1,"band":"low","card_color":"silver"},
+    {"id":"carapace","name":"CARAPACE","effect":"Vos unités encaissent +15 PV max.","flavor":"Mue par une chose qui a survécu à sa propre mort.","tier":1,"band":"low","card_color":"silver"},
+    {"id":"aegis","name":"AEGIS","effect":"Les attaques ennemies frappent 15% plus doucement.","flavor":"Un bouclier votif, fendu par les prières qu'il n'a pas exaucées.","tier":1,"band":"low","card_color":"silver"},
+    {"id":"kings_bowl","name":"LE BOL DES ROIS","effect":"Votre poison mord 20% plus profond.","flavor":"Douze rois y burent ; douze royaumes les suivirent dans la terre.","tier":2,"band":"mid","card_color":"gold"},
+    {"id":"ember_heart","name":"CŒUR DE BRAISE","effect":"Vos feux brûlent 30% plus chaud.","flavor":"Il bat une fois par heure, et l'heure brûle.","tier":2,"band":"mid","card_color":"gold"},
+    {"id":"weeping_nail","name":"LE CLOU QUI PLEURE","effect":"Vos plaies saignent 30% plus fort.","flavor":"Il n'a pas cessé de pleurer depuis la première chair trouvée.","tier":2,"band":"mid","card_color":"gold"},
+    {"id":"grave_cap","name":"CHAPEAU DE TOMBE","effect":"Votre putréfaction s'étend 30% plus vite.","flavor":"Il ne fructifie que sur les morts, et les morts ne suffisent jamais.","tier":2,"band":"mid","card_color":"gold"},
+    {"id":"famines_math","name":"L'ARITHMÉTIQUE DE LA FAMINE","effect":"3 unités ou moins : elles frappent et encaissent bien plus.","flavor":"Elle pèse un os contre un plateau vide, et les trouve égaux.","tier":3,"band":"mid","card_color":"gold"},
+    {"id":"hollow_choir","name":"CHŒUR CREUX","effect":"Vos afflictions percent 40% des soins ennemis.","flavor":"Un chœur de gorges vides, et pas une ne laissera une plaie se refermer.","tier":3,"band":"high","card_color":"prismatic"},
+    {"id":"feeding_frenzy","name":"FRÉNÉSIE","effect":"Chaque ennemi qui meurt fait frapper vos unités plus fort.","flavor":"Trop de dents, et jamais, jamais assez.","tier":3,"band":"high","card_color":"prismatic"},
+    {"id":"whetstone","name":"PIERRE À AIGUISER","effect":"Vos unités attaquent 15% plus vite.","flavor":"Affûtée sur ce qui saignait volontiers, et en était heureux.","tier":1,"band":"low","card_color":"silver"},
+    {"id":"thornguard","name":"GARDE-RONCE","effect":"Les attaquants subissent 4 dégâts en retour.","flavor":"Porté par des saints qui voulaient partager leur souffrance.","tier":2,"band":"mid","card_color":"gold"},
+    {"id":"sacred_shield","name":"BOUCLIER SACRÉ","effect":"Votre équipe est invulnérable la première demi-seconde.","flavor":"Une auréole qui tient — le temps d'un souffle.","tier":3,"band":"high","card_color":"prismatic"},
+    {"id":"second_breath","name":"SECOND SOUFFLE","effect":"Chaque unité survit à un coup fatal à 1 PV.","flavor":"La Fosse en laisse certains tomber deux fois avant de les garder.","tier":3,"band":"high","card_color":"prismatic"},
+    {"id":"forked_tongue","name":"LANGUE FOURCHUE","effect":"Votre foudre arque vers un second ennemi.","flavor":"Elle a goûté l'air une fois, et l'air la craint depuis.","tier":4,"band":"high","card_color":"prismatic"},
+    {"id":"everburn","name":"FLAMME ÉTERNELLE","effect":"Vos feux ne faiblissent jamais.","flavor":"Allumée pour une veillée que les pleureurs n'ont pas survécue.","tier":4,"band":"high","card_color":"prismatic"},
+    {"id":"open_wounds","name":"PLAIES OUVERTES","effect":"Vos saignements ne se referment jamais.","flavor":"Certaines coupures sont gardées ouvertes exprès, et savent pourquoi.","tier":4,"band":"high","card_color":"prismatic"},
+    {"id":"plague_communion","name":"COMMUNION DE PESTE","effect":"Sous 2+ afflictions, l'ennemi subit +25% de tout.","flavor":"Bois de chaque maladie, et nomme le mélange un sacrement.","tier":4,"band":"high","card_color":"prismatic"},
+    {"id":"carrion_ledger","name":"LE REGISTRE DE CHAROGNE","effect":"Gagnez d'un coup une vague d'expérience de boutique.","flavor":"Chaque nom est rayé. Les dettes sont payées.","tier":3,"band":"mid","card_color":"gold"},
+    {"id":"black_summons","name":"NOIRE CONVOCATION","effect":"Augmente le palier de votre boutique de 1.","flavor":"Une invitation scellée à la cire froide. Vous n'étiez pas censé refuser.","tier":4,"band":"high","card_color":"prismatic"},
+    {"id":"beggars_lantern","name":"LANTERNE DU GUEUX","effect":"Votre boutique tire un palier plus bas désormais.","flavor":"Elle attire les bas et les désespérés, qui arrivent en grand nombre.","tier":2,"band":"mid","card_color":"gold"},
+    {"id":"usurers_ledger","name":"LE REGISTRE DE L'USURIER","effect":"Votre or se reporte ; +1 or par tranche de 5 détenus (max +5).","flavor":"Chaque pièce en doit une autre. La Fosse perçoit toujours.","tier":3,"band":"mid","card_color":"gold"},
+    {"id":"tithe_bowl","name":"BOL DE DÎME","effect":"Gagnez un combat : +2 or au tour suivant.","flavor":"Jamais vide, et jamais tout à fait plein.","tier":2,"band":"mid","card_color":"gold"},
+    {"id":"paupers_boon","name":"AUBAINE DU PAUVRE","effect":"+3 or au début de chaque tour.","flavor":"Les poches d'un mort, jamais tout à fait vides.","tier":2,"band":"mid","card_color":"gold"},
+    {"id":"grave_robbers_cut","name":"PART DU PILLEUR DE TOMBES","effect":"Vendre une unité rembourse son coût plein.","flavor":"Rien d'enterré n'est perdu pour qui creuse.","tier":2,"band":"mid","card_color":"gold"},
+    {"id":"blood_banner","name":"BANNIÈRE DE SANG","effect":"Toute votre meute frappe +10% plus fort.","flavor":"Une peau d'homme dressée sur la fosse ; dessous, tous frappent plus fort.","tier":3,"band":"mid","card_color":"gold"},
+    {"id":"seers_mark","name":"LA MARQUE DU VOYANT","effect":"Vos coups marquent : +15% de tout pendant ~2s.","flavor":"Il a vu trop loin ; ses yeux vous montrent à tout ce qui mord.","tier":3,"band":"mid","card_color":"gold"},
+    {"id":"carrion_feast","name":"FESTIN DE CHAROGNE","effect":"Chaque ennemi tué rend 5 PV au tueur.","flavor":"La Fosse ne gâche rien. Ce qui tombe nourrit ce qui tient.","tier":3,"band":"mid","card_color":"gold"},
+    {"id":"second_plague","name":"LA SECONDE PESTE","effect":"Vos coups sèment un venin léger là où rien ne pourrit.","flavor":"Une plaie en appelle une seconde, et la seconde n'attend pas.","tier":3,"band":"mid","card_color":"gold"},
+    {"id":"tide_caller","name":"APPELE-MARÉE","effect":"Toute votre congrégation subit 8% de moins.","flavor":"Le mur se souvient d'avoir été un saint ; il endure, par habitude.","tier":3,"band":"mid","card_color":"gold"},
+    {"id":"bait_lantern","name":"LANTERNE-APPÂT","effect":"Chaque coup rend 5% des dégâts en PV.","flavor":"Allume la lanterne et laisse la faim faire. Ce qui approche, on le boit.","tier":3,"band":"mid","card_color":"gold"},
+    {"id":"echo_crown","name":"COURONNE D'ÉCHO","effect":"Votre unité la plus avancée frappe deux fois par coup.","flavor":"La couronne se souvient de chaque coup reçu, et le rend, encore, encore.","tier":4,"band":"high","card_color":"prismatic"},
+    {"id":"gravediggers_due","name":"LE DÛ DU FOSSOYEUR","effect":"+50% contre tout ennemi sous 25% de PV.","flavor":"Sous le quart, tu n'es plus une proie ; tu es une dette échue.","tier":4,"band":"high","card_color":"prismatic"},
+    {"id":"splitting_maw","name":"GUEULE FENDUE","effect":"Vos coups éclaboussent les voisins pour 40%.","flavor":"Une bouche n'a jamais suffi. Elle mord, et toute la rangée saigne.","tier":4,"band":"high","card_color":"prismatic"}
+  ];
+
+  /* ---------- moteur (primitives éprouvées) ---------- */
+  function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;var t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+  function hexToRgb(h){h=(''+h).replace('#','');if(h.length===3)h=h.split('').map(function(c){return c+c;}).join('');var n=parseInt(h,16);return [(n>>16)&255,(n>>8)&255,n&255];}
+  function makeGrid(w,h){return {w:w,h:h,data:new Array(w*h).fill(null)};}
+  function set(g,x,y,c){x=x|0;y=y|0;if(x<0||y<0||x>=g.w||y>=g.h)return;g.data[y*g.w+x]=c;}
+  function ellipse(g,cx,cy,rx,ry,c){cx=Math.round(cx);cy=Math.round(cy);rx=Math.max(1,Math.round(rx));ry=Math.max(1,Math.round(ry));for(var y=-ry;y<=ry;y++){for(var x=-rx;x<=rx;x++){if((x*x)/(rx*rx)+(y*y)/(ry*ry)<=1.05){set(g,cx+x,cy+y,c);}}}}
+  function disc(g,cx,cy,r,c){cx=Math.round(cx);cy=Math.round(cy);r=Math.max(0,Math.round(r));for(var y=-r;y<=r;y++){for(var x=-r;x<=r;x++){if(x*x+y*y<=r*r+r*0.5){set(g,cx+x,cy+y,c);}}}}
+  function line(g,x0,y0,x1,y1,c){x0=Math.round(x0);y0=Math.round(y0);x1=Math.round(x1);y1=Math.round(y1);var dx=Math.abs(x1-x0),dy=Math.abs(y1-y0),sx=x0<x1?1:-1,sy=y0<y1?1:-1,err=dx-dy;while(true){set(g,x0,y0,c);if(x0===x1&&y0===y1)break;var e2=2*err;if(e2>-dy){err-=dy;x0+=sx;}if(e2<dx){err+=dx;y0+=sy;}}}
+  function tube(g,pts,r0,r1,c){if(pts.length===1){disc(g,pts[0][0],pts[0][1],r0,c);return;}var segLens=[],total=0,i;for(i=1;i<pts.length;i++){var dx=pts[i][0]-pts[i-1][0],dy=pts[i][1]-pts[i-1][1];var l=Math.hypot(dx,dy);segLens.push(l);total+=l;}if(total===0){disc(g,pts[0][0],pts[0][1],r0,c);return;}var acc=0;for(i=1;i<pts.length;i++){var a=pts[i-1],b=pts[i],L=segLens[i-1];var steps=Math.max(1,Math.ceil(L));for(var s=0;s<=steps;s++){var t=(acc+L*s/steps)/total;var x=a[0]+(b[0]-a[0])*s/steps,y=a[1]+(b[1]-a[1])*s/steps;var r=r0+(r1-r0)*t;disc(g,x,y,r,c);}acc+=L;}}
+  function polygon(g,pts,c){var miny=Infinity,maxy=-Infinity,i;for(i=0;i<pts.length;i++){miny=Math.min(miny,pts[i][1]);maxy=Math.max(maxy,pts[i][1]);}miny=Math.floor(miny);maxy=Math.ceil(maxy);for(var y=miny;y<=maxy;y++){var xs=[];for(i=0;i<pts.length;i++){var a=pts[i],b=pts[(i+1)%pts.length];var y0=a[1],y1=b[1];if((y0<=y&&y1>y)||(y1<=y&&y0>y)){xs.push(a[0]+(b[0]-a[0])*(y-y0)/(y1-y0));}}xs.sort(function(p,q){return p-q;});for(var k=0;k+1<xs.length;k+=2){for(var x=Math.round(xs[k]);x<=Math.round(xs[k+1]);x++){set(g,x,y,c);}}}}
+  function rectF(g,x0,y0,x1,y1,c){for(var y=y0;y<=y1;y++)for(var x=x0;x<=x1;x++)set(g,x,y,c);}
+  function outline(g,oc){var w=g.w,h=g.h,src=g.data.slice();for(var y=0;y<h;y++){for(var x=0;x<w;x++){if(src[y*w+x]!==null)continue;var t=(x>0&&src[y*w+x-1])||(x<w-1&&src[y*w+x+1])||(y>0&&src[(y-1)*w+x])||(y<h-1&&src[(y+1)*w+x]);if(t)g.data[y*w+x]=oc;}}}
+
+  /* ---------- palettes thématiques ---------- */
+  var PAL={
+    BLOOD:{deep:'#3a0a12',sh:'#6e1322',base:'#a81d33',hi:'#d83b52',accent:'#ff7283'},
+    FIRE:{deep:'#4a1402',sh:'#8a2f06',base:'#e0760f',hi:'#ffc23a',accent:'#fff1a0'},
+    ROT:{deep:'#1f2a14',sh:'#3c4a1e',base:'#6b7a2e',hi:'#9fae42',accent:'#c7d05a'},
+    POISON:{deep:'#102a1a',sh:'#1e4a2e',base:'#2e7a4a',hi:'#46c77a',accent:'#7affb0'},
+    BONE:{deep:'#4a4636',sh:'#7a745c',base:'#b9b08c',hi:'#e8e0c0',accent:'#fffbe0'},
+    IRON:{deep:'#1c2026',sh:'#3a424c',base:'#6b7682',hi:'#aab4c0',accent:'#dfe6ee'},
+    GOLD:{deep:'#4a3408',sh:'#8a6a14',base:'#d8a82a',hi:'#ffe35a',accent:'#fff7c0'},
+    PALE:{deep:'#2a2e3a',sh:'#4a5060',base:'#8a90a4',hi:'#cfd6e6',accent:'#ffffff'},
+    STONE:{deep:'#232323',sh:'#454548',base:'#777a80',hi:'#a8acb2',accent:'#cfd2d6'},
+    SHADOW:{deep:'#140a1e',sh:'#2a1840',base:'#4a2e72',hi:'#7a52c0',accent:'#b48aff'},
+    FLESH:{deep:'#3a2014',sh:'#6e3a24',base:'#a85a3c',hi:'#d08a64',accent:'#f0b38a'}
+  };
+  var OUTC='#0c0810';
+
+  /* ---------- motifs ---------- */
+  function mFlame(g,p,rnd,o){o=o||{};var cx=o.cx||20,cy=o.cy||26,h=o.h||18,baseR=o.baseR||7,i,t,y,r,col,i2,t2,y2;
+    for(i=0;i<h;i++){t=i/h;y=cy-i;r=baseR*(1-t*0.85)*(1+0.12*Math.sin(i*0.8));if(r<0.6)r=0.6;col=t<0.22?p.sh:(t<0.55?p.base:(t<0.82?p.hi:p.accent));disc(g,cx+Math.round(Math.sin(i*0.5)*1.2*t),y,r,col);}
+    for(i2=2;i2<h-3;i2++){t2=i2/h;y2=cy-i2;disc(g,cx+Math.round(Math.sin(i2*0.5)*1.2*t2),y2,Math.max(0.6,baseR*0.42*(1-t2)),p.accent);}}
+  function mHeart(g,p,rnd,o){var cx=20,cy=20,s=10,x,y,nx,Y,v,col;
+    for(y=-s;y<=s+2;y++)for(x=-s-1;x<=s+1;x++){nx=x/s;Y=-(y)/s+0.28;v=Math.pow(nx*nx+Y*Y-1,3)-nx*nx*Y*Y*Y;if(v<=0){col=p.base;if(y>s*0.25)col=p.sh;set(g,cx+x,cy+y,col);}}
+    disc(g,cx-4,cy-3,3,p.hi);disc(g,cx-4,cy-3,1,p.accent);line(g,cx,cy-6,cx,cy+2,p.sh);
+    if(o&&o.flame){mFlame(g,p,rnd,{cx:cx,cy:cy-6,h:11,baseR:4});}}
+  function mShield(g,p,rnd,o){o=(o&&o.o)||{};var cx=20,cy=20,i;
+    polygon(g,[[cx-10,cy-11],[cx+10,cy-11],[cx+10,cy-1],[cx+5,cy+8],[cx,cy+13],[cx-5,cy+8],[cx-10,cy-1]],p.sh);
+    polygon(g,[[cx-8,cy-9],[cx+8,cy-9],[cx+8,cy-1],[cx+4,cy+6],[cx,cy+10],[cx-4,cy+6],[cx-8,cy-1]],p.base);
+    line(g,cx-8,cy-9,cx+8,cy-9,p.hi);disc(g,cx,cy-1,3,p.hi);disc(g,cx,cy-1,2,p.accent);
+    if(o.crack){line(g,cx+2,cy-8,cx-1,cy+2,p.deep);line(g,cx-1,cy+2,cx+2,cy+9,p.deep);line(g,cx-1,cy+2,cx-4,cy+5,p.deep);}
+    if(o.thorn){for(i=-2;i<=2;i++){var tx=cx+i*5;polygon(g,[[tx-1,cy-11],[tx+1,cy-11],[tx,cy-15]],p.accent);}}
+    if(o.wave){for(i=-1;i<=2;i++){var wy=cy-2+i*3;line(g,cx-7,wy,cx-3,wy-1,p.hi);line(g,cx-3,wy-1,cx+1,wy,p.hi);line(g,cx+1,wy,cx+5,wy-1,p.hi);}}}
+  function mBowl(g,p,rnd,o){var lp=(o&&o.lp)||p,cx=20,cy=22,x,y;
+    for(y=0;y<=9;y++)for(x=-12;x<=12;x++){if((x*x)/144+(y*y)/100<=1&&y>=0)set(g,cx+x,cy+y,p.sh);}
+    for(y=1;y<=9;y++)for(x=-11;x<=11;x++){if((x*x)/121+(y*y)/81<=1&&y>=1)set(g,cx+x,cy+y,p.base);}
+    ellipse(g,cx,cy,12,2,p.hi);ellipse(g,cx,cy,10,1.6,lp.base);ellipse(g,cx,cy,10,1.3,lp.hi);disc(g,cx+4,cy,1,lp.accent);
+    if(o&&o.bubbles){disc(g,cx-4,cy-1,1,lp.hi);disc(g,cx+2,cy-2,1,lp.accent);disc(g,cx+6,cy-1,1,lp.hi);}
+    rectF(g,cx-3,cy+10,cx+3,cy+12,p.sh);rectF(g,cx-6,cy+12,cx+6,cy+13,p.base);}
+  function mNail(g,p,rnd,o){var cx=20;ellipse(g,cx,9,6,2,p.sh);ellipse(g,cx,8,6,2,p.base);line(g,cx-5,7,cx+5,7,p.hi);
+    tube(g,[[cx,10],[cx,28]],3,0.6,p.sh);tube(g,[[cx,10],[cx,28]],2,0.4,p.base);line(g,cx-1,11,cx-1,26,p.hi);}
+  function mMushroom(g,p,rnd,o){var cx=20,cy=18,x,y;
+    for(y=-8;y<=2;y++)for(x=-12;x<=12;x++){if((x*x)/144+(y*y)/81<=1&&y<=2)set(g,cx+x,cy+y,p.sh);}
+    for(y=-7;y<=1;y++)for(x=-11;x<=11;x++){if((x*x)/121+(y*y)/64<=1&&y<=1)set(g,cx+x,cy+y,p.base);}
+    ellipse(g,cx-3,cy-4,4,2,p.hi);disc(g,cx-5,cy-3,1,p.accent);disc(g,cx+4,cy-2,1,p.accent);disc(g,cx,cy-5,1,p.accent);
+    rectF(g,cx-11,cy+1,cx+11,cy+2,p.deep);tube(g,[[cx,cy+2],[cx,cy+15]],3,4,p.sh);tube(g,[[cx,cy+2],[cx,cy+14]],2,3,p.base);line(g,cx-1,cy+3,cx-1,cy+13,p.hi);}
+  function mBalance(g,p,rnd,o){var cx=20,s,x,x2;tube(g,[[cx,8],[cx,30]],1.4,1.4,p.sh);line(g,cx-12,12,cx+12,12,p.base);line(g,cx-12,11,cx+12,11,p.hi);disc(g,cx,8,2,p.hi);rectF(g,cx-4,30,cx+4,31,p.sh);
+    for(s=-1;s<=1;s+=2){var px=cx+s*12;line(g,px,12,px-3,20,p.deep);line(g,px,12,px+3,20,p.deep);for(x=-4;x<=4;x++)set(g,px+x,20,p.base);for(x2=-3;x2<=3;x2++)set(g,px+x2,21,p.sh);}
+    rectF(g,cx-13,18,cx-10,19,p.hi);}
+  function mChoir(g,p,rnd,o){var cy=20,k,cx,i;for(k=-1;k<=1;k++){cx=20+k*10;ellipse(g,cx,cy,5,8,p.sh);ellipse(g,cx,cy,4,7,p.deep);ellipse(g,cx,cy,2.4,5,'#0a0307');for(i=-2;i<=2;i++){set(g,cx+i,cy-5,p.hi);set(g,cx+i,cy+5,p.base);}}}
+  function mMaw(g,p,rnd,o){var cx=20,cy=20,wide=o&&o.wide,rw=wide?14:12,i,j;ellipse(g,cx,cy,rw,9,p.sh);ellipse(g,cx,cy,rw-1,8,p.deep);ellipse(g,cx,cy,rw-3,6,'#0a0307');
+    for(i=-3;i<=3;i++){var tx=cx+i*3;polygon(g,[[tx-1.6,cy-8],[tx+1.6,cy-8],[tx,cy-3]],p.hi);}
+    for(j=-3;j<=3;j++){var bx=cx+j*3+1;polygon(g,[[bx-1.6,cy+8],[bx+1.6,cy+8],[bx,cy+3]],p.base);}}
+  function mWhetstone(g,p,rnd,o){var cx=20,cy=22;polygon(g,[[cx-13,cy+2],[cx+11,cy-4],[cx+13,cy+1],[cx-11,cy+7]],p.sh);polygon(g,[[cx-12,cy+2],[cx+10,cy-3],[cx+11,cy],[cx-11,cy+6]],p.base);line(g,cx-12,cy+2,cx+10,cy-3,p.hi);polygon(g,[[cx-6,cy-3],[cx+2,cy-5],[cx+3,cy-3],[cx-5,cy-1]],p.hi);}
+  function mFeather(g,p,rnd,o){var cx=20,i,t,bx,by,len;tube(g,[[cx+6,32],[cx-3,8]],0.8,0.8,p.sh);
+    for(i=0;i<22;i++){t=i/22;bx=cx+6-9*t;by=32-24*t;len=6*(1-Math.abs(t-0.45)*1.4);if(len<1)continue;line(g,bx,by,bx-len,by-len*0.4,p.base);line(g,bx,by,bx+len*0.7,by-len*0.5,p.hi);}
+    disc(g,cx-3,8,1,p.accent);}
+  function mTongue(g,p,rnd,o){var cx=20;tube(g,[[cx,30],[cx,16]],2.4,1.6,p.sh);tube(g,[[cx,30],[cx,16]],1.6,1,p.base);tube(g,[[cx,16],[cx-5,8]],1.2,0.5,p.base);tube(g,[[cx,16],[cx+5,8]],1.2,0.5,p.base);line(g,cx-1,28,cx-1,17,p.hi);disc(g,cx-5,8,1,p.accent);disc(g,cx+5,8,1,p.accent);}
+  function mDrop(g,p,rnd,o){var cx=20,cy=19,y,w,x,y2,w2,x2;
+    if(o&&o.wound){ellipse(g,cx,cy+2,10,12,p.sh);ellipse(g,cx,cy+2,9,11,p.base);
+      for(y=-9;y<=9;y++){w=Math.round(3*(1-(y*y)/81));for(x=-w;x<=w;x++)set(g,cx+x,cy+2+y,p.deep);}
+      for(y2=-7;y2<=7;y2++){w2=Math.round(1.6*(1-(y2*y2)/49));for(x2=-w2;x2<=w2;x2++)set(g,cx+x2,cy+2+y2,'#1a0307');}
+      line(g,cx-3,cy-5,cx-2,cy+6,p.accent);line(g,cx+3,cy-5,cx+2,cy+6,p.accent);return;}
+    disc(g,cx,cy+4,6,p.sh);disc(g,cx,cy+4,5,p.base);polygon(g,[[cx-5,cy+4],[cx+5,cy+4],[cx,cy-8]],p.sh);polygon(g,[[cx-4,cy+4],[cx+4,cy+4],[cx,cy-6]],p.base);disc(g,cx-1,cy+3,2,p.hi);disc(g,cx-1,cy+2,1,p.accent);}
+  function mBook(g,p,rnd,o){var cx=20,cy=20,i;rectF(g,cx-11,cy-12,cx+11,cy+12,p.sh);rectF(g,cx-10,cy-11,cx+10,cy+11,p.base);rectF(g,cx+7,cy-12,cx+11,cy+12,p.deep);rectF(g,cx-12,cy-10,cx-11,cy+10,p.hi);disc(g,cx-1,cy-1,3,p.accent);for(i=-3;i<=3;i++){line(g,cx-7,cy+i*2.6,cx+5,cy+i*2.6,p.deep);}}
+  function mLetter(g,p,rnd,o){var cx=20,cy=20,seal=(o&&o.seal)||p;rectF(g,cx-12,cy-8,cx+12,cy+9,p.sh);rectF(g,cx-11,cy-7,cx+11,cy+8,p.base);polygon(g,[[cx-11,cy-7],[cx+11,cy-7],[cx,cy+2]],p.sh);line(g,cx-11,cy-7,cx,cy+2,p.hi);line(g,cx+11,cy-7,cx,cy+2,p.hi);disc(g,cx,cy+1,3,seal.base);disc(g,cx,cy+1,2,seal.accent);}
+  function mLantern(g,p,rnd,o){var gp=(o&&o.gp)||p,cx=20,cy=20,a,an;for(a=0;a<16;a++){an=Math.PI+a/16*Math.PI;set(g,Math.round(cx+Math.cos(an)*4),Math.round(6+Math.sin(an)*4),p.hi);}rectF(g,cx-1,8,cx+1,10,p.sh);polygon(g,[[cx-7,11],[cx+7,11],[cx+4,8],[cx-4,8]],p.sh);rectF(g,cx-7,11,cx+7,28,p.deep);rectF(g,cx-6,12,cx+6,27,p.sh);rectF(g,cx-5,13,cx+5,26,gp.deep);disc(g,cx,cy+1,4,gp.base);disc(g,cx,cy+1,2,gp.accent);line(g,cx,11,cx,28,p.sh);line(g,cx-7,19,cx+7,19,p.sh);rectF(g,cx-6,28,cx+6,30,p.base);}
+  function mCoin(g,p,rnd,o){var cx=20,cy=20,a,an;disc(g,cx,cy,11,p.sh);disc(g,cx,cy,10,p.base);disc(g,cx,cy,9,p.sh);disc(g,cx,cy,8,p.base);ellipse(g,cx-3,cy-4,3,2,p.hi);line(g,cx,cy-5,cx,cy+5,p.deep);line(g,cx-4,cy,cx+4,cy,p.deep);for(a=0;a<36;a++){an=a/36*6.283;set(g,Math.round(cx+Math.cos(an)*11),Math.round(cy+Math.sin(an)*11),p.hi);}}
+  function mBanner(g,p,rnd,o){var cx=18;tube(g,[[cx-9,7],[cx-9,32]],1.2,1.2,p.sh);disc(g,cx-9,7,2,p.hi);polygon(g,[[cx-8,9],[cx+10,9],[cx+10,27],[cx+1,31],[cx-8,27]],p.base);rectF(g,cx+6,9,cx+10,27,p.sh);line(g,cx-8,9,cx+10,9,p.hi);disc(g,cx+1,18,3,p.deep);disc(g,cx+1,18,2,p.accent);}
+  function mEye(g,p,rnd,o){var cx=20,cy=20,x,yy;ellipse(g,cx,cy,13,8,p.sh);ellipse(g,cx,cy,12,7,'#e8e0d0');disc(g,cx,cy,5,p.base);disc(g,cx,cy,4,p.accent);disc(g,cx,cy,2,'#100a14');disc(g,cx-1,cy-1,1,'#ffffff');for(x=-12;x<=12;x++){yy=Math.round(-Math.sqrt(Math.max(0,1-(x*x)/169))*8);set(g,cx+x,cy+yy,p.deep);set(g,cx+x,cy-yy,p.deep);}}
+  function mCrown(g,p,rnd,o){var cx=20,cy=22,i,i2,j;rectF(g,cx-11,cy,cx+11,cy+6,p.sh);rectF(g,cx-10,cy+1,cx+10,cy+5,p.base);line(g,cx-10,cy+1,cx+10,cy+1,p.hi);for(i=-2;i<=2;i++){var px=cx+i*5;polygon(g,[[px-3,cy],[px+3,cy],[px,cy-8]],p.base);}for(i2=-2;i2<=2;i2++){var px2=cx+i2*5;line(g,px2-3,cy,px2,cy-8,p.hi);line(g,px2+3,cy,px2,cy-8,p.sh);disc(g,px2,cy-7,1,p.accent);}for(j=-1;j<=1;j++)disc(g,cx+j*6,cy+3,1,p.accent);}
+  function mRibs(g,p,rnd,o){var cx=20,i,y,w,s;tube(g,[[cx,8],[cx,30]],1.6,1.6,p.sh);for(i=0;i<5;i++){y=11+i*4;w=11-i;for(s=-1;s<=1;s+=2){line(g,cx,y,cx+s*w,y+3,p.base);line(g,cx+s*w,y+3,cx+s*(w-2),y+7,p.base);}}disc(g,cx,8,2,p.hi);}
+  function mBoil(g,p,rnd,o){var cx=20,cy=20,pts,i;disc(g,cx,cy,10,p.sh);disc(g,cx,cy,9,p.base);pts=[[cx-4,cy-3],[cx+4,cy-2],[cx-2,cy+4],[cx+3,cy+4],[cx,cy-1]];for(i=0;i<pts.length;i++){disc(g,pts[i][0],pts[i][1],2,p.sh);disc(g,pts[i][0],pts[i][1],1,p.accent);}ellipse(g,cx-3,cy-4,3,2,p.hi);}
+  function mShovel(g,p,rnd,o){var cx=20,a,an;tube(g,[[cx,8],[cx,22]],1.4,1.4,p.sh);for(a=0;a<16;a++){an=Math.PI+a/16*Math.PI;set(g,Math.round(cx+Math.cos(an)*3),Math.round(8+Math.sin(an)*3),p.hi);}polygon(g,[[cx-7,22],[cx+7,22],[cx+6,30],[cx,34],[cx-6,30]],p.sh);polygon(g,[[cx-6,23],[cx+6,23],[cx+5,29],[cx,33],[cx-5,29]],p.base);line(g,cx-6,23,cx+6,23,p.hi);}
+  function mGrave(g,p,rnd,o){var cx=20,cy=20,x,y,top;for(y=-12;y<=12;y++)for(x=-9;x<=9;x++){top=(y<-6)?(Math.abs(x)<=Math.sqrt(Math.max(0,1-((y+6)*(y+6))/36))*9):true;if(top&&y<=12)set(g,cx+x,cy+y,(x>5?p.sh:p.base));}rectF(g,cx-1,cy-7,cx+1,cy+3,p.deep);rectF(g,cx-4,cy-4,cx+4,cy-2,p.deep);ellipse(g,cx,cy+13,12,2,p.deep);}
+  function mShell(g,p,rnd,o){var cx=20,cy=21,x,y,k,rx,yy;for(y=-10;y<=4;y++)for(x=-13;x<=13;x++){if((x*x)/169+(y*y)/121<=1&&y<=4)set(g,cx+x,cy+y,p.sh);}for(y=-9;y<=3;y++)for(x=-12;x<=12;x++){if((x*x)/144+(y*y)/100<=1&&y<=3)set(g,cx+x,cy+y,p.base);}for(k=-2;k<=2;k++){rx=cx+k*5;for(yy=-9;yy<=3;yy++){if((rx-cx)*(rx-cx)/169+(yy*yy)/121<=1)set(g,rx,cy+yy,p.deep);}}ellipse(g,cx-3,cy-5,4,2,p.hi);rectF(g,cx-12,cy+3,cx+12,cy+4,p.deep);}
+  function mGem(g,p,rnd,o){var cx=20,cy=20;polygon(g,[[cx,cy-11],[cx+9,cy-2],[cx+6,cy+10],[cx-6,cy+10],[cx-9,cy-2]],p.sh);polygon(g,[[cx,cy-9],[cx+7,cy-2],[cx+5,cy+8],[cx-5,cy+8],[cx-7,cy-2]],p.base);polygon(g,[[cx,cy-9],[cx+7,cy-2],[cx,cy-2]],p.hi);disc(g,cx-2,cy-3,1,p.accent);}
+
+  var MOTIF={flame:mFlame,heart:mHeart,shield:mShield,bowl:mBowl,nail:mNail,mushroom:mMushroom,balance:mBalance,choir:mChoir,maw:mMaw,whetstone:mWhetstone,feather:mFeather,tongue:mTongue,drop:mDrop,book:mBook,letter:mLetter,lantern:mLantern,coin:mCoin,banner:mBanner,eye:mEye,crown:mCrown,ribs:mRibs,boil:mBoil,shovel:mShovel,grave:mGrave,shell:mShell,gem:mGem};
+
+  /* ---------- mapping relique → visuel ---------- */
+  var VIS={
+    bloodstone:{m:'heart',pal:'BLOOD',anim:['beat']},
+    carapace:{m:'shell',pal:'FLESH',anim:['harden']},
+    aegis:{m:'shield',pal:'IRON',anim:['ward'],o:{crack:1}},
+    kings_bowl:{m:'bowl',pal:'IRON',lp:'POISON',anim:['brew']},
+    ember_heart:{m:'heart',pal:'FIRE',anim:['beat','flicker'],flame:1},
+    weeping_nail:{m:'nail',pal:'IRON',anim:['drip'],drop:'BLOOD'},
+    grave_cap:{m:'mushroom',pal:'ROT',anim:['spore','pulse']},
+    famines_math:{m:'balance',pal:'BONE',anim:['sway']},
+    hollow_choir:{m:'choir',pal:'PALE',anim:['chant']},
+    feeding_frenzy:{m:'maw',pal:'BONE',anim:['chatter']},
+    whetstone:{m:'whetstone',pal:'STONE',anim:['spark']},
+    thornguard:{m:'shield',pal:'IRON',anim:['bristle'],o:{thorn:1}},
+    sacred_shield:{m:'shield',pal:'GOLD',anim:['barrier']},
+    second_breath:{m:'feather',pal:'PALE',anim:['drift']},
+    forked_tongue:{m:'tongue',pal:'BLOOD',anim:['flick']},
+    everburn:{m:'flame',pal:'FIRE',anim:['flicker']},
+    open_wounds:{m:'drop',pal:'BLOOD',anim:['drip'],wound:1},
+    plague_communion:{m:'bowl',pal:'IRON',lp:'SHADOW',anim:['brew','spore'],bubbles:1},
+    carrion_ledger:{m:'book',pal:'BONE',anim:['strike']},
+    black_summons:{m:'letter',pal:'SHADOW',anim:['sealpulse'],seal:'BLOOD'},
+    beggars_lantern:{m:'lantern',pal:'IRON',gp:'FIRE',anim:['flicker']},
+    usurers_ledger:{m:'book',pal:'GOLD',anim:['pageflip']},
+    tithe_bowl:{m:'bowl',pal:'GOLD',lp:'GOLD',anim:['coinpop']},
+    paupers_boon:{m:'coin',pal:'GOLD',anim:['coinspin']},
+    grave_robbers_cut:{m:'shovel',pal:'IRON',anim:['dig']},
+    blood_banner:{m:'banner',pal:'BLOOD',anim:['sway']},
+    seers_mark:{m:'eye',pal:'POISON',anim:['blink']},
+    carrion_feast:{m:'ribs',pal:'BONE',anim:['pulse']},
+    second_plague:{m:'boil',pal:'POISON',anim:['pulse','spore']},
+    tide_caller:{m:'shield',pal:'PALE',anim:['waveflow'],o:{wave:1}},
+    bait_lantern:{m:'lantern',pal:'IRON',gp:'POISON',anim:['flicker','lure']},
+    echo_crown:{m:'crown',pal:'GOLD',anim:['echo']},
+    gravediggers_due:{m:'grave',pal:'STONE',anim:['mist']},
+    splitting_maw:{m:'maw',pal:'BLOOD',anim:['chatter'],wide:1}
+  };
+
+  function hashId(s){var h=1779033703^s.length,i;for(i=0;i<s.length;i++){h=Math.imul(h^s.charCodeAt(i),3432918353);h=h<<13|h>>>19;}return h>>>0;}
+  function buildRelic(relic){
+    var v=VIS[relic.id]||{m:'gem',pal:'STONE',anim:['pulse']},p=PAL[v.pal]||PAL.STONE,g=makeGrid(40,40),rnd=mulberry32(hashId(relic.id));
+    var opt={lp:v.lp?PAL[v.lp]:p,gp:v.gp?PAL[v.gp]:p,o:v.o||{},seal:v.seal?PAL[v.seal]:p,wide:v.wide,wound:v.wound,flame:v.flame,bubbles:v.bubbles};
+    (MOTIF[v.m]||mGem)(g,p,rnd,opt);outline(g,OUTC);
+    relic._g=g;relic._pal=p;relic._anim=v.anim||[];relic._dropPal=v.drop?PAL[v.drop]:p;relic._liquid=v.lp?PAL[v.lp]:p;relic._glowPal=v.gp?PAL[v.gp]:p;relic._flamePal=(v.m==='lantern')?(v.gp?PAL[v.gp]:p):p;
+    relic._dripX=20;relic._dripY=(v.m==='nail')?28:24;
+    if(v.m==='flame'){relic._flameTop=8;relic._flameBase=24;}
+    else if(v.m==='lantern'){relic._flameTop=14;relic._flameBase=24;}
+    else if(v.m==='heart'&&v.flame){relic._flameTop=10;relic._flameBase=14;}
+    else{relic._flameTop=10;relic._flameBase=22;}
+    return relic;
+  }
+
+  /* ---------- rendu ---------- */
+  function renderGrid(g,ctx,scale){ctx.clearRect(0,0,g.w*scale,g.h*scale);ctx.imageSmoothingEnabled=false;for(var y=0;y<g.h;y++)for(var x=0;x<g.w;x++){var c=g.data[y*g.w+x];if(!c)continue;ctx.fillStyle=c;ctx.fillRect(x*scale,y*scale,scale,scale);}}
+  function has(a,t){return a.indexOf(t)>=0;}
+  function _h2(x,y){var n=Math.sin(x*12.9898+y*78.233)*43758.5453;return n-Math.floor(n);}
+  function blk(ctx,sc,gx,gy,s,c,al){ctx.globalAlpha=al==null?1:Math.max(0,Math.min(1,al));ctx.fillStyle=c;ctx.fillRect(Math.round(gx*sc),Math.round(gy*sc),Math.max(1,Math.round(s*sc)),Math.max(1,Math.round(s*sc)));ctx.globalAlpha=1;}
+
+  function drawRelic(relic,ctx,scale,t){
+    var g=relic._g,p=relic._pal,W=g.w,H=g.h,A=relic._anim,cx=20,cy=20,SC=scale,i,k,xx,yy,ph,an,bx,by;
+    ctx.clearRect(0,0,W*SC,H*SC);ctx.imageSmoothingEnabled=false;
+    var bs=1;if(has(A,'beat'))bs+=0.05*Math.sin(t*3.2);if(has(A,'pulse'))bs+=0.03*Math.sin(t*2.0);
+    var sxMul=has(A,'coinspin')?(0.5+0.5*Math.abs(Math.cos(t*1.8))):1;
+    var digDY=has(A,'dig')?Math.max(0,Math.sin(t*3))*3:0;
+    var perPixel=has(A,'sway')||has(A,'flick')||has(A,'chatter')||has(A,'drift')||has(A,'coinspin')||has(A,'dig')||has(A,'echo');
+    if(has(A,'echo')){var ex=Math.sin(t*3)*3.2,ea=0.26*(0.5+0.5*Math.cos(t*3));for(yy=0;yy<H;yy++)for(xx=0;xx<W;xx++){var ce=g.data[yy*W+xx];if(ce)blk(ctx,SC,xx+ex,yy,1,ce,ea);}}
+    if(perPixel){
+      var ch=has(A,'chatter')?(_h2((t*16)|0,3)-0.5)*0.9:0,chy=has(A,'chatter')?(_h2(7,(t*16)|0)-0.5)*0.9:0;
+      for(yy=0;yy<H;yy++)for(xx=0;xx<W;xx++){var col=g.data[yy*W+xx];if(!col)continue;
+        var px=cx+(xx-cx)*bs*sxMul,py=cy+(yy-cy)*bs+digDY;
+        if(has(A,'sway'))px+=Math.sin(t*2.2+yy*0.3)*1.3*Math.max(0,(yy-6)/26);
+        if(has(A,'drift')){px+=Math.sin(t*1.6+yy*0.25)*0.9;py+=Math.sin(t*1.3+xx*0.1)*0.5;}
+        if(has(A,'flick')&&yy<15)px+=Math.sin(t*9+yy*0.4)*1.8*((15-yy)/9);
+        px+=ch;py+=chy;ctx.fillStyle=col;ctx.fillRect(Math.round(px*SC),Math.round(py*SC),SC+1,SC+1);}
+    } else if(relic._base){var w=W*SC,h=H*SC;ctx.save();ctx.translate(w/2,h/2);ctx.scale(bs,bs);ctx.translate(-w/2,-h/2);ctx.drawImage(relic._base,0,0);ctx.restore();}
+    else renderGrid(g,ctx,SC);
+    if(has(A,'flicker')){var fp=relic._flamePal||p;for(i=0;i<4;i++){var jx=Math.sin(t*12+i*1.7)*2.2*(1-i*0.18),jy=-Math.abs(Math.sin(t*9+i))*2;blk(ctx,SC,cx+jx+(i-1.5)*1.5,relic._flameTop+jy+i*0.6,i<2?2:1,i%2?fp.accent:fp.hi,0.9);}var ey=(t*8)%14;blk(ctx,SC,cx+Math.sin(t*3)*3,relic._flameBase-ey,1,fp.accent,1-ey/14);}
+    if(has(A,'drip')){var dpp=relic._dropPal,d=(t*9)%18,a=d<2?d/2:(d>14?(18-d)/4:1);blk(ctx,SC,relic._dripX,relic._dripY+d,d<2?1:2,dpp.accent,a);blk(ctx,SC,relic._dripX,relic._dripY+d-1,1,dpp.hi,a*0.8);blk(ctx,SC,relic._dripX,relic._dripY,1,dpp.accent,0.6+0.4*Math.sin(t*5));}
+    if(has(A,'spore')){for(i=0;i<6;i++){ph=(t*0.6+i*0.6)%1;blk(ctx,SC,20+Math.sin(i*2+t)*9,18-ph*16,1,p.accent,(1-ph)*0.7);}}
+    if(has(A,'spark')){var sph=(t*2.2)%1;if(sph<0.3)for(i=0;i<4;i++){var ds=sph/0.3*(4+i*2);blk(ctx,SC,24+ds,18-ds*0.6-i,1,i%2?p.accent:p.hi,1-sph/0.3);}}
+    if(has(A,'blink')){for(xx=-2;xx<=2;xx++)for(yy=-2;yy<=2;yy++){if(xx*xx+yy*yy<=4)blk(ctx,SC,cx+xx,cy+yy,1,p.accent,1);}var gz=Math.round(Math.sin(t*0.9)*2),gy=Math.round(Math.sin(t*0.6)*1);blk(ctx,SC,cx+gz-1,cy+gy-1,2,'#100a14',1);blk(ctx,SC,cx+gz-1,cy+gy-1,1,'#ffffff',0.9);var bl=Math.sin(t*0.7);if(bl>0.93)for(xx=-12;xx<=12;xx++)for(yy=-7;yy<=7;yy++){if((xx*xx)/169+(yy*yy)/49<=1)blk(ctx,SC,cx+xx,cy+yy,1,p.sh,1);}}
+    if(has(A,'harden')){var hh=0.5+0.5*Math.sin(t*1.6);for(k=-2;k<=2;k++){var rxp=20+k*5;for(yy=-8;yy<=2;yy++){if((rxp-20)*(rxp-20)/169+(yy*yy)/121<=1)blk(ctx,SC,rxp,21+yy,1,p.hi,hh*0.4);}}}
+    if(has(A,'brew')){var lq=relic._liquid||p;for(i=0;i<5;i++){ph=(t*0.7+i*0.37)%1;bx=14+_h2(i,2)*12;by=29-ph*7;if(ph<0.85)blk(ctx,SC,bx,by,1,i%2?lq.accent:lq.hi,(1-ph)*0.85);if(ph>0.8&&ph<0.95){blk(ctx,SC,bx-1,22,1,lq.hi,0.6);blk(ctx,SC,bx+1,22,1,lq.hi,0.6);}}}
+    if(has(A,'chant')){for(k=0;k<3;k++){var mx=10+k*10,cl=0.5+0.5*Math.sin(t*3+k*2.1),amt=Math.round(cl*4);for(i=0;i<amt;i++)for(xx=-2;xx<=2;xx++){blk(ctx,SC,mx+xx,cy-5+i,1,p.sh,1);blk(ctx,SC,mx+xx,cy+5-i,1,p.sh,1);}if(cl<0.18)blk(ctx,SC,mx,cy-9-Math.round((0.18-cl)*10),1,p.hi,0.5);}}
+    if(has(A,'bristle')){for(i=-2;i<=2;i++){var tx=20+i*5,pb=Math.sin(t*4+i*1.3);if(pb>0.5){blk(ctx,SC,tx,5,1,p.accent,(pb-0.5)*2);blk(ctx,SC,tx,4,1,p.accent,(pb-0.5)*1.5);}}}
+    if(has(A,'barrier')){var seg=10;for(i=0;i<seg;i++){an=t*1.5+i/seg*6.283;blk(ctx,SC,20+Math.cos(an)*13,20+Math.sin(an)*12.4,1,p.accent,0.5+0.3*Math.sin(an*2));}var fb=(t*0.7)%1;if(fb<0.12)for(i=0;i<seg*2;i++){an=i/(seg*2)*6.283;blk(ctx,SC,20+Math.cos(an)*13,20+Math.sin(an)*12.4,1,p.hi,(0.12-fb)/0.12);}}
+    if(has(A,'ward')){var pw=0.4+0.6*(0.5+0.5*Math.sin(t*3)),wp=[[22,12],[21,15],[20,18],[19,22],[20,25],[22,29],[18,24],[16,25]];for(i=0;i<wp.length;i++)blk(ctx,SC,wp[i][0],wp[i][1],1,p.accent,pw);var wsx=(t*1.3)%1;if(wsx<0.4)blk(ctx,SC,19+Math.sin(t*9)*2,22-wsx*6,1,p.hi,(0.4-wsx)/0.4);}
+    if(has(A,'waveflow')){for(k=0;k<2;k++){var yp=((t*0.5)+k*0.5)%1,wy=28-yp*16;for(xx=-6;xx<=6;xx++)blk(ctx,SC,20+xx,wy+Math.round(Math.sin(xx*0.6+t*3)*1.2),1,p.hi,(1-Math.abs(yp-0.5)*1.4)*0.7);}}
+    if(has(A,'strike')){var nL=7,pr=(t*0.55)%1,act=Math.floor(pr*nL);for(i=0;i<=act&&i<nL;i++){var ly=Math.round(cy+(i-3)*2.6),fr=i<act?1:(pr*nL-act),x1=Math.round(13+fr*12);for(xx=13;xx<=x1;xx++)blk(ctx,SC,xx,ly,1,'#7d1426',0.9);}}
+    if(has(A,'sealpulse')){var sp2=0.55+0.45*Math.sin(t*4);blk(ctx,SC,20,21,2,'#ff7283',sp2*0.5);for(i=0;i<4;i++){ph=(t*0.5+i*0.25)%1;blk(ctx,SC,20+Math.sin(i*2+t*2)*(1+ph*3),14-ph*10,1,'#2a1840',(1-ph)*0.6);}}
+    if(has(A,'pageflip')){var pp=(t*0.6)%1,lf=pp<0.5?pp*2:(1-pp)*2,s2=Math.round(lf*6);for(i=0;i<s2;i++){blk(ctx,SC,28-i,10+i,1,p.hi,0.9);blk(ctx,SC,28-i,11+i,1,p.base,0.7);}}
+    if(has(A,'coinpop')){for(i=0;i<3;i++){ph=(t*0.8+i*0.5)%1;bx=16+i*4;by=8+ph*13;if(ph<0.9){blk(ctx,SC,bx,by,2,p.hi,1);blk(ctx,SC,bx+1,by,1,p.accent,0.9);}else blk(ctx,SC,bx,22,1,p.accent,0.7);}}
+    if(has(A,'coinspin')&&sxMul>0.88)blk(ctx,SC,20+Math.sin(t*1.8)*8,20,1,p.accent,0.9);
+    if(has(A,'dig')){var ht=Math.sin(t*3);if(ht>0.7)for(i=0;i<4;i++){var ag=-0.3-i*0.45,sp=(ht-0.7)/0.3;blk(ctx,SC,20+Math.cos(ag)*sp*8,33-Math.abs(Math.sin(ag))*sp*6,1,'#3a2014',1-sp*0.5);}}
+    if(has(A,'mist')){for(i=0;i<6;i++){ph=(t*0.4+i*0.5)%1;blk(ctx,SC,10+i*4+Math.sin(t+i)*2,33-ph*18,1,'#8a90a4',(1-ph)*0.4);}}
+    if(has(A,'lure')){var gpL=relic._glowPal||p;for(i=0;i<5;i++){ph=(t*0.6+i*0.4)%1;an=i/5*6.283;var rr=10*(1-ph);blk(ctx,SC,20+Math.cos(an)*rr,21+Math.sin(an)*rr,1,gpL.accent,ph<0.9?0.3+ph*0.5:0);}}
+  }
+
+  /* ---------- expose pour tests ---------- */
+  if(typeof window!=='undefined'){window.__RELICTEST={RELICS:RELICS,buildRelic:buildRelic,drawRelic:drawRelic,PAL:PAL,VIS:VIS,renderGrid:renderGrid};}
+
+  /* ---------- UI ---------- */
+  function init(){
+    var grid=document.getElementById('grid');if(!grid)return;
+    var BIG=4,INV=2,cards=[];
+    RELICS.forEach(function(relic){
+      buildRelic(relic);
+      var card=document.createElement('div');card.className='card '+relic.card_color;
+      var art=document.createElement('div');art.className='art';
+      var big=document.createElement('canvas');big.className='big';big.width=40*BIG;big.height=40*BIG;
+      var invw=document.createElement('div');invw.className='invwrap';
+      var inv=document.createElement('canvas');inv.className='inv';inv.width=40*INV;inv.height=40*INV;
+      var invl=document.createElement('div');invl.className='invlbl';invl.textContent='inventaire';
+      invw.appendChild(inv);invw.appendChild(invl);art.appendChild(big);art.appendChild(invw);
+      var meta=document.createElement('div');meta.className='meta';
+      meta.innerHTML='<div class="name">'+relic.name+'</div><div class="badge">T'+relic.tier+' · '+relic.band+'</div><div class="eff">'+relic.effect+'</div><div class="flav">'+relic.flavor+'</div>';
+      card.appendChild(art);card.appendChild(meta);grid.appendChild(card);
+      // base offscreen (icône statique) — sert aussi à l'inventaire
+      var base=document.createElement('canvas');base.width=40*BIG;base.height=40*BIG;renderGrid(relic._g,base.getContext('2d'),BIG);relic._base=base;
+      renderGrid(relic._g,inv.getContext('2d'),INV);   // inventaire = statique
+      cards.push({relic:relic,ctx:big.getContext('2d')});
+    });
+    var last=0;
+    function loop(now){requestAnimationFrame(loop);if(now-last<40)return;last=now;var t=now/1000;for(var i=0;i<cards.length;i++){try{drawRelic(cards[i].relic,cards[i].ctx,BIG,t);}catch(e){}}}
+    requestAnimationFrame(loop);
+  }
+  if(typeof document!=='undefined'&&document.getElementById('grid'))init();
+})();
+</script>
+</body></html>
