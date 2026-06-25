@@ -229,6 +229,21 @@ function Builders.gallery(host)
   return Gallery.new(Palette, VW, VH, host)
 end
 
+-- ANIM SHEETS (B.1) : planches de contact des réactions sur critter.lua, figées à la phase de PIC. Servent à
+-- juger AU SCREENSHOT chaque kind d'attaque/mort/dégât. Require paresseux (scène DEV, hors jeu/headless).
+function Builders.anim_attack(host)
+  local AnimSheet = require("src.scenes.animsheet")
+  return AnimSheet.new(Palette, VW, VH, host, { mode = "attack", phase = 0.42 }) -- frappe au pic
+end
+function Builders.anim_death(host)
+  local AnimSheet = require("src.scenes.animsheet")
+  return AnimSheet.new(Palette, VW, VH, host, { mode = "death", phase = 0.5 }) -- fragmentation
+end
+function Builders.anim_hurt(host)
+  local AnimSheet = require("src.scenes.animsheet")
+  return AnimSheet.new(Palette, VW, VH, host, { mode = "hurt", phase = 0.10 }) -- secousse fraîche
+end
+
 -- DESIGNSYSTEM : storybook in-engine de l'UI (require paresseux : grosse scène, évite de la charger si non demandée).
 function Builders.designsystem(host)
   local DesignSystem = require("src.scenes.designsystem")
@@ -240,6 +255,7 @@ local M = {}
 -- Liste des noms de scènes capturables (ordre stable, pour --shoot=all et les messages d'erreur).
 M.names = { "menu", "build", "combat", "summary", "relicpick", "runover", "grimoire", "grimoire_relics",
   "gallery", "designsystem", "build_relic_hover",
+  "anim_attack", "anim_death", "anim_hurt",
   "commander_empty", "commander_filled", "commander_hover", "commander_offer", "commander_refuse",
   "commander_fiche", "commander_fiche_none" }
 
