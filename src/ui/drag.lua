@@ -28,11 +28,27 @@
 
 local Drag = {}
 
--- Réglages (identiques à feel-lab/lib/behavior.lua — calibrage validé) :
-local FOLLOW   = 0.25   -- part de la cible dans le déplacement (0.25 = bouncy ; 1 = snap dur)
-local DAMP     = 0.75   -- conservation du momentum
-local TILT_K   = 0.012  -- radians par px/s de vélocité X (clamp ±TILT_MAX)
-local TILT_MAX = 0.16
+-- Réglages du ressort (vel = vel*DAMP + (cible-pos)*FOLLOW). Le profil unique « bouncy » du lab (0.25/0.75)
+-- était SOUS-AMORTI -> overshoot prononcé. Retour user : pendant le DRAG, l'unité « rebondit bizarrement » en
+-- suivant le curseur (on veut un suivi SERRÉ, ~zéro rebond) ; au SWAP/pose, le settle élastique « rebondit trop
+-- fort » (on veut PUNCHY mais sobre). On DIFFÉRENCIE donc deux profils selon `d.dragging` :
+--   · DRAG (suit le curseur) : FOLLOW haut + DAMP bas = quasi-critique, colle au curseur sans osciller.
+--   · REPOS/SWAP (settle vers l'ancre) : approche rapide + MICRO-overshoot (snappy, pas trampoline).
+-- Leviers nommés pour réglage fin ultérieur. Frame-rate ~normalisé (échelle dt*60 dans apply).
+-- Valeurs calibrées par balayage (overshoot mesuré sur un pas de 100 px ; le profil lab 0.25/0.75 overshootait
+-- à ~42% = le « trampoline » détesté). Le pas est borné et frame-rate-normalisé (dt*60) dans apply.
+local FOLLOW_DRAG  = 0.50   -- suivi-curseur SERRÉ (lab : 0.25) -> rattrape la souris en ~6 frames
+local DAMP_DRAG    = 0.12   -- momentum TRÈS faible (lab : 0.75) -> overshoot ≈ 0.1% : suit NET, zéro rebond élastique
+local FOLLOW_REST  = 0.45   -- settle/swap : approche RAPIDE vers l'ancre de case
+local DAMP_REST    = 0.33   -- micro-overshoot ≈ 9% (lab : 42%) -> PUNCHY mais sobre, settle ~10 frames, pas de trampoline
+-- TILT (inclinaison « tissu dans le vent ») — ADOUCI (retour user : la vibration était trop nerveuse/rapide).
+-- Le ressort « bouncy » fait osciller vx d'une frame à l'autre ; comme le tilt SUIVAIT vx vite (lerp 0.25) avec
+-- une grosse amplitude (0.16 rad ≈ 9°) et une forte réactivité (0.012), ça lisait comme un tremblement. On
+-- garde le PRINCIPE (incline dans le sens du geste) mais : amplitude ↓ (~5° max), réactivité ↓, et surtout le
+-- SUIVI de la cible de tilt ralenti (lerp 0.25→0.12) -> le tilt LISSE l'oscillation du ressort = lean DOUX/posé.
+local TILT_K   = 0.006  -- radians par px/s de vélocité X (était 0.012) — moitié moins réactif au geste
+local TILT_MAX = 0.09   -- inclinaison MAX (était 0.16) — ~5° au lieu de ~9° : posé, pas penché-fort
+local TILT_FOLLOW = 0.12 -- vitesse de SUIVI de la cible de tilt (était 0.25) — lisse le wobble du ressort
 -- profil grimdark (≈ B.profile du lab, posé sur 0.6 par défaut) -> dose le lift/scale du pickup.
 local PROFILE  = 0.6
 
@@ -66,16 +82,20 @@ end
 function Drag.apply(d, dt)
   if d.px == nil then d.px, d.py = d.gx or 0, d.gy or 0; d.vx, d.vy = 0, 0 end
   local tx, ty = d.gx or d.px, d.gy or d.py
-  -- ressort discret « bouncy » (frame-rate ~normalisé : on échelle par dt*60, pas borné à 1 -> stable)
+  -- ressort discret (frame-rate ~normalisé : on échelle par dt*60, pas borné à 1 -> stable). Profil SELON le mode :
+  -- en DRAG = suivi serré ~zéro rebond ; au REPOS/SWAP = approche rapide + micro-overshoot punchy (cf. constantes).
+  local follow = d.dragging and FOLLOW_DRAG or FOLLOW_REST
+  local damp   = d.dragging and DAMP_DRAG   or DAMP_REST
   local f = math.min(1, (dt or 1 / 60) * 60)
-  d.vx = (d.vx or 0) * DAMP + (tx - d.px) * FOLLOW
-  d.vy = (d.vy or 0) * DAMP + (ty - d.py) * FOLLOW
+  d.vx = (d.vx or 0) * damp + (tx - d.px) * follow
+  d.vy = (d.vy or 0) * damp + (ty - d.py) * follow
   d.px = d.px + d.vx * f
   d.py = d.py + d.vy * f
   -- tilt par vélocité X (« tissu dans le vent ») — actif seulement pendant le drag ; revient à plat au repos.
+  -- Le SUIVI lent (TILT_FOLLOW) lisse l'oscillation du ressort -> inclinaison DOUCE/posée, pas une vibration.
   if d.dragging then
     local target = math.max(-TILT_MAX, math.min(TILT_MAX, d.vx * TILT_K * 60))
-    d.tilt = (d.tilt or 0) + (target - (d.tilt or 0)) * math.min(1, f * 0.25)
+    d.tilt = (d.tilt or 0) + (target - (d.tilt or 0)) * math.min(1, f * TILT_FOLLOW)
   else
     d.tilt = (d.tilt or 0) * (1 - math.min(1, f * 0.18))
   end

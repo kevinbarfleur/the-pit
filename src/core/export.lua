@@ -23,6 +23,7 @@ local Palette      = require("src.core.palette")
 local Units        = require("src.data.units")
 local CreatureGen  = require("src.gen.creaturegen")
 local Rig          = require("src.core.rig")
+local SystemButton = require("src.ui.system_button")
 
 local Export = {}
 
@@ -154,6 +155,7 @@ function Export.shoot(name, buildScene, opts)
     -- 4. UI native par-dessus (texte net). Pas de HUD générique (drawHud lit love.timer.getFPS -> bruit) :
     -- les scènes à chrome propre (daChrome) se suffisent ; on capture l'écran « tel que joué ».
     if scene.drawOverlay then scene:drawOverlay(view) end
+    if not host.overlay and SystemButton.visible(host.name) then SystemButton.draw(view, host.name, false) end
   end)
 
   return dir .. "/" .. name .. ".png"

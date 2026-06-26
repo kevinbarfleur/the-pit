@@ -14,6 +14,7 @@
 local CreatureGen = require("src.gen.creaturegen")
 local Units = require("src.data.units")
 local Creatures = require("src.data.creatures")
+local Spawn = require("src.data.spawn") -- tokens d'engeance (AXE 3) : absents de Units -> visuel via le pont (family="sousetres"/arch dédié)
 
 local Critter = {}
 local sin, cos, floor, abs, max = math.sin, math.cos, math.floor, math.abs, math.max
@@ -680,9 +681,9 @@ local cache = {}
 local function info(id)
   local c = cache[id]
   if c then return c end
-  local spec = Units[id] or {}
+  local spec = Units[id] or Spawn.token(id) or {} -- engeance : Units[id] nil -> pont Spawn (family/arch parent)
   local ok, d = pcall(CreatureGen.cachedLive,
-    { id = id, type = spec.type, family = spec.family, arch = spec.arch, effects = spec.effects, rank = spec.rank })
+    { id = id, type = spec.type, family = spec.family, arch = spec.arch, effects = spec.effects, rank = spec.rank or 1 })
   if not ok or not d or not d.grid then return nil end
   local data, W, H = d.grid, d.w, d.h
   local cells, n, minX, maxX, minY, maxY = {}, 0, W, 0, H, 0
@@ -894,7 +895,7 @@ end
 local function specOf(id) -- (arch, family) de l'unité, via le cache info() si dispo, sinon via le spec Units.
   local c = cache[id] or info(id)
   if c then return c.arch, c.family end
-  local spec = Units[id]
+  local spec = Units[id] or Spawn.token(id) -- engeance : fallback pont Spawn (family="sousetres")
   return nil, spec and spec.family
 end
 

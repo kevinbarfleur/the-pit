@@ -536,6 +536,10 @@ local VIS = {
   echo_crown       = { m = "crown",     pal = "GOLD",   anim = { "echo" } },
   gravediggers_due = { m = "grave",     pal = "STONE",  anim = { "mist" } },
   splitting_maw    = { m = "maw",       pal = "BLOOD",  anim = { "chatter" }, wide = true },
+  -- ── W1 — axe type-identité (3 reliques) : motifs/palettes distincts des existants (réconciliation 1:1). ──
+  pack_blood       = { m = "maw",       pal = "FLESH",  anim = { "chatter" } },          -- la meute affamée (gueule, chair)
+  bile_orb         = { m = "bowl",      pal = "SHADOW", lp = "POISON", anim = { "brew" } }, -- globe d'eau noire (vase, venin)
+  prismatic_wraith = { m = "gem",       pal = "SHADOW", anim = { "pulse" } },             -- le prisme multi-facettes
 }
 RelicGen.VIS = VIS
 RelicGen.PAL = PAL
@@ -663,6 +667,8 @@ RelicGen.order = {
   -- refonte 2026-06 (relics-overhaul) — NOUVELLES (append-only)
   "blood_banner", "seers_mark", "carrion_feast", "second_plague", "tide_caller", "bait_lantern",
   "echo_crown", "gravediggers_due", "splitting_maw",
+  -- W1 — axe type-identité (mono-type amps + rainbow team payoff ; plan big-update §AXE 2)
+  "pack_blood", "bile_orb", "prismatic_wraith",
 }
 
 return RelicGen

@@ -20,8 +20,8 @@
 
 local Theme = require("src.ui.theme")
 local Draw = require("src.ui.draw")
+local Button = require("src.ui.button")
 local Feel = require("src.ui.feel") -- JUICE (bible §4) : survol/press/respiration + ACTION DIFFÉRÉE
-local Forge = require("src.ui.forge") -- YEUX cauchemardesques du CTA (overlay seedé, hors-texte) — RENDER pur
 local Nightmare = require("src.ui.nightmare") -- surcouche ONIRIQUE (bordures qui tanguent) : avance le dt mural
 local Ambient = require("src.fx.ambient")
 local Grimoire = require("src.core.grimoire")
@@ -48,6 +48,7 @@ local DIAMOND_R = 4  -- losange sang en préfixe de ENTER
 local DIAMOND_GAP = 12 -- espace losange -> texte de ENTER
 local HIT_PADX, HIT_PADY = 14, 8 -- marge de confort autour du texte pour le hit-test (clic plus généreux)
 local BAND_TOP, BAND_BOTTOM = 452, 660 -- bande des entrées : sous le diviseur (~444), au-dessus du pied (~690)
+local TOOL_SIZE, TOOL_GAP, TOOL_Y, TOOL_MARGIN = 34, 10, 24, 24
 
 function Menu.new(palette, vw, vh, host)
   local self = setmetatable({}, Menu)
@@ -61,23 +62,53 @@ function Menu.new(palette, vw, vh, host)
   self.mx, self.my = 0, 0        -- souris en ESPACE DESIGN
   self.ambient = Ambient.new(7)  -- seed fixe -> atmosphère stable
 
-  -- Entrées : ENTER (CTA héros) + GRIMOIRE/PROVING/DESIGN SYSTEM (secondaires) + RITES (scellée) + ABANDON.
-  -- kind = "cta" | "sec" | "off" : pilote la voix (police/poids), la lueur héros et le préfixe losange.
-  self.items = {
-    { id = "enter",        key = "menu.enter",        kind = "cta", enabled = true,  action = function() self.host.newRun() end },
-    { id = "grimoire",     key = "menu.grimoire",     kind = "sec", enabled = true,  action = function() self.host.goto("grimoire") end },
-    { id = "proving",      key = "menu.proving",      kind = "sec", enabled = true,  action = function() self.host.goto("playground") end },
-    { id = "designsystem", key = "menu.designsystem", kind = "sec", enabled = true,  action = function() self.host.goto("designsystem") end },
-    { id = "rites",        key = "menu.rites",        kind = "sec", enabled = false },
-    { id = "abandon",      key = "menu.abandon",      kind = "off", enabled = true,  action = function() love.event.quit() end },
-  }
-  self:layout()
+  self:refreshItems()
   self.hover = nil
+  self.toolHover = nil
   self.down = false
   Feel.reset() -- repart au repos en (re)entrant dans le menu (survol/press/respiration vierges)
   -- Toggle MODE DEV (cheat) — coin haut-gauche, présent UNIQUEMENT si Dev.ENABLED (masqué/inerte en release).
   self.devRect = Dev.ENABLED and { x = 16, y = 14, w = 252, h = 26 } or nil
   return self
+end
+
+function Menu:refreshItems()
+  local canResume = self.host and self.host.canResumeRun and self.host.canResumeRun()
+  local function confirm(mode, fallback)
+    return function()
+      if self.host and self.host.openSystemMenu then self.host.openSystemMenu({ mode = mode })
+      elseif fallback then fallback() end
+    end
+  end
+  local items = {}
+  if canResume then
+    items[#items + 1] = { id = "resume", key = "menu.resume", kind = "cta", enabled = true,
+      action = function() if self.host.resumeRun then self.host.resumeRun() end end }
+    items[#items + 1] = { id = "newrun", key = "menu.new_run", kind = "sec", enabled = true,
+      action = confirm("confirm_new_run", function() self.host.newRun() end) }
+  else
+    items[#items + 1] = { id = "enter", key = "menu.enter", kind = "cta", enabled = true,
+      action = function() self.host.newRun() end }
+  end
+  items[#items + 1] = { id = "grimoire",     key = "menu.grimoire",     kind = "sec", enabled = true,  action = function() self.host.goto("grimoire") end }
+  items[#items + 1] = { id = "settings",     key = "menu.settings",     kind = "sec", enabled = true,
+    action = function() if self.host.openSystemMenu then self.host.openSystemMenu({ mode = "settings", prevMode = "close" }) end end }
+  items[#items + 1] = { id = "quit",         key = "menu.quit",         kind = "off", enabled = true,
+    action = confirm("confirm_quit", function() love.event.quit() end) }
+  self.items = items
+  self.tools = {
+    { id = "proving", key = "menu.proving", icon = "sigil", action = function() if self.host.goto then self.host.goto("playground") end end },
+    { id = "designsystem", key = "menu.designsystem", icon = "gear", action = function() if self.host.goto then self.host.goto("designsystem") end end },
+  }
+  self:layout()
+end
+
+function Menu:onEnter()
+  self:refreshItems()
+  self.hover = nil
+  self.toolHover = nil
+  self.down = false
+  Feel.reset()
 end
 
 -- Police/poids d'une entrée selon son kind (la voix qui porte la hiérarchie). px raboté = override de taille.
@@ -136,6 +167,14 @@ function Menu:layout()
     it._prefixW = prefixW
     y = y + step
   end
+
+  local tools = self.tools or {}
+  local totalW = #tools * TOOL_SIZE + math.max(0, #tools - 1) * TOOL_GAP
+  local tx = Draw.W - TOOL_MARGIN - totalW
+  for _, tool in ipairs(tools) do
+    tool.rect = { x = tx, y = TOOL_Y, w = TOOL_SIZE, h = TOOL_SIZE }
+    tx = tx + TOOL_SIZE + TOOL_GAP
+  end
 end
 
 -- Indice de l'entrée sous (dx,dy) en coords DESIGN, ou nil (entrées scellées ignorées).
@@ -145,6 +184,14 @@ function Menu:itemAt(dx, dy)
     if it.enabled and r and dx >= r.x and dx <= r.x + r.w and dy >= r.y and dy <= r.y + r.h then
       return i
     end
+  end
+  return nil
+end
+
+function Menu:toolAt(dx, dy)
+  for i, tool in ipairs(self.tools or {}) do
+    local r = tool.rect
+    if r and dx >= r.x and dx <= r.x + r.w and dy >= r.y and dy <= r.y + r.h then return i end
   end
   return nil
 end
@@ -211,22 +258,6 @@ function Menu:drawItem(it, hovered)
     diamond(dx, cy, DIAMOND_R + 2, c.blood, math.min(0.8, dAlpha))
     diamond(dx, cy, DIAMOND_R, c.blood, 1)
     local textX = x0 + it._prefixW
-    -- ⭐ YEUX cauchemardesques sur ENTER THE PIT (le héros) : au SURVOL des yeux s'ouvrent autour du texte
-    -- (jamais DESSUS : keep-out de l'empreinte réelle du label), pilotés par g (glow lissé) ; au CLIC ils
-    -- RÉAGISSENT (s'écarquillent + iris vif + regard vers la souris) via le flash. Dessinés AVANT le texte ->
-    -- le libellé reste toujours au-dessus. Repos (g≈0) -> no-op (l'entrée reste un texte gravé propre).
-    if it.enabled and (g > 0.02 or (fs.flash or 0) > 0.01) then
-      local epx = Forge.PX or 2
-      local margin = 26                       -- gouttières latérales pour loger la nuée (hors texte)
-      local regW = it._textW + margin * 2      -- région des yeux (design px) : texte + marges
-      local regH = math.max(fh + 16, 30)       -- un peu plus haut que la ligne -> de l'air vertical
-      local rx = textX - margin
-      local ry = math.floor(cy - regH / 2)
-      Forge.uiCtaEyes("menu.cta.eyes", rx, ry, regW, regH, label, {
-        open = g, react = fs.flash or 0, mouse = { mx = self.mx, my = self.my }, t = self.t,
-        labelW = it._textW / epx, labelH = fh / epx, eyeR = 7, pad = 4, frameTh = 0,
-      })
-    end
     -- couleur du texte : interpole title -> ink avec g (montée continue, pas un saut binaire).
     local col = { c.title[1] + (c.ink[1] - c.title[1]) * g,
                   c.title[2] + (c.ink[2] - c.title[2]) * g,
@@ -287,6 +318,20 @@ function Menu:drawOverlay(view)
       on and c.goldBright or c.fainter, Theme.label(10))
   end
 
+  for i, tool in ipairs(self.tools or {}) do
+    local r = tool.rect
+    Button.icon(r.x, r.y, r.w, tool.icon, { hover = self.toolHover == i })
+  end
+  if self.toolHover and self.tools and self.tools[self.toolHover] then
+    local tool = self.tools[self.toolHover]
+    local f = Theme.label(9)
+    local label = T(tool.key)
+    local tw = Draw.textWidth(label, f)
+    local x, y = Draw.W - TOOL_MARGIN - tw, TOOL_Y + TOOL_SIZE + 10
+    Draw.rect(x - 8, y - 5, tw + 16, 18, c.panelDeep, c.iron, 1)
+    Draw.text(label, x, y, c.ink3, f)
+  end
+
   Draw.finish()
 end
 
@@ -297,7 +342,8 @@ end
 function Menu:mousemoved(vx, vy)
   local dx, dy = vx * 4, vy * 4
   self.mx, self.my = dx, dy
-  self.hover = self:itemAt(dx, dy)
+  self.toolHover = self:toolAt(dx, dy)
+  self.hover = self.toolHover and nil or self:itemAt(dx, dy)
   for i, it in ipairs(self.items) do
     if it.enabled then Feel.hover(feelId(it), self.hover == i) end
   end
@@ -313,6 +359,13 @@ function Menu:mousepressed(vx, vy, button)
   if self.devRect then -- MODE DEV : clic sur le toggle full-unlock (immédiat, pas une action de navigation)
     local r = self.devRect
     if dx >= r.x and dx <= r.x + r.w and dy >= r.y and dy <= r.y + r.h then Dev.toggleFullUnlock(); return end
+  end
+  local ti = self:toolAt(dx, dy)
+  if ti then
+    self.toolHover = ti
+    local tool = self.tools[ti]
+    Feel.press("menu.tool." .. tool.id, tool.action)
+    return
   end
   local i = self:itemAt(dx, dy)
   if i then
