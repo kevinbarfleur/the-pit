@@ -544,6 +544,10 @@ local VIS = {
   zenith_stone     = { m = "gem",       pal = "GOLD",   anim = { "pulse", "spark" } },
   forked_echo      = { m = "choir",     pal = "SHADOW", anim = { "echo", "chant" } },
   link_cable       = { m = "nail",      pal = "IRON",   anim = { "spark" } },
+  -- W4 - axe tank/removal/execution : le finish d'equipe (cage thoracique pale = le faucheur) + l'anti-mur (bloc de
+  -- siege en fer, distinct du whetstone par la palette). Append-only avec Relics.order (reconciliation 1:1).
+  reapers_scythe   = { m = "ribs",      pal = "PALE",   anim = { "mist" } },             -- le faucheur d'equipe (os, brume froide)
+  siege_hammer     = { m = "whetstone", pal = "IRON",   anim = { "spark" } },            -- le marteau de siege (fer lourd, etincelle d'impact)
 }
 RelicGen.VIS = VIS
 RelicGen.PAL = PAL
@@ -675,6 +679,8 @@ RelicGen.order = {
   "pack_blood", "bile_orb", "prismatic_wraith",
   -- W3 - axe mimetisme/amplification (meta-multiplicateurs)
   "zenith_stone", "forked_echo", "link_cable",
+  -- W4 - axe tank/removal/execution (finish d'equipe + anti-mur ; plan big-update §AXE 7)
+  "reapers_scythe", "siege_hammer",
 }
 
 return RelicGen

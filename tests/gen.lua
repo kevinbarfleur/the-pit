@@ -395,12 +395,13 @@ do
   -- (b) GOLDEN DE GÉNÉRATION : empreinte stable cross-process (hashId = FNV-1a 5.1-safe, IEEE déterministe).
   -- Re-baseline INTENTIONNEL au PIN (B.2 : la forme passe de hash-dérivée à ancrée-au-nom). Si tu changes un
   -- builder/une palette/un PIN VOLONTAIREMENT, regénère et colle la nouvelle valeur ici.
-  local EXPECTED_GEN = 1055948952 -- re-baseline W3 (2026-06-26) : +3 unités mimétisme/amplification APPEND-ONLY
-  -- (mimic_spawn/echo_flesh/hollow_crown). PROUVÉ golden-neutre sur les 96 pré-W3 (le fold des 96 = 3256988032
-  -- INCHANGÉ, == baseline W2) -> seul l'ajout des 3 nouvelles formes déplace l'empreinte. family/arch = combos
-  -- primgen ÉPROUVÉS (gelatine/blobmonster, colosse/ogre, oeil/eyecluster) ; ids uniques -> seed=hashId(id)
-  -- distinct -> sprites distincts (0 collision). Antérieurs : 3256988032 (W2, +7 mort&engeance), 541702824
-  -- (W1, +6 type-identité), 1150543352 (PIN).
+  local EXPECTED_GEN = 2109192272 -- re-baseline W4 (2026-06-26) : +5 unités tank/removal/exécution APPEND-ONLY
+  -- (headsman/culler/wallbreaker/siege_titan/reaper_shade). PROUVÉ golden-neutre sur les 99 pré-W4 (le fold des
+  -- 99 = 1055948952 INCHANGÉ, == baseline W3) -> seul l'ajout des 5 nouvelles formes déplace l'empreinte.
+  -- family/arch = combos primgen ÉPROUVÉS (crane/skullking, colosse/cyclops, golem/sentinel, automate/juggernaut,
+  -- spectre/wraith) ; ids uniques -> seed=hashId(id) distinct -> sprites distincts (0 collision sur les 104).
+  -- Antérieurs : 1055948952 (W3, +3 mimétisme), 3256988032 (W2, +7 mort&engeance), 541702824 (W1, +6
+  -- type-identité), 1150543352 (PIN).
   local function roll(acc, s) return CreatureGen.hashId(string.format("%d|", acc) .. s) end
   local acc = 0
   for _, id in ipairs(Units.order) do acc = roll(acc, id .. "=" .. sigs[id]) end

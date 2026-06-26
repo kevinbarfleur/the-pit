@@ -162,6 +162,21 @@ local R = {
   -- les seuls amplis d'école (poison/burn/bleed/rot) d'équipe. Méta-multiplicateur de l'axe affliction (cappé DOT ×4).
   link_cable = { id = "link_cable", op = "relic_amplify_auras", tier = 4, band = "high",
     params = { frac = 0.20, target = "team", dotOnly = true } },
+
+  -- ── W4 — AXE TANK / REMOVAL / EXÉCUTION (plan big-update §AXE 7) — « donne du SENS aux caps » : quand les deux
+  -- boards sont CAPPÉS (late), on ne peut plus out-stat → la victoire passe au removal %-PV / exécution. Ces deux
+  -- reliques font du FINISH et du %-PV des AXES d'équipe (le counter du mur-regen, constat SUMMARY §3). Réutilisent
+  -- relic_add_effect (effet lu en combat) : grant_team{teamExecute} (combat_start) et on_attack percent_hp_strike.
+  -- GOLDEN-SAFE : aucune relique n'est dans le scénario golden ; les ops sont gated. CAPS PRÉSERVÉS (PCT_STRIKE_CAP
+  -- absolu côté op + HIT ×7 backstop ; teamExecute additif borné). PLACEHOLDERS (à tuner via tools/relicsim.lua). ──
+  -- FAUX-DU-MOISSONNEUR (high) : toute l'équipe achève les blessés — +40% contre tout ennemi sous 25% PV (le
+  -- payoff TEAM-WIDE de l'execute ; gravediggers_due fait pareil pour UNE unité, ceci pour l'ÉQUIPE). Réécrit la fin.
+  reapers_scythe = { id = "reapers_scythe", op = "relic_add_effect", tier = 4, band = "high",
+    params = { effect = { trigger = "combat_start", op = "grant_team", params = { teamExecute = { threshold = 0.25, bonus = 0.40 } } } } },
+  -- MARTEAU-DE-SIÈGE (mid) : chaque frappe ARRACHE 8% des PV MAX de la cible (cap absolu 10 -> mord un mur sans
+  -- one-shot un carry). L'anti-mur accessible (band mid). on_attack percent_hp_strike (rider de la frappe, borné).
+  siege_hammer = { id = "siege_hammer", op = "relic_add_effect", tier = 3, band = "mid",
+    params = { effect = { trigger = "on_attack", op = "percent_hp_strike", params = { frac = 0.08, cap = 10 } } } },
 }
 
 R.order = { "bloodstone", "carapace", "aegis", "kings_bowl", "ember_heart", "weeping_nail", "grave_cap",
@@ -176,7 +191,9 @@ R.order = { "bloodstone", "carapace", "aegis", "kings_bowl", "ember_heart", "wee
   -- W1 — axe type-identité (mono-type amps + rainbow team payoff ; plan big-update §AXE 2)
   "pack_blood", "bile_orb", "prismatic_wraith",
   -- W3 — axe mimétisme/amplification (méta-multiplicateurs : Zenith / Onsetra / Link-Cable ; plan big-update §AXE 4)
-  "zenith_stone", "forked_echo", "link_cable" }
+  "zenith_stone", "forked_echo", "link_cable",
+  -- W4 — axe tank/removal/exécution (le finish + le %-PV deviennent des axes ; plan big-update §AXE 7)
+  "reapers_scythe", "siege_hammer" }
 
 -- ── relic_aura_stat : BAKE direct d'un CHAMP combat-time sur les specs (plan relics-overhaul §2.0). ──
 -- POINT DUR : applyRelics tourne APRÈS buildComp (qui a déjà baké aura_stat -> spec.atkInc/multicast/…).

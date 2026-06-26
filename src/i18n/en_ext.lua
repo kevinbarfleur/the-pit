@@ -327,6 +327,52 @@ return {
   ["relic.link_cable.effect"] = "Your affliction-amplifying auras are 20% stronger.",
   ["relic.link_cable.flavor"] = "A wet black cord joining rites that were never meant to touch.",
 
+  -- ── W4 — AXE TANK / REMOVAL / EXÉCUTION (plan big-update §AXE 7). Le removal/finish/%-PV : le counter du mur.
+  -- Convention : l'EXÉCUTION (seuil/bonus) s'exprime en % (comme gravediggers_due) ; la frappe %-PV donne le %
+  -- (qui dépend des PV de la cible, non exprimable en plat) AVEC son plafond CONCRET (« up to N ») = lisible. ──
+  ["unit.headsman.name"]         = "HEADSMAN",
+  ["unit.headsman.passive_name"] = "Headsman's Stroke",
+  ["unit.headsman.passive_desc"] = "Finishes the wounded: +80% damage to targets under 30% health.",
+  ["unit.headsman.command_name"]   = "THE BLOCK",
+  ["unit.headsman.command_desc"]   = "Your foremost beast strikes for +12% more.",
+  ["unit.headsman.command_flavor"] = "It keeps the edge bright and the count honest; under it the front line learns where the neck is.",
+
+  ["unit.culler.name"]         = "CULLER",
+  ["unit.culler.passive_name"] = "Cull the Fat",
+  ["unit.culler.passive_desc"] = "Hunts the enemy with the most health, ignoring the front line; each strike tears away 10% of its maximum health (up to 12). Murder on a wall, a tickle on the small.",
+  ["unit.culler.command_name"]   = "THE CULLING WEIGHT",
+  ["unit.culler.command_desc"]   = "Your foremost beast takes 10% less attack damage.",
+  ["unit.culler.command_flavor"] = "It measures a thing by how much there is to cut away; under it the front line stops fearing the big ones.",
+
+  ["unit.wallbreaker.name"]         = "WALLBREAKER",
+  ["unit.wallbreaker.passive_name"] = "Siegework",
+  ["unit.wallbreaker.passive_desc"] = "Its blows dissolve 40% of the target's shield and tear away 8% of its maximum health (up to 12).",
+  ["unit.wallbreaker.command_name"]   = "THE BREACHING RAM",
+  ["unit.wallbreaker.command_desc"]   = "At combat start, the enemy's shields are stripped by 30%.",
+  ["unit.wallbreaker.command_flavor"] = "Every wall it has met is a door it has not opened yet; under it the host arrives already inside.",
+
+  ["unit.siege_titan.name"]         = "SIEGE TITAN",
+  ["unit.siege_titan.passive_name"] = "Wall That Breaks Walls",
+  ["unit.siege_titan.passive_desc"] = "Taunts the enemy and holds the line; each strike tears away 10% of the target's maximum health (up to 12).",
+  ["unit.siege_titan.command_name"]   = "THE SIEGE RAM",
+  ["unit.siege_titan.command_desc"]   = "Your foremost beast takes 18% less attack damage.",
+  ["unit.siege_titan.command_flavor"] = "A wall given legs and a grudge; under it the front line is both the gate and the thing that breaks it.",
+
+  ["unit.reaper_shade.name"]         = "REAPER SHADE",
+  ["unit.reaper_shade.passive_name"] = "Reaping Air",
+  ["unit.reaper_shade.passive_desc"] = "Your whole team finishes the wounded: +30% damage to enemies under 25% health.",
+  ["unit.reaper_shade.command_name"]   = "THE REAPER",
+  ["unit.reaper_shade.command_desc"]   = "Your whole team deals +40% to enemies under 25% health.",
+  ["unit.reaper_shade.command_flavor"] = "It does not kill; it collects what was already owed; under it the whole pit reaps the failing.",
+
+  ["relic.reapers_scythe.name"]   = "THE REAPER'S SCYTHE",
+  ["relic.reapers_scythe.effect"] = "Your whole team finishes the work: +40% against any enemy below 25% health.",
+  ["relic.reapers_scythe.flavor"] = "One long stroke for the whole field; below the quarter, you are all of you a debt come due.",
+
+  ["relic.siege_hammer.name"]   = "THE SIEGE HAMMER",
+  ["relic.siege_hammer.effect"] = "Each of your strikes tears away 8% of the target's maximum health (up to 10).",
+  ["relic.siege_hammer.flavor"] = "It does not care how much wall there is, only that walls are made to come down.",
+
   -- TOKENS D'ENGEANCE (sous-êtres invoqués, src/data/spawn.lua) : pas dans le roster/boutique, mais survolables
   -- en combat → noms/blurbs courts. PAS de command_* (un token n'est jamais commandant). Valeurs concrètes.
   ["unit.grubling.name"]         = "GRUBLING",

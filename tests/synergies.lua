@@ -683,12 +683,155 @@ local ok, err = pcall(function()
   end
   print("  W3 mimétisme: repeat_ability × corruptor -> copie poison+vuln (viaCopy) / conclut (profondeur 1) / stacks bornés / deterministe OK")
 
+  -- ════ W4 — TANK / REMOVAL / EXÉCUTION (plan §AXE 7). On valide les TROIS verbes + l'INTENTION DE DESIGN :
+  -- le removal %-PV PRESSE un mur-regen que les frappes brutes ne percent pas (le counter manquant, SUMMARY §3). ════
+
+  -- W4.1 — PERCENT_HP_STRIKE : la frappe inflige des dégâts = frac des PV MAX de la cible (dégâts COURANTS scalés sur
+  -- le pool, PAS une amputation de maxHp), CLAMPÉS en valeur absolue (le cap MORD) -> JAMAIS de one-shot, QUELLE QUE
+  -- SOIT la cible (Q8, le cœur de l'op). On prouve : (a) sur un mur ÉNORME, la contribution de l'op = le cap
+  -- (frac×maxHp serait gigantesque) ; (b) le mur N'EST PAS one-shot ; (c) sur une squishy, frac×maxHp sous le cap.
+  -- Comparé à une frappe SANS l'op (isolement du mordant). État pur, déterministe.
+  do
+    local pctEff = { { trigger = "on_attack", op = "percent_hp_strike", params = { frac = 0.10, cap = 14 } } }
+    -- (a)+(b) MUR ÉNORME : maxHp 50000 -> frac×maxHp = 5000, MAIS cap 14 -> la frappe ne rajoute QUE 14. Pas one-shot.
+    do
+      local a = Arena.new({ left = { U("bandit", pctEff, { dmg = 5 }) },
+        right = { U("gravewarden", {}, { hp = 50000 }) }, autoReset = false, seed = 1 })
+      local atk, wall = a.units[1], a.units[2]
+      local hp0 = wall.hp; a:hit(atk, wall); local dealt = hp0 - wall.hp
+      -- dmg base 5 + bite clampé 14 = 19 (PAS 5 + 5000). Le cap a MORDU.
+      assert(dealt == 5 + 14, ("W4 percent_hp_strike: contribution CLAMPÉE au cap (attendu %d, obtenu %d)"):format(5 + 14, dealt))
+      assert(wall.alive and wall.hp > 40000, "W4 percent_hp_strike: le MUR n'est PAS one-shot (cap absolu tient)")
+    end
+    -- (a') le cap est un PLAFOND DUR : une data qui demande cap=9999 reste bornée à PCT_STRIKE_CAP (14). On ne peut
+    -- PAS desserrer le plafond par la data -> impossible de one-shot via cet op, quoi qu'on passe en params.
+    do
+      local greedy = { { trigger = "on_attack", op = "percent_hp_strike", params = { frac = 0.99, cap = 9999 } } }
+      local a = Arena.new({ left = { U("bandit", greedy, { dmg = 5 }) },
+        right = { U("gravewarden", {}, { hp = 50000 }) }, autoReset = false, seed = 1 })
+      local atk, wall = a.units[1], a.units[2]
+      local hp0 = wall.hp; a:hit(atk, wall); local dealt = hp0 - wall.hp
+      assert(dealt == 5 + 14, ("W4 percent_hp_strike: cap data 9999 BORNÉ à PCT_STRIKE_CAP 14 (obtenu %d)"):format(dealt))
+      assert(wall.alive, "W4 percent_hp_strike: même avec frac 0.99/cap 9999, le mur SURVIT (plafond dur)")
+    end
+    -- (c) SQUISHY : maxHp 80 -> frac×maxHp = 8 (sous le cap 14) -> l'op ajoute 8 (le % mord, pas le cap). Déterministe.
+    do
+      local a = Arena.new({ left = { U("bandit", pctEff, { dmg = 5 }) },
+        right = { U("skeleton", {}, { hp = 80 }) }, autoReset = false, seed = 2 })
+      local atk, sq = a.units[1], a.units[2]
+      local hp0 = sq.hp; a:hit(atk, sq); local d1 = hp0 - sq.hp
+      -- maxHp APRÈS hpMult ×2 = 160 -> 10% = 16, MAIS cap 14 -> 14. (le tank-buster mord même la squishy gonflée)
+      assert(d1 == 5 + 14, ("W4 percent_hp_strike: squishy gonflée (160 PV) -> 10%%=16 clampé 14 (obtenu %d)"):format(d1))
+      -- déterminisme : re-jouer le même hit isolé -> même mordant.
+      local b = Arena.new({ left = { U("bandit", pctEff, { dmg = 5 }) },
+        right = { U("skeleton", {}, { hp = 80 }) }, autoReset = false, seed = 2 })
+      local hp0b = b.units[2].hp; b:hit(b.units[1], b.units[2]); assert((hp0b - b.units[2].hp) == d1, "W4 percent_hp_strike: déterministe")
+    end
+  end
+  print("  W4 removal: percent_hp_strike -> %PV max CLAMPÉ (cap MORD, plafond dur), JAMAIS de one-shot + déterministe OK")
+
+  -- W4.2 — STRIKE_HIGHEST_HP : le chasseur de mur IGNORE la colonne avant ET le taunt pour viser le PV MAX le plus
+  -- haut (le « delete the biggest threat » SAP). chooseTarget pur, tie-break DÉTERMINISTE maxHp desc -> row -> slot.
+  do
+    -- 3 ennemis : un front fragile (depth 0), un mur de fond ÉNORME (depth 1), un mid. Sans le flag -> ciblage standard
+    -- (front, depth 0). AVEC le flag -> le mur de fond (maxHp max), MALGRÉ qu'il soit protégé derrière le front.
+    local a = Arena.new({ left = { U("bandit", {}) },
+      right = { U("skeleton", {}, { hp = 30, depth = 0, row = 0, slot = 1 }),    -- front fragile
+                U("gravewarden", {}, { hp = 400, depth = 1, row = 1, slot = 5 }), -- MUR de fond (PV max le + haut)
+                U("marauder", {}, { hp = 60, depth = 0, row = 2, slot = 9 }) },   -- mid
+      autoReset = false, seed = 3 })
+    local hunter = a.units[1]
+    -- ciblage STANDARD (flag off) : la colonne avant (depth 0) -> jamais le mur de fond.
+    local stdTgt = a:chooseTarget(hunter)
+    assert(stdTgt and stdTgt.id ~= "gravewarden", "W4 strike_highest_hp: SANS le flag, ciblage standard (front, pas le mur)")
+    -- ciblage CHASSEUR (flag on) : le PV MAX le plus haut = le mur de fond, malgré la colonne avant.
+    hunter.strikeHighestHp = true
+    local huntTgt = a:chooseTarget(hunter)
+    assert(huntTgt and huntTgt.id == "gravewarden", "W4 strike_highest_hp: vise le PV MAX le plus haut (le mur de fond), pas le front")
+    -- TIE-BREAK déterministe : deux ennemis à PV MAX ÉGAUX -> row asc puis slot asc.
+    local b = Arena.new({ left = { U("bandit", {}, { strikeHighestHp = true }) },
+      right = { U("gravewarden", {}, { hp = 200, depth = 0, row = 2, slot = 9 }),
+                U("gravewarden", {}, { hp = 200, depth = 1, row = 0, slot = 5 }) }, -- même maxHp, row plus basse -> GAGNE
+      autoReset = false, seed = 4 })
+    local t = b:chooseTarget(b.units[1])
+    assert(t and t.row == 0, "W4 strike_highest_hp: tie-break PV égaux -> row asc (déterministe)")
+    -- COMMANDANT untargetable : un commandant à PV énorme n'est JAMAIS la cible du chasseur.
+    local c = Arena.new({ left = { U("bandit", {}, { strikeHighestHp = true }) },
+      right = { U("skeleton", {}, { hp = 40, depth = 0, row = 0, slot = 1 }),
+                U("gravewarden", {}, { hp = 99999, depth = 1, row = 1, slot = 5, isCommander = true, untargetable = true }) },
+      autoReset = false, seed = 5 })
+    local ct = c:chooseTarget(c.units[1])
+    assert(ct and not ct.isCommander, "W4 strike_highest_hp: le commandant (PV énorme, untargetable) n'est JAMAIS visé")
+  end
+  print("  W4 removal: strike_highest_hp -> vise le PV max le + haut (ignore front+taunt) / tie-break déterministe / commandant épargné OK")
+
+  -- W4.3 — TEAMEXECUTE (grant_team) : une aura d'équipe donne un EXECUTE à TOUS (le finish d'équipe). Un allié SANS
+  -- execute par-unité gagne +bonus contre un ennemi blessé (sous le seuil). Lu dans hit() AVANT empower. État pur.
+  do
+    local grantEff = { { trigger = "combat_start", op = "grant_team", params = { teamExecute = { threshold = 0.25, bonus = 1.0 } } } }
+    -- la source pose le drapeau d'équipe au combat_start (Arena.new lance combat_start) ; bandit (sans execute) frappe.
+    local a = Arena.new({ left = { U("reaper_shade", grantEff, { depth = 1, row = 0 }), U("bandit", {}, { depth = 0, row = 0 }) },
+      right = { U("skeleton", {}, { hp = 200 }) }, autoReset = false, seed = 6 })
+    local hitter, tgt = a.units[2], a.units[3] -- bandit (allié, pas de execute propre), cible robuste
+    assert(a.teamFlags.left.teamExecute, "W4 teamExecute: le drapeau d'équipe est posé au combat_start")
+    -- cible SAINE : pas de bonus (au-dessus du seuil).
+    tgt.hp = tgt.maxHp; local h0 = tgt.hp; a:hit(hitter, tgt); local healthy = h0 - tgt.hp
+    -- cible BLESSÉE (sous 25%) : +100% (bonus 1.0) sur le coup du bandit, même s'il n'a PAS d'execute propre.
+    tgt.hp = math.floor(tgt.maxHp * 0.10); local h1 = tgt.hp; a:hit(hitter, tgt); local low = h1 - tgt.hp
+    assert(low > healthy, ("W4 teamExecute: l'équipe achève le blessé (%d > %d), même sans execute par-unité"):format(low, healthy))
+  end
+  print("  W4 removal: teamExecute (grant_team) -> l'équipe entière achève les blessés (finish team-wide) OK")
+
+  -- W4.4 — INTENTION DE DESIGN (le cœur de la vague, §6.2 « la bascule cap→removal ») : le removal %-PV PRESSE un
+  -- mur-regen que les FRAPPES BRUTES ne percent pas (le counter MANQUANT, SUMMARY §3). On oppose, contre le MÊME
+  -- mur (gros PV + REGEN FORTE), un attaquant PUR (dmg élevé) vs un attaquant REMOVAL au MÊME dmg de base mais dont
+  -- chaque coup ajoute un mordant %-PV (percent_hp_strike, qui scale sur les PV MAX -> ignore les PV bruts). La regen
+  -- est tunée pour que la frappe pure STAGNE (le mur ne meurt pas) tandis que le removal PERCE (il tue OU descend le
+  -- mur nettement plus bas). NB : percent_hp_strike inflige des dégâts COURANTS proportionnels au pool (pas une
+  -- amputation de maxHp) -> c'est précisément ce qui gagne la course contre la regen sans dépendre des PV bruts.
+  do
+    -- mur de référence : PV élevés + regen FORTE (le « mur-regen+taunt » que rien ne contrait, SUMMARY §3).
+    local function wall() return U("gravewarden", { { trigger = "combat_start", op = "regen", params = { value = 11 } } },
+      { hp = 220, dmg = 0, depth = 0, row = 0, x = 190, y = 70, facing = -1 }) end -- dmg 0 : on isole la course dégât/regen
+    -- attaquant PUR : frappe brute, aucun removal. coût-dégât de référence (dmg 12, cadence rapide).
+    local pureAtk = U("bandit", {}, { dmg = 12, cd = 36, depth = 0, row = 0, x = 130, y = 70, facing = 1 })
+    -- attaquant REMOVAL : MÊME dmg de base, MAIS +12% des PV MAX de la cible par coup (cap 14) -> le mordant scale sur
+    -- le pool du mur (gros) au lieu de buter sur la regen. Le « tueur de mur » qui ignore les PV bruts.
+    local remAtk = U("bandit", { { trigger = "on_attack", op = "percent_hp_strike", params = { frac = 0.12, cap = 14 } } },
+      { dmg = 12, cd = 36, depth = 0, row = 0, x = 130, y = 70, facing = 1 })
+    -- mesure : creux de PV COURANTS atteint par le mur (la regen remonte ; on capte la pression réelle) + s'il MEURT,
+    -- et À QUEL tick. FENÊTRE 1000 ticks, SOUS le seuil de Fatigue (1020) -> c'est bien le REMOVAL qui tue, jamais l'usure.
+    local function pressure(atk, ticks)
+      local a = Arena.new({ left = { atk }, right = { wall() }, autoReset = false, seed = 7 })
+      assert(ticks < Arena.FATIGUE_START, "W4 design: la fenêtre doit rester sous la Fatigue (sinon l'usure fausse la course)")
+      local w = a.units[2]
+      local lowest, killTick = w.hp, nil
+      for i = 1, ticks do
+        a:update(1.0, i * 1.0)
+        if w.hp < lowest then lowest = w.hp end
+        if a.over then killTick = i; break end
+      end
+      return lowest, (w.alive == false), w.maxHp, killTick
+    end
+    local pureLow, pureDead, wmax = pressure(pureAtk, 1000)
+    local remLow,  remDead, _, remKill = pressure(remAtk, 1000)
+    -- (1) la frappe PURE STAGNE : le mur-regen ne descend jamais bas (la regen tient la course) -> il SURVIT.
+    assert(not pureDead, "W4 design: la frappe brute STAGNE contre le mur-regen (il survit, le constat SUMMARY §3)")
+    assert(pureLow > wmax * 0.40, ("W4 design: sous frappe pure, le mur reste haut (creux %d > 40%% de %d : regen gagne la course)"):format(pureLow, wmax))
+    -- (2) le REMOVAL PERCE : il presse le mur NETTEMENT plus bas ET le TUE avant la Fatigue -> le counter manquant fonctionne.
+    assert(remLow < pureLow, ("W4 design: le removal PRESSE le mur plus bas que la frappe brute (creux %d vs %d)"):format(remLow, pureLow))
+    assert(remDead and remKill and remKill < Arena.FATIGUE_START,
+      ("W4 design: le removal %%PV TUE le mur-regen (tick %s < Fatigue %d) que la frappe brute ne percait pas (counter du mur)"):format(tostring(remKill), Arena.FATIGUE_START))
+  end
+  print("  W4 removal: INTENTION -> le removal %PV PERCE (tue, pré-Fatigue) un mur-regen où la frappe brute STAGNE (counter du mur) OK")
+
   print("  synergies : choc-decharge-allie / poison-multi-sources / weaken-reduit-output / bleed-ralentit-cadence / regen-contre-DoT")
   print("  synergies+: contagion / propagation-a-la-mort / aggravate / shieldEat (T2)")
   print("  synergies#: bleed->rot / poison->feu / festering-sans-cap (T3 croises) OK")
   print("  synergies TROU#2: grant_team markEnemiesVuln -> vulnInc sur l'equipe ennemie (cmd epargne, cumul <= cap) OK")
   print("  keystones : multicast×epines (borne) / multicast×choc (idempotence) / empower+vuln caps / determinisme OK")
   print("  new-ops   : crit(seedé) / execute / grant_vuln(expire) / cleave / heal_on_kill / purge / convert_dot / grant_if_absent OK")
+  print("  W4 removal: percent_hp_strike(cap dur, anti-one-shot) / strike_highest_hp(chasseur de mur) / teamExecute / INTENTION counter-du-mur OK")
   print("  pire-combo: multicast×empower×vuln×crit conclut SANS one-shot (caps+backstop tiennent) OK")
 end)
 

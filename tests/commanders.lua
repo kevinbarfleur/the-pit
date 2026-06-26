@@ -34,6 +34,7 @@ local GRANT_FLAGS = {
   burnNoDecay = true, poisonNoCap = true, poisonDurBonus = true, pierceHeal = true,
   invulnT = true, shockChain = true, bleedNoExpire = true, plagueAmp = true,
   stripEnemyShield = true, slowEnemies = true, rotEnemies = true, markEnemiesVuln = true,
+  teamExecute = true, -- W4 (AXE 7) : exécution d'équipe, lu dans arena:hit() (le commandant Removal du plan §AXE 9)
 }
 -- Garde-fous de design gravés (spec §1.2) : interdits par construction (broken).
 local function bannedCombo(stat, target)

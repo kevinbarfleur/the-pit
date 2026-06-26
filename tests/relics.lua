@@ -365,6 +365,60 @@ local ok, err = pcall(function()
     assert(math.abs(ampOnce() - ampOnce()) < 1e-12, "relic_amplify_auras déterministe (même entrée -> même sortie)")
   end
 
+  -- 2d-quater) W4 — AXE TANK / REMOVAL / EXÉCUTION (plan big-update §AXE 7) : les reliques de FINISH / %-PV (le
+  -- counter du mur, SUMMARY §3). Toutes = relic_add_effect (effet lu en combat) : grant_team{teamExecute} ou
+  -- on_attack percent_hp_strike. On vérifie l'INJECTION + le PALIER + (point critique) que le %-PV est CAPPÉ à la
+  -- LECTURE en combat -> impossible de one-shot, quelle que soit la cible.
+  do
+    local Arena = require("src.combat.arena")
+    -- FAUX-DU-MOISSONNEUR (relic_add_effect -> combat_start grant_team{teamExecute}) : injecte le drapeau d'équipe.
+    local function injectsGrant(relic, key)
+      local r = RunState.new(500); r:grantRelic(relic)
+      local cc = { { id = "a", hp = 50, dmg = 7, cd = 36 } }; r:applyRelics(cc)
+      for _, e in ipairs(cc[1].effects or {}) do
+        if e.op == "grant_team" and e.params and e.params[key] ~= nil then return true end
+      end
+      return false
+    end
+    assert(injectsGrant("reapers_scythe", "teamExecute"), "reapers_scythe: injecte grant_team{teamExecute}")
+    assert(Relics.reapers_scythe.band == "high", "reapers_scythe: band high")
+
+    -- MARTEAU-DE-SIÈGE (relic_add_effect -> on_attack percent_hp_strike) : injecte l'op de frappe %-PV.
+    local function injectsAttack(relic, op)
+      local r = RunState.new(501); r:grantRelic(relic)
+      local cc = { { id = "a", hp = 50, dmg = 7, cd = 36 } }; r:applyRelics(cc)
+      for _, e in ipairs(cc[1].effects or {}) do if e.trigger == "on_attack" and e.op == op then return true end end
+      return false
+    end
+    assert(injectsAttack("siege_hammer", "percent_hp_strike"), "siege_hammer: injecte on_attack percent_hp_strike")
+    assert(Relics.siege_hammer.band == "mid", "siege_hammer: band mid")
+
+    -- CAP EN COMBAT (le point CRITIQUE, Q8) : siege_hammer pose percent_hp_strike frac=0.08/cap=10. Contre un mur
+    -- ÉNORME (maxHp 40000), 8% = 3200, MAIS le cap (min(10, PCT_STRIKE_CAP)=10) borne la contribution à 10. Le mur
+    -- N'EST PAS one-shot. On vérifie la valeur LUE en combat (relique appliquée à une vraie unité, hit() réel).
+    local sh = RunState.new(502); sh:grantRelic("siege_hammer")
+    local atkSpec = { id = "bandit", hp = 50, dmg = 5, cd = 36, depth = 0, row = 0, slot = 1, x = 10, y = 0, facing = 1 }
+    sh:applyRelics({ atkSpec }) -- injecte percent_hp_strike dans atkSpec.effects
+    local a = Arena.new({ left = { atkSpec },
+      right = { { id = "gravewarden", hp = 40000, dmg = 1, cd = 60, effects = {}, depth = 0, row = 0, x = 20, y = 0, facing = -1 } },
+      autoReset = false, seed = 13 })
+    local atk, wall = a.units[1], a.units[2]
+    local hp0 = wall.hp; a:hit(atk, wall); local dealt = hp0 - wall.hp
+    -- dmg base 5 + bite clampé 10 = 15 (PAS 5 + 3200). Le cap a MORDU -> aucun one-shot possible via la relique.
+    assert(dealt == 5 + 10, ("siege_hammer CAP: contribution %%PV CLAMPÉE au cap 10 -> 15 dégâts (obtenu %d, JAMAIS 3205)"):format(dealt))
+    assert(wall.alive and wall.hp > 39000, "siege_hammer CAP: le MUR n'est PAS one-shot par la relique (plafond absolu tient)")
+
+    -- DÉTERMINISME : deux frappes identiques (relique appliquée) -> même mordant.
+    local function bite()
+      local r = RunState.new(503); r:grantRelic("siege_hammer")
+      local s = { id = "bandit", hp = 50, dmg = 5, cd = 36, depth = 0, row = 0, slot = 1, x = 10, y = 0, facing = 1 }
+      r:applyRelics({ s })
+      local b = Arena.new({ left = { s }, right = { { id = "skeleton", hp = 5000, dmg = 1, cd = 60, effects = {}, depth = 0, row = 0, x = 20, y = 0, facing = -1 } }, autoReset = false, seed = 13 })
+      local h0 = b.units[2].hp; b:hit(b.units[1], b.units[2]); return h0 - b.units[2].hp
+    end
+    assert(bite() == bite(), "siege_hammer: déterministe (même frappe -> même mordant %PV)")
+  end
+
   -- 2e) SURVEILLANCE D'EMPILEMENT (plan relics-overhaul §4) : les empilements dangereux restent BORNÉS au
   -- BUILD (les caps moteur a la LECTURE sont testés ailleurs : tests/synergies KEYSTONES). Ici on verifie la
   -- COMPOSITION des champs bakés (somme team + relique), qui DOIT rester sous les caps moteur.
@@ -433,6 +487,7 @@ local ok, err = pcall(function()
   Grimoire.wipe()
   print("  reliques : grant lisible / ops stats+amplis+paliers+defensives+transformatives(chain/burn/bleed/plague) / offre seedee / Grimoire OK")
   print("  reliques W3: méta-multiplicateurs (zenith team / forked_echo role:back / link_cable dotOnly) -> amplifient l'aura bakée, CAP préservé à la lecture OK")
+  print("  reliques W4: removal/exécution (reapers_scythe teamExecute / siege_hammer percent_hp_strike) -> injectées, %PV CAPPÉ en combat (anti one-shot) OK")
 end)
 
 if ok then
