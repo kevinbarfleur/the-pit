@@ -689,6 +689,42 @@ Interpretation ajoutee apres pair-planning:
   complet achetable contre `94.6%` baseline), mais il reduit les wins moyens
   tant que certains shells, surtout tank, ne sont pas plus accessibles.
 
+Ajout apres le scenario `tank` (`tools/sim.lua tank 20`) :
+
+- Le diagnostic tank est maintenant separe en trois hypotheses testables :
+  acces, pilotage et puissance mecanique.
+- Le shell actuel reste tres faible : a pacing live (`hp x2 / cooldown x1`),
+  `current_plan` fait `0%` completion, `0.90` wins moyens, `25%` plan commit
+  et seulement `25%` de final boards vraiment tanks.
+- Le shell `survival_shell` gagne tres fort (`55%` completion, `9.55` wins
+  moyens), mais son actual final tank commit est `0%`. C'est donc un faux ami :
+  acheter des corps low-rank robustes sauve la run, mais ne cree pas une
+  identite tank lisible.
+- `husk_seed` commit souvent (`90%`) mais reste a `0.00` wins live et `0%`
+  final tank commit. Husk n'est pas une bonne graine tank sans mecanique
+  defensive explicite.
+- `demon_seed` est meilleur (`3.95` wins live, jusqu'a `6.00` en `hp2_cd4`),
+  mais reste plutot un seed bruiser/lifesteal qu'une vraie entree tank.
+- Le buff sim-only de payoff tank ne regle pas l'acces : il agit apres avoir
+  trouve des tanks, donc il ne resout pas le trou de rang 1.
+- Conclusion economie/design : il ne faut pas juger `sap_cost` ou une courbe
+  de revenu tant que tank n'a pas une entree low-rank lisible. Sinon on risque
+  d'attribuer a l'economie un probleme qui vient du roster.
+
+Ajout pacing combat :
+
+- Le scenario tank mesure maintenant les durees en secondes (`ticks / 60`) et
+  le taux de combats sous 5 secondes.
+- Sur `current_plan`, le live donne environ `9.81s` early en moyenne, `9.02s`
+  median global, `15.10s` p90, et `10%` d'early fights sous `5s`.
+- `cooldown x2` supprime les early fights sous `5s` et monte l'early moyen a
+  `17.19s`, mais touche deja la fatigue dans environ `51%` des combats.
+- `cooldown x3/x4` pousse presque tout en fatigue (`~89-94%` sur current tank).
+  Un `cd x4` global serait donc trop brutal sans deplacer aussi le seuil de
+  fatigue/overtime et retuner DoT/shields.
+- Prochain test recommande : ajouter ces metriques de duree au scenario global
+  non-tank, puis balayer `cd x1.5` / `cd x2` avec fatigue plus tardive.
+
 Metrics recommandees :
 
 - `full_shop_cost_ratio` : cout du shop entier / gold disponible par round.

@@ -136,6 +136,28 @@ local ok, err = pcall(function()
   local r1 = Rundriver.run(42, Policies.random_baseline(love.math.newRandomGenerator(7)), {})
   local r2 = Rundriver.run(42, Policies.random_baseline(love.math.newRandomGenerator(7)), {})
   assert(r1.wins == r2.wins and #r1.rounds == #r2.rounds, "rundriver deterministe (random, RNG re-seede)")
+  local function pacedRun()
+    local calls = { left = 0, right = 0 }
+    local mut = function(comp, side)
+      calls[side] = (calls[side] or 0) + 1
+      for _, s in ipairs(comp or {}) do s.cd = math.max(1, math.floor((s.cd or 1) * 2 + 0.5)) end
+    end
+    return Rundriver.run(314159, Policies.greedy_stats, { hpMult = 2, compMutator = mut }), calls
+  end
+  local pt1, pc1 = pacedRun()
+  local pt2, pc2 = pacedRun()
+  assert(pt1.result == pt2.result and pt1.wins == pt2.wins and #pt1.rounds == #pt2.rounds,
+    "rundriver mutateur compo: deterministe")
+  assert(pc1.left == pc1.right and pc1.left == #pt1.rounds and pc2.left == pc2.right,
+    "rundriver mutateur compo: applique aux deux camps a chaque combat")
+  local leftCalls = 0
+  local lt = Rundriver.run(271828, Policies.greedy_stats, {
+    leftMutator = function(comp)
+      leftCalls = leftCalls + 1
+      if comp[1] then comp[1].hp = comp[1].hp + 1 end
+    end,
+  })
+  assert(leftCalls == #lt.rounds, "rundriver leftMutator: applique uniquement au joueur a chaque combat")
   local intentDrv = Rundriver.new(20260626, {})
   local desired = Policies.greedy_stats:desiredOffers(intentDrv)
   assert(desired.visibleCount >= desired.count and desired.visibleCost >= desired.cost,

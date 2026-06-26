@@ -1501,10 +1501,60 @@ Next implementation targets:
      round `6`, completion `0%`, `0.95` wins average; `sap_cost` tank forms
      `3/20` plans and averages `0.05` wins. This is an accessibility/power
      defect in the tank shell, not a reserve-management defect.
+   Latest N=20 learning after adding `tools/sim.lua tank [N]`:
+   - `src/lab/rundriver.lua` now supports lab-only `compMutator`,
+     `leftMutator`, and `rightMutator` overlays. These let us test pacing and
+     candidate balance changes without mutating live roster data.
+   - `tools/scenarios/tank.lua` crosses six tank hypotheses with five pacing
+     profiles and writes `runs/report-tank.json`:
+     `current_plan`, `survival_shell`, `husk_seed`, `demon_seed`,
+     `current_power_plus`, `husk_seed_power_plus` x
+     `live_hp2_cd1`, `hp2_cd2`, `hp2_cd3`, `hp2_cd4`, `hp3_cd2`.
+   - Current tank remains weak: live pacing, current policy, `0%` completion,
+     `0.90` wins average, `25%` plan commitment, `25%` actual final tank
+     commitment.
+   - A broad survivable filler shell is very strong (`55%` completion and
+     `9.55` wins at live pacing), but it is not actually tank:
+     actual final tank commitment is `0%`. This is a useful negative result.
+     Robust low-rank fillers can save runs, but they do not create a readable
+     tank identity.
+   - `husk` as a simulated rank-1 tank seed forms the policy plan often
+     (`90%`) but wins `0.00` at live pacing and never reaches actual tank
+     final commitment. Husk is not a viable seed without real tank mechanics.
+   - `demon` as a simulated seed is more promising (`3.95` wins live,
+     `6.00` wins at `hp2_cd4`) but still has low actual tank final commitment
+     (`15-30%`). It behaves like a strong bruiser seed, not a clean tank seed.
+   - A simple sim-only tank payoff overlay (`+15%` tank HP, `+0.06`
+     damage-reduction, +shield payoff) does not fix access. It only applies
+     after real tanks are found, so it cannot solve the missing rank-1 entry
+     point by itself.
+   - Conclusion: the next roster design pass should add or convert a true
+     low-rank tank identity with an explicit defensive mechanic, then retest.
+     Merely telling the policy to buy robust bodies produces a different
+     archetype, not tank.
+   Pacing learning from the same report:
+   - External reference: Riot's TFT patch notes explicitly treat combat pacing
+     as a live balance target. Patch 15.3 says the set was continuing a goal
+     of slowing combat pacing and nerfed units/items/artifacts accordingly:
+     https://teamfighttactics.leagueoflegends.com/en-us/news/game-updates/teamfight-tactics-patch-15-3-notes/
+     This is not a direct target duration for The Pit, but it validates making
+     fight duration a first-class simulation metric.
+   - Live baseline already has early current-tank fights around `9.81s` average
+     with `10%` of early fights under `5s`. The issue is not universal early
+     shortness in this narrow tank probe, but it may still appear in bursty
+     non-tank matchups and must be measured globally.
+   - `cooldown x2` roughly doubles current-tank pacing (`17.19s` early average)
+     and removes early under-5s fights, but it triggers fatigue in about `51%`
+     of current-tank fights. This is a candidate only if fatigue timing is also
+     retuned.
+   - `cooldown x3/x4` pushes most fights into fatigue (`~89-94%` current tank
+     fatigue touch rate). A blind global `cd x4` would be too blunt unless
+     the fatigue/overtime model is moved later and DoT/shield cadence is
+     rebalanced around it.
+   - Recommended next step: add duration reporting to a global policy/meta
+     scenario, then test `cd x1.5` and `cd x2` with a later fatigue threshold
+     before any live roster-wide cooldown change.
    Remaining additions:
-   - turn the tank diagnosis into sim-only candidate variants: rank-1 tank seed,
-     stronger shield/taunt payoff, and/or tank rush policy that buys survivable
-     filler until tier 2;
    - add a "pair completion over time" metric: pair formed -> merge completed
      rate, not only raw pair/merge purchase counts;
    - model relic access and relic tags in coherence/economy reports;

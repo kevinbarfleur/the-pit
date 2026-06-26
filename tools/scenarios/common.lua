@@ -128,7 +128,7 @@ end
 -- et on remplace le bloc du mode par regénération complète depuis un cache disque. Pour rester SANS décodeur,
 -- on stocke chaque résumé de mode dans son PROPRE fichier runs/ref-<mode>.json, et report-ref.json est leur
 -- CONCATÉNATION ordonnée régénérée à chaque écriture. Simple, déterministe, diff-able.
-local REF_MODES = { "meta", "invest", "policy", "godroll", "commander", "counter", "economy" }
+local REF_MODES = { "meta", "invest", "policy", "godroll", "commander", "counter", "economy", "tank" }
 function Common.updateRef(name, summary)
   local dir = OUT_DIR
   os.execute("mkdir -p " .. dir)

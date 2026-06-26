@@ -322,12 +322,16 @@ local function pruneBenchToReserve(drv, opts, reserve)
 end
 
 function Policies.commitmentFor(drv, archetype)
+  return Policies.commitmentForWant(drv, archetype, function(id) return Policies.archetypeOf(id) == archetype end)
+end
+
+function Policies.commitmentForWant(drv, archetype, want)
   local total, hits = 0, 0
   for i = 1, 9 do
     local sr = drv.build.slotRigs[i]
     if sr then
       total = total + 1
-      if Policies.archetypeOf(sr.id) == archetype then hits = hits + 1 end
+      if wants(want, sr.id) then hits = hits + 1 end
     end
   end
   local share = (total > 0) and (hits / total) or 0
@@ -634,23 +638,25 @@ function Policies.committed_archetype(archetype, sigil)
   }
 end
 
-function Policies.committed_archetype_plan(archetype, sigil)
+function Policies.committed_archetype_plan_with(archetype, sigil, opts)
+  opts = opts or {}
   return {
-    name = "committed_" .. archetype .. "_plan",
+    name = opts.name or ("committed_" .. archetype .. "_plan"),
     archetype = archetype, sigil = sigil,
     desiredOffers = function(self, drv)
-      local want = function(id) return Policies.archetypeOf(id) == self.archetype end
+      local want = opts.want or function(id) return Policies.archetypeOf(id) == self.archetype end
       return smartDesiredShop(drv, want, { want = want, protectWanted = true }, drv.run.pendingSlotGrant and 1 or 0)
     end,
     commitment = function(self, drv)
-      return Policies.commitmentFor(drv, self.archetype)
+      local want = opts.commitWant or opts.want or function(id) return Policies.archetypeOf(id) == self.archetype end
+      return Policies.commitmentForWant(drv, self.archetype, want)
     end,
     act = function(self, drv)
       if sigil and drv.build.board.shape.name ~= sigil then drv:reshape(sigil) end
       resolveGrant(drv, true)
-      local want = function(id) return Policies.archetypeOf(id) == self.archetype end
+      local want = opts.want or function(id) return Policies.archetypeOf(id) == self.archetype end
       local xpBuys = 0
-      local minRank = Policies.minRankForArchetype(self.archetype) or 1
+      local minRank = opts.minRank or Policies.minRankForArchetype(self.archetype) or 1
       while drv.run.shopTier < minRank and drv.run:canBuyXp() and xpBuys < 2 do
         if not drv:buyXp() then break end
         xpBuys = xpBuys + 1
@@ -682,6 +688,10 @@ function Policies.committed_archetype_plan(archetype, sigil)
       return { archetype = self.archetype, bought = bought, sold = sold, boardSold = boardSold, rerolls = rerolls, xpBuys = xpBuys }
     end,
   }
+end
+
+function Policies.committed_archetype_plan(archetype, sigil)
+  return Policies.committed_archetype_plan_with(archetype, sigil)
 end
 
 -- ── 6) RANDOM BASELINE (factory, RNG INJECTÉ -> déterministe) : accepte/refuse, reroll, achats au hasard.

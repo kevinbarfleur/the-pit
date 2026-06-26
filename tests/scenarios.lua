@@ -71,7 +71,7 @@ local ok, err = pcall(function()
   local OUT = "runs/_test"
   local ENV = "PIT_SCEN_OUT=" .. OUT .. " "
   os.execute("rm -rf " .. OUT .. " && mkdir -p " .. OUT)
-  local MODES = { "invest", "policy", "godroll", "commander", "counter", "economy" }
+  local MODES = { "invest", "policy", "godroll", "commander", "counter", "economy", "tank" }
   for _, m in ipairs(MODES) do
     local code = os.execute(ENV .. "luajit tools/sim.lua " .. m .. " 1 >/dev/null 2>&1")
     -- os.execute renvoie true (5.2+) ou 0 (5.1) au succes ; on accepte les deux conventions.
@@ -81,7 +81,7 @@ local ok, err = pcall(function()
     local body = f:read("*a"); f:close()
     assert(jsonLooksObject(body), "mode " .. m .. " : report-" .. m .. ".json est un objet JSON")
   end
-  print("  scenarios : SMOKE OK (6 modes tournent via le driver + ecrivent un rapport JSON ; garde-fous god-roll tenus)")
+  print("  scenarios : SMOKE OK (7 modes tournent via le driver + ecrivent un rapport JSON ; garde-fous god-roll tenus)")
 
   -- 3) DÉTERMINISME : un mode relance a meme N -> rapport IDENTIQUE (regle d'or). On teste le plus rapide.
   os.execute(ENV .. "luajit tools/sim.lua godroll 1 >/dev/null 2>&1")
@@ -101,7 +101,7 @@ local ok, err = pcall(function()
 end)
 
 if ok then
-  print("=> SCENARIOS OK : moteur de scenarios (common + 6 modes + determinisme + golden de meta).")
+  print("=> SCENARIOS OK : moteur de scenarios (common + 7 modes + determinisme + golden de meta).")
 else
   print("=> SCENARIOS FAIL :")
   print(err)

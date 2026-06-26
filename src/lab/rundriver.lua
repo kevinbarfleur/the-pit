@@ -32,6 +32,9 @@ function Rundriver.new(seed, opts)
     run = run, build = build, host = host, opts = opts,
     tickCap = opts.tickCap or 8000,
     hpMult = opts.hpMult, -- bouton global de PV (forwardé à Match.run dans fight) ; nil -> constante Arena.HP_MULT
+    compMutator = opts.compMutator, -- lab-only overlay appliqué aux deux camps avant Match.run (pacing, probes)
+    leftMutator = opts.leftMutator, -- lab-only overlay appliqué au joueur seulement (candidate balance)
+    rightMutator = opts.rightMutator, -- lab-only overlay appliqué à l'adversaire seulement
     relicsKnown = opts.relicsKnown or false, -- reliques pré-connues au Grimoire ? (le driver n'a pas d'IO)
     opponentFn = opts.opponent,              -- (driver) -> compo droite ; défaut PvE escaladante
     over = nil, pendingRelics = nil, lastResult = nil,
@@ -305,6 +308,12 @@ function Rundriver:opponent()
   return self.build:buildRightComp(enc, bump), enc.key
 end
 
+function Rundriver:_mutateComp(comp, side)
+  if self.compMutator then self.compMutator(comp, side, self) end
+  if side == "left" and self.leftMutator then self.leftMutator(comp, self) end
+  if side == "right" and self.rightMutator then self.rightMutator(comp, self) end
+end
+
 -- ── Combat + avancement de la méta-boucle (mirroir de host.finishCombat, SANS IO Grimoire) ──
 -- Renvoie { result, over?, relicChoices? }. Si relicChoices : le round N'EST PAS avancé -> il FAUT
 -- appeler pickRelic ensuite (l'agent/la politique choisit). Sinon le round suivant est ouvert (startRound).
@@ -312,7 +321,9 @@ function Rundriver:fight()
   local left = self.build:buildLeftComp()
   if #left == 0 then return { error = "empty_board" } end
   self.run:applyRelics(left) -- reliques : effet RÉEL sur la compo joueur (comme au build)
+  self:_mutateComp(left, "left")
   local right, enemyKey = self:opponent()
+  self:_mutateComp(right, "right")
   local seed = self.run:nextCombatSeed()
   local res = Match.run(left, right, seed, { tickCap = self.tickCap, hpMult = self.hpMult })
   res.enemyKey = enemyKey
