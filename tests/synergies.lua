@@ -8,6 +8,8 @@ love = require("tests.mock_love")
 
 local Arena = require("src.combat.arena")
 local Units = require("src.data.units")
+local Build = require("src.scenes.build")   -- W3 : repeat_ability est BUILD-RÉSOLU -> on teste le vrai chemin build→combat
+local Palette = require("src.core.palette")
 
 -- spec minimal : on peut injecter des effets custom (eff) et écraser des champs (over) pour ISOLER
 -- l'interaction qu'on teste, sans bruit (ex. désactiver un passif gênant en passant eff = {}).
@@ -624,6 +626,62 @@ local ok, err = pcall(function()
     assert(finalN < 64, "W2 summon×scavenge: le nombre d'unites reste borne (anti-snowball d'engeance)")
   end
   print("  W2 engeance: summon × scavenge -> conclut (borne) + token jaillit + deterministe OK")
+
+  -- ════ W3 — REPEAT_ABILITY × CORRUPTOR (l'écho × affliction, plan §AXE 4 + cas dur §6.6) : un MIMIC placé
+  -- DERRIÈRE un corruptor (poison + grant_vuln on_hit) COPIE ses on_hit (build-résolu) → il RE-POSE poison ET vuln
+  -- au niveau du mimic → double pose. On exige : (1) le mimic gagne bien les on_hit copiés (viaCopy), (2) le combat
+  -- CONCLUT (pas de boucle : un on_hit copié ne re-déclenche aucun repeat — profondeur 1), (3) le snowball reste
+  -- BORNÉ (POISON_STACK_CAP=8, VULN_INC_CAP=0.5 à la lecture), (4) DÉTERMINISTE. Chemin RÉEL build→combat. ════
+  do
+    -- BUILD : corruptor en col 2 (front, slot 6), mimic (soot_acolyte porteur repeat_ability ahead) en col 1 (slot 5,
+    -- DERRIÈRE le corruptor sur la même row 1). On force l'effet repeat_ability sur soot_acolyte (hors scénario golden).
+    local function buildMimicComp()
+      local saved = Units.soot_acolyte.effects
+      Units.soot_acolyte.effects = { { trigger = "combat_start", op = "repeat_ability", params = { who = "ahead" } } }
+      local b = Build.new(Palette, 320, 180, { goto = function() end })
+      b.board:setShape("carre"); b:computeLayout(); b.board:unlock(9)
+      b:placeId(6, "corruptor")     -- carry on_hit (poison + grant_vuln), col 2 = FRONT
+      b:placeId(5, "soot_acolyte")  -- le MIMIC, col 1 = DERRIÈRE le corruptor (même row 1)
+      local comp = b:buildComp(-1)
+      Units.soot_acolyte.effects = saved
+      return comp
+    end
+    local comp = buildMimicComp()
+    -- (1) le mimic a copié poison ET grant_vuln (les 2 on_hit du corruptor), chacun viaCopy.
+    local mimic; for _, s in ipairs(comp) do if s.id == "soot_acolyte" then mimic = s end end
+    local nPoison, nVuln = 0, 0
+    for _, e in ipairs(mimic.effects or {}) do
+      if e.trigger == "on_hit" and e.op == "poison" and e.viaCopy then nPoison = nPoison + 1 end
+      if e.trigger == "on_hit" and e.op == "grant_vuln" and e.viaCopy then nVuln = nVuln + 1 end
+    end
+    assert(nPoison == 1 and nVuln == 1, "W3 mimic: copie EXACTEMENT poison+grant_vuln du corruptor (viaCopy)")
+
+    -- (2)+(3)+(4) COMBAT : on rejoue le comp (positions de combat data) contre une cible robuste. Le mimic et le
+    -- corruptor empoisonnent tous deux la même cible -> on vérifie que le combat CONCLUT et que les stacks de poison
+    -- de la cible ne dépassent JAMAIS le cap (anti repeat-of-repeat = pas d'empilage infini de poses).
+    local function run(seed)
+      -- on repositionne le comp en 2 lignes de combat saines (depth/row déjà posés par buildComp).
+      local right = { U("templar", nil, { depth = 0, row = 0, x = 190, y = 70, facing = -1 }),
+        U("gravewarden", nil, { depth = 0, row = 1, x = 190, y = 104, facing = -1 }) }
+      local a = Arena.new({ left = comp, right = right, autoReset = false, seed = seed })
+      local maxStacks, n = 0, 0
+      for i = 1, 8000 do
+        a:update(1.0, i * 1.0); n = i
+        for _, u in ipairs(a.units) do
+          if u.dots and u.dots.poison and #u.dots.poison > maxStacks then maxStacks = #u.dots.poison end
+        end
+        if a.over then break end
+      end
+      assert(a.over, "W3 mimic×corruptor: le combat CONCLUT (on_hit copié ne re-déclenche aucun repeat, profondeur 1)")
+      assert(n < 8000, "W3 mimic×corruptor: conclu strictement sous le plafond")
+      return (a.win and "W" or "L"), n, maxStacks
+    end
+    local w1, n1, ms1 = run(321)
+    assert(ms1 <= 8, "W3 mimic×corruptor: les stacks de poison restent BORNÉS (POISON_STACK_CAP=8, obtenu " .. ms1 .. ")")
+    local w2, n2 = run(321)
+    assert(w1 == w2 and n1 == n2, "W3 mimic×corruptor: DÉTERMINISTE (même seed -> même issue + durée)")
+  end
+  print("  W3 mimétisme: repeat_ability × corruptor -> copie poison+vuln (viaCopy) / conclut (profondeur 1) / stacks bornés / deterministe OK")
 
   print("  synergies : choc-decharge-allie / poison-multi-sources / weaken-reduit-output / bleed-ralentit-cadence / regen-contre-DoT")
   print("  synergies+: contagion / propagation-a-la-mort / aggravate / shieldEat (T2)")

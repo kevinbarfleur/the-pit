@@ -142,6 +142,26 @@ local R = {
   -- sur CHAQUE unité). Récompense le toolbox multi-type (la stratégie opposée au mono-type). Réécrit « plus tu mélanges ».
   prismatic_wraith = { id = "prismatic_wraith", op = "relic_rainbow", tier = 4, band = "high",
     params = { dmgPerType = 3, hpPerType = 5 } },
+
+  -- ── W3 — AXE MIMÉTISME/AMPLIFICATION (plan big-update §AXE 4) — les MÉTA-MULTIPLICATEURS (« la combinatoire
+  -- broken qu'on n'avait pas », Batomon Zenith-Stone/Onsetra/Link-Cable). Tous = `relic_amplify_auras` : APRÈS
+  -- buildComp (qui a baké les auras en champs sur les specs : atkInc/haste/dmgReduce/regenAura/lifestealAura +
+  -- amplis d'école poisonInc/...), ils MULTIPLIENT ces sorties par (1+frac). CAPS PRÉSERVÉS : on amplifie la
+  -- valeur BRUTE ; le clamp final reste à la LECTURE en combat (ATK_INC_CAP 1.5 / HASTE 0.40 / DMG_REDUCE 0.60 /
+  -- DOT_CAP_MULT ×4 ...) -> un Zénith +15% d'aura ne franchit JAMAIS un cap. multicast (bascule ENTIÈRE) N'est
+  -- PAS amplifié (anti double-snowball). GOLDEN-SAFE : aucune relique n'est dans le scénario golden ; gated.
+  -- PLACEHOLDERS (à tuner via tools/relicsim.lua). ──
+  -- PIERRE-DU-ZÉNITH (high) : « toutes les voix résonnent plus fort » — +15% sur TOUTE aura d'équipe (le Zenith-Stone).
+  zenith_stone = { id = "zenith_stone", op = "relic_amplify_auras", tier = 4, band = "high",
+    params = { frac = 0.15, target = "team" } },
+  -- DOUBLE-LANGUE (high, Onsetra) : amplifie PLUS FORT (+25%) mais SEULEMENT l'unité d'ARRIÈRE (role:back) — le
+  -- méta-multiplicateur focalisé (le carry protégé à l'arrière voit ses auras doubler de voix). Borné (1 cible).
+  forked_echo = { id = "forked_echo", op = "relic_amplify_auras", tier = 4, band = "high",
+    params = { frac = 0.25, target = "role:back" } },
+  -- CÂBLE-DE-LIAISON (high, Link-Cable) : le « câble » qui fait porter les amplis d'AFFLICTION plus loin — +20% sur
+  -- les seuls amplis d'école (poison/burn/bleed/rot) d'équipe. Méta-multiplicateur de l'axe affliction (cappé DOT ×4).
+  link_cable = { id = "link_cable", op = "relic_amplify_auras", tier = 4, band = "high",
+    params = { frac = 0.20, target = "team", dotOnly = true } },
 }
 
 R.order = { "bloodstone", "carapace", "aegis", "kings_bowl", "ember_heart", "weeping_nail", "grave_cap",
@@ -154,7 +174,9 @@ R.order = { "bloodstone", "carapace", "aegis", "kings_bowl", "ember_heart", "wee
   "blood_banner", "seers_mark", "carrion_feast", "second_plague", "tide_caller", "bait_lantern",
   "echo_crown", "gravediggers_due", "splitting_maw",
   -- W1 — axe type-identité (mono-type amps + rainbow team payoff ; plan big-update §AXE 2)
-  "pack_blood", "bile_orb", "prismatic_wraith" }
+  "pack_blood", "bile_orb", "prismatic_wraith",
+  -- W3 — axe mimétisme/amplification (méta-multiplicateurs : Zenith / Onsetra / Link-Cable ; plan big-update §AXE 4)
+  "zenith_stone", "forked_echo", "link_cable" }
 
 -- ── relic_aura_stat : BAKE direct d'un CHAMP combat-time sur les specs (plan relics-overhaul §2.0). ──
 -- POINT DUR : applyRelics tourne APRÈS buildComp (qui a déjà baké aura_stat -> spec.atkInc/multicast/…).
@@ -239,6 +261,30 @@ function R.apply(comp, relic)
     for _, spec in ipairs(comp) do
       if spec.dmg and addD > 0 then spec.dmg = spec.dmg + addD end
       if spec.hp and addH > 0 then spec.hp = spec.hp + addH end
+    end
+    return
+  end
+  -- relic_amplify_auras (W3 — MÉTA-MULTIPLICATEUR, plan §AXE 4) : APRÈS buildComp (auras bakées en champs sur les
+  -- specs), MULTIPLIE les SORTIES d'aura par (1+frac). CAPS PRÉSERVÉS : on amplifie la valeur BRUTE -> le clamp
+  -- reste à la LECTURE en combat (ATK_INC_CAP/HASTE_CAP/DMG_REDUCE_CAP/DOT_CAP_MULT). On amplifie les stats
+  -- CONTINUES (atkInc/haste/dmgReduce/regenAura/lifestealAura) + les amplis d'école (poisonInc/...). PAS `multicast`
+  -- (bascule ENTIÈRE : amplifier un seuil = double-snowball interdit). target="team" (déf.) | "role:back" (focalisé,
+  -- Onsetra) ; dotOnly => seulement les amplis d'école (Link-Cable). frac BORNÉ (anti-empilage). Déterministe (ipairs).
+  if op == "relic_amplify_auras" then
+    local frac = math.min(0.50, p.frac or 0) -- AMPLIFY_FRAC_CAP (miroir build.lua) : gain d'aura plafonné, lisible
+    if frac <= 0 then return end
+    local f = 1 + frac
+    local CONT = { "atkInc", "haste", "dmgReduce", "regenAura", "lifestealAura" } -- stats d'aura continues (jamais multicast)
+    local DOT = { "poisonInc", "burnInc", "bleedInc", "rotInc" }                   -- amplis d'école (lus par la pose de DoT)
+    local function amp(spec)
+      if not p.dotOnly then for _, k in ipairs(CONT) do if spec[k] then spec[k] = spec[k] * f end end end
+      for _, k in ipairs(DOT) do if spec[k] then spec[k] = spec[k] * f end end
+    end
+    if (p.target or "team") == "role:back" then
+      local s = resolveRoleSpec(comp, false) -- back = depth max ; tie-break identique chooseTarget
+      if s then amp(s) end
+    else
+      for _, spec in ipairs(comp) do if not spec.isCommander then amp(spec) end end -- commandant intouchable : hors amp
     end
     return
   end

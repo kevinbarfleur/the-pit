@@ -293,6 +293,40 @@ return {
   ["unit.bone_harvest.command_desc"]   = "The whole pit mends 2 HP each second.",
   ["unit.bone_harvest.command_flavor"] = "It gathers the dead like grain; under it the pit grows stout on what it has lost.",
 
+  -- W3 - MIMICRY / AMPLIFICATION
+  ["unit.mimic_spawn.name"]         = "MIMIC SPAWN",
+  ["unit.mimic_spawn.passive_name"] = "Borrowed Maw",
+  ["unit.mimic_spawn.passive_desc"] = "Combat start: copies the on-hit effects of the ally directly ahead, replaying them from its own strikes.",
+  ["unit.mimic_spawn.command_name"]   = "THE IMITATING PRESS",
+  ["unit.mimic_spawn.command_desc"]   = "The whole pit strikes 5% faster.",
+  ["unit.mimic_spawn.command_flavor"] = "It learns hunger by watching another throat open; under it the whole pit moves in the borrowed rhythm.",
+
+  ["unit.echo_flesh.name"]         = "ECHO FLESH",
+  ["unit.echo_flesh.passive_name"] = "Strongest Echo",
+  ["unit.echo_flesh.passive_desc"] = "Combat start: copies the on-hit effects of its strongest adjacent ally that has any.",
+  ["unit.echo_flesh.command_name"]   = "THE FRONT'S ECHO",
+  ["unit.echo_flesh.command_desc"]   = "The foremost unit strikes for +10% more.",
+  ["unit.echo_flesh.command_flavor"] = "A mass that repeats the strongest shape beside it; under it the front line answers every blow louder.",
+
+  ["unit.hollow_crown.name"]         = "HOLLOW CROWN",
+  ["unit.hollow_crown.passive_name"] = "Resonance",
+  ["unit.hollow_crown.passive_desc"] = "Combat start: amplifies your already-resolved team auras by 20%, still obeying their caps.",
+  ["unit.hollow_crown.command_name"]   = "THE HOLLOW THRONE",
+  ["unit.hollow_crown.command_desc"]   = "The unit at the heart strikes for +10% more.",
+  ["unit.hollow_crown.command_flavor"] = "An empty crown that makes every vow around it ring; under it the pit's heart cuts with borrowed voices.",
+
+  ["relic.zenith_stone.name"]   = "ZENITH STONE",
+  ["relic.zenith_stone.effect"] = "Your team auras are 15% stronger.",
+  ["relic.zenith_stone.flavor"] = "A stone set at the highest point of a place with no sky; every chant climbs toward it.",
+
+  ["relic.forked_echo.name"]   = "FORKED ECHO",
+  ["relic.forked_echo.effect"] = "Auras affecting your rearmost unit are 25% stronger.",
+  ["relic.forked_echo.flavor"] = "One voice leaves the mouth and returns as two, both whispering to the hidden blade.",
+
+  ["relic.link_cable.name"]   = "LINK CABLE",
+  ["relic.link_cable.effect"] = "Your affliction-amplifying auras are 20% stronger.",
+  ["relic.link_cable.flavor"] = "A wet black cord joining rites that were never meant to touch.",
+
   -- TOKENS D'ENGEANCE (sous-êtres invoqués, src/data/spawn.lua) : pas dans le roster/boutique, mais survolables
   -- en combat → noms/blurbs courts. PAS de command_* (un token n'est jamais commandant). Valeurs concrètes.
   ["unit.grubling.name"]         = "GRUBLING",

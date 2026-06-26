@@ -803,6 +803,32 @@ local U = {
     effects = { { trigger = "on_ally_death", op = "scavenge_on_ally_death", params = { stat = "hp", value = 3, cap = 12 } } },
     -- COMMANDANT : sustain team (la moisson d'os renforce ; regen 2, sans cap moteur).
     commandBonus = { trigger = "combat_start", op = "aura_stat", target = "team", params = { stat = "regen", value = 2 } } },
+
+  -- ── W3 — AXE MIMÉTISME/AMPLIFICATION (plan big-update §AXE 4). Le pattern « Tiger » SAP (une unité = FONCTION
+  -- d'une autre) + le méta-multiplicateur (Zenith-Stone). repeat_ability/amplify_auras sont BUILD-RÉSOLUS (comme
+  -- aura_stat, dans build.lua:buildComp) -> l'arène ne change pas, golden SIM inchangé tant qu'aucune unité golden
+  -- (templar/marauder/skeleton/witch/demon) ne les porte (gated). ANTI-BOUCLE (plan Q3) : repeat_ability copie
+  -- SEULEMENT les on_hit du voisin, PROFONDEUR 1 (un effet copié ne se re-copie pas : flag viaCopy) -> pas de
+  -- repeat-of-repeat, combat toujours terminant. CAPS PRÉSERVÉS pour amplify_auras (clamp à la lecture combat).
+  -- family/arch = combos primgen ÉPROUVÉS (ids uniques -> sprites distincts, seed=hashId(id) ; gen golden re-baseliné
+  -- APPEND-ONLY, sous-fold pré-W3 inchangé). chiffres = PLACEHOLDERS (à tuner via tools/sim.lua). ──
+  mimic_spawn = { -- ABYSS/gélatine : « il devient ce qu'il dévore » — copie le carry on_hit DEVANT lui (who="ahead").
+    id = "mimic_spawn", type = "abyss", family = "gelatine", arch = "blobmonster", rank = 3, cost = 3, hp = 48, dmg = 5, cd = 56, aggro = 5,
+    -- À PLACER DERRIÈRE un carry on_hit : il re-joue SES poses (poison/burn/choc...) au niveau du mimic. Inerte si rien devant.
+    effects = { { trigger = "combat_start", op = "repeat_ability", params = { who = "ahead" } } },
+    -- COMMANDANT : tempo team (l'imitation presse la meute ; haste 0.05, sans cap moteur).
+    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "team", params = { stat = "haste", value = 0.05 } } },
+  echo_flesh = { -- FLESH/colosse : copie le PLUS FORT voisin on_hit du graphe (who="neighbors", tie-break slot asc).
+    id = "echo_flesh", type = "flesh", family = "colosse", arch = "ogre", rank = 3, cost = 3, hp = 60, dmg = 5, cd = 58, aggro = 12,
+    effects = { { trigger = "combat_start", op = "repeat_ability", params = { who = "neighbors" } } },
+    -- COMMANDANT : empower l'avant-garde (l'écho de chair arme le front ; atkInc 0.10, 1 cible/cappé ATK_INC_CAP).
+    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "role:front", params = { stat = "atkInc", value = 0.10 } } },
+  hollow_crown = { -- ARCANE/œil : LE ZENITH-STONE incarné — « toutes les voix résonnent plus fort autour de lui ».
+    id = "hollow_crown", type = "arcane", family = "oeil", arch = "eyecluster", rank = 4, cost = 4, hp = 50, dmg = 5, cd = 60, aggro = 5,
+    -- amplify_auras : +20% sur TOUTE aura d'équipe déjà bakée (build-résolu). CAPS PRÉSERVÉS (clamp à la lecture combat).
+    effects = { { trigger = "combat_start", op = "amplify_auras", params = { frac = 0.20 } } },
+    -- COMMANDANT : arme le cœur du board (le prisme creux résonne au centre ; atkInc role:center, 1 cible/cappé).
+    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "role:center", params = { stat = "atkInc", value = 0.10 } } },
 }
 
 -- ══ FAMILLE DoT DÉCLARATIVE (M2/2.4 — « type » des synergies P1 + segmentation Grimoire). Porteur explicite,
@@ -876,7 +902,9 @@ U.order = { "marauder", "templar", "skeleton", "bandit", "witch", "demon",
   -- W1 — axe type-identité (mono-type amps + rainbow payoff ; plan big-update §AXE 2)
   "flesh_warband", "bone_choir", "arcane_seer", "abyss_maw", "order_marshal", "prism_horror",
   -- W2 — axe mort & engeance (invocateurs on_death + charognards faint-payoff ; plan big-update §AXE 3)
-  "brood_mother", "larval_host", "spore_sac", "rat_warren", "pit_shepherd", "carrion_choir", "bone_harvest" }
+  "brood_mother", "larval_host", "spore_sac", "rat_warren", "pit_shepherd", "carrion_choir", "bone_harvest",
+  -- W3 — axe mimétisme/amplification (mimics repeat_ability + méta-multiplicateur amplify_auras ; plan big-update §AXE 4)
+  "mimic_spawn", "echo_flesh", "hollow_crown" }
 
 -- Pool d'unités ACHETABLES en boutique (cf. src/run/state.lua). Identique au roster pour l'instant.
 -- NB : les 9 TOKENS d'engeance (src/data/spawn.lua) sont VOLONTAIREMENT ABSENTS du pool ET de l'order :
@@ -909,7 +937,9 @@ U.pool = { "marauder", "templar", "skeleton", "bandit", "witch", "demon",
   -- W1 — axe type-identité (mono-type amps + rainbow payoff ; plan big-update §AXE 2)
   "flesh_warband", "bone_choir", "arcane_seer", "abyss_maw", "order_marshal", "prism_horror",
   -- W2 — axe mort & engeance (invocateurs + charognards ; plan big-update §AXE 3). Tokens NON inclus (summon-only).
-  "brood_mother", "larval_host", "spore_sac", "rat_warren", "pit_shepherd", "carrion_choir", "bone_harvest" }
+  "brood_mother", "larval_host", "spore_sac", "rat_warren", "pit_shepherd", "carrion_choir", "bone_harvest",
+  -- W3 — axe mimétisme/amplification (mimics + méta-multiplicateur ; plan big-update §AXE 4)
+  "mimic_spawn", "echo_flesh", "hollow_crown" }
 
 -- Visuel : les 6 vanille ont un rig DESSINÉ main (src/data/creatures.lua) ; toutes les autres unités
 -- sont GÉNÉRÉES procéduralement (src/gen/creaturegen.lua, déterministe par id), résolu côté rendu

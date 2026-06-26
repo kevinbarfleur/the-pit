@@ -300,6 +300,71 @@ local ok, err = pcall(function()
     assert(cmono[1].dmg == 9 + 3 and cmono[1].hp == 60 + 5, "prismatic_wraith mono-type: count=1 -> +3 dmg / +5 hp")
   end
 
+  -- 2d-ter) W3 — AXE MIMÉTISME/AMPLIFICATION (plan big-update §AXE 4) : les MÉTA-MULTIPLICATEURS (op
+  -- relic_amplify_auras). APRÈS buildComp (auras bakées en champs sur les specs), ils MULTIPLIENT les sorties
+  -- d'aura par (1+frac). CAPS PRÉSERVÉS : on amplifie la valeur BRUTE ; le clamp reste à la LECTURE en combat.
+  do
+    local Arena = require("src.combat.arena")
+    -- PIERRE-DU-ZÉNITH (relic_amplify_auras frac=0.15 team) : MULTIPLIE les auras CONTINUES + amplis d'école.
+    -- specs avec auras déjà bakées (atkInc 0.20, haste 0.10, poisonInc 0.30) -> ×1.15.
+    local zs = RunState.new(400); zs:grantRelic("zenith_stone")
+    local czs = { { id = "a", hp = 50, dmg = 10, cd = 36, depth = 0, row = 0, slot = 1, atkInc = 0.20, haste = 0.10, poisonInc = 0.30 },
+                  { id = "b", hp = 50, dmg = 10, cd = 36, depth = 1, row = 1, slot = 2 } } -- sans aura -> inerte (golden-safe)
+    zs:applyRelics(czs)
+    assert(math.abs(czs[1].atkInc - 0.23) < 1e-9, "zenith_stone: atkInc 0.20 ×1.15 = 0.23")
+    assert(math.abs(czs[1].haste - 0.115) < 1e-9, "zenith_stone: haste 0.10 ×1.15 = 0.115")
+    assert(math.abs(czs[1].poisonInc - 0.345) < 1e-9, "zenith_stone: poisonInc 0.30 ×1.15 = 0.345 (ampli d'école)")
+    assert((czs[2].atkInc or 0) == 0, "zenith_stone: une unité SANS aura n'est pas affectée (inerte, golden-safe)")
+    assert(Relics.zenith_stone.band == "high", "zenith_stone: band high")
+    -- multicast (bascule ENTIÈRE) N'est PAS amplifié (anti double-snowball).
+    local zm = RunState.new(401); zm:grantRelic("zenith_stone")
+    local czm = { { id = "a", hp = 50, dmg = 10, cd = 36, depth = 0, row = 0, slot = 1, multicast = 2 } }
+    zm:applyRelics(czm)
+    assert(czm[1].multicast == 2, "zenith_stone: multicast (bascule entière) JAMAIS amplifié (reste 2)")
+
+    -- DOUBLE-LANGUE / Onsetra (relic_amplify_auras frac=0.25 role:back) : amplifie SEULEMENT l'unité d'arrière.
+    -- back = depth max ; tie-break row asc/slot asc (identique chooseTarget). front (depth 0) intact.
+    local fe = RunState.new(402); fe:grantRelic("forked_echo")
+    local cfe = { { id = "front", hp = 50, dmg = 10, cd = 36, depth = 0, row = 0, slot = 1, atkInc = 0.20 },
+                  { id = "back",  hp = 50, dmg = 10, cd = 36, depth = 2, row = 0, slot = 5, atkInc = 0.20 } }
+    fe:applyRelics(cfe)
+    assert(math.abs(cfe[2].atkInc - 0.25) < 1e-9, "forked_echo: role:back atkInc 0.20 ×1.25 = 0.25")
+    assert(math.abs(cfe[1].atkInc - 0.20) < 1e-9, "forked_echo: le FRONT reste brut (0.20, focalisé arrière)")
+    assert(Relics.forked_echo.band == "high", "forked_echo: band high")
+
+    -- CÂBLE-DE-LIAISON / Link-Cable (relic_amplify_auras frac=0.20 dotOnly) : amplifie SEULEMENT les amplis d'école
+    -- (poison/burn/bleed/rot), pas les stats continues. atkInc intact, poisonInc ×1.20.
+    local lc = RunState.new(403); lc:grantRelic("link_cable")
+    local clc = { { id = "a", hp = 50, dmg = 10, cd = 36, depth = 0, row = 0, slot = 1, atkInc = 0.20, poisonInc = 0.30, burnInc = 0.10 } }
+    lc:applyRelics(clc)
+    assert(math.abs(clc[1].poisonInc - 0.36) < 1e-9, "link_cable: poisonInc 0.30 ×1.20 = 0.36 (dotOnly)")
+    assert(math.abs(clc[1].burnInc - 0.12) < 1e-9, "link_cable: burnInc 0.10 ×1.20 = 0.12 (dotOnly)")
+    assert(math.abs(clc[1].atkInc - 0.20) < 1e-9, "link_cable: atkInc INTACT (dotOnly n'amplifie PAS les stats continues)")
+    assert(Relics.link_cable.band == "high", "link_cable: band high")
+
+    -- CAP PRÉSERVÉ (le point CRITIQUE) : un atkInc déjà ÉNORME (1.4) ×1.15 = 1.61 baké, MAIS l'arène clampe à
+    -- ATK_INC_CAP=1.5 à la LECTURE -> l'ampli ne franchit JAMAIS le cap. On vérifie la valeur LUE en combat.
+    local zc = RunState.new(404); zc:grantRelic("zenith_stone")
+    local czc = { { id = "marauder", hp = 999, dmg = 10, cd = 60, depth = 0, row = 0, slot = 1, atkInc = 1.4, effects = {} } }
+    zc:applyRelics(czc)
+    assert(czc[1].atkInc > 1.5, "zenith_stone CAP: la valeur BRUTE bakée dépasse le cap (1.61), prouve l'ampli")
+    local a = Arena.new({ left = { czc[1] },
+      right = { { id = "skeleton", hp = 99999, dmg = 1, cd = 60, effects = {}, depth = 0, row = 0, x = 10, y = 0, facing = -1 } },
+      autoReset = false, seed = 11 })
+    local atk, tgt = a.units[1], a.units[2]
+    local hp0 = tgt.hp; a:hit(atk, tgt); local dealt = hp0 - tgt.hp
+    -- dmg 10, atkInc clampé 1.5 -> 10×2.5 = 25 (le cap a MORDU malgré l'ampli ; sans cap ce serait 10×2.61=26).
+    assert(dealt == 25, "zenith_stone CAP: atkInc clampé 1.5 à la lecture -> 25 (le cap CONTIENT l'ampli, obtenu " .. dealt .. ")")
+
+    -- DÉTERMINISME : deux applications identiques -> sorties identiques.
+    local function ampOnce()
+      local r = RunState.new(405); r:grantRelic("zenith_stone")
+      local c = { { id = "a", hp = 50, dmg = 10, cd = 36, slot = 1, atkInc = 0.33 } }
+      r:applyRelics(c); return c[1].atkInc
+    end
+    assert(math.abs(ampOnce() - ampOnce()) < 1e-12, "relic_amplify_auras déterministe (même entrée -> même sortie)")
+  end
+
   -- 2e) SURVEILLANCE D'EMPILEMENT (plan relics-overhaul §4) : les empilements dangereux restent BORNÉS au
   -- BUILD (les caps moteur a la LECTURE sont testés ailleurs : tests/synergies KEYSTONES). Ici on verifie la
   -- COMPOSITION des champs bakés (somme team + relique), qui DOIT rester sous les caps moteur.
@@ -367,6 +432,7 @@ local ok, err = pcall(function()
 
   Grimoire.wipe()
   print("  reliques : grant lisible / ops stats+amplis+paliers+defensives+transformatives(chain/burn/bleed/plague) / offre seedee / Grimoire OK")
+  print("  reliques W3: méta-multiplicateurs (zenith team / forked_echo role:back / link_cable dotOnly) -> amplifient l'aura bakée, CAP préservé à la lecture OK")
 end)
 
 if ok then

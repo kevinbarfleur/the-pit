@@ -95,7 +95,7 @@ local RELIC_TYPE = {
 }
 
 local SPACING = 26
-local BOARD_OY = 76 -- centre du plateau (virtuel) : ×4 = 304 design, REMONTÉ pour dégager le BANC sous le plateau
+local BOARD_OY = 72 -- centre du plateau (virtuel) : ×4 = 288 design ; laisse un vrai souffle avant le banc
 local BOARD_HALF_W = 128 -- demi-étendue MAX (virtuelle) des CENTRES de cases -> board centré, jamais hors zone
 local BOARD_HALF_H = 30  -- (idem vertical) : RESSERRÉ pour qu'un sigil étalé ne morde pas sur le banc
 local BENCH_SIZE = 4 -- BANC (réserve hors-combat) : rangée de slots sous le plateau pour STOCKER/FUSIONNER (n'entre jamais en combat). 4 max -> garde un vrai arbitrage de placement (retour user 2026-06).
@@ -115,6 +115,16 @@ local COMMANDER_CD_MULT = 1.5
 -- est borné à RAINBOW_TYPE_CAP -> la magnitude reste lisible et plafonnée (discipline de cap §6.1). Flat
 -- additif sur hp/dmg (même couche que statInc, mais en plat) -> sous les caps relatifs existants par construction.
 local RAINBOW_TYPE_CAP = 5 -- nb de types distincts comptés (le jeu n'en a que 5 ; borne dure anti-extension)
+
+-- ── W3 (axe Mimétisme/amplification, plan §AXE 4) — `repeat_ability` (le pattern « Tiger » SAP). Une unité
+-- MIMIC re-rejoue les effets `on_hit` d'UN voisin, AU NIVEAU du mimic. BUILD-RÉSOLU (comme aura_stat) : on COPIE
+-- les descripteurs on_hit du voisin DANS la liste d'effets du mimic (jamais un appel à hit() en combat -> zéro
+-- ré-entrance/aliasing ctx). ANTI-BOUCLE DUR (plan Q3) : (1) on ne copie QUE des on_hit (jamais combat_start ->
+-- repeat_ability ne se copie JAMAIS lui-même : pas de repeat-of-repeat) ; (2) PROFONDEUR 1 = on saute tout
+-- descripteur déjà marqué `viaCopy` (un effet copié ne peut pas être recopié par un 2e mimic) ; (3) le copié
+-- porte `viaCopy=true` -> il est inerte aux yeux d'un mimic voisin. Déterministe (ipairs, tie-break slot asc),
+-- zéro RNG. `who` = "ahead" (l'allié droit DEVANT, axe X=depth) | "neighbors" (le PLUS FORT voisin du graphe).
+local REPEAT_DEPTH_MAX = 1 -- garde-fou lisible (§6.4) : un seul niveau de copie (Tiger SAP), jamais de chaîne
 
 -- ── Courbe de difficulté (cold-start) — TUNABLES (cf. the-pit-balance-diagnosis). Le board joueur croît de
 -- façon PRÉVISIBLE (grants timés 3->9). L'ennemi suit : l'index d'encounter grimpe avec le round (taille),
@@ -1541,10 +1551,69 @@ function Build:buildComp(side)
     end
   end
 
+  -- ── W3 — MIMÉTISME (`repeat_ability`, plan §AXE 4) : un MIMIC copie les effets `on_hit` d'UN voisin DANS sa
+  -- propre liste d'effets (re-joue au niveau du mimic en combat, via Effects.run sur le mimic). BUILD-RÉSOLU.
+  -- mimicCopies[slot] = liste de descripteurs on_hit copiés (chacun `viaCopy=true`). nil = pas un mimic -> base.
+  -- Lookup (col,row) -> slot pour résoudre "ahead" (l'allié droit DEVANT = même row, col+1 vers le front, car
+  -- depth = b.maxC - col -> front = col MAX). Déterministe (construit en ipairs).
+  local byColRow = {}
+  for _, p in ipairs(placed) do byColRow[p.col .. ":" .. p.row] = p.slot end
+  -- Collecte les descripteurs on_hit COPIABLES de l'unité `srcId` (PROFONDEUR 1 : on saute tout effet déjà
+  -- `viaCopy` -> un effet copié ne se re-copie jamais ; et on ne copie QUE on_hit -> un repeat_ability/aura
+  -- combat_start n'est JAMAIS copié = pas de repeat-of-repeat, pas de copie d'aura/summon). Copie PROFONDE des
+  -- params (le mimic ne partage aucune table avec la source). `viaCopy` marque la copie (inerte pour un 2e mimic).
+  local function copyableOnHit(srcId)
+    local out = {}
+    for _, e in ipairs(Units[srcId].effects or {}) do
+      if e.trigger == "on_hit" and not e.viaCopy then
+        local pa = {}
+        for k, v in pairs(e.params or {}) do pa[k] = v end
+        out[#out + 1] = { trigger = "on_hit", op = e.op, params = pa, condition = e.condition, viaCopy = true }
+      end
+    end
+    return out
+  end
+  local mimicCopies = {}
+  for _, p in ipairs(placed) do
+    for _, e in ipairs(Units[p.id].effects or {}) do
+      if e.trigger == "combat_start" and e.op == "repeat_ability" then
+        local who = (e.params and e.params.who) or "ahead"
+        local srcSlot
+        if who == "ahead" then
+          srcSlot = byColRow[(p.col + 1) .. ":" .. p.row] -- l'allié DEVANT (vers le front), même rangée
+        elseif who == "neighbors" then
+          -- copie le PLUS FORT voisin du GRAPHE qui porte un on_hit (heuristique de force = dmg ; tie-break slot asc,
+          -- déterministe). « le plus fort » = on copie le carry qu'on jouxte, pas un buff au hasard.
+          local best, bestDmg
+          for _, nb in ipairs(self.board:neighbors(p.slot)) do
+            if self.slotRigs[nb] then
+              local nid = self.slotRigs[nb].id
+              local hasHit = false
+              for _, ne in ipairs(Units[nid].effects or {}) do if ne.trigger == "on_hit" and not ne.viaCopy then hasHit = true; break end end
+              if hasHit then
+                local d = Units[nid].dmg or 0
+                if not best or d > bestDmg or (d == bestDmg and nb < best) then best, bestDmg = nb, d end
+              end
+            end
+          end
+          srcSlot = best
+        end
+        if srcSlot and srcSlot ~= p.slot and self.slotRigs[srcSlot] then
+          local copies = copyableOnHit(self.slotRigs[srcSlot].id)
+          if #copies > 0 then
+            local dst = mimicCopies[p.slot]; if not dst then dst = {}; mimicCopies[p.slot] = dst end
+            for _, c in ipairs(copies) do dst[#dst + 1] = c end -- PROFONDEUR 1 (REPEAT_DEPTH_MAX) : append direct, jamais récursif
+          end
+        end
+      end
+    end
+  end
+
   -- Matérialise les effets d'un voisin SOUS aura (rot growth + grant_bleed seulement ; poison/burn passent
-  -- par poisonInc/burnInc sur l'unité). Sinon nil = base (golden-safe).
+  -- par poisonInc/burnInc sur l'unité) + les copies de MIMÉTISME (W3). Sinon nil = base (golden-safe).
   local function auraEffects(id, slot)
-    if not (rotGrowth[slot] or grantBleed[slot]) then return nil end
+    local mc = mimicCopies[slot]
+    if not (rotGrowth[slot] or grantBleed[slot] or mc) then return nil end
     local out = {}
     for _, e in ipairs(Units[id].effects or {}) do
       local pa = {}
@@ -1556,6 +1625,9 @@ function Build:buildComp(side)
       local g = grantBleed[slot]
       out[#out + 1] = { trigger = "on_hit", op = "bleed",
         params = { dps = g.dps or 1, dur = g.dur or 180, slowPct = g.slowPct or 0 } }
+    end
+    if mc then -- W3 : les on_hit COPIÉS s'ajoutent en FIN -> Effects.run(mimic, "on_hit") les rejoue au niveau du mimic
+      for _, c in ipairs(mc) do out[#out + 1] = c end
     end
     return out
   end
@@ -1750,6 +1822,39 @@ function Build:buildComp(side)
     if cb and cb.op == "aura_stat" then
       local sm = LEVEL_MULT[cmd.level or 1] or 1.0
       bakeAuraStat(cb, sm, nil) -- srcSlot=nil : pas de voisins, jamais self-ciblé (hors board)
+    end
+  end
+
+  -- ── W3 — MÉTA-MULTIPLICATEUR (`amplify_auras`, plan §AXE 4) : le « Zenith-Stone » incarné en unité
+  -- (hollow_crown). APRÈS que TOUTES les auras du board (unités + rainbow + amplis d'école + commandant) sont
+  -- bakées, le porteur MULTIPLIE par (1+frac) les SORTIES d'aura déjà posées sur l'équipe. CAPS PRÉSERVÉS : on
+  -- amplifie la valeur BRUTE bakée ; le clamp final reste à la LECTURE en combat (ATK_INC_CAP 1.5 / HASTE 0.40 /
+  -- DMG_REDUCE 0.60 / DOT_CAP_MULT ×4 ...) -> un Zénith « +20% d'aura » ne franchit JAMAIS un cap. On amplifie les
+  -- stats CONTINUES (atkInc/haste/dmgReduce/regen/lifesteal) + les amplis d'école (poisonInc/...) + rainbowFlat +
+  -- shield. On N'amplifie PAS `multicast` (bascule ENTIÈRE : amplifier un seuil = double-snowball interdit, cf.
+  -- bakeAuraStat). frac CUMULÉ (plusieurs Zénith s'additionnent) puis BORNÉ (AMPLIFY_FRAC_CAP) -> magnitude lisible.
+  -- Build-résolu, déterministe (ipairs), zéro RNG. Gated : aucune unité golden ne porte amplify_auras.
+  local AMPLIFY_FRAC_CAP = 0.50 -- borne dure du gain d'aura cumulé (anti-empilage de méta-multiplicateurs)
+  local AMP_STATS = { atkInc = true, haste = true, dmgReduce = true, regen = true, lifesteal = true }
+  local ampFrac = 0
+  for _, p in ipairs(placed) do
+    for _, e in ipairs(Units[p.id].effects or {}) do
+      if e.trigger == "combat_start" and e.op == "amplify_auras" then
+        ampFrac = ampFrac + ((e.params and e.params.frac) or 0)
+      end
+    end
+  end
+  if ampFrac > 0 then
+    local f = 1 + math.min(AMPLIFY_FRAC_CAP, ampFrac)
+    for _, sb in pairs(statBuf) do
+      for stat in pairs(AMP_STATS) do if sb[stat] then sb[stat] = sb[stat] * f end end
+    end
+    for _, buf in ipairs({ poisonInc, burnInc, bleedInc, rotInc }) do
+      for slot, v in pairs(buf) do buf[slot] = v * f end
+    end
+    for slot, v in pairs(shield) do shield[slot] = math.floor(v * f + 0.5) end
+    for _, rf in pairs(rainbowFlat) do
+      rf.dmg = math.floor(rf.dmg * f + 0.5); rf.hp = math.floor(rf.hp * f + 0.5)
     end
   end
 
