@@ -19,6 +19,8 @@ local GrimoireScene = require("src.scenes.grimoire")
 local Playground = require("src.scenes.playground")
 local ForgeIter = require("src.scenes.forge_iter") -- vue d'iteration dev : isole les creatures en cours de refonte
 local DesignSystem = require("src.scenes.designsystem") -- STORYBOOK in-engine : source de vérité visuelle de l'UI
+local SystemMenu = require("src.ui.system_menu") -- MENU SYSTÈME GLOBAL : pause/settings/confirmations
+local SystemButton = require("src.ui.system_button") -- BOUTON GLOBAL visible vers pause/settings
 local RunState = require("src.run.state")
 local ChronicleOverlay = require("src.render.chronicle_overlay") -- LA CHRONIQUE : overlay modal (journal de combat)
 local PostFX = require("src.render.postfx") -- SURCOUCHE CAUCHEMARDESQUE : post-fx RENDER-pur par-dessus l'UI nette ([F9])
@@ -26,6 +28,7 @@ local Grimoire = require("src.core.grimoire")
 local Dev = require("src.core.dev") -- MODE DEV (cheat) : toggle full-unlock du codex (menu) ; master switch Dev.ENABLED
 local Bestiary = require("src.core.bestiary") -- codex des créatures rencontrées (persistant, full-unlock-aware)
 local Theme = require("src.ui.theme")
+local Feel = require("src.ui.feel") -- FEEDBACK UI global : hover/press/action différée ; reset à l'ouverture système
 local Juice = require("src.ui.juice") -- MOUVEMENT « candy » : screen-shake trauma² + hitstop, piloté au dt MURAL (RENDER pur)
 local Particles = require("src.ui.particles") -- PARTICULES PIXEL bakées (transplant Feel Lab) : explosion de level-up/fusion ; no-op headless
 local SFX = require("src.audio.sfx") -- SON PROCÉDURAL (identité Oniric grave) : bake + câble les hooks Feel ; no-op headless
@@ -41,7 +44,89 @@ local view = { scale = 1, ox = 0, oy = 0 }
 -- Mini state-machine : build <-> combat, enrobée par la méta de RUN (host.run). Une scène demande
 -- une transition via host.goto(name, payload). La phase build est PERSISTANTE sur tout le run (le
 -- plateau est conservé de round en round) ; combat et runover sont recréés à chaque entrée.
-local host = { scene = nil, name = nil, build = nil, run = nil, overlay = nil }
+local host = { scene = nil, name = nil, build = nil, run = nil, overlay = nil, suspended = nil, musicEnabled = true, systemHover = false }
+
+local RUN_SCENES = { build = true, combat = true, relicpick = true, runover = true }
+
+local function runIsOver()
+  return host.run and host.run.isOver and host.run:isOver()
+end
+
+local function setMusicScene(name)
+  Music.setScene(name)
+  if not host.musicEnabled then Music.pause() end
+end
+
+local function hitSystemButton(vx, vy)
+  if host.overlay or not host.scene then return false end
+  return SystemButton.hit(host.name, vx * 4, vy * 4)
+end
+
+function host.canResumeRun()
+  return host.run ~= nil and not runIsOver() and (host.suspended ~= nil or host.build ~= nil)
+end
+
+function host.resumeRun()
+  if not host.canResumeRun() then return end
+  host.overlay = nil
+  if host.suspended then
+    host.name = host.suspended.name or "build"
+    host.scene = host.suspended.scene or host.build
+    host.suspended = nil
+    if host.name == "build" and host.build and host.build.onEnter then host.build:onEnter() end
+    setMusicScene(host.name)
+  else
+    host.goto("build")
+  end
+end
+
+function host.suspendToMenu()
+  if host.run and not runIsOver() and host.name ~= "menu" and RUN_SCENES[host.name] then
+    host.suspended = { name = host.name, scene = host.scene }
+  elseif runIsOver() then
+    host.run, host.build, host.suspended = nil, nil, nil
+  end
+  host.overlay = nil
+  host.goto("menu")
+end
+
+function host.abandonRun()
+  host.overlay = nil
+  host.run, host.build, host.suspended = nil, nil, nil
+  host.goto("menu")
+end
+
+function host.openSystemMenu(opts)
+  Feel.reset() -- annule les actions différées de la scène derrière (anti double-routage sous overlay)
+  opts = opts or {}
+  opts.sceneName = host.name
+  host.systemHover = false
+  host.overlay = SystemMenu.new(host, opts)
+end
+
+function host.toggleMusic()
+  host.musicEnabled = not host.musicEnabled
+  if host.musicEnabled then
+    setMusicScene(host.name)
+    Music.resume()
+  else
+    Music.pause()
+  end
+  return host.musicEnabled
+end
+
+function host.postfxReady()
+  return postfx and postfx.available and true or false
+end
+
+function host.postfxEnabled()
+  return postfx and postfx.enabled and true or false
+end
+
+function host.togglePostFx()
+  if postfx and postfx.toggle then return postfx:toggle() end
+  return false
+end
 
 -- LA CHRONIQUE : overlay modal ouvrable n'importe où dans une run ([c]). Construit avec la chronique du
 -- combat EN COURS (si on y est) + l'historique archivé (run.chronicles). Toggle : referme si déjà ouvert.
@@ -53,6 +138,7 @@ function host.openChronicle()
 end
 
 function host.goto(name, payload)
+  host.systemHover = false
   if name == "combat" then
     host.scene = Combat.new(Palette, VW, VH, host, payload)
   elseif name == "runover" then
@@ -70,6 +156,7 @@ function host.goto(name, payload)
   elseif name == "menu" then
     -- Écran titre : mémoïsé (indépendant du run). ENTER THE PIT -> host.newRun().
     host.menu = host.menu or Menu.new(Palette, VW, VH, host)
+    if host.menu.onEnter then host.menu:onEnter() end
     host.scene = host.menu
   elseif name == "grimoire" then
     -- Codex persistant (reliques + bestiaire) : mémoïsé (rigs construits une fois) ; refresh() relit connu/vu.
@@ -105,7 +192,7 @@ function host.goto(name, payload)
   -- MUSIQUE : on notifie le directeur à CHAQUE changement de scène. Il ne change réellement de morceau (crossfade)
   -- que si la scène cible relève d'un AUTRE morceau ; sinon (build<->combat<->relicpick) il ne fait RIEN -> la
   -- musique de la run continue SANS coupure. Toute la continuité par-morceau est gérée DANS Music.setScene.
-  Music.setScene(name)
+  setMusicScene(name)
 end
 
 -- Fin d'un combat : la méta de run résout l'issue (vies/victoires/streaks), puis ouvre le round
@@ -183,6 +270,8 @@ end
 
 -- Démarre une run neuve : nouvel état seedé (boutique/seeds de combat dérivés) + plateau remis à zéro.
 function host.newRun()
+  host.overlay = nil
+  host.suspended = nil
   host.run = RunState.new(love.math.random(1, 2147483647))
   host.build = Build.new(Palette, VW, VH, host)
   host.goto("build")
@@ -277,7 +366,10 @@ function love.load(args)
 end
 
 function love.update(dt)
-  if host.overlay then return end -- Chronique ouverte : le jeu derrière est FIGÉ (combat/anims gelés)
+  if host.overlay then
+    if host.overlay.update then host.overlay:update(dt * FRAME) end
+    return
+  end -- Overlay modal ouverte : le jeu derrière est FIGÉ (combat/anims gelés)
   if not host.scene then return end -- mode export/--shoot : la scène GLOBALE n'est pas montée (Export.shoot a son propre host)
   -- HITSTOP (juice) : le dt de la SCÈNE/MONDE est multiplié par Juice.timeScale() -> 0 pendant un micro-gel
   -- (gros coup/mort), 1 sinon. La SIM ne fait que SUSPENDRE sa progression À L'ÉCRAN ; le pas reste fixe et
@@ -368,6 +460,9 @@ function love.draw()
   -- 4. UI native par-dessus (texte net). La chrome DA est portée par la scène ; sinon HUD générique.
   scene:drawOverlay(view)
   if not scene.daChrome then drawHud(scene) end
+  if not host.overlay and SystemButton.visible(host.name) then
+    SystemButton.draw(view, host.name, host.systemHover)
+  end
 
   if shaking and love.graphics.pop then love.graphics.pop() end -- fin du transform de shake (scène + chrome)
 
@@ -381,7 +476,7 @@ function love.draw()
   if fxOn then
     local tension = 0
     local run = host.run
-    if run and run.lives and RunState.START_LIVES then
+    if run and RUN_SCENES[host.name] and run.lives and RunState.START_LIVES then
       tension = math.max(0, math.min(1, 1 - run.lives / RunState.START_LIVES))
     end
     postfx:endFrame(view, tension)
@@ -403,6 +498,10 @@ function love.keypressed(key)
   end
   -- LA CHRONIQUE (overlay modal) : capte le clavier en priorité tant qu'elle est ouverte.
   if host.overlay then
+    if host.overlay.kind == "system" then
+      host.overlay:keypressed(key)
+      return
+    end
     if key == "escape" or key == "c" then host.overlay = nil; return end
     host.overlay:keypressed(key); return
   end
@@ -411,11 +510,13 @@ function love.keypressed(key)
     host.openChronicle(); return
   end
   if key == "escape" then
-    -- Depuis le Grimoire ou le Proving Ground (ouverts via le menu) : retour menu ; sinon quitte.
+    -- Navigation non destructive : les scènes de run ouvrent le menu système, les sous-pages reviennent au hub.
     if host.name == "inspect" then host.goto("playground"); return end -- build verrouillé -> retour banc d'essai
     if host.name == "grimoire" or host.name == "playground" or host.name == "designsystem" then host.goto("menu"); return end
     if host.name == "forge_iter" then host.goto("build"); return end -- vue d'itération : retour build
-    love.event.quit(); return
+    if host.name == "menu" then host.openSystemMenu({ mode = "pause" }); return end
+    if RUN_SCENES[host.name] then host.openSystemMenu({ mode = "pause" }); return end
+    host.openSystemMenu({ mode = "confirm_quit" }); return
   end
   -- [g] bascule build <-> galerie (revue visuelle des entités). Réservé aux scènes de revue.
   if key == "g" and (host.name == "build" or host.name == "gallery" or host.name == "relicons") then
@@ -439,6 +540,10 @@ function love.mousepressed(x, y, button)
     if host.overlay:mousepressed(vx, vy, button) == "close" then host.overlay = nil end
     return
   end
+  if button == 1 and hitSystemButton(vx, vy) then
+    host.openSystemMenu({ mode = "pause" })
+    return
+  end
   if not (host.scene and host.scene.mousepressed) then return end
   host.scene:mousepressed(vx, vy, button)
 end
@@ -456,6 +561,7 @@ function love.mousemoved(x, y)
     if host.overlay.mousemoved then host.overlay:mousemoved(vx, vy) end -- survol des boutons forge de l'overlay
     return -- la scène derrière est figée
   end
+  host.systemHover = hitSystemButton(vx, vy)
   if not (host.scene and host.scene.mousemoved) then return end
   host.scene:mousemoved(vx, vy)
 end

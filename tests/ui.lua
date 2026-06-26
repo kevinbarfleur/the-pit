@@ -661,10 +661,11 @@ local ok, err = pcall(function()
   -- Menu : entrées = boutons forge (ENTER = cta), Layout.column centrée. host stub recoit les actions.
   do
     local Menu = require("src.scenes.menu")
-    local went = nil
-    local host = { newRun = function() went = "run" end, goto = function(n) went = n end }
+    local went, sysMode = nil, nil
+    local host = { newRun = function() went = "run" end, goto = function(n) went = n end,
+      openSystemMenu = function(opts) sysMode = opts.mode end }
     local mn = Menu.new(Palette, 320, 180, host)
-    assert(#mn.items >= 5, "menu : entrées construites")
+    assert(#mn.items >= 4, "menu : entrées construites")
     for _, it in ipairs(mn.items) do assert(it.rect and it.rect.w > 0, "menu : chaque entrée a un rect de hit-test") end
     assert(mn.items[1].kind == "cta", "menu : ENTER = entrée HÉROS (kind cta)")
     -- LAYOUT : TOUTES les entrées tiennent à l'ÉCRAN (jamais coupées sous le pied @690) et restent SOUS le
@@ -713,6 +714,24 @@ local ok, err = pcall(function()
     mn:mousereleased((rg.x + rg.w / 2) / 4, (rg.y + rg.h / 2) / 4, 1)
     mn:update(60)                    -- mûrit l'action différée
     assert(went == "grimoire", "menu : clic sur GRIMOIRE ouvre le grimoire (après le différé)")
+    -- SETTINGS est une entrée principale ; les outils de travail ne sont plus dans la pile principale.
+    local si
+    for i, it in ipairs(mn.items) do if it.id == "settings" then si = i end end
+    assert(si, "menu : SETTINGS visible dans la liste principale")
+    local rset = mn.items[si].rect
+    mn:mousemoved((rset.x + rset.w / 2) / 4, (rset.y + rset.h / 2) / 4)
+    mn:mousepressed((rset.x + rset.w / 2) / 4, (rset.y + rset.h / 2) / 4, 1)
+    mn:update(60)
+    assert(sysMode == "settings", "menu : SETTINGS ouvre les settings système")
+    for _, it in ipairs(mn.items) do assert(it.id ~= "proving" and it.id ~= "designsystem", "menu : outils dev hors liste principale") end
+    assert(mn.tools and #mn.tools == 2, "menu : outils de travail accessibles en icônes")
+    local tool = mn.tools[1].rect
+    went, sysMode = nil, nil
+    mn:mousemoved((tool.x + tool.w / 2) / 4, (tool.y + tool.h / 2) / 4)
+    assert(mn.toolHover == 1 and mn.hover == nil, "menu : icône outil survolée sans hover d'entrée")
+    mn:mousepressed((tool.x + tool.w / 2) / 4, (tool.y + tool.h / 2) / 4, 1)
+    mn:update(60)
+    assert(went == "playground", "menu : icône Proving Ground ouvre le banc d'essai")
     -- clavier : navigation + validation (action différée via Feel.fire) -> mûrir puis vérifier que ça agit.
     went = nil
     mn:keypressed("down"); mn:keypressed("up")
@@ -720,11 +739,107 @@ local ok, err = pcall(function()
     mn.hover = 1; mn:keypressed("return")
     mn:update(60)
     assert(went == "run", "menu : validation clavier (return) déclenche l'action différée")
-    -- entrée scellée (rites) : non hoverable / non cliquable.
-    local sealed
-    for i, it in ipairs(mn.items) do if it.id == "rites" then sealed = i end end
-    local rs = mn.items[sealed].rect
-    assert(mn:itemAt(rs.x + 1, rs.y + 1) == nil, "menu : entrée scellée ignorée au hit-test")
+  end
+
+  -- Menu avec run suspendue : RESUME devient le CTA, NEW DESCENT passe par confirmation système.
+  do
+    local Menu = require("src.scenes.menu")
+    local went, sysMode = nil, nil
+    local host = {
+      canResumeRun = function() return true end,
+      resumeRun = function() went = "resume" end,
+      newRun = function() went = "new" end,
+      goto = function(n) went = n end,
+      openSystemMenu = function(opts) sysMode = opts.mode end,
+    }
+    local mn = Menu.new(Palette, 320, 180, host)
+    assert(mn.items[1].id == "resume", "menu actif : RESUME est le CTA")
+    local rr = mn.items[1].rect
+    mn:mousemoved((rr.x + rr.w / 2) / 4, (rr.y + rr.h / 2) / 4)
+    mn:mousepressed((rr.x + rr.w / 2) / 4, (rr.y + rr.h / 2) / 4, 1)
+    mn:update(60)
+    assert(went == "resume", "menu actif : clic RESUME restaure la run")
+    local nr
+    for i, it in ipairs(mn.items) do if it.id == "newrun" then nr = i end end
+    assert(nr, "menu actif : NEW DESCENT visible")
+    local rn = mn.items[nr].rect
+    mn:mousemoved((rn.x + rn.w / 2) / 4, (rn.y + rn.h / 2) / 4)
+    mn:mousepressed((rn.x + rn.w / 2) / 4, (rn.y + rn.h / 2) / 4, 1)
+    mn:update(60)
+    assert(sysMode == "confirm_new_run", "menu actif : NEW DESCENT demande confirmation")
+  end
+
+  -- SystemButton : affordance globale visible dans menu/run, absente des sous-pages qui ont leur propre retour.
+  do
+    local SystemButton = require("src.ui.system_button")
+    assert(SystemButton.visible("build") and SystemButton.visible("combat"), "system button : visible en run")
+    assert(not SystemButton.visible("menu"), "system button : absent du menu principal")
+    assert(not SystemButton.visible("grimoire"), "system button : grimoire garde son bouton MENU dédié")
+    local rb = SystemButton.rect("build")
+    assert(SystemButton.hit("build", rb.x + rb.w / 2, rb.y + rb.h / 2), "system button : hit-test centre")
+    assert(not SystemButton.hit("build", rb.x - 4, rb.y), "system button : hit-test hors rect")
+    SystemButton.draw(view, "build", true)
+  end
+
+  -- SystemMenu : overlay global, settings, suspension menu, confirmations destructives.
+  do
+    local SystemMenu = require("src.ui.system_menu")
+    local Feel = require("src.ui.feel")
+    local action, postfxToggled = nil, false
+    local host
+    host = {
+      name = "build",
+      musicEnabled = true,
+      canResumeRun = function() return true end,
+      suspendToMenu = function() action = "menu" end,
+      abandonRun = function() action = "abandon" end,
+      newRun = function() action = "new" end,
+      toggleMusic = function() host.musicEnabled = not host.musicEnabled; return host.musicEnabled end,
+      postfxReady = function() return true end,
+      postfxEnabled = function() return postfxToggled end,
+      togglePostFx = function() postfxToggled = not postfxToggled; return postfxToggled end,
+    }
+    Feel.reset()
+    local sm = SystemMenu.new(host, { mode = "pause" })
+    host.overlay = sm
+    sm:update(1.0); sm:draw(view)
+    local ret
+    for i, it in ipairs(sm.items) do if it.id == "return_menu" then ret = i end end
+    assert(ret, "system menu : RETURN TO MENU visible en run")
+    local rr = sm.rects[ret]
+    sm:mousepressed((rr.x + rr.w / 2) / 4, (rr.y + rr.h / 2) / 4, 1)
+    sm:update(60)
+    assert(action == "menu", "system menu : RETURN TO MENU suspend vers le hub")
+
+    sm = SystemMenu.new(host, { mode = "settings" })
+    host.overlay = sm
+    sm:update(1.0); sm:draw(view)
+    local music
+    for i, it in ipairs(sm.items) do if it.id == "toggle_music" then music = i end end
+    local rm = sm.rects[music]
+    sm:mousepressed((rm.x + rm.w / 2) / 4, (rm.y + rm.h / 2) / 4, 1)
+    sm:update(60)
+    assert(host.musicEnabled == false, "settings : toggle music route au host")
+    assert(sm.items[music].label:match("OFF"), "settings : le label music reflète l'état OFF")
+
+    sm = SystemMenu.new(host, { mode = "settings", prevMode = "close" })
+    host.overlay = sm
+    local back
+    for i, it in ipairs(sm.items) do if it.id == "back" then back = i end end
+    local rb = sm.rects[back]
+    sm:mousepressed((rb.x + rb.w / 2) / 4, (rb.y + rb.h / 2) / 4, 1)
+    sm:update(60)
+    assert(host.overlay == nil, "settings depuis le menu : BACK ferme la modale")
+
+    action = nil
+    sm = SystemMenu.new(host, { mode = "confirm_abandon" })
+    host.overlay = sm
+    local ab
+    for i, it in ipairs(sm.items) do if it.id == "abandon_confirm" then ab = i end end
+    local ra = sm.rects[ab]
+    sm:mousepressed((ra.x + ra.w / 2) / 4, (ra.y + ra.h / 2) / 4, 1)
+    sm:update(60)
+    assert(action == "abandon", "confirmation : abandon appelle host.abandonRun")
   end
 
   -- Runover : panneau forge + bannière (win/defeat) + bouton-œil de relance. host stub recoit newRun.

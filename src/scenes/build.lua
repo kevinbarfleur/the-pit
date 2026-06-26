@@ -54,6 +54,7 @@ local Layout = require("src.ui.layout") -- MOTEUR de layout flex (alignement par
 local Keywords = require("src.ui.keywords") -- registre afflictions (mini-chips de carte)
 local Chip = require("src.ui.chip") -- pastilles keyword (icône d'affliction)
 local Ambient = require("src.fx.ambient")
+local NightmareBG = require("src.fx.nightmare_bg") -- champ cauchemardesque réutilisé derrière la zone de formation
 local Rarity = require("src.gen.rarity") -- rang -> couleur de cadre + glow (accent de rareté de la fiche)
 local MiniRig = require("src.render.minirig") -- mesure OPAQUE mutualisée des rigs (bounds/fit) : seule source de vérité
 local MonsterCard = require("src.render.monstercard") -- FICHE de monstre (extraite de drawTooltip) : réutilisée ici + Chronique
@@ -161,7 +162,8 @@ function Build.new(palette, vw, vh, host)
   -- self.button / rerollBtn / declineBtn + les rects du layout (orbe, cartes) sont calculés par
   -- computeShop() via le moteur Layout (déjà appelé ci-dessus) -> alignement parfait, fill-to-container.
   -- (les accents de liseré des cases sont désormais portés par les 6 ÉTATS de l'atome Slot — plus de cache forge.)
-  self.ambient = Ambient.new(3) -- fond calme (mode "build" : dégradé, pas de particules d'ambiance)
+  self.ambient = Ambient.new(3) -- fond calme (repli + hors zone de formation)
+  self.nightmareBg = NightmareBG.new(17) -- fosse animée derrière le plateau/banc ; RENDER pur, headless-safe
   if self.host.run then self:syncSlots() end
   return self
 end
@@ -596,33 +598,84 @@ end
 -- `t`/`dur` avancés dans update() (frameDt/60) ; lus au DRAW. Tout est COSMÉTIQUE (golden-safe).
 local function newMergeAnim(n, big)
   -- climaxAt = MERGE_ANTICIP + (n-1)*MERGE_STAGGER + MERGE_FLY_DUR (cf. spawnMergeFx) ; dur englobe le settle.
-  local climaxAt = MERGE_ANTICIP + (math.max(1, n) - 1) * MERGE_STAGGER + MERGE_FLY_DUR
-  return { t = 0, climaxAt = climaxAt, dur = climaxAt + MERGE_CLIMAX + MERGE_SETTLE, big = big or false }
+  n = math.max(1, n or 1)
+  local climaxAt = MERGE_ANTICIP + (n - 1) * MERGE_STAGGER + MERGE_FLY_DUR
+  -- INSTANTS D'ARRIVÉE de chaque âme (alignés EXACTEMENT sur spawnMergeFx : depart_i + MERGE_FLY_DUR). Le rig
+  -- doit RÉAGIR à CHACUN (throb « ta ») -> on les stocke pour que mergeEnv somme un pulse amorti par arrivée
+  -- (la choré multi-étapes du lab : tspring + _pulse par beat). La DERNIÈRE arrivée == climaxAt (« TAAA »).
+  local arrivals = {}
+  for i = 1, n do arrivals[i] = MERGE_ANTICIP + (i - 1) * MERGE_STAGGER + MERGE_FLY_DUR end
+  return { t = 0, climaxAt = climaxAt, dur = climaxAt + MERGE_CLIMAX + MERGE_SETTLE, big = big or false, arrivals = arrivals }
 end
 
--- Enveloppe 0..1 de la chorégraphie -> (lift px VIRTUELS vers le haut, facteur de scale autour de 1, glow 0..1).
--- Anticipation : creux léger (scale<1) qui se charge. Climax (au franchissement de climaxAt) : pic de scale +
--- saut + glow plein, puis amortissement (overshoot). Tout dérivé de b.t -> aucune mutation, pur DRAW.
+-- Enveloppe de la chorégraphie MULTI-ÉTAPES (transplant FIDÈLE de feel-lab/lib/levelup.lua : tspring + _pulse).
+-- -> (lift px VIRTUELS vers le haut, facteur de scale autour de 1, glow 0..1). Au lieu d'une simple bosse au
+-- climax, le rig est un RESSORT amorti recevant des IMPULSIONS DISCRÈTES — reproduites en forme fermée par une
+-- SUPERPOSITION de pulses amortis (golden-safe, déterministe, dt-mural) :
+--   1) ANTICIPATION : un CREUX de charge net au tout début (le rig « inspire »).
+--   2) ARRIVÉE de CHAQUE âme (« ta ») : un THROB de scale + un bump de glow -> le rig PULSE à chaque beat
+--      (la DERNIÈRE arrivée == climax). C'est ça, le « ta-ta-ta » visible ABSENT de l'ancienne version.
+--   3) CLIMAX (« TAAA ») : gros pulse de scale + saut (lift) + glow plein, puis SETTLE en oscillant.
+-- Le ressort du lab (k=360, d=22) est sous-amorti : ζ≈0.58 -> chaque pulse décroît en ~0.09 s en oscillant à
+-- ~15.5 rad/s. On modélise un pulse par A·exp(-(t-ti)/TAU)·cos((t-ti)·OMEGA), sommé sur tous les beats franchis.
+local MERGE_TAU   = 0.10   -- décroissance d'un pulse (s) — sous-amorti, « vivant »
+local MERGE_OMEGA = 15.5   -- pulsation du ressort (rad/s) — overshoot organique
+-- amplitudes (calibrées sur _pulse(amt) du lab : peak ≈ amt·1.4) :
+local A_ANTICIP   = -0.14  -- creux d'anticipation (lab _pulse(-0.10))  ; big -> plus profond
+local A_BEAT      = 0.075  -- throb par arrivée d'âme (lab _pulse(0.05))
+local A_CLIMAX    = 0.34   -- gros pulse au climax (lab _pulse(0.24))    ; big -> 0.48
+
+-- contribution d'un pulse posé à `ti`, lue à `t` (0 si pas encore déclenché). Décroissance × oscillation.
+local function springPulse(t, ti, amp)
+  if t < ti then return 0 end
+  local a = t - ti
+  return amp * math.exp(-a / MERGE_TAU) * math.cos(a * MERGE_OMEGA)
+end
+
 local function mergeEnv(b)
   if not b then return 0, 1, 0 end
-  local ca = b.climaxAt or MERGE_FLY_DUR
   local t = b.t or 0
-  -- phase d'ANTICIPATION (avant la dernière arrivée) : creux progressif + glow qui monte.
-  if t < ca then
-    local e = math.max(0, math.min(1, t / math.max(0.001, ca)))
-    local dip = math.sin(e * math.pi) * 0.06           -- creux doux (squash d'inspiration), revient à 0 au climax
-    return 0, 1 - dip, e * 0.5
-  end
-  -- phase de CLIMAX -> SETTLE : impulsion amortie (ressort) après le « TAAA ».
-  local a = t - ca                                       -- temps écoulé DEPUIS le climax
-  local decay = math.exp(-a / 0.16)                      -- enveloppe d'amortissement (~0,16 s de tau)
-  local osc = math.cos(a * 26)                           -- oscillation du ressort (overshoot organique)
   local big = b.big
-  local amp = big and 0.42 or 0.30
-  local punch = amp * decay * (0.5 + 0.5 * osc)          -- pic à a=0 (stretch), puis revient en oscillant
-  local lift = math.sin(math.min(1, a / 0.42) * math.pi) * (big and 4 or 3) * decay  -- saut amorti
-  local glow = decay
-  return lift, 1 + punch, glow
+  local arrivals = b.arrivals
+  local ca = b.climaxAt or MERGE_FLY_DUR
+  local nA = arrivals and #arrivals or 1
+
+  -- SCALE = 1 + somme des pulses (anticipation + chaque arrivée + climax). Le climax = la DERNIÈRE arrivée :
+  -- on remplace son throb léger par le GROS pulse du « TAAA » (sinon double-compte).
+  local sc = 0
+  sc = sc + springPulse(t, 0.0, big and (A_ANTICIP * 1.35) or A_ANTICIP) -- 1) creux de charge (dès t=0)
+  if arrivals then
+    for i = 1, nA do
+      local ti = arrivals[i]
+      if i == nA then
+        sc = sc + springPulse(t, ti, big and 0.48 or A_CLIMAX)            -- 3) CLIMAX (dernière arrivée = « TAAA »)
+      else
+        sc = sc + springPulse(t, ti, A_BEAT)                              -- 2) THROB par arrivée d'âme (« ta »)
+      end
+    end
+  else
+    sc = sc + springPulse(t, ca, big and 0.48 or A_CLIMAX)
+  end
+
+  -- GLOW : rampe douce pendant la convergence + bump à chaque arrivée, plein au climax, puis décroît au settle.
+  local glow
+  if t < ca then
+    glow = math.max(0, math.min(1, (t / math.max(0.001, ca)) * 0.55)) -- rampe de base
+    if arrivals then
+      for i = 1, nA - 1 do if t >= arrivals[i] then glow = math.min(1, glow + 0.28 * math.exp(-(t - arrivals[i]) / 0.35)) end end
+    end
+  else
+    glow = math.exp(-(t - ca) / 0.16) -- plein (1) au climax puis settle
+  end
+
+  -- LIFT (saut) : seulement au CLIMAX (le rig « bondit » sur le TAAA), amorti. 0 avant.
+  local lift = 0
+  if t >= ca then
+    local a = t - ca
+    lift = math.sin(math.min(1, a / 0.42) * math.pi) * (big and 4 or 3) * math.exp(-a / 0.16)
+  end
+
+  return lift, 1 + sc, glow
 end
 
 -- Enveloppe du pop -> (scaleMul autour de 1, shakeX en px virtuels). No-op (1, 0) hors animation.
@@ -1865,6 +1918,7 @@ function Build:update(frameDt)
   -- au lieu de sauter. À chaque CHANGEMENT de cible (achat/vente/reroll/budget de round), un petit PUNCH de scale
   -- (Juice "build.gold") + on relance le roulement. RENDER pur : on ne lit que run.gold (jamais écrit) ; le SON
   -- « coin » est déjà câblé ailleurs -> ici on apporte le MOUVEMENT apparié. frameDt en frames@60 -> /60 = s.
+  if self.nightmareBg then self.nightmareBg:update(frameDt / 60) end
   if run0 then
     local target = run0.gold or 0
     if self.goldShown == nil then
@@ -2017,6 +2071,12 @@ function Build:drawBack(view)
   local b, run, c = self.board, self.host.run, Theme.c
   Draw.begin(view)
   self.ambient:draw("build")
+  if self.nightmareBg then
+    local y0 = TOPCHROME_H
+    self.nightmareBg:drawField(0, y0, Draw.W, math.max(1, BAR.y - y0))
+    -- Voile central pour garder les sockets lisibles tout en laissant vivre le champ.
+    Draw.rect(0, y0, Draw.W, BAR.y - y0, { c.void[1], c.void[2], c.void[3], 0.16 })
+  end
 
   -- Arêtes du graphe de synergies (la forme EST le graphe).
   love.graphics.setLineStyle("rough")
@@ -2263,18 +2323,12 @@ local function withMergeScale(sr, gx, gy, body)
   love.graphics.pop()
 end
 
--- HALO additif du survivant au climax (mergeGlow) : disque doré doux DERRIÈRE le sprite (le rig « s'illumine »).
--- 0 hors animation -> rien dessiné. Centre RELEVÉ vers le torse (gy = pieds) pour cadrer le corps. RENDER pur.
-local function mergeHalo(sr, gx, gy, rise)
-  local g = mergeGlow(sr)
-  if g < 0.02 then return end
-  local cc = Theme.c
-  love.graphics.setBlendMode("add")
-  love.graphics.setColor(cc.gold[1], cc.gold[2], cc.gold[3], 0.30 * g)
-  love.graphics.circle("fill", gx, gy - (rise or 10), 13 + g * 5)
-  love.graphics.setBlendMode("alpha")
-  love.graphics.setColor(1, 1, 1, 1)
-end
+-- (RÈGLE DA : AUCUN halo/disque de fond « pour mettre en valeur » = banni.) L'ancien `mergeHalo` (disque doré
+-- additif derrière le rig au climax) est RETIRÉ. L'« illumination » du level-up est portée par l'EXPLOSION de
+-- particules pixel (onde + shards + braises + motes) + le punch de scale du rig, jamais par un backing rond.
+-- No-op conservé (call-sites inchangés) pour ne pas toucher la structure de drawWorld. `mergeGlow` reste lu par
+-- d'éventuels usages futurs, mais ne dessine plus rien ici.
+local function mergeHalo() end
 
 -- ── Rendu monde (canvas virtuel, pixel-perfect) : UNIQUEMENT les rigs (unités/aperçus/drag) ──
 -- Toutes les créatures sont AJUSTÉES À LEUR CONTENEUR (fit-to-box, cf. rigFitScale) -> aucune ne déborde
@@ -2858,6 +2912,7 @@ function Build:drawRunBanner(run)
     { k = "streak", w = pad + math.max(fL:getWidth(T("ui.streak")), 12 + fSm:getWidth(streakStr)) + pad },
     { k = "tier",   w = pad + math.max(fL:getWidth(T("ui.tier_label") .. " " .. tierStr), Run.MAX_TIER * 12) + pad },
   }
+  local systemReserve = 52
 
   -- cluster GAUCHE packé depuis x=0 (filets iron entre segments, pas après le dernier).
   local x = 0
@@ -2868,11 +2923,12 @@ function Build:drawRunBanner(run)
   -- cluster DROITE aligné à droite (filets internes seulement).
   local rTot = #right - 1
   for _, s in ipairs(right) do rTot = rTot + s.w end
-  local rx = Draw.W - rTot
+  local rx = Draw.W - systemReserve - rTot
   for i, s in ipairs(right) do
     drawSeg(s, rx); rx = rx + s.w
     if i < #right then Draw.rect(rx, 6, 1, H - 12, C.iron); rx = rx + 1 end
   end
+  Draw.rect(Draw.W - systemReserve, 6, 1, H - 12, C.iron)
 end
 
 -- RELIQUES possédées dans le segment « RELICS » du bandeau : socle (dégradé brun + bord laiton, vif au survol)
