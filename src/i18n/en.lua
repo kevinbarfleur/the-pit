@@ -569,7 +569,7 @@ return {
 
   -- FLAVOR (lore par unite) : ligne d'ambiance pure, rendue conditionnellement par la fiche de monstre
   -- (src/render/monstercard.lua : I18n.has -> divider laiton + Spectral italique). i18n TEXTE only, golden-neutre.
-  -- Sources : docs/base-game/creature-renames.md (SEVERE + Mild) & docs/base-game/creature-lore-extra.md. 83 unites.
+  -- Source actuelle : ce fichier. Les anciens docs base-game ont ete retires du dossier actif.
   ["unit.marauder.flavor"] = "It came up the drains when the Pit flooded, and learned everything down here is meat.",
   ["unit.templar.flavor"] = "A wheel of golden eyes that never blinks, set turning to guard what is already lost.",
   ["unit.skeleton.flavor"] = "A bog-swollen corpse that forgot to finish dying; strike it and it gives your blow back, bone for bone.",

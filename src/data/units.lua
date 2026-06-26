@@ -738,8 +738,8 @@ local U = {
     -- ampli POISON (poisonInc, routé vers le buffer dédié, cappé DOT_CAP_MULT) à toutes les unités abyss : croise
     -- l'axe 1 (un « commandant toxique de type »). Mono-abyss = la marée venimeuse.
     effects = { { trigger = "combat_start", op = "aura_stat", target = "type:abyss", params = { stat = "poisonInc", value = 0.15 } } },
-    -- COMMANDANT (LE VENIN PROFOND) : ampli poison d'équipe (mono-école, TROU #1) ; chaque venin mord plus profond.
-    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "team", params = { stat = "poisonInc", value = 0.18 } } },
+    -- COMMANDANT W6 (type-porteur) : le venin abyssal ne commande que les Abyss -> l'axe type devient lisible.
+    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "type:abyss", params = { stat = "poisonInc", value = 0.18 } } },
   order_marshal = { id = "order_marshal", type = "order", family = "automate", arch = "automaton", rank = 2, cost = 2, hp = 58, dmg = 6, cd = 60, aggro = 20,
     -- sustain (regen, lu par tickDots) à toutes les unités order : l'empire qui se répare (mur regen mono-order).
     effects = { { trigger = "combat_start", op = "aura_stat", target = "type:order", params = { stat = "regen", value = 2 } } },
@@ -872,6 +872,42 @@ local U = {
     effects = { { trigger = "combat_start", op = "grant_team", params = { teamExecute = { threshold = 0.25, bonus = 0.30 } } } },
     -- COMMANDANT (LE FAUCHEUR) : l'équipe entière achève plus fort (teamExecute renforcé ; le commandant Removal du plan §AXE 9).
     commandBonus = { trigger = "combat_start", op = "grant_team", params = { teamExecute = { threshold = 0.25, bonus = 0.40 } } } },
+
+  -- ── W5 — AXE POSITION / POLARITÉ DIRECTIONNELLE (plan big-update §AXE 5). Ces unités utilisent les nouveaux
+  -- targets relatifs `ahead/behind/above/below`. Le placement devient un puzzle : X = exposition, Y = sécurité.
+  -- GOLDEN-SAFE : append-only, aucune unité golden ne porte ces cibles. chiffres = PLACEHOLDERS W9. ──
+  vanguard_drummer = { -- devant un carry : buffe l'allié DERRIÈRE lui (carry protégé).
+    id = "vanguard_drummer", type = "order", family = "automate", arch = "automaton", rank = 2, cost = 2, hp = 58, dmg = 4, cd = 64, aggro = 22,
+    effects = { { trigger = "combat_start", op = "aura_stat", target = "behind", params = { stat = "atkInc", value = 0.15 } } },
+    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "role:front", params = { stat = "dmgReduce", value = 0.10 } } },
+  rear_goad = { -- derrière un frontliner : presse l'allié DEVANT lui (exposition-couplé).
+    id = "rear_goad", type = "flesh", family = "culte", arch = "cultist", rank = 2, cost = 2, hp = 42, dmg = 5, cd = 54, aggro = 8,
+    effects = { { trigger = "combat_start", op = "aura_stat", target = "ahead", params = { stat = "haste", value = 0.12 } } },
+    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "role:back", params = { stat = "haste", value = 0.08 } } },
+  spine_column = { -- protège l'axe vertical : au-dessus ET au-dessous, exposition-neutre.
+    id = "spine_column", type = "bone", family = "crane", arch = "skullking", rank = 3, cost = 3, hp = 70, dmg = 4, cd = 70, aggro = 28,
+    effects = {
+      { trigger = "combat_start", op = "aura_stat", target = "above", params = { stat = "dmgReduce", value = 0.12 } },
+      { trigger = "combat_start", op = "aura_stat", target = "below", params = { stat = "dmgReduce", value = 0.12 } },
+    },
+    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "role:center", params = { stat = "dmgReduce", value = 0.10 } } },
+  tide_caller_v2 = { -- l'écho directionnel : donne +1 sous-coup à l'allié DEVANT.
+    id = "tide_caller_v2", type = "arcane", family = "cephalo", arch = "squid", rank = 3, cost = 3, hp = 46, dmg = 4, cd = 62, aggro = 6,
+    effects = { { trigger = "combat_start", op = "aura_stat", target = "ahead", params = { stat = "multicast", value = 1 } } },
+    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "role:center", params = { stat = "multicast", value = 1 } } },
+
+  -- ── W6 — FRÉQUENCE + commandants d'axe. Pas de nouvel op : multicast/haste existent déjà et restent sous caps.
+  storm_conductor = { -- cadence + choc : plus de frappes, plus de décharges.
+    id = "storm_conductor", type = "arcane", family = "oeil", arch = "eyecluster", rank = 3, cost = 3, hp = 44, dmg = 5, cd = 52, aggro = 6,
+    effects = {
+      { trigger = "combat_start", op = "aura_stat", target = "neighbors", params = { stat = "haste", value = 0.10 } },
+      { trigger = "on_hit", op = "shock", params = { add = 1, cap = 6, dur = 150 } },
+    },
+    commandBonus = { trigger = "combat_start", op = "grant_team", params = { shockChain = 1 } } },
+  echo_warden = { -- l'unité au cœur frappe deux fois : payoff de placement central.
+    id = "echo_warden", type = "abyss", family = "golem", arch = "sentinel", rank = 3, cost = 3, hp = 62, dmg = 5, cd = 66, aggro = 18,
+    effects = { { trigger = "combat_start", op = "aura_stat", target = "role:center", params = { stat = "multicast", value = 1 } } },
+    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "role:center", params = { stat = "multicast", value = 1 } } },
 }
 
 -- ══ FAMILLE DoT DÉCLARATIVE (M2/2.4 — « type » des synergies P1 + segmentation Grimoire). Porteur explicite,
@@ -882,7 +918,8 @@ local U = {
 -- = rot, ses bleed/poison à 0 dps sont utilitaires). Couverture + cohérence (op RÉEL vs famille déclarée)
 -- garanties par tests/dot_family.lua (lint dans check.sh). ⚠ pièges : `rot_grub` est POISON (op), pas rot
 -- (nom) ; les 4 auras (soot/clot/miasma/decay) portent leur famille mais ne sont PAS des poseurs actifs
--- (exclues du plancher rang). Audit complet : docs/roadmap-lab/audit/identity-audit.md.
+-- (exclues du plancher rang). Les anciens audits roadmap-lab ont ete retires; garder cette table
+-- synchronisee avec tests/dot_family.lua et les rapports de coherence.
 U.dotFamily = {
   -- BRÛLURE (13)
   emberling = "burn", cinder_cur = "burn", pyre_tender = "burn", ash_moth = "burn", bellows_priest = "burn",
@@ -905,7 +942,7 @@ U.dotFamily = {
   -- CHOC (11)
   stormcaller = "shock", live_wire = "shock", thunderhead = "shock", static_swarm = "shock",
   galvanizer = "shock", stormlord = "shock", dynamo_priest = "shock", arc_warden = "shock",
-  storm_anchor = "shock", siphon_jelly = "shock", rust_sentinel = "shock",
+  storm_anchor = "shock", siphon_jelly = "shock", rust_sentinel = "shock", storm_conductor = "shock",
 }
 
 -- Roster complet (ordre d'affichage). Les 6 premiers = vanille/v0 ; les suivants = familles de statuts.
@@ -949,7 +986,11 @@ U.order = { "marauder", "templar", "skeleton", "bandit", "witch", "demon",
   -- W3 — axe mimétisme/amplification (mimics repeat_ability + méta-multiplicateur amplify_auras ; plan big-update §AXE 4)
   "mimic_spawn", "echo_flesh", "hollow_crown",
   -- W4 — axe tank/removal/exécution (execute + percent_hp_strike + strike_highest_hp + teamExecute ; plan big-update §AXE 7)
-  "headsman", "culler", "wallbreaker", "siege_titan", "reaper_shade" }
+  "headsman", "culler", "wallbreaker", "siege_titan", "reaper_shade",
+  -- W5 — axe position/polarité directionnelle (ahead/behind/above/below)
+  "vanguard_drummer", "rear_goad", "spine_column", "tide_caller_v2",
+  -- W6 — fréquence + commandants d'axe
+  "storm_conductor", "echo_warden" }
 
 -- Pool d'unités ACHETABLES en boutique (cf. src/run/state.lua). Identique au roster pour l'instant.
 -- NB : les 9 TOKENS d'engeance (src/data/spawn.lua) sont VOLONTAIREMENT ABSENTS du pool ET de l'order :
@@ -986,7 +1027,11 @@ U.pool = { "marauder", "templar", "skeleton", "bandit", "witch", "demon",
   -- W3 — axe mimétisme/amplification (mimics + méta-multiplicateur ; plan big-update §AXE 4)
   "mimic_spawn", "echo_flesh", "hollow_crown",
   -- W4 — axe tank/removal/exécution (execute + percent_hp_strike + tank-hybride + aura teamExecute ; plan big-update §AXE 7)
-  "headsman", "culler", "wallbreaker", "siege_titan", "reaper_shade" }
+  "headsman", "culler", "wallbreaker", "siege_titan", "reaper_shade",
+  -- W5 — axe position/polarité directionnelle (ahead/behind/above/below)
+  "vanguard_drummer", "rear_goad", "spine_column", "tide_caller_v2",
+  -- W6 — fréquence + commandants d'axe
+  "storm_conductor", "echo_warden" }
 
 -- Visuel : les 6 vanille ont un rig DESSINÉ main (src/data/creatures.lua) ; toutes les autres unités
 -- sont GÉNÉRÉES procéduralement (src/gen/creaturegen.lua, déterministe par id), résolu côté rendu

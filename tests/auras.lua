@@ -573,8 +573,42 @@ local ok, err = pcall(function()
     rA()
   end
 
+  -- 29) W5 — cibles DIRECTIONNELLES relatives (ahead/behind/above/below). Sur carré, depuis le centre slot 5 :
+  -- ahead=6, behind=4, above=2, below=8. Elles ne dépendent PAS des arêtes du graphe, mais des coordonnées.
+  do
+    local restore = withAura("soot_acolyte", { stat = "atkInc", target = "behind", value = 0.15 })
+    local b = fresh()
+    for s = 1, 9 do b:placeId(s, s == 5 and "soot_acolyte" or "marauder") end
+    local hits = {}
+    for _, s in ipairs(b:buildComp(-1)) do if s.atkInc and s.atkInc > 0 then hits[#hits + 1] = s.slot end end
+    assert(#hits == 1 and hits[1] == 4, "W5 behind depuis slot 5 -> slot 4 (obtenu " .. tostring(hits[1]) .. ")")
+    restore()
+  end
+  do
+    local restore = withAura("soot_acolyte", { stat = "haste", target = "ahead", value = 0.12 })
+    local b = fresh()
+    for s = 1, 9 do b:placeId(s, s == 5 and "soot_acolyte" or "marauder") end
+    local hits = {}
+    for _, s in ipairs(b:buildComp(-1)) do if s.haste and s.haste > 0 then hits[#hits + 1] = s.slot end end
+    assert(#hits == 1 and hits[1] == 6, "W5 ahead depuis slot 5 -> slot 6 (obtenu " .. tostring(hits[1]) .. ")")
+    restore()
+  end
+  do
+    local restore = withEffects("soot_acolyte", {
+      { trigger = "combat_start", op = "aura_stat", target = "above", params = { stat = "dmgReduce", value = 0.12 } },
+      { trigger = "combat_start", op = "aura_stat", target = "below", params = { stat = "dmgReduce", value = 0.12 } },
+    })
+    local b = fresh()
+    for s = 1, 9 do b:placeId(s, s == 5 and "soot_acolyte" or "marauder") end
+    local got = {}
+    for _, s in ipairs(b:buildComp(-1)) do if s.dmgReduce and s.dmgReduce > 0 then got[s.slot] = s.dmgReduce end end
+    assert(got[2] and got[8] and not got[4] and not got[6], "W5 above/below depuis slot 5 -> slots 2 et 8 uniquement")
+    restore()
+  end
+
   print("  auras W3: repeat_ability (ahead/neighbors, copie on_hit viaCopy, isolé=base, anti repeat-of-repeat profondeur 1) OK")
   print("  auras W3: amplify_auras (multiplie l'aura bakée, inerte sans aura, CAP préservé à la lecture combat, déterministe) OK")
+  print("  auras W5: targets directionnels ahead/behind/above/below (relatifs au porteur, golden-safe) OK")
 
   print("  auras : ampli increased sur voisin (lu a la pose) / grant d'effet / isolé = base (golden-safe) OK")
   print("  auras K1: role front/back/center sur carré (unique+stable) / team / tier:N (spec §6.2.1) OK")

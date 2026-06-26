@@ -1,7 +1,14 @@
 # The Pit — Design System Implementation Bible
 
+Status: technical visual reference, not gameplay source of truth.
+
 > Source files: `design-system-source.html` (1308 lines), `forge-px.js` (widget atoms, ~426 lines), `pit-forge.js` (full renderer, ~900 lines).
 > This document is the authoritative implementation reference for porting the designer's web system into Lua/LÖVE.
+
+Gameplay note: this document predates the readable-relic decision. Use its
+palette, dimensions, typography, frame algorithms and component anatomy. Ignore
+old relic-content assumptions about cryptic/identified states or hidden
+identification; `CLAUDE.md` and `docs/research/relics-design.md` win.
 
 ---
 
@@ -13,7 +20,7 @@
 | II | Typographie | 4 voices (Jacquard/Cinzel/Spectral/Space Mono), type scale, before/after comparison |
 | III | Iconographie | Type pips (shape per faction), affliction icons (shape + color), sprite niche convention |
 | IV | Atomes | All base controls: buttons (5 variants), inputs, select, toggles/checkbox/radio/segmented, slider, chips (type/affliction/status), badges, stat-line readouts, health + cooldown + lives + descent gauges, 3 divider styles |
-| V | Molécules | Unit shop cards (4 states), unit detail card, relic cards (identified + cryptic), tooltip, board-graph 3×3, HUD run banner + eco cluster, floating combat numbers, chronicle log, tabs, result banners (Victory/Defeat/Ascension), modal dialog, side settings panel |
+| V | Molécules | Unit shop cards (4 states), unit detail card, readable relic cards, tooltip, board-graph 3×3, HUD run banner + eco cluster, floating combat numbers, chronicle log, tabs, result banners (Victory/Defeat/Ascension), modal dialog, side settings panel |
 | VI | Organismes | Full screen compositions living inside the reliquary band: Main Menu, Build screen, Combat screen, Grimoire, Relic Pick 1-of-3 |
 
 ---
@@ -552,13 +559,13 @@ Content: toggle rows + slider + radio language select.
 
 ### 2.23 — Grimoire codex row
 
-Compact horizontal row for the 4-column relic grid:
+Compact horizontal row for the grimoire grid:
 - Width per cell: ~25% of grimoire content area
 - Padding: 13px 13px 14px
-- Icon: 30×30px rotated diamond (identified: colored bg + inner element; cryptic: hatch fill + "?" Cinzel 13px `rot`)
-- Name: Cinzel 700 12px `ink` (identified) or "? ? ?" `ink-3`
+- Icon: 30×30px rotated diamond (colored bg + inner element for known entries)
+- Name: Cinzel 700 12px `ink`
 - Effect: Spectral 11.5px `ink-3`, values in Space Mono 700
-- Unencountered: opacity 0.6, empty icon placeholder
+- Unencountered collection entries may be dimmed, but encountered relic effects are readable.
 
 **pit-forge.js**: `drawCodexRow(buf,W,H,state,entry,known,t)` — thumbnail portrait (stripeFill or "?" for unknown), name + type+rank below.
 
@@ -646,7 +653,7 @@ Min-height 400px, bg `radial-gradient(110% 120% at 50% 100%, rgba(120,40,140,.18
 
 **Header**: Spectral italic 12.5px `ink-3` flavor line + Cinzel 700 26px `ink` "A Fragment Surfaces".
 
-**Three relic cards** (212px each, gap 18px): all cryptic (unknown), center card elevated (translateY -6px) with brass border + `0 0 22px rgba(168,111,196,.2)` purple glow.
+**Three relic cards** (212px each, gap 18px): all options readable; center card elevated (translateY -6px) with brass border + `0 0 22px rgba(168,111,196,.2)` purple glow.
 
 **Actions**: PRIMARY "BIND THE FRAGMENT" + ghost "REFUSE +2◆".
 
@@ -784,7 +791,7 @@ The `forge-px.js` frame is the **inner** golden bevel wrapping individual widget
 | Board graph renderer (`ui/board_view.lua`) | HIGH | Slots + edges + 6 slot states; currently handled in `scenes/build.lua` inline |
 | Floating damage numbers (`ui/floatnum.lua`) | MED | Colored + glow per source type |
 | Result banner (`ui/banner.lua`) | MED | Jacquard font + double-line rules + overlay |
-| Relic card (`ui/relic_card.lua`) | MED | Identified + cryptic states; diamond icon |
+| Relic card (`ui/relic_card.lua`) | MED | Readable effect + flavor; diamond icon |
 | Codex grid row (`ui/codex_row.lua`) | MED | Grimoire 4-col grid entry |
 | Modal dialog (`ui/modal.lua`) | LOW | Centered overlay with STAY/ABANDON |
 | Settings side panel (`ui/settings_panel.lua`) | LOW | Slide-in from right |
@@ -831,7 +838,7 @@ The `forge-px.js` frame is the **inner** golden bevel wrapping individual widget
 
 2. **Blood veins are seeded per-frame-instance, not global.** The seed is derived from `aw*131 + ah*17 + T*101 + 9`, meaning different-sized frames get different vein patterns. This is intentional — every container looks slightly different.
 
-3. **The "1-of-3" relic pick shows ALL THREE as cryptic**, even if one is already known. The designer chose to keep maximum mystery at the offering moment. Identification/grimoire locking happens AFTER binding.
+3. **Superseded relic-content note.** The original mockup hid the 1-of-3 relic effects, but the current game design shows readable effects immediately. Keep the layout/elevation treatment, not the hidden-identification rule.
 
 4. **Shop cards have no rarity visual yet** — the mockup shows uniform brass treatment for affordable, dimmed grey for too-expensive. Rarity tiers (R1–R5) are captured in the codex row only. This aligns with the CLAUDE.md note "boutique sans raretés/cotes-par-niveau (pool uniforme)".
 

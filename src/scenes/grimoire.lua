@@ -48,6 +48,8 @@ local Critter = require("src.render.critter") -- rendu VIVANT (mêmes créatures
 local Rarity = require("src.gen.rarity")
 local RelicCard = require("src.ui.relic_card")   -- fiche relique (band/fam) — survol
 local MonsterCard = require("src.render.monstercard") -- fiche monstre (MÊME carte que build) — survol
+local CardGlossary = require("src.ui.card_glossary")
+local MechanicsText = require("src.ui.mechanics_text")
 local T = require("src.core.i18n").t
 
 local C = Theme.c
@@ -68,18 +70,22 @@ local RELIC_FAM = {
   echo_crown = "order", gravediggers_due = "bone", splitting_maw = "flesh",
 }
 
--- ── MISE EN PAGE (espace design 1280×720) — façon Pokédex : titre + bascule + chips, puis grande grille. ──
+-- ── MISE EN PAGE (espace design 1280×720) — collection à gauche, fiche persistante à droite. ──
 local TITLE_Y = 28
-local TAB_Y, TAB_W, TAB_H = 78, 176, 34   -- bascule RELIQUES | BESTIARY
+local TAB_Y, TAB_W, TAB_H = 78, 220, 34   -- bascule RELIQUES | BESTIARY
 local CHIP_Y = 126                         -- 1re rangée de chips de sous-filtre
 local CHIP_H, CHIP_GAP, CHIP_PAD = 24, 8, 10
 local GRID_X0 = 40                         -- marge latérale de la grille
 local GRID_TOP_FALLBACK = 176             -- haut de la grille si une seule rangée de chips (recalculé)
 local GRID_BOTTOM = 690
-local COLS = 8                             -- 8 colonnes -> cases ~138px de pitch (centrées)
+local COLS = 5                             -- colonne de collection à gauche ; détail fixe à droite.
 local CELL_W, CELL_H = 138, 124            -- pitch d'une case (slot + label)
 local TILE = 92                            -- côté de la vignette Slot dans la case
 local CELL_PADX = (CELL_W - TILE) / 2
+local DETAIL_X = 770
+local DETAIL_W = Draw.W - DETAIL_X - 40
+local DETAIL_CARD_W = 288
+local RELIC_CARD_W = 300
 
 local function ptIn(px, py, x, y, w, h) return px >= x and px <= x + w and py >= y and py <= y + h end
 
@@ -93,6 +99,10 @@ function Screen.new(palette, vw, vh, host)
     -- band). Bestiaire : 2 facettes indépendantes -> TYPE *et* TIER (l'user veut filtrer/trier par tier).
     filter = { relics = { band = "all" }, bestiary = { type = "all", tier = "all" } },
     hover = nil, scroll = 0,
+    selected = { relics = nil, bestiary = nil },
+    selectedLevel = 1,
+    levelHover = nil,
+    lastCardBox = nil,
     mx = -100, my = -100, -- souris en ESPACE DESIGN (survol cases + boutons)
     gridTop = GRID_TOP_FALLBACK,
     ambient = Ambient.new(5),
@@ -134,6 +144,30 @@ function Screen:refresh()
   for _, e in ipairs(self.beastEntries) do if Bestiary.isSeen(e.id) then self.seenBeasts = self.seenBeasts + 1 end end
   self:rebuildChips()
   self:rebuildCells()
+end
+
+function Screen:ensureSelection()
+  local current = self.selected and self.selected[self.tab]
+  for _, cell in ipairs(self.cells or {}) do
+    if cell.on and cell.e and cell.e.id == current then return end
+  end
+  self.selected[self.tab] = nil
+  for _, cell in ipairs(self.cells or {}) do
+    if cell.on and cell.e then
+      self.selected[self.tab] = cell.e.id
+      if self.tab == "bestiary" then self.selectedLevel = 1 end
+      return
+    end
+  end
+end
+
+function Screen:selectedCell()
+  local id = self.selected and self.selected[self.tab]
+  if not id then return nil end
+  for _, cell in ipairs(self.cells or {}) do
+    if cell.e and cell.e.id == id then return cell end
+  end
+  return nil
 end
 
 -- Construit les CHIPS de sous-filtre de l'onglet courant. Chaque chip porte sa FACETTE (sélection unique PAR
@@ -249,6 +283,7 @@ function Screen:rebuildCells()
   for _, cell in ipairs(unknown) do cells[#cells + 1] = cell end
   self.cells = cells
   self.scroll = 0
+  self:ensureSelection()
 end
 
 -- Géométrie de défilement.
@@ -279,6 +314,8 @@ function Screen:update(frameDt)
   end
   -- JUICE des cases : la case survolée monte/glow (Feel). Une clé stable par index VISIBLE.
   for i = 1, #(self.cells or {}) do Feel.hover("grim.cell." .. i, self.hover == i) end
+  self:updateLevelHover()
+  for lvl = 1, 3 do Feel.hover("grim.level." .. lvl, self.levelHover == lvl) end
   -- anim idle des rigs du bestiaire (comme la galerie) — la créature de chaque case respire.
   for _, e in ipairs(self.beastEntries) do Rig.update(e.char, self.t, frameDt) end
 end
@@ -299,7 +336,7 @@ function Screen:drawOverlay(view)
   local titleFont = Theme.title(34)
   Draw.text(T("grimoire.title"), GRID_X0, TITLE_Y, C.ink, titleFont)
   local titleW = (titleFont and titleFont:getWidth(T("grimoire.title"))) or 380
-  Draw.text(T("grimoire.hint"), GRID_X0 + titleW + 20, TITLE_Y + 22, C.ink4, Theme.label(11))
+  Draw.text(T("grimoire.hint_select"), GRID_X0 + titleW + 20, TITLE_Y + 22, C.ink4, Theme.label(11))
   self.backRect = Nav.back(view, T("grimoire.back"), { mx = self.mx, my = self.my, id = "grim.back" })
 
   -- Bascule RELIQUES | BESTIARY (deux boutons secondary, l'actif forcé en survol + liseré doré) + compteur.
@@ -329,9 +366,8 @@ function Screen:drawOverlay(view)
     Draw.rect(sbx, ty, 3, thumbH, C.brass)
   end
 
-  -- FICHE au SURVOL (au curseur). DERNIER dessiné -> par-dessus la grille. Relique = RelicCard ; monstre =
-  -- MonsterCard (la MÊME que build/combat). On NE la dessine que sur une case RÉVÉLÉE (rien à montrer si voilée).
-  self:drawHoverCard(view)
+  -- FICHE persistante à DROITE : clic sur une entrée connue -> sélection, plus de carte flottante au hover.
+  self:drawSelectedDetail(view)
 
   Draw.finish()
 end
@@ -391,6 +427,7 @@ end
 function Screen:drawCell(view, i, cell, x, y)
   local e, on = cell.e, cell.on
   local hov = (self.hover == i)
+  local selected = on and self.selected and self.selected[self.tab] == e.id
   local fs = Feel.state("grim.cell." .. i)
   local lift = math.floor((fs.lift or 0) + 0.5)
 
@@ -404,9 +441,12 @@ function Screen:drawCell(view, i, cell, x, y)
   local tierC = tierBorder -- (rétro-compat des couleurs de label plus bas)
 
   -- État du Slot : voilé -> "locked" ; révélé -> "empty", "selected" au survol. Bestiaire -> bord TEINTÉ par tier.
-  local state = on and (hov and "selected" or "empty") or "locked"
+  local state = on and ((hov or selected) and "selected" or "empty") or "locked"
   Slot.draw(tx, ty, TILE, state, (on and tierBorder)
     and { tierBorder = tierBorder, tierGlow = rich } or nil)
+  if selected then
+    Draw.rect(tx - 3, ty - 3, TILE + 6, TILE + 6, nil, tierBorder or C.brass, 2)
+  end
 
   -- halo additif de rareté DERRIÈRE la créature (bestiaire, rangs hauts) — « ça rayonne ».
   local cx, cy = tx + TILE / 2, ty + TILE / 2
@@ -463,7 +503,7 @@ function Screen:drawCell(view, i, cell, x, y)
       name = name .. "…"
     end
     local col = (tierC and C.ink) or C.ink2
-    Draw.textC(name, x + CELL_W / 2, labY, hov and C.ink or col, lf)
+    Draw.textC(name, x + CELL_W / 2, labY, (hov or selected) and C.ink or col, lf)
     -- sous-label : palier de relique OU rang de monstre (couleur de tier), petit.
     if bestiary and e.rank then
       Draw.textC(T(Rarity.tierNameKey(e.rank)), x + CELL_W / 2, labY + 13, Rarity.tierBright(e.rank), Theme.labelSmall(9))
@@ -477,15 +517,38 @@ function Screen:drawCell(view, i, cell, x, y)
   end
 end
 
--- FICHE au survol (au curseur). La MÊME carte qu'en jeu : monstre -> MonsterCard (suit le curseur + rebond
--- géré en interne) ; relique -> RelicCard (on calcule l'ancre au curseur + rebond ici, comme MonsterCard).
-function Screen:drawHoverCard(view)
-  local cell = self.cells and self.cells[self.hover]
-  if not (cell and cell.on) then return end
+function Screen:drawDetailEmpty()
+  local f = Theme.body(13) or Theme.bodyLight(13)
+  local x, y, w = DETAIL_X, self.gridTop, DETAIL_W
+  Draw.divider(x + w / 2, y + 18, w - 40, C.iron, 0.6)
+  Draw.textWrap(T("grimoire.detail_empty"), x + 24, y + 44, w - 48, C.ink3, f)
+end
+
+-- FICHE persistante à droite. La MÊME carte qu'en jeu, mais posée dans une colonne fixe.
+function Screen:drawSelectedDetail(view)
+  self.lastCardBox = nil
+  local cell = self:selectedCell()
+  if not (cell and cell.on) then self:drawDetailEmpty(); return end
   local e = cell.e
+  local top = math.max(self.gridTop, 150)
+  Draw.rect(DETAIL_X - 18, top - 16, 1, GRID_BOTTOM - top + 28, C.iron)
   if self.tab == "bestiary" then
-    -- exactement le câblage du build : ancre = curseur (espace design), rig d'aperçu animé -> portrait qui respire.
-    MonsterCard.draw(view, self.palette, e.id, self.mx, self.my, self.t / 60, { rig = self.previewRigs[e.id] })
+    local level = math.max(1, math.min(3, tonumber(self.selectedLevel) or 1))
+    local unit = MonsterCard.unitAtLevel(e.id, level) or Units[e.id]
+    local cardX = DETAIL_X + math.floor((DETAIL_W - DETAIL_CARD_W) / 2)
+    local box = MonsterCard.draw(view, self.palette, e.id, cardX, top, self.t / 60, {
+      rig = self.previewRigs[e.id],
+      keywordHint = true,
+      x = cardX,
+      y = top,
+      level = level,
+      unit = unit,
+      levelSelector = true,
+      levelHover = self.levelHover,
+      levelFeelPrefix = "grim.level",
+    })
+    self.lastCardBox = box
+    CardGlossary.drawMonster(view, box, e.id, self.t / 60, { unit = unit, force = self.forceKeywordGlossary })
   else
     -- carte de relique IDENTIFIÉE (band -> couleur de carte). L'ICÔNE ANIMÉE (id + t) remplit l'écrin.
     -- Hauteur MESURÉE -> rien ne déborde.
@@ -493,20 +556,20 @@ function Screen:drawHoverCard(view)
     local opts = {
       state = "identified",
       name = T("relic." .. e.id .. ".name"),
-      effect = T("relic." .. e.id .. ".effect"),
+      effect = table.concat(MechanicsText.relicLines(e.id), "\n"),
       flavor = T("relic." .. e.id .. ".flavor"),
       fam = RELIC_FAM[e.id] or "bone",
       band = e.band,
       id = e.id, t = self.t / 60,
     }
     local h = RelicCard.measure(W, opts)
-    -- placement au curseur, rebond sur les bords (calque de MonsterCard : décalé bas-droite, bascule si déborde).
-    local x, y = self.mx + 18, self.my + 10
-    if x + W > Draw.W then x = self.mx - W - 18 end
-    if x < 4 then x = 4 end
-    if y + h > Draw.H then y = Draw.H - h - 6 end
-    if y < 4 then y = 4 end
-    RelicCard.draw(math.floor(x), math.floor(y), W, h, opts)
+    local x = DETAIL_X + math.floor((DETAIL_W - RELIC_CARD_W) / 2)
+    local y = top
+    if y + h > GRID_BOTTOM then y = math.max(top, GRID_BOTTOM - h) end
+    local cardBox = { x = math.floor(x), y = math.floor(y), w = W, h = h }
+    RelicCard.draw(cardBox.x, cardBox.y, W, h, opts)
+    self.lastCardBox = cardBox
+    CardGlossary.drawRelic(view, cardBox, e.id, self.t / 60, { force = self.forceKeywordGlossary })
   end
 end
 
@@ -543,9 +606,40 @@ function Screen:cellAt(dx, dy)
   return nil
 end
 
+function Screen:updateLevelHover()
+  self.levelHover = nil
+  local box = self.lastCardBox
+  if not (box and box.levelRects) then return nil end
+  for lvl, r in ipairs(box.levelRects) do
+    if ptIn(self.mx, self.my, r.x, r.y, r.w, r.h) then
+      self.levelHover = lvl
+      return lvl
+    end
+  end
+  return nil
+end
+
+function Screen:levelAt(dx, dy)
+  local box = self.lastCardBox
+  if not (box and box.levelRects) then return nil end
+  for lvl, r in ipairs(box.levelRects) do
+    if ptIn(dx, dy, r.x, r.y, r.w, r.h) then return lvl end
+  end
+  return nil
+end
+
+function Screen:selectCell(i)
+  local cell = self.cells and self.cells[i]
+  if not (cell and cell.on and cell.e) then return end
+  local previous = self.selected[self.tab]
+  self.selected[self.tab] = cell.e.id
+  if self.tab == "bestiary" and previous ~= cell.e.id then self.selectedLevel = 1 end
+end
+
 function Screen:mousemoved(vx, vy)
   self.mx, self.my = vx * 4, vy * 4
   self.hover = self:cellAt(self.mx, self.my)
+  self:updateLevelHover()
 end
 
 function Screen:mousepressed(vx, vy, button)
@@ -555,13 +649,28 @@ function Screen:mousepressed(vx, vy, button)
   if self.backRect and ptIn(dx, dy, self.backRect.x, self.backRect.y, self.backRect.w, self.backRect.h) then
     Feel.press("grim.back", function() self.host.goto("menu") end); return -- ⭐ différé : press visible avant la bascule
   end
+  local level = self:levelAt(dx, dy)
+  if level then
+    Feel.press("grim.level." .. level, function() self.selectedLevel = level end, { delay = 0.08 })
+    return
+  end
   if self._tabRects then
     for id, r in pairs(self._tabRects) do
-      if ptIn(dx, dy, r.x, r.y, r.w, r.h) then Feel.press("grim.tab." .. id); self:setTab(id); return end
+      if ptIn(dx, dy, r.x, r.y, r.w, r.h) then
+        Feel.press("grim.tab." .. id, function() self:setTab(id) end, { delay = 0.08 })
+        return
+      end
     end
   end
   for _, r in ipairs(self.chipRects or {}) do
-    if ptIn(dx, dy, r.x, r.y, r.w, r.h) then Feel.press("grim.chip." .. r.facet .. "." .. r.key); self:setFilter(r.facet, r.key); return end
+    if ptIn(dx, dy, r.x, r.y, r.w, r.h) then
+      Feel.press("grim.chip." .. r.facet .. "." .. r.key, function() self:setFilter(r.facet, r.key) end, { delay = 0.08 })
+      return
+    end
+  end
+  local ci = self:cellAt(dx, dy)
+  if ci and self.cells and self.cells[ci] and self.cells[ci].on then
+    Feel.press("grim.cell." .. ci, function() self:selectCell(ci) end, { delay = 0.08 })
   end
 end
 
@@ -571,11 +680,15 @@ function Screen:wheelmoved(_, dy)
   if self.scroll < 0 then self.scroll = 0 elseif self.scroll > m then self.scroll = m end
   -- met à jour le survol (le contenu sous le curseur a bougé).
   self.hover = self:cellAt(self.mx, self.my)
+  self:updateLevelHover()
 end
 
 function Screen:keypressed(key)
   if key == "tab" or key == "left" or key == "right" then self:setTab(self.tab == "relics" and "bestiary" or "relics")
   elseif key == "g" or key == "escape" then self.host.goto("menu") end
+  if self.tab == "bestiary" and (key == "1" or key == "2" or key == "3") then
+    self.selectedLevel = tonumber(key)
+  end
 end
 
 return Screen

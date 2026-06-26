@@ -110,6 +110,7 @@ local ok, err = pcall(function()
       { id = "carrion_ledger",  runOp = "shop_xp",        tier = 3 },
       { id = "black_summons",   runOp = "shop_tier_up",   tier = 4 },
       { id = "beggars_lantern", runOp = "shop_tier_down", tier = 2 },
+      { id = "frost_seal",      runOp = "shop_freeze",    tier = 2 },
     }
     for _, want in ipairs(shopRelics) do
       local rel = Relics[want.id]
@@ -156,6 +157,13 @@ local ok, err = pcall(function()
       assert(rd:grantRelic("beggars_lantern"), "octroi de beggars_lantern")
       assert(rd.shopOddsShift == -1, "beggars_lantern : shopOddsShift = -1")
       assert(rd.shopTier == tier0, "beggars_lantern : le tier REEL est inchange (seul le decalage de cotes bouge)")
+    end
+    -- shop_freeze : débloque 1 verrou de boutique, hors combat.
+    do
+      local rf = RunState.new(106)
+      assert(rf.freezeSlots == 0, "frost_seal : aucun slot de gel au depart")
+      assert(rf:grantRelic("frost_seal"), "frost_seal : grant OK")
+      assert(rf.freezeSlots == 1, "frost_seal : debloque 1 slot de gel")
     end
 
     -- R.apply / applyRelics avec une relique runOp dans la compo : AUCUN crash, AUCUNE stat de combat modifiee.
@@ -419,6 +427,34 @@ local ok, err = pcall(function()
     assert(bite() == bite(), "siege_hammer: déterministe (même frappe -> même mordant %PV)")
   end
 
+  -- 2d-quinquies) W5 — AXE POSITION / POLARITÉ DIRECTIONNELLE : reliques directionnelles. Contrairement à une
+  -- aura de rôle, chaque unité du board devient SOURCE et buffe l'allié immédiat dans la direction donnée.
+  do
+    local rs = RunState.new(600); rs:grantRelic("rear_standard")
+    local c = {
+      { id = "marauder", hp = 60, dmg = 9, cd = 60, slot = 4 }, -- col 0,row 1
+      { id = "bandit", hp = 46, dmg = 7, cd = 36, slot = 5 },   -- col 1,row 1 -> buffe 4 derrière
+      { id = "husk", hp = 58, dmg = 4, cd = 72, slot = 6 },     -- col 2,row 1 -> buffe 5 derrière
+    }
+    rs:applyRelics(c)
+    assert(math.abs((c[1].atkInc or 0) - 0.10) < 1e-9, "rear_standard : slot 4 reçoit +0.10 du slot 5")
+    assert(math.abs((c[2].atkInc or 0) - 0.10) < 1e-9, "rear_standard : slot 5 reçoit +0.10 du slot 6")
+    assert((c[3].atkInc or 0) == 0, "rear_standard : slot 6 n'a personne devant pour le buffer derrière")
+    assert(Relics.rear_standard.band == "mid", "rear_standard: band mid")
+
+    local fl = RunState.new(601); fl:grantRelic("front_lance")
+    local d = {
+      { id = "marauder", hp = 60, dmg = 9, cd = 60, slot = 4 },
+      { id = "bandit", hp = 46, dmg = 7, cd = 36, slot = 5 },
+      { id = "husk", hp = 58, dmg = 4, cd = 72, slot = 6 },
+    }
+    fl:applyRelics(d)
+    assert((d[1].dmgReduce or 0) == 0, "front_lance : slot 4 n'est pas ciblé par ahead")
+    assert(math.abs((d[2].dmgReduce or 0) - 0.10) < 1e-9, "front_lance : slot 5 reçoit +0.10 du slot 4")
+    assert(math.abs((d[3].dmgReduce or 0) - 0.10) < 1e-9, "front_lance : slot 6 reçoit +0.10 du slot 5")
+    assert(Relics.front_lance.band == "mid", "front_lance: band mid")
+  end
+
   -- 2e) SURVEILLANCE D'EMPILEMENT (plan relics-overhaul §4) : les empilements dangereux restent BORNÉS au
   -- BUILD (les caps moteur a la LECTURE sont testés ailleurs : tests/synergies KEYSTONES). Ici on verifie la
   -- COMPOSITION des champs bakés (somme team + relique), qui DOIT rester sous les caps moteur.
@@ -466,11 +502,11 @@ local ok, err = pcall(function()
     local cl = l:rollRelicChoices(3)
     for _, id in ipairs(cl) do assert(tierOf(id) <= 4, "late : offre dans le plafond tier 4 (" .. id .. ")") end
     -- FALLBACK : si moins de 3 candidats sous le plafond (on possede presque tout le tier <=2), on elargit a TOUT.
-    -- (13 reliques tier<=2 existent : on en possede 11 -> 2 candidats sous plafond < 3 -> fallback force.)
+    -- (14 reliques tier<=2 existent : on en possede 12 -> 2 candidats sous plafond < 3 -> fallback force.)
     local f = RunState.new(99); f.wins = 0
     f.relics = { { id = "bloodstone" }, { id = "carapace" }, { id = "aegis" }, { id = "whetstone" },
       { id = "kings_bowl" }, { id = "ember_heart" }, { id = "weeping_nail" }, { id = "grave_cap" },
-      { id = "thornguard" }, { id = "beggars_lantern" }, { id = "tithe_bowl" } }
+      { id = "thornguard" }, { id = "beggars_lantern" }, { id = "tithe_bowl" }, { id = "frost_seal" } }
     local cf = f:rollRelicChoices(3)
     assert(#cf == 3, "fallback : l'offre reste a 3 choix meme a court de candidats tiérés")
     local sawAbove = false

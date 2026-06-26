@@ -27,6 +27,7 @@ local function targetResolves(t)
   if FIXED_TARGETS[t] then return true end
   if t:sub(1, 5) == "tier:" and tonumber(t:sub(6)) then return true end
   if t:sub(1, 6) == "level:" and tonumber(t:sub(7)) then return true end
+  if t:sub(1, 5) == "type:" and #t:sub(6) > 0 then return true end
   return false
 end
 -- grant_team : flags RÉELLEMENT lus (ops.lua:281-305 handler + arena:spawn). Tout autre flag = inerte.

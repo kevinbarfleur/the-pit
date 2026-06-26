@@ -20,6 +20,12 @@ local Menu      = require("src.scenes.menu")
 local Gallery   = require("src.scenes.gallery")
 local GrimoireS = require("src.scenes.grimoire")
 local SystemMenu = require("src.ui.system_menu")
+local Draw      = require("src.ui.draw")
+local MonsterCard = require("src.render.monstercard")
+local CardGlossary = require("src.ui.card_glossary")
+local RelicCard = require("src.ui.relic_card")
+local MechanicsText = require("src.ui.mechanics_text")
+local I18n = require("src.core.i18n")
 
 local VW, VH = 320, 180
 local SEED = 13 -- seed FIXE -> capture reproductible (même build/boutique/adversaire à chaque export)
@@ -92,12 +98,90 @@ function Builders.build(host)
   return makeBuild(host)
 end
 
+-- BUILD_FREEZE : variante de capture avec Frost Seal actif pour inspecter la pastille FRZ et l'état gelé.
+function Builders.build_freeze(host)
+  local b = makeBuild(host)
+  host.run:grantRelic("frost_seal")
+  host.run:freezeOffer(2)
+  return b
+end
+
 -- C4 — captures dédiées du PIÉDESTAL (revue visuelle ui-artisan) : vide / rempli / survol portée / refus drag.
 function Builders.commander_empty(host)  return makeCommanderBuild(host, "empty") end
 function Builders.commander_filled(host) return makeCommanderBuild(host, "filled") end
 function Builders.commander_hover(host)  return makeCommanderBuild(host, "hover") end
 function Builders.commander_offer(host)  return makeCommanderBuild(host, "offer") end
 function Builders.commander_refuse(host) return makeCommanderBuild(host, "empty", { dragNonChief = true }) end
+
+function Builders.commander_spore_keywords(host)
+  local b = makeBuild(host)
+  host.run.commanderUnlocked = true
+  b.commanderSlot = { id = "spore_tick", level = 1, char = b:newRig("spore_tick") }
+  b.forceKeywordGlossary = true
+  local r = b.commanderRect
+  b.mx, b.my = r.x + r.w / 2, r.y + r.h / 2
+  return b
+end
+
+local function monsterCardStress(id, opts)
+  opts = opts or {}
+  return {
+    daChrome = true,
+    t = 0,
+    update = function(self, dt) self.t = (self.t or 0) + (dt or 0) / 60 end,
+    drawBack = function() end,
+    drawWorld = function() end,
+    drawOverlay = function(self, view)
+      Draw.begin(view)
+      Draw.rect(0, 0, Draw.W, Draw.H, { 0.02, 0.012, 0.03, 1 })
+      local box = MonsterCard.draw(view, Palette, id, 120, 24, self.t, { keywordHint = true })
+      if opts.glossary then
+        CardGlossary.drawMonster(view, box, id, self.t, { force = true, tagOpts = opts.tagOpts })
+      end
+      Draw.finish()
+    end,
+  }
+end
+
+function Builders.card_ember_sac(host) return monsterCardStress("venom_censer") end
+function Builders.card_wither_bloom(host) return monsterCardStress("wither_bloom") end
+function Builders.card_wither_bloom_glossary(host) return monsterCardStress("wither_bloom", { glossary = true }) end
+function Builders.card_plague_pyre(host) return monsterCardStress("plague_pyre") end
+function Builders.card_plague_pyre_glossary(host) return monsterCardStress("plague_pyre", { glossary = true }) end
+
+local function relicCardStress(id, opts)
+  opts = opts or {}
+  return {
+    daChrome = true,
+    t = 0,
+    update = function(self, dt) self.t = (self.t or 0) + (dt or 0) / 60 end,
+    drawBack = function() end,
+    drawWorld = function() end,
+    drawOverlay = function(self, view)
+      Draw.begin(view)
+      Draw.rect(0, 0, Draw.W, Draw.H, { 0.02, 0.012, 0.03, 1 })
+      local W = 300
+      local rc = require("src.data.relics")[id]
+      local cardOpts = {
+        state = "identified",
+        name = I18n.t("relic." .. id .. ".name"),
+        effect = table.concat(MechanicsText.relicLines(id), "\n"),
+        flavor = I18n.t("relic." .. id .. ".flavor"),
+        band = rc and rc.band,
+        id = id,
+        t = self.t,
+      }
+      local h = RelicCard.measure(W, cardOpts)
+      local box = { x = 120, y = 38, w = W, h = h }
+      RelicCard.draw(box.x, box.y, box.w, box.h, cardOpts)
+      if opts.glossary then CardGlossary.drawRelic(view, box, id, self.t, { force = true }) end
+      Draw.finish()
+    end,
+  }
+end
+
+function Builders.card_relic_aegis(host) return relicCardStress("aegis") end
+function Builders.card_relic_aegis_glossary(host) return relicCardStress("aegis", { glossary = true }) end
 
 -- FICHE « At command » : survol d'une unité-chef du BOARD -> la fiche montre la ligne « AT COMMAND : <aura> ».
 -- On pose un galvanizer (porte commandBonus) en case 4 et le curseur dessus.
@@ -255,16 +339,15 @@ function Builders.runover(host)
   return Runover.new(Palette, VW, VH, host, { result = "win", run = host.run })
 end
 
--- GRIMOIRE : codex persistant POKÉDEX (grille + filtres + fiche au survol). refresh() relit l'état connu/vu.
--- Pour la capture : onglet BESTIAIRE -> on voit (1) les chips de filtre TYPE *et* TIER, (2) le bord de chaque
--- case TEINTÉ par le tier (comme les cartes shop), (3) la FICHE au survol. On POSE LE CURSEUR sur une case du
--- TIER LE PLUS HAUT révélé (bord violet/or + halo) pour PROUVER le color-codage le plus vif dans le png.
-function Builders.grimoire(host)
+-- GRIMOIRE : codex persistant en deux colonnes. Pour la capture : onglet BESTIAIRE, entrée de haut tier
+-- sélectionnée, fiche fixe à droite au niveau III. Full-unlock DEV pour ne pas dépendre de la sauvegarde.
+local function makePinnedGrimoire(host, opts)
+  opts = opts or {}
+  local Dev = require("src.core.dev")
+  Dev._fullUnlock = true
   local s = GrimoireS.new(Palette, VW, VH, host)
   if s.refresh then s:refresh() end
   if s.setTab then s:setTab("bestiary") end -- onglet BESTIAIRE (là où se lit la RARETÉ par couleur de tier)
-  -- pose le curseur (espace DESIGN) au centre d'une case révélée de RANG ÉLEVÉ et VISIBLE (sous le pli de scroll)
-  -- pour déclencher la fiche ET montrer un bord de tier saturé. La grille est triée par tier ascendant.
   if s.cells and #s.cells > 0 then
     local target, bestRank = nil, -1
     for i = 1, #s.cells do
@@ -280,10 +363,15 @@ function Builders.grimoire(host)
     local x, y = s:cellOrigin(target)
     s.hover = target
     s.mx, s.my = x + 138 / 2, y + 92 / 2 -- centre de la vignette (espace design)
-    -- le harness ne passe pas par mousemoved ; on pose mx/my en design directement (la fiche lit mx/my design).
+    s:selectCell(target)
+    s.selectedLevel = opts.level or 3
   end
+  s.forceKeywordGlossary = opts.glossary == true
   return s
 end
+
+function Builders.grimoire(host) return makePinnedGrimoire(host) end
+function Builders.grimoire_glossary(host) return makePinnedGrimoire(host, { glossary = true, level = 3 }) end
 
 -- GRIMOIRE_RELICS : même codex, onglet RELIQUES -> grille d'ICÔNES ANIMÉES (RelicAnim) + fiche de relique
 -- ANIMÉE au survol. Force le full-unlock (toutes révélées) pour juger TOUTES les icônes 40×40 dans la grille.
@@ -346,13 +434,16 @@ end
 local M = {}
 
 -- Liste des noms de scènes capturables (ordre stable, pour --shoot=all et les messages d'erreur).
-M.names = { "menu", "build", "combat", "combat_react", "summary", "relicpick", "runover", "grimoire", "grimoire_relics",
+M.names = { "menu", "build", "combat", "combat_react", "summary", "relicpick", "runover", "grimoire", "grimoire_glossary", "grimoire_relics",
   "grimoire_bestiary",
-  "gallery", "designsystem", "build_relic_hover", "system", "settings",
+  "gallery", "designsystem", "build_relic_hover", "build_freeze", "system", "settings",
   "anim_attack", "anim_death", "anim_hurt",
   "combat_commander",
   "commander_empty", "commander_filled", "commander_hover", "commander_offer", "commander_refuse",
-  "commander_fiche", "commander_fiche_none" }
+  "commander_spore_keywords", "commander_fiche", "commander_fiche_none",
+  "card_ember_sac", "card_wither_bloom", "card_wither_bloom_glossary",
+  "card_plague_pyre", "card_plague_pyre_glossary",
+  "card_relic_aegis", "card_relic_aegis_glossary" }
 
 -- Renvoie la fabrique d'une scène nommée (ou nil si inconnue).
 function M.builder(name)

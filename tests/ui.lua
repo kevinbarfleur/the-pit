@@ -11,6 +11,9 @@ local Theme = require("src.ui.theme")
 local Frame = require("src.ui.frame")
 local Chip = require("src.ui.chip")
 local Keywords = require("src.ui.keywords")
+local TagGlossary = require("src.ui.tagglossary")
+local MechanicsText = require("src.ui.mechanics_text")
+local Units = require("src.data.units")
 local Forge = require("src.ui.forge")
 local Layout = require("src.ui.layout")
 
@@ -54,10 +57,94 @@ local ok, err = pcall(function()
   assert(#Keywords.applied({}) == 0, "unite sans effets -> aucune affliction")
   assert(#Keywords.applied(nil) == 0, "nil -> aucune affliction (pas de crash)")
 
+  -- ── Keywords TAGS : registre generalise + tokens inline + glossary smoke ──
+  assert(Keywords.tag("execute") and Keywords.tag("execute").category == "offense", "tag offense present")
+  assert(Keywords.tagName("summon") == "SPAWN", "tagName i18n")
+  assert(Keywords.tagBlurb("shield") ~= "", "tagBlurb i18n")
+  assert(Keywords.tagColor("type_arcane") == Theme.types.arcane.color, "tagColor type -> Theme.types")
+  local runs = Keywords.inlineRuns("Its bite [poison|poisons] through [shield].", Theme.c.ink2)
+  assert(#runs == 5, "inlineRuns : texte + 2 tags")
+  assert(runs[2].text == "poisons" and runs[2].tag == "poison", "inlineRuns : label custom")
+  assert(runs[4].text == "SHIELD" and runs[4].tag == "shield", "inlineRuns : label i18n")
+  assert(Keywords.plainText("[poison] and [shield|armor]") == "POISON and armor", "plainText : tokens resolus")
+  local richTags = Keywords.tagsForUnit("plague_bearer")
+  local sawPoison, sawContagion = false, false
+  for _, id in ipairs(richTags) do
+    if id == "poison" then sawPoison = true end
+    if id == "contagion" then sawContagion = true end
+  end
+  assert(sawPoison and sawContagion, "tagsForUnit : poison + contagion")
+  local sporeNormal = Keywords.tagsForUnit("spore_tick")
+  local sporeCommand = Keywords.tagsForUnit("spore_tick", { context = "commander" })
+  local nPoison, nHaste, nCommander = false, false, false
+  for _, id in ipairs(sporeNormal) do if id == "poison" then nPoison = true elseif id == "haste" then nHaste = true elseif id == "commander" then nCommander = true end end
+  assert(nPoison and not nHaste and not nCommander, "tagsForUnit normal : poison oui, command/haste caches")
+  local cPoison, cHaste, cCommander = false, false, false
+  for _, id in ipairs(sporeCommand) do if id == "poison" then cPoison = true elseif id == "haste" then cHaste = true elseif id == "commander" then cCommander = true end end
+  assert(cHaste and cCommander and not cPoison, "tagsForUnit commander : command/haste oui, passif poison cache")
+  local noSyn = Keywords.inlineRuns("The whole pit strikes faster.", Theme.c.ink2, { haste = true })
+  for _, r in ipairs(noSyn) do assert(r.tag ~= "haste", "inlineRuns : synonymes interdits, faster != haste") end
+  local exactRuns = Keywords.inlineRuns("Gain Haste.", Theme.c.ink2, { haste = true })
+  local sawExactHaste = false
+  for _, r in ipairs(exactRuns) do if r.tag == "haste" then sawExactHaste = true end end
+  assert(sawExactHaste, "inlineRuns : seul le terme canonique Haste tague")
+
+  local sporeBoard = table.concat(MechanicsText.unitLines("spore_tick"), " ")
+  local sporeCmd = table.concat(MechanicsText.commandLines("spore_tick"), " ")
+  assert(sporeBoard:find("%[poison|Poison%]"), "MechanicsText board : Spore Tick dit Poison")
+  assert(not sporeBoard:lower():find("venom", 1, true), "MechanicsText board : pas de synonyme venom")
+  assert(sporeCmd:find("%[haste|Haste%]"), "MechanicsText command : Spore Tick dit Haste")
+  assert(not sporeCmd:lower():find("faster", 1, true), "MechanicsText command : pas de synonyme faster")
+  local witherBlocks = MechanicsText.unitBlocks("wither_bloom")
+  assert(#witherBlocks == 1 and witherBlocks[1].trigger == "ON HIT", "MechanicsText blocks : Withering fusionne les on-hit")
+  assert(#witherBlocks[1].lines >= 5, "MechanicsText blocks : toutes les lignes on-hit restent presentes")
+  local function hasTrigger(blocks, trigger)
+    for _, b in ipairs(blocks or {}) do if b.trigger == trigger then return true, b end end
+    return false, nil
+  end
+  local okBurnDeath, burnDeath = hasTrigger(MechanicsText.unitBlocks("plague_pyre"), "BURNED DEATH")
+  assert(okBurnDeath, "MechanicsText death clarity : plague_pyre = BURNED DEATH, pas DEATH/KILL")
+  assert(table.concat(burnDeath.lines, " "):find("dead enemy", 1, true), "MechanicsText death clarity : propagation precise le mort ennemi")
+  assert(hasTrigger(MechanicsText.unitBlocks("blight_spreader"), "ROTTED DEATH"), "MechanicsText death clarity : rot spread = ROTTED DEATH")
+  assert(hasTrigger(MechanicsText.unitBlocks("brood_mother"), "FAINT"), "MechanicsText death clarity : summon self-death = FAINT")
+  assert(hasTrigger(MechanicsText.unitBlocks("carrion_pecker"), "ON KILL"), "MechanicsText death clarity : heal_on_kill = ON KILL")
+  assert(hasTrigger(MechanicsText.unitBlocks("bone_harvest"), "ALLY DEATH"), "MechanicsText death clarity : scavenge = ALLY DEATH")
+  local frenzyTrigger = MechanicsText.extractTrigger(table.concat(MechanicsText.relicLines("feeding_frenzy"), "\n"))
+  assert(frenzyTrigger == "ENEMY DEATH", "MechanicsText relic clarity : feeding_frenzy = ENEMY DEATH")
+  local cmdBlock = MechanicsText.commandBlock("venom_censer")
+  assert(cmdBlock and cmdBlock.trigger == "COMMAND", "MechanicsText commandBlock : trigger COMMAND")
+  assert(not cmdBlock.lines[1]:find("%[commander|Command%] %-", 1), "MechanicsText commandBlock : pas de prefixe redondant")
+  local function setOf(list)
+    local s = {}
+    for _, id in ipairs(list) do s[id] = true end
+    return s
+  end
+  local function assertLineTagsActive(lines, active, label)
+    for _, line in ipairs(lines) do
+      for id in line:gmatch("%[([%w_]+)|") do
+        assert(active[id], label .. " mentionne un tag inactif: " .. id .. " dans " .. line)
+      end
+    end
+  end
+  for id, U in pairs(Units) do
+    if type(U) == "table" and U.id then
+      local allText = table.concat(MechanicsText.unitLines(id), " ") .. " " .. table.concat(MechanicsText.commandLines(id), " ")
+      assert(not allText:find("Mechanic pending", 1, true), "MechanicsText couvre toutes les ops de " .. id)
+      assertLineTagsActive(MechanicsText.unitLines(id), setOf(Keywords.tagsForUnit(id)), "board " .. id)
+      assertLineTagsActive(MechanicsText.commandLines(id), setOf(Keywords.tagsForUnit(id, { context = "commander" })), "command " .. id)
+    end
+  end
+  local box = TagGlossary.draw(nil, { x = 900, y = 40, w = 248, h = 300 }, "plague_bearer", 0)
+  assert(box and box.w > 0 and box.h > 0, "TagGlossary.draw : smoke + box")
+  local cbox = TagGlossary.draw(nil, { x = 900, y = 40, w = 248, h = 300 }, "spore_tick", 0,
+    { tagOpts = { context = "commander" } })
+  assert(cbox and cbox.w > 0 and cbox.h > 0, "TagGlossary.draw : command context smoke")
+
   -- ── Icône bakée (mock : image stub mais dimensions reelles de la grille) ──
   local ic = Keywords.icon("burn")
   assert(ic and ic.w > 0 and ic.h > 0, "icone burn bakee avec dimensions")
   assert(Keywords.icon("burn") == ic, "bake memoise (meme objet)")
+  assert(Keywords.icon("haste") and Keywords.icon("commander"), "icones pour tags non-affliction")
   assert(Keywords.icon("pas_une_affliction") == nil, "cle inconnue -> nil")
 
   -- ── Frame : smoke des 3 niveaux + retour de la zone interieure ──
@@ -724,7 +811,7 @@ local ok, err = pcall(function()
     mn:update(60)
     assert(sysMode == "settings", "menu : SETTINGS ouvre les settings système")
     for _, it in ipairs(mn.items) do assert(it.id ~= "proving" and it.id ~= "designsystem", "menu : outils dev hors liste principale") end
-    assert(mn.tools and #mn.tools == 2, "menu : outils de travail accessibles en icônes")
+    assert(mn.tools and #mn.tools >= 2, "menu : outils de travail accessibles en icônes")
     local tool = mn.tools[1].rect
     went, sysMode = nil, nil
     mn:mousemoved((tool.x + tool.w / 2) / 4, (tool.y + tool.h / 2) / 4)

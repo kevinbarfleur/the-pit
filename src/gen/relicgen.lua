@@ -548,6 +548,10 @@ local VIS = {
   -- siege en fer, distinct du whetstone par la palette). Append-only avec Relics.order (reconciliation 1:1).
   reapers_scythe   = { m = "ribs",      pal = "PALE",   anim = { "mist" } },             -- le faucheur d'equipe (os, brume froide)
   siege_hammer     = { m = "whetstone", pal = "IRON",   anim = { "spark" } },            -- le marteau de siege (fer lourd, etincelle d'impact)
+  -- W5/W8 - positionnement + boutique : motifs existants, réconciliation 1:1 avec Relics.order.
+  rear_standard    = { m = "banner",    pal = "IRON",   anim = { "sway" } },
+  front_lance      = { m = "nail",      pal = "PALE",   anim = { "spark" } },
+  frost_seal       = { m = "letter",    pal = "PALE",   anim = { "sealpulse" }, seal = "SHADOW" },
 }
 RelicGen.VIS = VIS
 RelicGen.PAL = PAL
@@ -681,6 +685,8 @@ RelicGen.order = {
   "zenith_stone", "forked_echo", "link_cable",
   -- W4 - axe tank/removal/execution (finish d'equipe + anti-mur ; plan big-update §AXE 7)
   "reapers_scythe", "siege_hammer",
+  -- W5/W8 - positionnement + boutique
+  "rear_standard", "front_lance", "frost_seal",
 }
 
 return RelicGen

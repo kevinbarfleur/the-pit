@@ -33,7 +33,9 @@ local Feel = require("src.ui.feel")          -- JUICE : survol (glow/lift) + pre
 local Overlay = require("src.ui.overlay")    -- CHORÉGRAPHIE d'entrée unifiée (voile modéré qui monte + cartes back-ease)
 local SFX = require("src.audio.sfx")         -- SON (Oniric grave) : BIND d'une relique = payoff (success). No-op headless.
 local RelicCard = require("src.ui.relic_card") -- MOLÉCULE carte de relique (fond + icône animée + nom + effet + flavor)
+local CardGlossary = require("src.ui.card_glossary")
 local Relics = require("src.data.relics")    -- pour le PALIER de nature (band -> couleur de carte Argent/Or/Prismatique)
+local MechanicsText = require("src.ui.mechanics_text")
 local RunState = require("src.run.state")    -- pour DECLINE_RELIC_GOLD (or accordé au refus)
 local T = require("src.core.i18n").t
 
@@ -88,7 +90,7 @@ function Relicpick.new(palette, vw, vh, host, payload)
   for i, id in ipairs(self.choices) do
     local opts = {
       name = T("relic." .. id .. ".name"),
-      effect = T("relic." .. id .. ".effect"),
+      effect = table.concat(MechanicsText.relicLines(id), "\n"),
       flavor = T("relic." .. id .. ".flavor"),
       fam = RELIC_TYPE[id] or "bone",
       band = Relics[id] and Relics[id].band, -- PALIER de nature -> couleur de carte (Argent/Or/Prismatique)
@@ -189,6 +191,13 @@ function Relicpick:drawOverlay(view)
 
   -- ── CARTES PROPRES (RelicCard) ──
   for i = 1, #self.cards do self:drawCard(i) end
+  do
+    local gi = self.hover or self.sel
+    if gi and self.cards[gi] and self.choices[gi] then
+      CardGlossary.drawRelic(view, self.cards[gi], self.choices[gi], self.t / 60,
+        { force = self.forceKeywordGlossary, scroll = self.tagGlossaryScroll or 0 })
+    end
+  end
 
   -- ── BIND : Button PRIMARY (l'action unique). Actif si une carte est choisie. JUICE via Feel.state. ──
   local ok = self.sel ~= nil

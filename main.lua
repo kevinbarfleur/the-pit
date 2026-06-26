@@ -28,6 +28,8 @@ local Grimoire = require("src.core.grimoire")
 local Dev = require("src.core.dev") -- MODE DEV (cheat) : toggle full-unlock du codex (menu) ; master switch Dev.ENABLED
 local Bestiary = require("src.core.bestiary") -- codex des créatures rencontrées (persistant, full-unlock-aware)
 local Theme = require("src.ui.theme")
+local Draw = require("src.ui.draw")
+local Viewport = require("src.ui.viewport")
 local Feel = require("src.ui.feel") -- FEEDBACK UI global : hover/press/action différée ; reset à l'ouverture système
 local Juice = require("src.ui.juice") -- MOUVEMENT « candy » : screen-shake trauma² + hitstop, piloté au dt MURAL (RENDER pur)
 local Particles = require("src.ui.particles") -- PARTICULES PIXEL bakées (transplant Feel Lab) : explosion de level-up/fusion ; no-op headless
@@ -40,6 +42,64 @@ local FRAME = 60                  -- conversion dt(s) -> "frames" pour l'horloge
 local canvas
 local postfx                      -- SURCOUCHE CAUCHEMARDESQUE (post-fx RENDER-pur ; nil/inerte en headless)
 local view = { scale = 1, ox = 0, oy = 0 }
+
+local function updateView(sw, sh)
+  return Viewport.update(view, VW, VH, sw, sh)
+end
+
+local function bleedMode(name)
+  if name == "menu" then return "menu" end
+  if name == "combat" then return "combat" end
+  if name == "relicpick" then return "relic" end
+  if name == "runover" then return "runover" end
+  if name == "grimoire" or name == "designsystem" then return "grimoire" end
+  return "build"
+end
+
+local function drawBleedBackground(scene, name)
+  if not (scene and view.hasBleed and view.bleed) then return end
+  Draw.begin(view.bleed)
+  if scene.nightmareBg then
+    if name == "build" or name == "inspect" then
+      scene.nightmareBg:drawField(0, 0, Draw.W, Draw.H)
+    else
+      scene.nightmareBg:draw(0, 0, Draw.W, Draw.H)
+    end
+  elseif scene.ambient then
+    scene.ambient:draw(bleedMode(name))
+  else
+    local c = Theme.c
+    Draw.rect(0, 0, Draw.W, Draw.H, c and c.void or { 0.02, 0.012, 0.03, 1 })
+  end
+  Draw.finish()
+end
+
+local function drawGutterChrome(name)
+  if not (view.hasBleed and view.extra and love and love.graphics) then return end
+  if name ~= "build" and name ~= "inspect" then return end
+  local c = Theme.c
+  local topH = view.extra.t or 0
+  local bottomH = view.extra.b or 0
+  local sw, sh = view.screenW or 0, view.screenH or 0
+  if topH > 0 then
+    love.graphics.setColor(0x12 / 255, 0x0d / 255, 0x08 / 255, 0.98)
+    love.graphics.rectangle("fill", 0, 0, sw, topH + 1)
+    if c and c.iron then
+      love.graphics.setColor(c.iron[1], c.iron[2], c.iron[3], 0.95)
+      love.graphics.rectangle("fill", 0, topH, sw, 1)
+    end
+  end
+  if bottomH > 0 then
+    local y = sh - bottomH
+    love.graphics.setColor(0x0a / 255, 0x07 / 255, 0x10 / 255, 0.98)
+    love.graphics.rectangle("fill", 0, y, sw, bottomH)
+    if c and c.brassS then
+      love.graphics.setColor(c.brassS[1], c.brassS[2], c.brassS[3], 0.25)
+      love.graphics.rectangle("fill", 0, y, sw, 1)
+    end
+  end
+  love.graphics.setColor(1, 1, 1, 1)
+end
 
 -- Mini state-machine : build <-> combat, enrobée par la méta de RUN (host.run). Une scène demande
 -- une transition via host.goto(name, payload). La phase build est PERSISTANTE sur tout le run (le
@@ -303,11 +363,14 @@ end
 local function tryExport(args)
   if not args then return false end
   local doBestiary, shoot = false, nil
+  local shootW, shootH
   for _, a in ipairs(args) do
     if a == "--export-bestiary" then doBestiary = true
-    else
-      local name = type(a) == "string" and a:match("^%-%-shoot=(.+)$")
+    elseif type(a) == "string" then
+      local name = a:match("^%-%-shoot=(.+)$")
       if name then shoot = name end
+      local w, h = a:match("^%-%-shoot%-size=(%d+)x(%d+)$")
+      if w and h then shootW, shootH = tonumber(w), tonumber(h) end
     end
   end
   if not doBestiary and not shoot then return false end
@@ -332,7 +395,7 @@ local function tryExport(args)
         print("[export] shoot: UNKNOWN scene '" .. tostring(name) .. "' (known: " .. table.concat(Scenes.names, ", ") .. ")")
         return
       end
-      local ok, res = pcall(Export.shoot, name, builder)
+      local ok, res = pcall(Export.shoot, name, builder, { w = shootW, h = shootH })
       if ok then print(string.format("[export] shoot %s -> %s (save dir: %s)", name, res, love.filesystem.getSaveDirectory()))
       else print("[export] shoot " .. name .. " FAILED: " .. tostring(res)) end
     end
@@ -388,10 +451,8 @@ function love.draw()
   -- Le texte d'UI reste NET (rasterisé à la résolution native, cf. Draw/Theme.fontNative) ; le monde pixel est
   -- blité à ce scale (léger non-entier seulement hors multiples exacts de 320×180 -> mais fini les bandes noires).
   local sw, sh = love.graphics.getDimensions()
-  local scale = math.max(1, math.min(sw / VW, sh / VH))
-  view.scale = scale
-  view.ox = math.floor((sw - VW * scale) / 2)
-  view.oy = math.floor((sh - VH * scale) / 2)
+  updateView(sw, sh)
+  local scale = view.scale
 
   -- 0bis. SURCOUCHE CAUCHEMARDESQUE : on rend TOUTE la frame dans un canvas à la RÉSOLUTION NATIVE (sw,sh),
   -- puis on le blit 1:1 à travers le shader (endFrame) -> ZÉRO rééchantillonnage, le texte reste net. Si la
@@ -405,6 +466,8 @@ function love.draw()
   -- Cible à restaurer après les passes monde (un setCanvas() nu retournerait à l'écran, court-circuitant la
   -- capture). fxCanvas = le canvas natif si la surcouche est engagée, sinon nil (== écran : comportement par défaut).
   local fxCanvas = postfx and postfx:currentCanvas() or nil
+  drawBleedBackground(scene, host.name)
+  drawGutterChrome(host.name)
 
   -- SCREEN-SHAKE (juice trauma²) : on avance Juice au dt MURAL (1×/frame réelle, JAMAIS gelé par le hitstop)
   -- puis on ENROBE scène + monde + chrome d'un transform translate/rotate autour du CENTRE écran (comme

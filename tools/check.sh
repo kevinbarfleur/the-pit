@@ -58,6 +58,18 @@ luajit tests/dot_family.lua
 echo "== i18n (multilangue : interpolation + fallback + couverture anglaise) =="
 luajit tests/i18n.lua
 
+echo "== tags (keywords mecaniques : derivation pure + couverture roster) =="
+luajit tests/tags.lua
+
+echo "== unit_resolver (source unique niveau/stats/effects) =="
+luajit tests/unit_resolver.lua
+
+echo "== effect_audit (facts/tags/contexte/level deltas) =="
+luajit tests/effect_audit.lua
+
+echo "== coherence (graphe d'intentions : synergies/positions/economie) =="
+luajit tests/coherence.lua
+
 echo "== commanders (tout le roster commande : aura resolue contre le moteur + i18n complete) =="
 luajit tests/commanders.lua
 
@@ -141,6 +153,9 @@ luajit tests/scenarios.lua
 
 echo "== ui (fondation visuelle : Frame bevel/gilded/etats + Chip + Keywords afflictions + Theme.state) =="
 luajit tests/ui.lua
+
+echo "== viewport (responsive : safe-area 16:9 + fond cover) =="
+luajit tests/viewport.lua
 
 if command -v luacheck >/dev/null 2>&1; then
   echo "== luacheck =="

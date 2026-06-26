@@ -20,7 +20,8 @@ Cite la source quand un point n'est pas trivial. Une API non vérifiée est un b
   puis transformée via la matrix stack `push/translate/rotate/scale/translate(-pivot)/draw/pop`.
 - **Déterminisme** : boucle à pas fixe (`love.run` accumulateur) + RNG seedé
   (`love.math.newRandomGenerator`), jamais `math.random` global pour la simulation.
-- **Rendu** : monde → canvas virtuel 320×180 → blit scale ENTIER ; UI texte en réso native.
+- **Rendu** : suivre `src/ui/viewport.lua` et la politique responsive actuelle ; préserver le nearest,
+  les coords nettes et les safe areas. Ne réintroduis pas un letterbox integer-only sans décision explicite.
 - **Dépendances minimales** (zéro lib pour l'instant ; éviter `anim8`).
 - Style : un module = une table retournée ; convention parts `head/torso/armBack/armFront/weapon/legs/tail` ; commentaires en français, concis, qui expliquent le *pourquoi*.
 

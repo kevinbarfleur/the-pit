@@ -39,8 +39,9 @@ Sources : [love.run](https://love2d.org/wiki/love.run) · [Config_Files](https:/
   flou bilinéaire). Par texture : `Texture:setFilter("nearest","nearest")`.
 - `love.graphics.setLineStyle("rough")`, `setLineWidth(1)`. NB : taille points/lignes en pixels,
   **non** affectée par `scale` (11.0) → préférer `rectangle("fill",…)` pour des cellules.
-- **Canvas virtuel scalé en entier** (pattern recommandé) : rendre le monde dans un Canvas basse
-  réso, puis `draw` avec un facteur **entier** (`math.floor`) et offsets de letterbox entiers.
+- **Viewport** : le pattern canvas basse resolution + scale entier reste une option pixel-perfect,
+  mais le projet actuel utilise un viewport responsive/fill (`src/ui/viewport.lua`) avec safe areas.
+  Ne pas revenir au letterbox integer-only sans decision explicite.
 - `setBackgroundColor`, `setColor`, `clear` : **floats 0..1** (piège de port 11.0).
 
 Sources : [setDefaultFilter](https://love2d.org/wiki/love.graphics.setDefaultFilter) · [setLineStyle](https://love2d.org/wiki/love.graphics.setLineStyle)

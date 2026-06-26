@@ -42,8 +42,9 @@ non vérifiée = un bug latent.
 - Grilles d'icônes data-only : `src/render/affliction_icons.lua`.
 
 ## Contraintes techniques (le cadre dans lequel tu travailles)
-- **Espace DESIGN 1280×720** (= 320×180 ×4) ; l'UI se dessine là puis `Draw.begin(view)` transforme. Tout
-  texte/sprite filtré **nearest**, coords **planchées** (net). Monde basse-réso → blit scale ENTIER.
+- **Espace DESIGN 1280×720** avec viewport responsive (`src/ui/viewport.lua`) ; l'UI se dessine là puis
+  `Draw.begin(view)` transforme. Tout texte/sprite filtré **nearest**, coords **planchées** (net). Ne force
+  pas un letterbox integer-only si le code courant remplit la fenêtre avec safe-area/cover.
 - **Bake une fois, jamais des milliers de `rectangle()`/frame.** La pierre + les runes se bakent ; seul le
   **glow s'anime** (uniform de shader / alpha additif piloté par `dt` et l'état hover/press). 9-slice
   (`love.graphics.newQuad`) pour étirer un cadre baké à une taille arbitraire en restant pixel-perfect.
@@ -53,16 +54,17 @@ non vérifiée = un bug latent.
 - **i18n** : tout texte affiché passe par `i18n.t(key)`. Ajoute les clés dans `src/i18n/en_ext.lua` (fichier
   additif anti-conflit) tant que `en.lua` est édité par d'autres chantiers.
 
-## Bonnes pratiques d'implémentation UI (BIBLE : `docs/research/game-ui-implementation.md`)
+## Bonnes pratiques d'implémentation UI (référence de compat : `docs/research/game-ui-implementation.md`)
 Avant d'intégrer un composant — **surtout** ceux d'un designer externe (souvent « nets/web ») — applique ces règles.
 Détail complet + chiffres + sources dans le guide (résolution · texte · layout/overflow · **feel & impact** · son · shaders) :
 - **Unités virtuelles** : tout en espace design 1280×720 ; **ancrer aux 9 points** (coins/bords/centre) + inset **%**,
-  jamais de position pixel absolue. Monde 320×180 scalé **entier** ; UI/texte en **résolution native** (net).
+  jamais de position pixel absolue. UI/texte en résolution native nette ; la politique responsive actuelle prime
+  sur les anciennes notes integer-only.
 - **Espacement** : une **seule échelle 8pt** (tokens `Theme.sp`, jamais de littéral) ; **plus d'espace autour d'un groupe
   qu'à l'intérieur** ; **3–4 niveaux de hiérarchie** (1 rôle = 1 niveau ; couleur/casse avant taille) ; passe le squint test.
 - **Texte** : composer à **70%** (marge i18n 30%) ; **mesurer (`Font:getWrap`) AVANT de dessiner** ; **overflow par
   contexte** (wrap / ellipsis+tooltip / shrink-to-fit **borné** / scroll+fade), jamais couper en plein mot ; **pixel fonts
-  = nearest + scale ENTIER + positions entières** ; lisible ≥12px pour le contenu, caps courtes seulement (cf. `feedback-legible-font-for-content`).
+  = nearest + positions entières** ; lisible ≥12px pour le contenu, caps courtes seulement (cf. `feedback-legible-font-for-content`).
 - **Scroll/overflow** : **clip + offset + cull + clamp(chaque frame) + thumb** (factoriser un `ScrollView`) ; `setScissor`
   = **px écran hors transform** → reconvertir via `view` (notre `Draw.scissor`). Panneaux **fixe+ancré**, remplissage en flex.
 - ⭐ **Feedback de press IMMÉDIAT (30–85 ms), action DIFFÉRÉE (~100–250 ms)** : squash+flash+son au pointer-DOWN, PUIS

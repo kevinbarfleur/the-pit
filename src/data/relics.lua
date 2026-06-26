@@ -177,6 +177,18 @@ local R = {
   -- one-shot un carry). L'anti-mur accessible (band mid). on_attack percent_hp_strike (rider de la frappe, borné).
   siege_hammer = { id = "siege_hammer", op = "relic_add_effect", tier = 3, band = "mid",
     params = { effect = { trigger = "on_attack", op = "percent_hp_strike", params = { frac = 0.08, cap = 10 } } } },
+
+  -- ── W5 — AXE POSITION / POLARITÉ DIRECTIONNELLE (plan big-update §AXE 5). Ces reliques utilisent les
+  -- nouveaux targets relatifs (ahead/behind) : chaque unité du board sert de source directionnelle et buffe
+  -- l'allié immédiatement devant/derrière elle. Build-résolu, zéro RNG, inerte si aucune cible dans la direction.
+  rear_standard = { id = "rear_standard", op = "relic_aura_stat", tier = 3, band = "mid",
+    params = { stat = "atkInc", target = "behind", value = 0.10 } },
+  front_lance = { id = "front_lance", op = "relic_aura_stat", tier = 3, band = "mid",
+    params = { stat = "dmgReduce", target = "ahead", value = 0.10 } },
+
+  -- ── W8 — ÉCO / TEMPO (Freeze). runOp pur côté RunState : débloque 1 verrou de boutique. R.apply ignore
+  -- volontairement cette relique (hors combat -> golden SIM inchangé).
+  frost_seal = { id = "frost_seal", runOp = "shop_freeze", params = { slots = 1 }, tier = 2, band = "mid" },
 }
 
 R.order = { "bloodstone", "carapace", "aegis", "kings_bowl", "ember_heart", "weeping_nail", "grave_cap",
@@ -193,7 +205,11 @@ R.order = { "bloodstone", "carapace", "aegis", "kings_bowl", "ember_heart", "wee
   -- W3 — axe mimétisme/amplification (méta-multiplicateurs : Zenith / Onsetra / Link-Cable ; plan big-update §AXE 4)
   "zenith_stone", "forked_echo", "link_cable",
   -- W4 — axe tank/removal/exécution (le finish + le %-PV deviennent des axes ; plan big-update §AXE 7)
-  "reapers_scythe", "siege_hammer" }
+  "reapers_scythe", "siege_hammer",
+  -- W5 — axe position/polarité directionnelle (reliques directionnelles)
+  "rear_standard", "front_lance",
+  -- W8 — éco/tempo (Freeze boutique)
+  "frost_seal" }
 
 -- ── relic_aura_stat : BAKE direct d'un CHAMP combat-time sur les specs (plan relics-overhaul §2.0). ──
 -- POINT DUR : applyRelics tourne APRÈS buildComp (qui a déjà baké aura_stat -> spec.atkInc/multicast/…).
@@ -230,9 +246,47 @@ local function resolveRoleSpec(comp, wantFront)
   return best
 end
 
+local function squareCoord(slot)
+  if not slot then return nil, nil end
+  slot = math.floor(slot)
+  if slot < 1 or slot > 9 then return nil, nil end
+  return (slot - 1) % 3, math.floor((slot - 1) / 3)
+end
+
+local function specCoord(spec)
+  if spec.col ~= nil and spec.row ~= nil then return spec.col, spec.row end
+  return squareCoord(spec.slot)
+end
+
+local bakeStat
+
+-- W5 : cible directionnelle relative. Pour une relique, chaque spec non-commandant devient source : la relique
+-- "lit" toute la formation et applique le bonus à l'allié immédiat dans la direction demandée. Si plusieurs
+-- sources pointent la même cible (formes futures), les valeurs se somment comme toute aura_stat.
+local function applyDirectionalAura(comp, target, stat, value)
+  local byKey = {}
+  for _, spec in ipairs(comp) do
+    if not spec.isCommander then
+      local col, row = specCoord(spec)
+      if col and row then byKey[col .. ":" .. row] = spec end
+    end
+  end
+  local dc = (target == "ahead" and 1) or (target == "behind" and -1) or 0
+  local dr = (target == "below" and 1) or (target == "above" and -1) or 0
+  for _, src in ipairs(comp) do
+    if not src.isCommander then
+      local col, row = specCoord(src)
+      if col and row then
+        local dst = byKey[(col + dc) .. ":" .. (row + dr)]
+        if dst and dst ~= src then bakeStat(dst, stat, value) end
+      end
+    end
+  end
+end
+
 -- Bake `value` du `stat` sur UNE spec (champ moteur résolu via STAT_FIELD ; multicast = somme entière, bornée
 -- à la lecture par MULTICAST_MAX comme une aura). Inerte si le stat n'est pas mappé (jamais de crash).
-local function bakeStat(spec, stat, value)
+function bakeStat(spec, stat, value)
   local field = STAT_FIELD[stat]
   if not (spec and field) then return end
   spec[field] = (spec[field] or 0) + value
@@ -248,6 +302,8 @@ function R.apply(comp, relic)
     local stat, target, value = p.stat, p.target or "team", p.value or 0
     if target == "team" then
       for _, spec in ipairs(comp) do bakeStat(spec, stat, value) end
+    elseif target == "ahead" or target == "behind" or target == "above" or target == "below" then
+      applyDirectionalAura(comp, target, stat, value)
     elseif target == "role:front" or target == "role:back" then
       local s = resolveRoleSpec(comp, target == "role:front")
       if s then bakeStat(s, stat, value) end

@@ -84,6 +84,7 @@ local love = {
     newRandomGenerator = newRandomGenerator,
     newTransform = function() return Transform.new() end,
   },
+  keyboard = { isDown = function() return false end },
   mouse = { getPosition = function() return 0, 0 end, isDown = function() return false end },
   timer = { getFPS = function() return 60 end, step = function() return 1 / 60 end, sleep = function() end },
   event = { quit = function() end },

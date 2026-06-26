@@ -395,9 +395,10 @@ do
   -- (b) GOLDEN DE GÉNÉRATION : empreinte stable cross-process (hashId = FNV-1a 5.1-safe, IEEE déterministe).
   -- Re-baseline INTENTIONNEL au PIN (B.2 : la forme passe de hash-dérivée à ancrée-au-nom). Si tu changes un
   -- builder/une palette/un PIN VOLONTAIREMENT, regénère et colle la nouvelle valeur ici.
-  local EXPECTED_GEN = 2109192272 -- re-baseline W4 (2026-06-26) : +5 unités tank/removal/exécution APPEND-ONLY
-  -- (headsman/culler/wallbreaker/siege_titan/reaper_shade). PROUVÉ golden-neutre sur les 99 pré-W4 (le fold des
-  -- 99 = 1055948952 INCHANGÉ, == baseline W3) -> seul l'ajout des 5 nouvelles formes déplace l'empreinte.
+  local EXPECTED_GEN = 3105545850 -- re-baseline W5/W6 (2026-06-26) : +6 unités position/fréquence APPEND-ONLY
+  -- (vanguard_drummer/rear_goad/spine_column/tide_caller_v2/storm_conductor/echo_warden). PROUVÉ golden-neutre
+  -- sur les 104 pré-W5/W6 (fold = 2109192272 INCHANGÉ, == baseline W4) -> seuls les 6 nouveaux sprites déplacent l'empreinte.
+  -- W4 : +5 unités tank/removal/exécution (headsman/culler/wallbreaker/siege_titan/reaper_shade), fold 2109192272.
   -- family/arch = combos primgen ÉPROUVÉS (crane/skullking, colosse/cyclops, golem/sentinel, automate/juggernaut,
   -- spectre/wraith) ; ids uniques -> seed=hashId(id) distinct -> sprites distincts (0 collision sur les 104).
   -- Antérieurs : 1055948952 (W3, +3 mimétisme), 3256988032 (W2, +7 mort&engeance), 541702824 (W1, +6

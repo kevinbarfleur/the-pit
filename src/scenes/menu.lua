@@ -67,8 +67,6 @@ function Menu.new(palette, vw, vh, host)
   self.toolHover = nil
   self.down = false
   Feel.reset() -- repart au repos en (re)entrant dans le menu (survol/press/respiration vierges)
-  -- Toggle MODE DEV (cheat) — coin haut-gauche, présent UNIQUEMENT si Dev.ENABLED (masqué/inerte en release).
-  self.devRect = Dev.ENABLED and { x = 16, y = 14, w = 252, h = 26 } or nil
   return self
 end
 
@@ -100,6 +98,14 @@ function Menu:refreshItems()
     { id = "proving", key = "menu.proving", icon = "sigil", action = function() if self.host.goto then self.host.goto("playground") end end },
     { id = "designsystem", key = "menu.designsystem", icon = "gear", action = function() if self.host.goto then self.host.goto("designsystem") end end },
   }
+  if Dev.ENABLED then
+    self.tools[#self.tools + 1] = {
+      id = "devunlock",
+      key = "menu.dev_unlock",
+      icon = "unlock",
+      action = function() Dev.toggleFullUnlock() end,
+    }
+  end
   self:layout()
 end
 
@@ -310,22 +316,17 @@ function Menu:drawOverlay(view)
   Draw.text(T("menu.relics", { n = inscribed, total = #Relics.order }), 24, 690, c.gold, Theme.label(10))
   Draw.textR(T("menu.tag"), Draw.W - 24, 690, c.ink5, Theme.label(10))
 
-  -- Toggle MODE DEV (coin haut-gauche) : visible seulement si Dev.ENABLED. Libellé en dur (dev-only).
-  if self.devRect then
-    local on, r = Dev.fullUnlock(), self.devRect
-    Draw.rect(r.x, r.y, r.w, r.h, c.panelDeep, on and c.gold or c.hair, 1)
-    Draw.text(on and "[DEV] FULL UNLOCK: ON" or "[DEV] FULL UNLOCK: OFF", r.x + 10, r.y + 7,
-      on and c.goldBright or c.fainter, Theme.label(10))
-  end
-
   for i, tool in ipairs(self.tools or {}) do
     local r = tool.rect
-    Button.icon(r.x, r.y, r.w, tool.icon, { hover = self.toolHover == i })
+    Button.icon(r.x, r.y, r.w, tool.icon, { hover = self.toolHover == i, pressed = tool.id == "devunlock" and Dev.fullUnlock() })
   end
   if self.toolHover and self.tools and self.tools[self.toolHover] then
     local tool = self.tools[self.toolHover]
     local f = Theme.label(9)
     local label = T(tool.key)
+    if tool.id == "devunlock" then
+      label = label .. (Dev.fullUnlock() and " ON" or " OFF")
+    end
     local tw = Draw.textWidth(label, f)
     local x, y = Draw.W - TOOL_MARGIN - tw, TOOL_Y + TOOL_SIZE + 10
     Draw.rect(x - 8, y - 5, tw + 16, 18, c.panelDeep, c.iron, 1)
@@ -356,10 +357,6 @@ function Menu:mousepressed(vx, vy, button)
   if button ~= 1 then return end
   local dx, dy = vx * 4, vy * 4
   self.mx, self.my = dx, dy
-  if self.devRect then -- MODE DEV : clic sur le toggle full-unlock (immédiat, pas une action de navigation)
-    local r = self.devRect
-    if dx >= r.x and dx <= r.x + r.w and dy >= r.y and dy <= r.y + r.h then Dev.toggleFullUnlock(); return end
-  end
   local ti = self:toolAt(dx, dy)
   if ti then
     self.toolHover = ti

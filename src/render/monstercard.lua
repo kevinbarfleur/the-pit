@@ -28,9 +28,14 @@ local Panel = require("src.ui.panel")
 local Badge = require("src.ui.badge")
 local Dividers = require("src.ui.dividers")
 local Keywords = require("src.ui.keywords")
+local MechanicsText = require("src.ui.mechanics_text")
+local MechanicsInline = require("src.ui.mechanics_inline")
 local Chip = require("src.ui.chip")
+local Button = require("src.ui.button")
+local Feel = require("src.ui.feel")
 local Rarity = require("src.gen.rarity")
 local Units = require("src.data.units")
+local UnitResolver = require("src.core.unit_resolver")
 local I18n = require("src.core.i18n")
 local MiniRig = require("src.render.minirig")
 local Critter = require("src.render.critter") -- rendu VIVANT : MÊME créature animée que le board (ailes/yeux/feu)
@@ -41,13 +46,18 @@ local T = I18n.t
 local MonsterCard = {}
 
 -- ── Constantes de mise en page (espace DESIGN, échelle 8pt) ─────────────────────────────────────────
-local W = 248         -- largeur de carte (alignée sur le tooltip propre, §2.14)
-local PAD = 14        -- marge intérieure
+local W = 288         -- carte un peu plus large : les blocs tag+trigger restent lisibles.
+local PAD = 16        -- marge intérieure
 local GAP = 8         -- interbloc (8pt) : chaque bloc respire de la même quantité
 local SECTION_GAP = 12 -- air supplémentaire AUTOUR d'un titre de section (groupe > intérieur)
-local PORTRAIT_H = 76  -- hauteur de la niche du portrait
+local PORTRAIT_H = 86  -- hauteur de la niche du portrait
 local STAT_PADV = 14   -- padding vertical interne de la barre de stats (cf. tooltip)
-local CHIP_H = 18      -- hauteur d'un chip d'affliction
+local CHIP_H = 17      -- hauteur d'un chip d'affliction
+local CHIP_GAP = 5
+local ABILITY_PAD = 8
+local ABILITY_GAP = 8
+local LEVEL_H = 28
+local LEVEL_GAP = 5
 
 -- ── Helpers PURS (transposés depuis build.lua, signatures + comportement INCHANGÉS) ─────────────────
 
@@ -56,25 +66,22 @@ local function afflValue(params)
   if not params then return nil end
   local bits = {}
   local dps = params.dps or params.base
-  if dps then bits[#bits + 1] = tostring(dps) .. " dps" end
+  if dps and tonumber(dps) and tonumber(dps) > 0 then bits[#bits + 1] = tostring(dps) .. " dps" end
   if params.dur then bits[#bits + 1] = string.format("%.0fs", params.dur / 60) end
   if #bits == 0 then return nil end
   return table.concat(bits, " ")
 end
 MonsterCard.afflValue = afflValue
 
+local function cloneUnitForLevel(id, level)
+  return UnitResolver.unitForLevel(id, level)
+end
+MonsterCard.unitAtLevel = cloneUnitForLevel
+
 -- TOKENISATION des valeurs inline (colorer les nombres d'une ligne dans la couleur de l'affliction de
 -- l'unité, sans toucher l'i18n). Un mot est « valeur » s'il commence (ponctuation ouvrante retirée) par un
 -- nombre éventuellement signé. PUR / testable headless.
-local function tokenizeValues(line)
-  local out = {}
-  for word, sp in line:gmatch("(%S+)(%s*)") do
-    local core = word:gsub("^[%(%[%{<\"']+", "")
-    local isVal = core:match("^[%+%-]?%d") ~= nil
-    out[#out + 1] = { text = word, sp = sp, value = isVal }
-  end
-  return out
-end
+local tokenizeValues = MechanicsInline.tokenizeValues
 MonsterCard.tokenizeValues = tokenizeValues
 
 -- ── Sous-rendus (transposés ; restylés au kit propre, signatures conservées) ────────────────────────
@@ -82,35 +89,9 @@ MonsterCard.tokenizeValues = tokenizeValues
 -- LIGNE de description en colorant les VALEURS dans la couleur de l'affliction `aff` + 1re valeur préfixée
 -- de l'icône de l'affliction. Sans affliction -> ligne unie (chemin neutre). PUR-RENDER. (Signature et
 -- comportement INCHANGÉS — tests/ui.lua en dépend ; seules les couleurs/police d'appel changent au-dehors.)
-local function drawDescLine(line, x, y, font, baseCol, aff, maxW)
-  love.graphics.setFont(font)
-  local affCol = aff and Keywords.get(aff)
-  affCol = affCol and affCol.color or nil
-  local icon = aff and Keywords.icon(aff) or nil
-  if not affCol then
-    Draw.text(line, x, y, baseCol, font)
-    return
-  end
-  local cx, cy, fh = x, y, font:getHeight()
-  local roomForIcon = (not maxW) or (font:getWidth(line) + (icon and (icon.w + 2) or 0) <= maxW)
-  local iconUsed = false
-  for _, tok in ipairs(tokenizeValues(line)) do
-    if tok.value then
-      if icon and roomForIcon and not iconUsed then
-        love.graphics.setColor(1, 1, 1, 1)
-        love.graphics.draw(icon.image, math.floor(cx), math.floor(cy + fh / 2 - icon.h / 2), 0, 1, 1)
-        cx = cx + icon.w + 2
-        iconUsed = true
-      end
-      Draw.setColor(affCol)
-    else
-      Draw.setColor(baseCol)
-    end
-    love.graphics.print(tok.text, math.floor(cx), math.floor(cy))
-    cx = cx + font:getWidth(tok.text)
-    if tok.sp ~= "" then cx = cx + font:getWidth(tok.sp) end
-  end
-  love.graphics.setColor(1, 1, 1, 1)
+local function drawDescLine(line, x, y, font, baseCol, aff, maxW, activeTags, t)
+  return MechanicsInline.drawLine(line, x, y, font, baseCol,
+    { aff = aff, maxW = maxW, activeTags = activeTags, t = t })
 end
 MonsterCard.drawDescLine = drawDescLine
 
@@ -197,6 +178,107 @@ local function drawCardStats(id, U, region)
 end
 MonsterCard.drawCardStats = drawCardStats
 
+local function tagChipItems(tags, U, font, t)
+  local valBy = {}
+  for _, e in ipairs(U.effects or {}) do
+    local k = Keywords.opAffliction(e.op)
+    if k and not valBy[k] then valBy[k] = afflValue(e.params) end
+  end
+  local out = {}
+  for _, id in ipairs(tags) do
+    local d = Keywords.tag(id)
+    if d and d.category ~= "type" then
+      out[#out + 1] = { key = id, value = valBy[id], font = font, h = CHIP_H, t = t }
+    end
+  end
+  return out
+end
+
+local function measureChipRows(items, maxW)
+  local rows, cx = 0, 0
+  for _, spec in ipairs(items) do
+    local cw = Chip.width(spec)
+    if cx > 0 and cx + CHIP_GAP + cw > maxW then
+      rows = rows + 1
+      cx = 0
+    end
+    cx = (cx == 0) and cw or (cx + CHIP_GAP + cw)
+  end
+  if cx > 0 then rows = rows + 1 end
+  if rows == 0 then return 0 end
+  return rows * CHIP_H + (rows - 1) * CHIP_GAP
+end
+
+local function drawChipRows(x, y, items, maxW)
+  local cx, cy = x, y
+  local rows = 0
+  for _, spec in ipairs(items) do
+    local cw = Chip.width(spec)
+    if cx > x and cx + CHIP_GAP + cw > x + maxW then
+      rows = rows + 1
+      cx = x
+      cy = cy + CHIP_H + CHIP_GAP
+    end
+    Chip.draw(cx, cy, spec)
+    cx = cx + cw + CHIP_GAP
+  end
+  return (#items > 0) and ((rows + 1) * CHIP_H + rows * CHIP_GAP) or 0
+end
+
+local function prepareAbilityBlocks(rawBlocks, bodyFont, _titleFont, maxW, activeTags)
+  local out = {}
+  local lineH = (bodyFont and bodyFont:getHeight() or 13) + 3
+  for _, block in ipairs(rawBlocks or {}) do
+    local trigger = block.trigger or "PASSIVE"
+    local chipW = MechanicsInline.triggerChipWidth(trigger, bodyFont)
+    local textX = ABILITY_PAD + chipW + 5
+    local bodyW = math.max(32, maxW - ABILITY_PAD - textX)
+    local lines = {}
+    for _, raw in ipairs(block.lines or {}) do
+      for _, line in ipairs(Keywords.wrapInline(raw, bodyFont, bodyW, activeTags)) do
+        lines[#lines + 1] = line
+      end
+    end
+    if #lines == 0 then lines[1] = "" end
+    local h = ABILITY_PAD + #lines * lineH + ABILITY_PAD - 3
+    out[#out + 1] = {
+      trigger = trigger,
+      title = block.title or T("ui.ability"),
+      lines = lines,
+      h = h,
+      lineH = lineH,
+      textX = textX,
+    }
+  end
+  return out
+end
+
+local function measureAbilityBlocks(blocks)
+  local h = 0
+  for i, block in ipairs(blocks or {}) do
+    if i > 1 then h = h + ABILITY_GAP end
+    h = h + block.h
+  end
+  return h
+end
+
+local function drawAbilityBlock(block, x, y, w, fonts, activeTags, t, opts)
+  opts = opts or {}
+  local border = opts.border or C.iron
+  local accent = opts.accent or C.brassD
+  Draw.rect(x, y, w, block.h, C.stone900, border, 1)
+  Draw.setColor(accent, opts.accentAlpha or 0.55)
+  love.graphics.rectangle("fill", x + 1, y + 1, 2, block.h - 2)
+
+  local by = y + ABILITY_PAD
+  MechanicsInline.drawTriggerChip(block.trigger, x + ABILITY_PAD, by, fonts.body)
+  for _, line in ipairs(block.lines) do
+    local tx = x + (block.textX or ABILITY_PAD)
+    drawDescLine(line, tx, by, fonts.body, C.ink2, nil, w - (tx - x) - ABILITY_PAD, activeTags, t)
+    by = by + block.lineH
+  end
+end
+
 -- ── API publique ────────────────────────────────────────────────────────────────────────────────────
 -- MonsterCard.draw(view, palette, id, anchorX, anchorY, t, opts)
 --   view      : vue d'espace-design (clip du portrait). nil = pas de clip (la carte tient quand même).
@@ -208,8 +290,14 @@ MonsterCard.drawCardStats = drawCardStats
 -- Renvoie la boîte { x, y, w, h } posée (utile au caller). nil si l'id est inconnu.
 function MonsterCard.draw(view, palette, id, anchorX, anchorY, t, opts)
   opts = opts or {}
-  local U = Units[id]
+  local U = opts.unit or (opts.level and cloneUnitForLevel(id, opts.level)) or Units[id]
   if not U then return nil end
+  id = U.id or id
+  local tagOpts = opts.tagOpts or {}
+  local commandContext = tagOpts.context == "commander"
+  local visibleTags = Keywords.tagsForUnit(U, tagOpts)
+  local visibleTagSet = {}
+  for _, tid in ipairs(visibleTags) do visibleTagSet[tid] = true end
   local rank = U.rank or 1
   local rich = rank >= 4 -- héros R4-R5 : halo de rareté derrière le portrait
   local rarCol = Rarity.frame(rank)
@@ -220,18 +308,23 @@ function MonsterCard.draw(view, palette, id, anchorX, anchorY, t, opts)
   local idFont = Theme.label(10)                          -- TYPE/famille = voix inscrite (Space Mono)
   local statFont = Theme.value(11)
   local passFont = Theme.value(11)                        -- nom de passif = Space Mono or
-  local descFont = Theme.body(13) or Theme.bodyLight(13)  -- description = prose Spectral LISIBLE
+  local descFont = Theme.body(12) or Theme.bodyLight(12)  -- description = prose Spectral LISIBLE
   local flavFont = Theme.flavor(13) or Theme.bodyItalic(13)
-  local DESC_LINE = (descFont and descFont:getHeight() or 14) + 2
+  local showLevelSelector = opts.levelSelector == true and not commandContext
 
-  local affl = Keywords.applied(U)
-  local primAff = affl[1]
-  local passiveName = T("unit." .. id .. ".passive_name")
-  local passiveDesc = T("unit." .. id .. ".passive_desc")
-  local hasPassiveName = passiveName ~= ("unit." .. id .. ".passive_name")
-  local descLines = {}
-  if descFont then local _w; _w, descLines = descFont:getWrap(passiveDesc, innerW) end
-  local nDescLines = math.max(1, #descLines)
+  local affl = commandContext and {} or Keywords.applied(U)
+  local chipFont = Theme.label(8)
+  local abilityChipItems = commandContext and {} or tagChipItems(visibleTags, U, chipFont, t)
+  if #abilityChipItems == 0 then
+    for _, k in ipairs(affl) do
+      abilityChipItems[#abilityChipItems + 1] = { key = k, font = chipFont, h = CHIP_H, t = t }
+    end
+  end
+  local abilityChipH = measureChipRows(abilityChipItems, innerW)
+  local abilityBlocks = {}
+  if not commandContext and descFont then
+    abilityBlocks = prepareAbilityBlocks(MechanicsText.unitBlocks(U), descFont, passFont, innerW, visibleTagSet)
+  end
   local flavorKey = "unit." .. id .. ".flavor"
   local hasFlavor = I18n.has(flavorKey)
 
@@ -239,19 +332,23 @@ function MonsterCard.draw(view, palette, id, anchorX, anchorY, t, opts)
   -- on affiche son aura EN VALEURS CONCRÈTES (le i18n command_desc, déjà rédigé sans %). Sinon « Cannot command »
   -- (grisé, honnête — sous-set curé). Mesuré comme un BANDEAU encastré (titre « AT COMMAND » + corps enroulé). ──
   local canCmd = U.commandBonus ~= nil
-  local cmdDescKey = "unit." .. id .. ".command_desc"
-  local cmdDesc = canCmd and I18n.has(cmdDescKey) and T(cmdDescKey) or nil
   local cmdHeadFont = Theme.label(8)            -- « AT COMMAND » (Space Mono, kicker doré)
-  local cmdBodyFont = Theme.body(12) or descFont -- corps lisible (Spectral)
-  local cmdLines = {}
-  if cmdDesc and cmdBodyFont then local _w2; _w2, cmdLines = cmdBodyFont:getWrap(cmdDesc, innerW - 16) end
+  local cmdBodyFont = Theme.body(11) or descFont -- corps lisible (Spectral)
+  local commandTags = Keywords.tagsForUnit(U, { context = "commander" })
+  local commandTagSet = {}
+  for _, tid in ipairs(commandTags) do commandTagSet[tid] = true end
+  local cmdPrepared = nil
+  if canCmd and cmdBodyFont then
+    cmdPrepared = prepareAbilityBlocks({ MechanicsText.commandBlock(U) }, cmdBodyFont, cmdHeadFont, innerW, commandTagSet)[1]
+  end
+  local showKeywordHint = opts.keywordHint == true and #visibleTags > 0
+  local keywordHintFont = Theme.label(8)
 
   -- mesure des hauteurs de bloc
   local hName = (nameFont and nameFont:getHeight()) or 16
   local hIdent = (idFont and idFont:getHeight()) or 12
   local hSection = 12 -- hauteur d'un Dividers.text (label inscrit 10px)
   local hStatBar = ((statFont and statFont:getHeight()) or 12) + STAT_PADV
-  local hPassName = (passFont and passFont:getHeight()) or 12
   local hFlav = (flavFont and flavFont:getHeight() or 14)
 
   -- pile verticale (le même rythme qu'au dessin) -> hauteur totale CONTENUE.
@@ -259,17 +356,18 @@ function MonsterCard.draw(view, palette, id, anchorX, anchorY, t, opts)
   h = h + hName                                     -- en-tête (nom + coût)
   h = h + GAP + PORTRAIT_H                           -- portrait (niche)
   h = h + GAP + hIdent                               -- identité (pip · type · famille · rareté)
+  if showLevelSelector then h = h + GAP + LEVEL_H end
   h = h + SECTION_GAP + hSection + GAP + hStatBar    -- titre STATS + barre
-  h = h + SECTION_GAP + hSection                     -- titre ABILITIES
-  if #affl > 0 then h = h + GAP + CHIP_H end          -- rangée de chips
-  if hasPassiveName then h = h + GAP + hPassName end  -- nom de passif
-  h = h + GAP + nDescLines * DESC_LINE                -- description
+  if not commandContext then
+    h = h + SECTION_GAP + hSection                    -- titre ABILITIES
+    if abilityChipH > 0 then h = h + GAP + abilityChipH end
+    h = h + GAP + measureAbilityBlocks(abilityBlocks)
+  end
   -- C4 : bandeau « AT COMMAND » (aura de chef) OU mention « Cannot command » (grisé) — toujours présent.
   local cmdHeadH = (cmdHeadFont and cmdHeadFont:getHeight()) or 10
-  local cmdBodyLineH = (cmdBodyFont and cmdBodyFont:getHeight() or 13) + 1
   local cmdBarH
-  if cmdDesc then
-    cmdBarH = 8 + cmdHeadH + 3 + math.max(1, #cmdLines) * cmdBodyLineH + 8
+  if canCmd then
+    cmdBarH = cmdPrepared and cmdPrepared.h or (8 + cmdHeadH + 8)
   else
     cmdBarH = 8 + cmdHeadH + 8 -- « Cannot command » sur une ligne (grisé)
   end
@@ -278,14 +376,27 @@ function MonsterCard.draw(view, palette, id, anchorX, anchorY, t, opts)
     local _, fLines = flavFont:getWrap(T(flavorKey), innerW)
     h = h + SECTION_GAP + #fLines * (hFlav + 1)
   end
+  if showKeywordHint and keywordHintFont then
+    h = h + SECTION_GAP + keywordHintFont:getHeight()
+  end
   h = h + PAD
 
   -- ── 2) POSITION : suit l'ancre (curseur), rebond sur les bords (jamais hors écran). ──
-  local x, y = anchorX + 18, anchorY + 10
-  if x + W > Draw.W then x = anchorX - W - 18 end
-  if x < 4 then x = 4 end
-  if y + h > Draw.H then y = Draw.H - h - 6 end
-  if y < 4 then y = 4 end
+  local x, y
+  if opts.x or opts.y then
+    x = opts.x or (anchorX + 18)
+    y = opts.y or (anchorY + 10)
+    if x + W > Draw.W then x = Draw.W - W - 4 end
+    if x < 4 then x = 4 end
+    if y + h > Draw.H then y = Draw.H - h - 6 end
+    if y < 4 then y = 4 end
+  else
+    x, y = anchorX + 18, anchorY + 10
+    if x + W > Draw.W then x = anchorX - W - 18 end
+    if x < 4 then x = 4 end
+    if y + h > Draw.H then y = Draw.H - h - 6 end
+    if y < 4 then y = 4 end
+  end
   x, y = math.floor(x), math.floor(y)
 
   -- ── 3) FOND : Panel propre (dégradé sombre + liseré iron + éclat haut ; accent de rareté pour héros). ──
@@ -333,7 +444,33 @@ function MonsterCard.draw(view, palette, id, anchorX, anchorY, t, opts)
   for k = 1, rank do
     Badge.diamond(rx0 + (k - 1) * DSP, midI, 3, rarCol, C.brass, C.brassS)
   end
-  cy = cy + hIdent + SECTION_GAP
+  cy = cy + hIdent
+
+  local levelRects = nil
+  if showLevelSelector then
+    cy = cy + GAP
+    levelRects = {}
+    local curLevel = math.max(1, math.min(3, tonumber(opts.level or U.level or 1) or 1))
+    local bw = math.floor((innerW - LEVEL_GAP * 2) / 3)
+    local lx = bodyX
+    for lvl = 1, 3 do
+      local active = lvl == curLevel
+      local fid = (opts.levelFeelPrefix or "monster.level") .. "." .. lvl
+      local fs = Feel.state(fid)
+      local label = ({ "I", "II", "III" })[lvl]
+      local rect = Button.draw(lx, cy, bw, LEVEL_H, "secondary", label, {
+        hover = active or (opts.levelHover == lvl),
+        feel = fs,
+        id = fid,
+      })
+      if active then Draw.rect(rect.x, rect.y, rect.w, rect.h, nil, rarCol, 1) end
+      levelRects[lvl] = rect
+      lx = lx + bw + LEVEL_GAP
+    end
+    cy = cy + LEVEL_H
+  end
+
+  cy = cy + SECTION_GAP
 
   -- (d) titre de section STATS (label inscrit entre filets iron).
   Dividers.text(x + W / 2, cy, innerW, "STATS")
@@ -343,36 +480,25 @@ function MonsterCard.draw(view, palette, id, anchorX, anchorY, t, opts)
   local statH = drawCardStats(id, U, { x = bodyX, y = cy, w = innerW, h = hStatBar })
   cy = cy + statH + SECTION_GAP
 
-  -- (f) titre de section ABILITIES.
-  Dividers.text(x + W / 2, cy, innerW, "ABILITIES")
-  cy = cy + hSection
+  if not commandContext then
+    -- (f) titre de section ABILITIES.
+    Dividers.text(x + W / 2, cy, innerW, "ABILITIES")
+    cy = cy + hSection
 
-  -- (g) CAPACITÉS : chips d'affliction (icône + nom + valeur) + nom de passif (or) + description lisible.
-  if #affl > 0 then
-    cy = cy + GAP
-    local fontChip = Theme.label(9)
-    local valBy = {}
-    for _, e in ipairs(U.effects or {}) do
-      local k = Keywords.opAffliction(e.op)
-      if k and not valBy[k] then valBy[k] = afflValue(e.params) end
+    -- (g) CAPACITÉS : jetons de mecanique, puis blocs trigger + nom + texte explicatif.
+    if abilityChipH > 0 then
+      cy = cy + GAP
+      cy = cy + drawChipRows(bodyX, cy, abilityChipItems, innerW)
     end
-    local chx = bodyX
-    for _, k in ipairs(affl) do
-      local w2 = Chip.draw(chx, cy, { key = k, value = valBy[k], font = fontChip, h = CHIP_H })
-      chx = chx + w2 + 5
-      if chx > bodyX + innerW - 24 then break end
+    if #abilityBlocks > 0 then
+      cy = cy + GAP
+      for i, block in ipairs(abilityBlocks) do
+        if i > 1 then cy = cy + ABILITY_GAP end
+        drawAbilityBlock(block, bodyX, cy, innerW, { body = descFont, title = passFont }, visibleTagSet, t,
+          { border = C.iron, accent = C.stone600, accentAlpha = 0.8 })
+        cy = cy + block.h
+      end
     end
-    cy = cy + CHIP_H
-  end
-  if hasPassiveName then
-    cy = cy + GAP
-    Draw.text(passiveName, bodyX, cy, C.gold, passFont)
-    cy = cy + hPassName
-  end
-  cy = cy + GAP
-  for _, line in ipairs(descLines) do
-    drawDescLine(line, bodyX, cy, descFont, C.ink2, primAff, innerW)
-    cy = cy + DESC_LINE
   end
 
   -- (g-bis) C4 — BANDEAU « AT COMMAND » : l'aura de chef de cette unité (commandBonus), en valeurs concrètes.
@@ -380,22 +506,14 @@ function MonsterCard.draw(view, palette, id, anchorX, anchorY, t, opts)
   -- board (« troupier ≠ leader »). Sans commandBonus -> « Cannot command » grisé (honnête). Enseigne le système.
   cy = cy + SECTION_GAP
   do
-    local cmdGold = canCmd and C.gold or C.ink4
-    Draw.rect(bodyX, cy, innerW, cmdBarH, C.stone900, C.brassD, 1)
-    if canCmd and love.graphics and love.graphics.setColor then
-      love.graphics.setColor(C.brass[1], C.brass[2], C.brass[3], 0.6) -- crête dorée (héros : « il commande »)
-      love.graphics.rectangle("fill", bodyX + 1, cy + 1, innerW - 2, 1)
-      love.graphics.setColor(1, 1, 1, 1)
-    end
-    local hx, hy = bodyX + 8, cy + 8
-    Draw.text(T("ui.command_prefix"), hx, hy, cmdGold, cmdHeadFont) -- « AT COMMAND »
-    if cmdDesc then
-      local by = hy + cmdHeadH + 3
-      for _, line in ipairs(cmdLines) do
-        Draw.text(line, hx, by, C.ink2, cmdBodyFont)
-        by = by + cmdBodyLineH
-      end
+    if canCmd and cmdPrepared then
+      drawAbilityBlock(cmdPrepared, bodyX, cy, innerW, { body = cmdBodyFont, title = cmdHeadFont }, commandTagSet, t,
+        { border = C.brassD, accent = C.brass, accentAlpha = 0.7 })
     else
+      local cmdGold = C.ink4
+      Draw.rect(bodyX, cy, innerW, cmdBarH, C.stone900, C.brassD, 1)
+      local hx, hy = bodyX + 8, cy + 8
+      Draw.text(T("ui.command_prefix"), hx, hy, cmdGold, cmdHeadFont)
       Draw.textR(T("ui.command_none"), bodyX + innerW - 8, hy, C.ink4, cmdHeadFont) -- « Cannot command » (grisé)
     end
     cy = cy + cmdBarH
@@ -406,11 +524,16 @@ function MonsterCard.draw(view, palette, id, anchorX, anchorY, t, opts)
     cy = cy + SECTION_GAP - GAP
     Dividers.brass(x + W / 2, cy, innerW - 20)
     cy = cy + 6
-    Draw.textWrap(T(flavorKey), bodyX, cy, innerW, C.ink3, flavFont)
+    cy = cy + Draw.textWrap(T(flavorKey), bodyX, cy, innerW, C.ink3, flavFont)
+  end
+
+  if showKeywordHint and keywordHintFont then
+    cy = cy + SECTION_GAP
+    Draw.textR(T("ui.keyword_hint"), rightX, cy, C.ink4, keywordHintFont)
   end
   Draw.reset()
 
-  return { x = x, y = y, w = W, h = h }
+  return { x = x, y = y, w = W, h = h, levelRects = levelRects, level = opts.level or U.level or 1 }
 end
 
 return MonsterCard
