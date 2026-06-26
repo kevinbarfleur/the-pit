@@ -35,9 +35,13 @@ local Panel = require("src.ui.panel")
 local Badge = require("src.ui.badge")
 local Dividers = require("src.ui.dividers")
 local Chip = require("src.ui.chip")
+local Keywords = require("src.ui.keywords")
+local MechanicsInline = require("src.ui.mechanics_inline")
 local RelicGen = require("src.gen.relicgen")        -- icône procédurale (40×40) : bake STATIQUE
 local RelicAnim = require("src.render.relic_anim")  -- rendu ANIMÉ de l'icône (SpriteBatch + overlays)
+local I18n = require("src.core.i18n")
 local C = Theme.c
+local T = I18n.t
 
 local RelicCard = {}
 
@@ -63,6 +67,8 @@ local PAD_BOTTOM = 12  -- air sous le flavor, avant le bord bas (le flavor ne to
 local GAP_SM = 8       -- petit interbloc
 local GAP_MD = 12      -- interbloc moyen (gemme->nom, divider->corps)
 local SEP_AIR = 8      -- air AU-DESSUS et EN DESSOUS d'un séparateur (respiration des filets)
+local CHIP_H = 18
+local CHIP_GAP = 5
 
 -- Hauteur d'une police (fallback 12 headless / si nil).
 local function fh(font, d) return (font and font.getHeight and font:getHeight()) or d or 12 end
@@ -75,34 +81,68 @@ local function wrapLines(font, str, limit)
   return max(1, #lines)
 end
 
-local function hasDigit(word)
-  for i = 1, #word do
-    local b = word:byte(i)
-    if b >= 48 and b <= 57 then return true end -- '0'..'9'
-  end
-  return false
+-- HAUTEUR de l'effet rendu par _drawEffect : même wrap inline que les fiches monstres
+-- (tags, icônes, triggers). Mesure et dessin restent donc alignés.
+local function activeTagSet(tags)
+  local set = {}
+  for _, id in ipairs(tags or {}) do set[id] = true end
+  return set
 end
 
--- HAUTEUR de l'effet rendu par _drawEffect : MÊME wrap manuel par MOT (prose vs valeurs chiffrées en Space
--- Mono, plus large) -> la MESURE et le DESSIN comptent IDENTIQUEMENT les lignes (le flavor ne peut pas
--- chevaucher un effet qui aurait wrappé une ligne de plus). 0 si vide / pas de police.
-local function effectHeight(effect, limit)
+local function relicTags(opts)
+  if not opts or not opts.id then return {} end
+  local out = {}
+  for _, id in ipairs(Keywords.tagsForRelic(opts.id)) do
+    local d = Keywords.tag(id)
+    if d then out[#out + 1] = id end
+  end
+  return out
+end
+
+local function measureChipRows(items, maxW)
+  local rows, cx = 0, 0
+  for _, spec in ipairs(items) do
+    local cw = Chip.width(spec)
+    if cx > 0 and cx + CHIP_GAP + cw > maxW then
+      rows = rows + 1
+      cx = 0
+    end
+    cx = (cx == 0) and cw or (cx + CHIP_GAP + cw)
+  end
+  if cx > 0 then rows = rows + 1 end
+  if rows == 0 then return 0 end
+  return rows * CHIP_H + (rows - 1) * CHIP_GAP
+end
+
+local function drawChipRows(x, y, items, maxW)
+  local cx, cy = x, y
+  local rows = 0
+  for _, spec in ipairs(items) do
+    local cw = Chip.width(spec)
+    if cx > x and cx + CHIP_GAP + cw > x + maxW then
+      rows = rows + 1
+      cx = x
+      cy = cy + CHIP_H + CHIP_GAP
+    end
+    Chip.draw(cx, cy, spec)
+    cx = cx + cw + CHIP_GAP
+  end
+  return (#items > 0) and ((rows + 1) * CHIP_H + rows * CHIP_GAP) or 0
+end
+
+local function tagChipItems(opts, font)
+  local out = {}
+  for _, id in ipairs(relicTags(opts)) do
+    out[#out + 1] = { key = id, font = font, h = CHIP_H, t = opts and opts.t }
+  end
+  return out
+end
+
+local function effectHeight(effect, limit, activeTags)
   if not effect or effect == "" then return 0 end
   local proseF = Theme.body(14) or Theme.bodyLight(14)
-  local valF = Theme.value(14) or Theme.label(14)
   if not proseF then return 0 end
-  local lineH = proseF:getHeight()
-  local spaceW = proseF:getWidth(" ")
-  local cx, lines = 0, 1
-  for word in (effect .. " "):gmatch("(.-) ") do
-    if word ~= "" then
-      local f = hasDigit(word) and valF or proseF
-      local ww = f:getWidth(word)
-      if cx > 0 and cx + ww > limit then cx = 0; lines = lines + 1 end
-      cx = cx + ww + spaceW
-    end
-  end
-  return lines * lineH
+  return MechanicsInline.effectHeight(effect, proseF, limit, activeTags)
 end
 
 -- ── LAYOUT MESURÉ (source unique pour measure ET draw) ───────────────────────────────────────────────
@@ -136,12 +176,13 @@ local function layoutCard(w, opts)
     local prose = opts.effect or "Its purpose hides beneath the surface."
     cy = cy + wrapLines(pf, prose, bodyW) * fh(pf, 14)
   else
-    if opts.affKey then
-      cy = cy + 16 + GAP_SM -- chip d'affliction (h=16) + air
-    end
+    local chipF = Theme.label(8) or Theme.value(8)
+    local chips = tagChipItems(opts, chipF)
+    local chipH = measureChipRows(chips, bodyW)
+    if chipH > 0 then cy = cy + chipH + GAP_SM end
     local kf = Theme.labelSmall(9) or Theme.label(9)
     cy = cy + fh(kf, 11) + GAP_SM -- sublabel « KNOWN EFFECT »
-    cy = cy + effectHeight(opts.effect or "", bodyW) -- même wrap par-mot que _drawEffect
+    cy = cy + effectHeight(opts.effect or "", bodyW, activeTagSet(relicTags(opts))) -- même wrap par-mot que _drawEffect
   end
 
   -- FLAVOR : filet de séparation (avec air dessus/dessous) + lignes wrappées + marge basse.
@@ -311,25 +352,25 @@ function RelicCard.draw(x, y, w, h, opts)
     if cryptic then
       -- sublabel énigmatique (text-divider) + prose (Spectral italique).
       local kf = Theme.labelSmall(9) or Theme.label(9)
-      Draw.textTrackedL("EFFECT UNKNOWN · REVEALS IN USE", bodyX, cursorY, C.ink4, kf, 1.4)
+      Draw.textTrackedL(T("ui.relic_effect_unknown"), bodyX, cursorY, C.ink4, kf, 1.4)
       cursorY = cursorY + fh(kf, 11) + GAP_SM
       local pf = Theme.flavor(13) or Theme.bodyItalic(13)
       local prose = opts.effect or "Its purpose hides beneath the surface."
       bodyBottom = cursorY + Draw.textWrap(prose, bodyX, cursorY, bodyW, C.ink3, pf, "left")
     else
-      -- chip d'AFFLICTION (foyer de la relique) : front-load du mot-clé via le registre unique (Chip).
-      if opts.affKey then
-        local cf = Theme.label(9) or Theme.value(9)
-        local cw = Chip.width({ key = opts.affKey, font = cf, h = 16 })
-        Chip.draw(floor(cx - cw / 2), cursorY, { key = opts.affKey, font = cf, h = 16 })
-        cursorY = cursorY + 16 + GAP_SM
+      -- Chips MECANIQUES : mêmes tags que les monstres, avant la phrase d'effet.
+      local chipF = Theme.label(8) or Theme.value(8)
+      local chips = tagChipItems(opts, chipF)
+      local tagSet = activeTagSet(relicTags(opts))
+      if #chips > 0 then
+        cursorY = cursorY + drawChipRows(bodyX, cursorY, chips, bodyW) + GAP_SM
       end
       -- sublabel « KNOWN EFFECT » (Space Mono, ink4, tracké).
       local kf = Theme.labelSmall(9) or Theme.label(9)
-      Draw.textTrackedL("KNOWN EFFECT", bodyX, cursorY, C.ink4, kf, 1.4)
+      Draw.textTrackedL(T("ui.relic_known_effect"), bodyX, cursorY, C.ink4, kf, 1.4)
       cursorY = cursorY + fh(kf, 11) + GAP_SM
       -- texte d'effet : Spectral ink, valeurs (tokens chiffrés) en Space Mono `bloodL`. (hauteur RÉELLE)
-      bodyBottom = cursorY + RelicCard._drawEffect(opts.effect or "", bodyX, cursorY, bodyW)
+      bodyBottom = cursorY + RelicCard._drawEffect(opts.effect or "", bodyX, cursorY, bodyW, opts.t, tagSet)
     end
 
     -- ── flavor (Spectral italique, ink3) ── ancré sur la PILE MESURÉE (jamais sous la bordure) : filet de
@@ -370,36 +411,13 @@ function RelicCard._drawRelicIcon(id, cx, cy, gr, t)
   end
 end
 
--- _drawEffect : pose le texte d'effet en Spectral `ink2`, mais chaque MOT qui contient un CHIFFRE (« +15% »,
--- « 2 », « 40 » ...) est rendu en Space Mono 700 `bloodL` (les valeurs « ressortent »). Découpe par ESPACES
--- (jamais par octet -> les multi-octets restent intacts) ; wrap manuel borné à `limit` (IDENTIQUE à
--- effectHeight ci-dessus -> mesure = dessin). Retourne la hauteur dessinée.
-function RelicCard._drawEffect(effect, x, y, limit)
+-- _drawEffect : pose le texte d'effet en Spectral `ink2` avec les tags mécaniques
+-- inline (icône + couleur + valeurs associées). Retourne la hauteur dessinée.
+function RelicCard._drawEffect(effect, x, y, limit, t, activeTags)
   if not (love and love.graphics and love.graphics.print) or effect == "" then return 0 end
   local proseF = Theme.body(14) or Theme.bodyLight(14)
-  local valF = Theme.value(14) or Theme.label(14)
   if not proseF then return 0 end
-  local lineH = proseF:getHeight()
-  local spaceW = proseF:getWidth(" ")
-  local cx, cy = x, y
-  -- itère les mots séparés par espace (préserve UTF-8 : on ne coupe qu'aux espaces ASCII).
-  for word in (effect .. " "):gmatch("(.-) ") do
-    if word ~= "" then
-      local isVal = hasDigit(word)
-      local f = isVal and valF or proseF
-      local col = isVal and C.bloodL or C.ink2
-      love.graphics.setFont(f)
-      local ww = f:getWidth(word)
-      if cx > x and (cx + ww) > (x + limit) then -- wrap : passe à la ligne suivante
-        cx = x; cy = cy + lineH
-      end
-      Draw.setColor(col)
-      love.graphics.print(word, floor(cx + 0.5), floor(cy + 0.5))
-      cx = cx + ww + spaceW
-    end
-  end
-  Draw.reset()
-  return (cy - y) + lineH
+  return MechanicsInline.drawBlock(effect, x, y, limit, { font = proseF, baseCol = C.ink2, t = t, activeTags = activeTags })
 end
 
 return RelicCard

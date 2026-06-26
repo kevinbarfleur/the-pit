@@ -179,9 +179,9 @@ local TYPE_SCALE = {
 -- trois -> rangée homogène où AUCUN flavor ne déborde sous le bord (la carte CONTIENT tout son contenu).
 local RELIC_CARDS = {
   { state = "identified", name = "BLOODSTONE", fam = "flesh", affKey = "bleed", status = "INKED",
-    effect = "Your units strike for +20% more.", flavor = "A heart of compressed murder, still warm to the touch." },
+    effect = "Team gains [empower|Empower] +20% attack damage.", flavor = "A heart of compressed murder, still warm to the touch." },
   { state = "selected", name = "THE KINGS' BOWL", fam = "abyss", affKey = "poison",
-    effect = "Poison deals 20% more damage.", flavor = "A bowl of endless hunger." },
+    effect = "Team [poison|Poison] deals +20% damage.", flavor = "A bowl of endless hunger." },
   { state = "cryptic", name = "Hidden Thing", fam = "arcane",
     effect = "The ink runs here. Something was seen in the Pit and never understood. Carry it, and watch." },
 }

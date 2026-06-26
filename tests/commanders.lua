@@ -27,6 +27,7 @@ local function targetResolves(t)
   if FIXED_TARGETS[t] then return true end
   if t:sub(1, 5) == "tier:" and tonumber(t:sub(6)) then return true end
   if t:sub(1, 6) == "level:" and tonumber(t:sub(7)) then return true end
+  if t:sub(1, 5) == "type:" and #t:sub(6) > 0 then return true end
   return false
 end
 -- grant_team : flags RÉELLEMENT lus (ops.lua:281-305 handler + arena:spawn). Tout autre flag = inerte.
@@ -34,6 +35,7 @@ local GRANT_FLAGS = {
   burnNoDecay = true, poisonNoCap = true, poisonDurBonus = true, pierceHeal = true,
   invulnT = true, shockChain = true, bleedNoExpire = true, plagueAmp = true,
   stripEnemyShield = true, slowEnemies = true, rotEnemies = true, markEnemiesVuln = true,
+  teamExecute = true, -- W4 (AXE 7) : exécution d'équipe, lu dans arena:hit() (le commandant Removal du plan §AXE 9)
 }
 -- Garde-fous de design gravés (spec §1.2) : interdits par construction (broken).
 local function bannedCombo(stat, target)

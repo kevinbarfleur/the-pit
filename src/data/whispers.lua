@@ -113,7 +113,27 @@ return {
       verb = "waited" },
   },
 
-  -- 10. THE COWARD (solo, esquive) — SUMP CLEAVER s'efface dans l'ombre. SEUL murmure RNG -> DÉSACTIVÉ en
+  -- 10. THE BORROWED SHAPE (lignée) — MIMIC SPAWN se tient plus sûr quand ECHO FLESH est présent.
+  -- Spice W6 : lie le nouveau lore du mimétisme sans devenir build-defining (+8% attaque, sous cap murmure).
+  mimic_spawn = {
+    { kind = "lineage", key = "the_borrowed_shape", partner = "echo_flesh",
+      trigger = "combat_start", op = "whisper_lineage",
+      params = { needPartner = "echo_flesh", reach = "presence",
+                 effect = { kind = "stat_inc", stat = "atkInc", value = 0.08 } },
+      verb = "borrows" },
+  },
+
+  -- 11. THE SECOND CURRENT (lignée, adjacence) — STORM CONDUCTOR et ECHO WARDEN forment une boucle de cadence.
+  -- Bonus faible et borné : le conducteur frappe un peu plus juste quand il touche la garde d'écho.
+  storm_conductor = {
+    { kind = "lineage", key = "the_second_current", partner = "echo_warden",
+      trigger = "combat_start", op = "whisper_lineage",
+      params = { needPartner = "echo_warden", reach = "adjacency",
+                 effect = { kind = "stat_inc", stat = "atkInc", value = 0.08 } },
+      verb = "conducts" },
+  },
+
+  -- 12. THE COWARD (solo, esquive) — SUMP CLEAVER s'efface dans l'ombre. SEUL murmure RNG -> DÉSACTIVÉ en
   -- v1 (W7) tant que tests/snapshot.lua ne prouve pas la réinjection 2-camps (un roll non-réinjecté en
   -- ghost desync TOUT le combat). Laissé en data COMMENTÉE -> zéro émission, golden-safe, prêt pour W7.
   --

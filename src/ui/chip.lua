@@ -34,6 +34,17 @@ local function resolveColor(opts)
   return a and a.color or C.muted
 end
 
+local function drawPrismaticText(text, x, y, font, key, t)
+  local cx = x
+  for i = 1, #text do
+    local ch = text:sub(i, i)
+    Draw.setColor(Keywords.prismaticColor(key, i, t))
+    love.graphics.print(ch, math.floor(cx), math.floor(y))
+    cx = cx + font:getWidth(ch)
+  end
+  return cx - x
+end
+
 -- Largeur d'un chip SANS le dessiner (mise en page d'une rangée).
 function Chip.width(opts)
   local font = opts.font or love.graphics.getFont()
@@ -57,10 +68,19 @@ function Chip.draw(x, y, opts)
   local h = opts.h or (fh + PAD)
   local label = resolveLabel(opts)
   local color = resolveColor(opts)
+  local prismatic = opts.key and Keywords.isPrismatic(opts.key)
   local w = Chip.width(opts)
 
   -- Fond sombre + liseré coloré (1px) : le chip emprunte la teinte de son mot-clé.
-  Draw.rect(x, y, w, h, C.panelDeep, color, 1)
+  Draw.rect(x, y, w, h, C.panelDeep, prismatic and C.ink or color, 1)
+  if prismatic and love.graphics and love.graphics.rectangle then
+    local pal = Keywords.PRISMATIC_PALETTE
+    local stripeW = math.max(1, math.floor((w - 2) / #pal))
+    for i, col in ipairs(pal) do
+      Draw.setColor(col)
+      love.graphics.rectangle("fill", math.floor(x + 1 + (i - 1) * stripeW), y + 1, stripeW, 1)
+    end
+  end
 
   local cx = x + PAD
   local midY = y + h / 2
@@ -70,14 +90,18 @@ function Chip.draw(x, y, opts)
     if ic then
       local s = opts.iconScale or 1
       love.graphics.setColor(1, 1, 1, 1)
-      love.graphics.draw(ic.image, math.floor(cx), math.floor(midY - ic.h * s / 2), 0, s, s)
+      love.graphics.draw(ic.image, math.floor(cx), math.floor(midY - ic.h * s / 2 + 1), 0, s, s)
       cx = cx + ic.w * s + GAP
     end
   end
 
   if label ~= "" then
-    Draw.setColor(color)
-    love.graphics.print(label, math.floor(cx), math.floor(midY - fh / 2))
+    if prismatic then
+      drawPrismaticText(label, cx, midY - fh / 2, font, opts.key, opts.t)
+    else
+      Draw.setColor(color)
+      love.graphics.print(label, math.floor(cx), math.floor(midY - fh / 2))
+    end
     cx = cx + font:getWidth(label)
   end
 

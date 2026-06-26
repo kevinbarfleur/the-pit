@@ -134,6 +134,8 @@ function RunState.new(seed)
     shopTier = START_TIER,         -- niveau de boutique (1->5) : gate QUELS rangs apparaissent (cotes ODDS)
     shopXp = 0,                    -- XP de boutique accumulée vers le tier suivant (cascade par XP_TO_LEVEL)
     shopOddsShift = 0,             -- Lot 6 : décalage PERSISTANT du tier utilisé POUR LES COTES (relique beggars_lantern = -1). 0 = identique au tier réel.
+    freezeSlots = 0,               -- W8 : nombre d'offres de boutique pouvant être gelées (relique frost_seal)
+    frozenOffers = {},             -- [slot] = {id,cost} conservé sur reroll/round tant qu'il n'est pas acheté
     shop = {},
     relics = {}, -- possédées : { { id } } (modèle LISIBLE : effet affiché ; collection Grimoire inscrite au grant)
     _pendingGold = 0, -- A3 : or DIFFÉRÉ au prochain round (reliques d'éco : or-sur-victoire). Hors RNG.
@@ -185,10 +187,15 @@ function RunState:roll()
   local odds = ODDS[tier]
   local shop = {}
   for i = 1, SHOP_SIZE do
-    local rank = rollRank(self, odds)
-    local bucket = bucketForRank(rank)
-    local id = bucket[self.rng:random(1, #bucket)]
-    shop[i] = { id = id, cost = unitCost(id), sold = false }
+    local frozen = self.frozenOffers and self.frozenOffers[i]
+    if frozen then
+      shop[i] = { id = frozen.id, cost = frozen.cost or unitCost(frozen.id), sold = false, frozen = true }
+    else
+      local rank = rollRank(self, odds)
+      local bucket = bucketForRank(rank)
+      local id = bucket[self.rng:random(1, #bucket)]
+      shop[i] = { id = id, cost = unitCost(id), sold = false }
+    end
   end
   self.shop = shop
 end
@@ -320,7 +327,40 @@ function RunState:buy(i)
   if self.gold < offer.cost then return nil end
   self.gold = self.gold - offer.cost
   offer.sold = true
+  if self.frozenOffers then self.frozenOffers[i] = nil end
   return offer.id
+end
+
+local function frozenCount(self)
+  local n = 0
+  for i = 1, SHOP_SIZE do if self.frozenOffers and self.frozenOffers[i] then n = n + 1 end end
+  return n
+end
+
+function RunState:canFreezeOffer(i)
+  if (self.freezeSlots or 0) <= 0 then return false end
+  if not (i and i >= 1 and i <= SHOP_SIZE) then return false end
+  local offer = self.shop[i]
+  if not offer or offer.sold then return false end
+  if self.frozenOffers and self.frozenOffers[i] then return true end -- déjà gelée -> toggle possible
+  return frozenCount(self) < self.freezeSlots
+end
+
+-- W8 : gèle/dégèle une offre sans tirer de RNG. L'offre reste en place lors des futurs roll/reroll/startRound,
+-- puis est libérée à l'achat ou par un nouveau toggle. C'est un levier de planification, pas une source de valeur.
+function RunState:freezeOffer(i)
+  if not (i and i >= 1 and i <= SHOP_SIZE) then return false end
+  self.frozenOffers = self.frozenOffers or {}
+  if self.frozenOffers[i] then
+    self.frozenOffers[i] = nil
+    if self.shop[i] then self.shop[i].frozen = false end
+    return true
+  end
+  if not self:canFreezeOffer(i) then return false end
+  local offer = self.shop[i]
+  self.frozenOffers[i] = { id = offer.id, cost = offer.cost }
+  offer.frozen = true
+  return true
 end
 
 function RunState:canReroll() return self.gold >= REROLL_COST end
@@ -484,6 +524,7 @@ function RunState:grantRelic(id)
     if runOp == "shop_xp" then self:addShopXp(p.amount or 0)
     elseif runOp == "shop_tier_up" then self:raiseShopTier(1)
     elseif runOp == "shop_tier_down" then self.shopOddsShift = self.shopOddsShift - 1
+    elseif runOp == "shop_freeze" then self.freezeSlots = math.max(self.freezeSlots or 0, p.slots or 1)
     end
   end
   return true
@@ -534,5 +575,6 @@ RunState.BUY_XP_AMOUNT = BUY_XP_AMOUNT
 RunState.BUY_XP_COST = BUY_XP_COST
 RunState.XP_TO_LEVEL = XP_TO_LEVEL
 RunState.ODDS = ODDS
+RunState.SHOP_FREEZE_DEFAULT = 1
 
 return RunState

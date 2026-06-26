@@ -290,6 +290,13 @@ Effects.register("grant_team", function(ctx, p)
     if p.plagueAmp then tf.plagueAmp = math.max(tf.plagueAmp or 0, p.plagueAmp) end     -- PLAGUE COMMUNION : 2+ afflictions -> +dmg
     if p.stripEnemyShield then tf.stripEnemyShield = math.max(tf.stripEnemyShield or 0, p.stripEnemyShield) end -- BRIS-SIÈGE (commandant) : ampute les boucliers ennemis d'ouverture (lu dans arena:spawn)
     if p.markEnemiesVuln then tf.markEnemiesVuln = math.max(tf.markEnemiesVuln or 0, p.markEnemiesVuln) end -- MARQUE DE VULN (commandant, TROU #2) : marque l'équipe ENNEMIE d'ouverture en `vulnInc` (lu dans arena:spawn, cappé à la lecture VULN_INC_CAP). max() = idempotent (re-pose).
+    if p.teamExecute then -- W4 (AXE 7) : EXÉCUTION D'ÉQUIPE — toute l'équipe achève les blessés (lu dans hit(), additif borné). Le finish devient un AXE (execute par-unité existe ; ceci est le payoff TEAM-WIDE). max() = idempotent (re-pose la plus forte).
+      local te = p.teamExecute
+      local cur = tf.teamExecute
+      if not cur or (te.bonus or 0) > (cur.bonus or 0) then -- garde la plus forte (anti-cumul de poses, lisible)
+        tf.teamExecute = { threshold = te.threshold or 0.25, bonus = te.bonus or 0 }
+      end
+    end
   end
   if p.slowEnemies then -- THE SLOW BLEED : aura de slow sur TOUTE l'équipe ennemie (immédiate)
     for _, w in ipairs(arena.units) do
@@ -340,6 +347,37 @@ Effects.register("execute", function(ctx, p)
   if not v or v.maxHp <= 0 then return end
   if (v.hp / v.maxHp) < (p.threshold or 0.25) then
     ctx.amount = math.floor(ctx.amount * (1 + (p.bonus or 0.5)) + 0.5)
+  end
+end)
+
+-- ════════ W4 — AXE TANK / REMOVAL / EXÉCUTION (plan big-update §AXE 7). « L'insight SAP : le cap → endgame de
+-- removal ». Quand deux boards sont CAPPÉS (fin de partie), on ne peut plus out-stat → la victoire appartient au
+-- removal %-PV / exécution / placement. Ces verbes IGNORENT les PV bruts (le contre du mur-regen, constat
+-- SUMMARY §3). Tous GATED (aucune unité du scénario golden ne les porte) → empreinte SIM inchangée. État PUR,
+-- ZÉRO RNG (on_attack mute ctx.amount AVANT damage, conforme §2.0.2). ══════════════════════════════════════════
+
+-- PCT_STRIKE_CAP — LE GARDE-FOU ABSOLU (Q8, le cœur de l'op) : la frappe %-PV ne peut JAMAIS contribuer plus que
+-- ce montant, QUELLE QUE SOIT la cible. Sur un mur à 5000 PV, frac=0.10 -> 500 brut MAIS clampé à PCT_STRIKE_CAP
+-- -> dégât SIGNIFICATIF (le mur fond) sans one-shot. Sur une squishy à 40 PV, frac×maxHp est déjà petit -> le cap
+-- n'intervient pas. Placeholder d'équilibrage (à tuner via tools/sim.lua) ; choisi pour MORDRE un tank sans
+-- trivialiser un carry. Le backstop moteur HIT ×7 (arena.lua:514) reste une 2e ceinture (cf. §AXE 7 golden-safety).
+local PCT_STRIKE_CAP = 14
+
+-- FRAPPE %-PV (« Skunk −X% » SAP) : la frappe ARRACHE frac des PV MAX de la cible (Q8 : PV MAX, l'anti-mur franc),
+-- en VALEUR ABSOLUE CLAMPÉE (cap par-paramètre `p.cap`, lui-même borné à PCT_STRIKE_CAP -> aucune data ne peut
+-- desserrer le plafond dur). on_attack : on AJOUTE ce mordant à ctx.amount (rider de la frappe -> passe ensuite par
+-- le backstop ×7), on ne REMPLACE pas (le removal s'EMPILE sur le coup de base, comme execute). État pur, zéro RNG.
+-- IMPOSSIBLE de one-shot VIA cet op : sa contribution est ≤ PCT_STRIKE_CAP, indépendamment des PV de la cible.
+Effects.register("percent_hp_strike", function(ctx, p)
+  local v = ctx.victim
+  if not v or (v.maxHp or 0) <= 0 then return end
+  local frac = p.frac or 0
+  if frac <= 0 then return end
+  local cap = math.min(p.cap or PCT_STRIKE_CAP, PCT_STRIKE_CAP) -- borne DURE : la data ne franchit jamais le plafond
+  local bite = math.min(math.floor(v.maxHp * frac + 0.5), cap)  -- frac des PV MAX, CLAMPÉ en valeur absolue (Q8)
+  if bite > 0 then
+    ctx.amount = (ctx.amount or 0) + bite
+    ctx.arena.bus:emit("amped", { unit = v, family = "removal" }) -- signal RENDER (golden-safe : aucun abonné SIM)
   end
 end)
 

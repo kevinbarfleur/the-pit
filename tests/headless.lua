@@ -702,6 +702,29 @@ local ok, err = pcall(function()
     print("  e2e clic : achat+place auto / grise sans or / grise plein-sans-trio / fusion plein+trio OK")
   end
 
+  -- E2E W8 : freeze boutique via la pastille de carte (frost_seal). Le RunState garde la regle, mais la scene
+  -- doit rendre l'action atteignable sans interferer avec le clic d'achat sur le reste de la carte.
+  do
+    local RunState = require("src.run.state")
+    local run = RunState.new(808)
+    local host = { goto = function() end, run = run, finishCombat = function() end }
+    local eb = Build.new(Palette, 320, 180, host)
+    assert(run:grantRelic("frost_seal"), "freeze UI: frost_seal se grant")
+    run.shop[1] = { id = "marauder", cost = 1, sold = false }
+    run.shop[2] = { id = "skeleton", cost = 1, sold = false }
+    local fr = eb:shopFreezeRect(1)
+    eb:mousepressed(fr.x + fr.w / 2, fr.y + fr.h / 2, 1)
+    assert(run.shop[1].frozen and run.frozenOffers[1] and run.frozenOffers[1].id == "marauder",
+      "freeze UI: clic pastille -> offre gelee")
+    local before = run.shop[1].id
+    run.gold = 99
+    run:reroll()
+    assert(run.shop[1].id == before and run.shop[1].frozen, "freeze UI: reroll preserve l'offre gelee")
+    eb:mousepressed(fr.x + fr.w / 2, fr.y + fr.h / 2, 1)
+    assert(not run.shop[1].frozen and run.frozenOffers[1] == nil, "freeze UI: second clic -> degel")
+    print("  e2e W8 : frost_seal -> pastille FRZ + preservation reroll + toggle off OK")
+  end
+
   -- E2E LOT 5 (§5.2) : récompense de relique au LEVEL-UP (fusion 3->niveau), bornée 1/round, MID-ROUND (pas
   -- de startRound -> board/boutique/or préservés). On REJOUE le routage exact de main.lua (host.offerLevelUpRelic
   -- + finishRelicPick* branchés mid-round) sur un VRAI RunState + la VRAIE scène build sous la mock.

@@ -10,10 +10,10 @@
 -- Modèle : { version, tier, seed, shape, units = { { id, level, col, row }, ... } }
 
 local Units = require("src.data.units")
+local UnitResolver = require("src.core.unit_resolver")
 local Place = require("src.combat.place")
 
 local Snapshot = {}
-local LEVEL_MULT = { 1.0, 1.8, 3.0 } -- DOIT suivre build.lua (scaling des duplicatas)
 local SEP_FIELD, SEP_UNIT, SEP_ATTR = "\t", ";", ","
 
 -- Capture : build LOGIQUE (liste {id, level, col, row}) + sigil + seed + tier/version -> snapshot figé.
@@ -62,12 +62,12 @@ function Snapshot.toComp(s, side)
   local b = Place.bounds(placed)
   local comp = {}
   for _, p in ipairs(placed) do
-    local u = Units[p.id]
-    local m = LEVEL_MULT[p.level] or 1.0
+    local stats = UnitResolver.statsFor(p.id, p.level)
     local px, py = Place.pos(p.col, p.row, side, b)
+    local effects = (p.level or 1) > 1 and UnitResolver.hasAuthoredLevel(p.id) and UnitResolver.effectsFor(p.id, p.level) or nil
     comp[#comp + 1] = { id = p.id, level = p.level,
-      hp = math.floor(u.hp * m + 0.5), dmg = math.floor(u.dmg * m + 0.5), cd = u.cd,
-      depth = b.maxC - p.col, row = p.row, x = px, y = py, facing = facing }
+      hp = stats.hp, dmg = stats.dmg, cd = stats.cd,
+      depth = b.maxC - p.col, row = p.row, effects = effects, x = px, y = py, facing = facing }
   end
   return comp
 end

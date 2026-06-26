@@ -33,7 +33,7 @@
 | Prise | Permet | Détail vérifié |
 |---|---|---|
 | `R.apply(comp, relic)` (mutation de spec au BUILD) | +PV plats, +% atk, **+affliction `*Inc`**, **+défense**, conditionnels comptés | mute `spec.hp/dmg/poisonInc/…` ; `makeUnit` (arena:102) copie ces champs sur l'unité |
-| ops `ampDps(base, ctx.source.*Inc)` | **+% dégâts d'affliction** | burn/poison lisent déjà `*Inc` (ops:66,119) ; **bleed/rot à étendre** (miroir, ~4 lignes) |
+| ops `ampDps(base, ctx.source.*Inc)` | **+% dégâts d'affliction** | poison/burn/bleed/rot lisent `*Inc` à la pose du DoT ; les amplis restent additifs puis cappés |
 | `relic_add_effect` d'un `{trigger="combat_start", op="grant_team", …}` | **règles d'équipe** (pierceHeal, frenzy, invuln) | réutilise `teamFlags` (arena:144) + l'op `grant_team` (ops:248) — zéro nouveau code de POSE |
 | hooks **gated** dans `Arena:damage` (arena:230) | défense (`dmgReduce`), invuln (`invulnUntil`), survie (`secondBreath`) | nil → inerte = **golden-safe** |
 | lecture gated dans le tick regen (arena:477) | pierce-heal (anti-sustain) | les dots portent `.source` → on lit le `teamFlags` de l'afflicteur |

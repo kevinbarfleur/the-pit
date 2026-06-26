@@ -78,6 +78,27 @@ local ok, err = pcall(function()
     assert(before == before, "garde-fou")
   end
 
+  -- ── W8 : Freeze boutique (runOp shop_freeze). Gèle une offre sans RNG ; elle survit aux rerolls ET rounds
+  -- jusqu'à achat ou toggle de dégel. Sans relique, le geste est impossible.
+  do
+    local r = RunState.new(808)
+    assert(not r:canFreezeOffer(1) and r:freezeOffer(1) == false, "freeze: impossible sans frost_seal")
+    assert(r:grantRelic("frost_seal"), "freeze: frost_seal se grant")
+    assert(r.freezeSlots == 1, "freeze: frost_seal debloque 1 slot de gel")
+    local frozen = r.shop[2].id
+    assert(r:freezeOffer(2) == true and r.shop[2].frozen, "freeze: slot 2 gelé")
+    assert(r:freezeOffer(3) == false, "freeze: un seul slot gelé à la fois")
+    r.gold = 99
+    assert(r:reroll(), "freeze: reroll avec offre gelée")
+    assert(r.shop[2].id == frozen and r.shop[2].frozen, "freeze: reroll conserve l'offre gelée au même slot")
+    r:startRound()
+    assert(r.shop[2].id == frozen and r.shop[2].frozen, "freeze: nouveau round conserve aussi l'offre gelée")
+    local cost = r.shop[2].cost
+    r.gold = cost
+    assert(r:buy(2) == frozen, "freeze: achat de l'offre gelée renvoie le bon id")
+    assert(not r.frozenOffers[2], "freeze: achat libère le slot gelé")
+  end
+
   -- ── Emplacements = GRANTS TIMÉS (accepter +1 slot / refuser +or), plus de gold-leveling ──
   do
     local r = RunState.new(3)
@@ -341,10 +362,10 @@ local ok, err = pcall(function()
     -- a TOUTES les non possédées -> une offre de 3 reste remplissable (peut alors contenir un tier > plafond).
     do
       local rf = RunState.new(5)
-      rf.wins = 0 -- plafond 2 ; on possède 11 des 13 reliques tier<=2 -> seulement 2 candidats sous plafond (<3)
+      rf.wins = 0 -- plafond 2 ; on possède 12 des 14 reliques tier<=2 -> seulement 2 candidats sous plafond (<3)
       rf.relics = { { id = "bloodstone" }, { id = "carapace" }, { id = "aegis" }, { id = "whetstone" },
         { id = "kings_bowl" }, { id = "ember_heart" }, { id = "weeping_nail" }, { id = "grave_cap" },
-        { id = "thornguard" }, { id = "beggars_lantern" }, { id = "tithe_bowl" } }
+        { id = "thornguard" }, { id = "beggars_lantern" }, { id = "tithe_bowl" }, { id = "frost_seal" } }
       local ch = rf:rollRelicChoices(3)
       assert(#ch == 3, "fallback : l'offre reste remplie a 3 malgre le plafond")
       local sawAbove = false

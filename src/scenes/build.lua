@@ -23,6 +23,7 @@ local Shapes = require("src.board.shapes")
 local Rig = require("src.core.rig")
 local Creatures = require("src.data.creatures")
 local Units = require("src.data.units")
+local UnitResolver = require("src.core.unit_resolver")
 local CreatureGen = require("src.gen.creaturegen") -- visuel généré pour les unités sans rig dessiné main
 local Critter = require("src.render.critter") -- rendu VIVANT (cadre natif : taille relative + mouvement par-pixel/famille)
 local Encounters = require("src.data.encounters")
@@ -58,8 +59,10 @@ local NightmareBG = require("src.fx.nightmare_bg") -- champ cauchemardesque réu
 local Rarity = require("src.gen.rarity") -- rang -> couleur de cadre + glow (accent de rareté de la fiche)
 local MiniRig = require("src.render.minirig") -- mesure OPAQUE mutualisée des rigs (bounds/fit) : seule source de vérité
 local MonsterCard = require("src.render.monstercard") -- FICHE de monstre (extraite de drawTooltip) : réutilisée ici + Chronique
+local CardGlossary = require("src.ui.card_glossary") -- glossaire Shift des mots-cles mecaniques de la fiche
 local RelicCard = require("src.ui.relic_card") -- FICHE de relique au survol (icône ANIMÉE + band + fam) : pop-up HUD
 local RelicsData = require("src.data.relics") -- band/palier de la relique (couleur de carte Argent/Or/Prismatique)
+local MechanicsText = require("src.ui.mechanics_text")
 local I18n = require("src.core.i18n")
 local T = I18n.t
 local SFX = require("src.audio.sfx") -- SON (Oniric grave) : cues SÉMANTIQUES des évènements de build (achat/vente/drag/fusion). No-op headless.
@@ -95,12 +98,12 @@ local RELIC_TYPE = {
 }
 
 local SPACING = 26
-local BOARD_OY = 76 -- centre du plateau (virtuel) : ×4 = 304 design, REMONTÉ pour dégager le BANC sous le plateau
+local BOARD_OY = 72 -- centre du plateau (virtuel) : ×4 = 288 design ; laisse un vrai souffle avant le banc
 local BOARD_HALF_W = 128 -- demi-étendue MAX (virtuelle) des CENTRES de cases -> board centré, jamais hors zone
 local BOARD_HALF_H = 30  -- (idem vertical) : RESSERRÉ pour qu'un sigil étalé ne morde pas sur le banc
 local BENCH_SIZE = 4 -- BANC (réserve hors-combat) : rangée de slots sous le plateau pour STOCKER/FUSIONNER (n'entre jamais en combat). 4 max -> garde un vrai arbitrage de placement (retour user 2026-06).
 local MAX_LEVEL = 3
-local LEVEL_MULT = { 1.0, 1.8, 3.0 } -- stats par niveau : 3 copies (même id+niveau) -> 1 unité niveau+1 (façon TFT)
+local LEVEL_MULT = UnitResolver.STAT_LEVEL_MULT -- stats par niveau : source unique (duplicatas / cartes / snapshots)
 
 -- ── COMMANDANTS (K4) — placeholders d'équilibrage (cf. docs/research/commanders-plan.md §1.4/§6.1).
 -- STAT_INC_CAP : plafond cumulé du buff `statInc` (commandant : +% PV ET dmg). Plus serré qu'ATK_INC_CAP
@@ -115,6 +118,16 @@ local COMMANDER_CD_MULT = 1.5
 -- est borné à RAINBOW_TYPE_CAP -> la magnitude reste lisible et plafonnée (discipline de cap §6.1). Flat
 -- additif sur hp/dmg (même couche que statInc, mais en plat) -> sous les caps relatifs existants par construction.
 local RAINBOW_TYPE_CAP = 5 -- nb de types distincts comptés (le jeu n'en a que 5 ; borne dure anti-extension)
+
+-- ── W3 (axe Mimétisme/amplification, plan §AXE 4) — `repeat_ability` (le pattern « Tiger » SAP). Une unité
+-- MIMIC re-rejoue les effets `on_hit` d'UN voisin, AU NIVEAU du mimic. BUILD-RÉSOLU (comme aura_stat) : on COPIE
+-- les descripteurs on_hit du voisin DANS la liste d'effets du mimic (jamais un appel à hit() en combat -> zéro
+-- ré-entrance/aliasing ctx). ANTI-BOUCLE DUR (plan Q3) : (1) on ne copie QUE des on_hit (jamais combat_start ->
+-- repeat_ability ne se copie JAMAIS lui-même : pas de repeat-of-repeat) ; (2) PROFONDEUR 1 = on saute tout
+-- descripteur déjà marqué `viaCopy` (un effet copié ne peut pas être recopié par un 2e mimic) ; (3) le copié
+-- porte `viaCopy=true` -> il est inerte aux yeux d'un mimic voisin. Déterministe (ipairs, tie-break slot asc),
+-- zéro RNG. `who` = "ahead" (l'allié droit DEVANT, axe X=depth) | "neighbors" (le PLUS FORT voisin du graphe).
+local REPEAT_DEPTH_MAX = 1 -- garde-fou lisible (§6.4) : un seul niveau de copie (Tiger SAP), jamais de chaîne
 
 -- ── Courbe de difficulté (cold-start) — TUNABLES (cf. the-pit-balance-diagnosis). Le board joueur croît de
 -- façon PRÉVISIBLE (grants timés 3->9). L'ennemi suit : l'index d'encounter grimpe avec le round (taille),
@@ -286,7 +299,7 @@ end
 function Build:commandRange()
   local cmd = self.commanderSlot
   if not cmd then return {}, nil, nil end
-  local cb = Units[cmd.id] and Units[cmd.id].commandBonus
+  local cb = UnitResolver.commandBonusFor(cmd.id, cmd.level or 1)
   if not cb then return {}, nil, nil end
   -- portée + étiquette dérivées du `target` (les rôles se résolvent comme le ciblage de combat).
   local target = cb.target or (cb.params and cb.params.target) or "neighbors"
@@ -310,6 +323,13 @@ function Build:commandRange()
     local n = tonumber(target:sub(7))
     for i = 1, 9 do local sr = self.slotRigs[i]; if sr and (sr.level or 1) == n then set[i] = true end end
     labelKey, labelVars = "ui.command_level", { n = n }
+  elseif target:sub(1, 5) == "type:" then
+    local ty = target:sub(6)
+    for i = 1, 9 do
+      local sr = self.slotRigs[i]
+      if sr and Units[sr.id] and Units[sr.id].type == ty then set[i] = true end
+    end
+    labelKey, labelVars = "ui.command_type", { type = T("type." .. ty) }
   else -- grant_team (Bris-Siège, stripEnemyShield) : pas de cible AMIE -> étiquette « toute la meute » (effet d'équipe)
     for i = 1, 9 do if self.slotRigs[i] then set[i] = true end end
     labelKey = "ui.command_pack"
@@ -482,6 +502,30 @@ end
 function Build:popPlaced(rig)
   if rig then rig.pop = newPopAnim() end
   SFX.play("place") -- cue d'APPARITION sur la case (créée en parallèle par le sound-designer ; id = "place")
+end
+
+-- DÉBLOCAGE D'UNE CASE (retour user) : quand on clique pour ouvrir une case verrouillée (grant accepté), une
+-- PETITE EXPLOSION façon level-up — MÊME chemin particules pixel que la fusion (P.burst/P.ring), mais VERSION
+-- RÉDUITE (un déblocage < un rank-up) : moins de particules, onde plus petite, pas de shards énormes. + un
+-- PETIT punch LOCAL (trauma² modeste + micro-hitstop, one-shot, très en-dessous du climax de fusion) + le son
+-- « unlock ». 100% RENDER/cosmétique (P.* no-op hors love.graphics ; SFX.play no-op headless/cue absente) ->
+-- golden-safe, ne touche jamais la SIM. `slotIndex` = la case ouverte ; ancre = son centre design (pos×4).
+-- Leviers : counts/r1 ci-dessous (taille explosion) ; UNLOCK_TRAUMA/UNLOCK_FREEZE (punch).
+local UNLOCK_TRAUMA = 0.20  -- secousse du déblocage (one-shot, modeste : < climax fusion 0.55/0.85)
+local UNLOCK_FREEZE = 0.04  -- micro-hitstop bref
+function Build:unlockFx(slotIndex)
+  local p = self.pos[slotIndex]
+  if not p then return end
+  local x, y = p.x * 4, p.y * 4
+  local c = Theme.c
+  Juice.addTrauma(UNLOCK_TRAUMA)
+  Juice.freeze(UNLOCK_FREEZE)
+  SFX.play("unlock") -- cue de DÉBLOCAGE de case (créée en parallèle par le sound-designer ; id = "unlock")
+  -- onde de choc dithérée (pixel) + éclats — RÉDUITS vs le climax de fusion (90px ring / shard 20 → ici ~50 / 8).
+  P.ring(x, y, { color = c.gold, r0 = 6, r1 = 50, life = 0.40 })
+  P.burst(x, y, { type = "shard", count = 8, speed = { 80, 180 }, life = { 0.35, 0.6 }, gravity = 200, drag = 1.7, spin = 12 })
+  P.burst(x, y, { type = "ember", count = 8, dir = -math.pi / 2, spread = math.pi * 0.8, speed = { 40, 110 }, life = { 0.45, 0.8 }, gravity = -45, drag = 2.2 })
+  P.burst(x, y, { type = "mote",  count = 6, speed = { 50, 150 }, life = { 0.28, 0.5 }, drag = 2.5 })
 end
 
 -- Centre (espace DESIGN) d'une position de jeu {kind, i} (case board ou slot banc) -> ancre des FX de fusion.
@@ -919,6 +963,22 @@ function Build:shopAt(px, py)
   return nil
 end
 
+function Build:shopFreezeRect(i)
+  local r = self.shopSlots and self.shopSlots[i]
+  if not r then return nil end
+  return { x = r.x + r.w - 7, y = r.y + 7, w = 6, h = 5 }
+end
+
+function Build:shopFreezeAt(px, py)
+  local run = self.host.run
+  if not run or not run.freezeSlots or run.freezeSlots <= 0 then return nil end
+  for i = 1, Run.SHOP_SIZE do
+    local fr = self:shopFreezeRect(i)
+    if fr and run.shop[i] and inRect(px, py, fr) then return i end
+  end
+  return nil
+end
+
 -- Indice du slot de BANC sous le curseur (espace virtuel), ou nil.
 function Build:benchAt(px, py)
   if not self.benchSlots then return nil end
@@ -1242,7 +1302,10 @@ function Build:mousepressed(vx, vy, button)
     if run.pendingSlotGrant then
       if inRect(vx, vy, self.declineBtn) then Feel.press("build.decline"); run:declineSlotGrant(); return end
       local lc = self:lockedCellAt(vx, vy)
-      if lc then if run:acceptSlotGrant() then self.board:openCell(lc) end; return end
+      if lc then
+        if run:acceptSlotGrant() then self.board:openCell(lc); self:unlockFx(lc) end -- ACHAT/DÉBLOCAGE : petite explosion pixel + punch + son « unlock »
+        return
+      end
     end
     -- C3 — OFFRE DE PIÉDESTAL (minimal fonctionnel ; polish/prompt dédié = ui-artisan) : pendant l'offre, un
     -- clic sur la zone du piédestal l'ACCEPTE (le piédestal apparaît) ; un clic sur REFUSER le décline (+or).
@@ -1256,6 +1319,12 @@ function Build:mousepressed(vx, vy, button)
     -- headless asserte l'or débité juste après le clic -> on ne diffère PAS ces actions de boutique).
     if inRect(vx, vy, self.raiseBtn) then Feel.press("build.raise"); if run:canBuyXp() then run:buyXp(); SFX.play("coin") end; return end -- LEVEL/XP : pièce (achat d'XP)
     if inRect(vx, vy, self.rerollBtn) then Feel.press("build.reroll"); run:reroll(); SFX.play("pop"); return end -- REROLL : « pop » (les offres se re-tirent)
+    local fi = self:shopFreezeAt(vx, vy)
+    if fi then
+      Feel.press("build.freeze." .. fi)
+      if run:freezeOffer(fi) then SFX.play("pop") end
+      return
+    end
     local oi = self:shopAt(vx, vy)
     if oi then -- prend une offre JOUABLE (achat consommé au lâcher sur une case, ou au CLIC via autoBuy) ; une
       local o = run.shop[oi] -- carte désactivée (pas d'or / plein sans level-up) est INERTE -> pas de pickup.
@@ -1523,8 +1592,8 @@ function Build:buildComp(side)
     return math.min(RAINBOW_TYPE_CAP, n)
   end
   for _, p in ipairs(placed) do
-    local sm = LEVEL_MULT[p.level] or 1.0 -- l'aura scale avec le NIVEAU de la source (duplicatas) ; cap appliqué à la LECTURE
-    for _, e in ipairs(Units[p.id].effects or {}) do
+    for _, e in ipairs(UnitResolver.effectsFor(p.id, p.level)) do
+      local sm = UnitResolver.legacyEffectLevelMult(e, p.level) -- authored level effects already carry final values
       if e.trigger == "combat_start" and e.target == "neighbors" then
         local op, pa = e.op, e.params or {}
         for _, nb in ipairs(self.board:neighbors(p.slot)) do
@@ -1541,12 +1610,75 @@ function Build:buildComp(side)
     end
   end
 
-  -- Matérialise les effets d'un voisin SOUS aura (rot growth + grant_bleed seulement ; poison/burn passent
-  -- par poisonInc/burnInc sur l'unité). Sinon nil = base (golden-safe).
-  local function auraEffects(id, slot)
-    if not (rotGrowth[slot] or grantBleed[slot]) then return nil end
+  -- ── W3 — MIMÉTISME (`repeat_ability`, plan §AXE 4) : un MIMIC copie les effets `on_hit` d'UN voisin DANS sa
+  -- propre liste d'effets (re-joue au niveau du mimic en combat, via Effects.run sur le mimic). BUILD-RÉSOLU.
+  -- mimicCopies[slot] = liste de descripteurs on_hit copiés (chacun `viaCopy=true`). nil = pas un mimic -> base.
+  -- Lookup (col,row) -> slot pour résoudre "ahead" (l'allié droit DEVANT = même row, col+1 vers le front, car
+  -- depth = b.maxC - col -> front = col MAX). Déterministe (construit en ipairs).
+  local byColRow = {}
+  for _, p in ipairs(placed) do byColRow[p.col .. ":" .. p.row] = p.slot end
+  -- Collecte les descripteurs on_hit COPIABLES de l'unité `srcId` (PROFONDEUR 1 : on saute tout effet déjà
+  -- `viaCopy` -> un effet copié ne se re-copie jamais ; et on ne copie QUE on_hit -> un repeat_ability/aura
+  -- combat_start n'est JAMAIS copié = pas de repeat-of-repeat, pas de copie d'aura/summon). Copie PROFONDE des
+  -- params (le mimic ne partage aucune table avec la source). `viaCopy` marque la copie (inerte pour un 2e mimic).
+  local function copyableOnHit(srcId, srcLevel)
     local out = {}
-    for _, e in ipairs(Units[id].effects or {}) do
+    for _, e in ipairs(UnitResolver.effectsFor(srcId, srcLevel or 1)) do
+      if e.trigger == "on_hit" and not e.viaCopy then
+        local pa = {}
+        for k, v in pairs(e.params or {}) do pa[k] = v end
+        out[#out + 1] = { trigger = "on_hit", op = e.op, params = pa, condition = e.condition, viaCopy = true }
+      end
+    end
+    return out
+  end
+  local mimicCopies = {}
+  for _, p in ipairs(placed) do
+    for _, e in ipairs(UnitResolver.effectsFor(p.id, p.level)) do
+      if e.trigger == "combat_start" and e.op == "repeat_ability" then
+        local who = (e.params and e.params.who) or "ahead"
+        local srcSlot
+        if who == "ahead" then
+          srcSlot = byColRow[(p.col + 1) .. ":" .. p.row] -- l'allié DEVANT (vers le front), même rangée
+        elseif who == "neighbors" then
+          -- copie le PLUS FORT voisin du GRAPHE qui porte un on_hit (heuristique de force = dmg ; tie-break slot asc,
+          -- déterministe). « le plus fort » = on copie le carry qu'on jouxte, pas un buff au hasard.
+          local best, bestDmg
+          for _, nb in ipairs(self.board:neighbors(p.slot)) do
+            if self.slotRigs[nb] then
+              local nid = self.slotRigs[nb].id
+              local nlevel = self.slotRigs[nb].level or 1
+              local hasHit = false
+              for _, ne in ipairs(UnitResolver.effectsFor(nid, nlevel)) do if ne.trigger == "on_hit" and not ne.viaCopy then hasHit = true; break end end
+              if hasHit then
+                local d = Units[nid].dmg or 0
+                if not best or d > bestDmg or (d == bestDmg and nb < best) then best, bestDmg = nb, d end
+              end
+            end
+          end
+          srcSlot = best
+        end
+        if srcSlot and srcSlot ~= p.slot and self.slotRigs[srcSlot] then
+          local src = self.slotRigs[srcSlot]
+          local copies = copyableOnHit(src.id, src.level or 1)
+          if #copies > 0 then
+            local dst = mimicCopies[p.slot]; if not dst then dst = {}; mimicCopies[p.slot] = dst end
+            for _, c in ipairs(copies) do dst[#dst + 1] = c end -- PROFONDEUR 1 (REPEAT_DEPTH_MAX) : append direct, jamais récursif
+          end
+        end
+      end
+    end
+  end
+
+  -- Matérialise les effets d'un voisin SOUS aura (rot growth + grant_bleed seulement ; poison/burn passent
+  -- par poisonInc/burnInc sur l'unité) + les copies de MIMÉTISME (W3). Sinon nil = base (golden-safe).
+  local function auraEffects(id, slot)
+    local mc = mimicCopies[slot]
+    local level = (self.slotRigs[slot] and self.slotRigs[slot].level) or 1
+    local needsLevelEffects = level > 1 and UnitResolver.hasAuthoredLevel(id)
+    if not (rotGrowth[slot] or grantBleed[slot] or mc or needsLevelEffects) then return nil end
+    local out = {}
+    for _, e in ipairs(UnitResolver.effectsFor(id, level)) do
       local pa = {}
       for k, v in pairs(e.params or {}) do pa[k] = v end
       if e.op == "rot" and rotGrowth[slot] then pa.growth = (pa.growth or 1) + rotGrowth[slot] end
@@ -1557,6 +1689,9 @@ function Build:buildComp(side)
       out[#out + 1] = { trigger = "on_hit", op = "bleed",
         params = { dps = g.dps or 1, dur = g.dur or 180, slowPct = g.slowPct or 0 } }
     end
+    if mc then -- W3 : les on_hit COPIÉS s'ajoutent en FIN -> Effects.run(mimic, "on_hit") les rejoue au niveau du mimic
+      for _, c in ipairs(mc) do out[#out + 1] = c end
+    end
     return out
   end
 
@@ -1564,8 +1699,8 @@ function Build:buildComp(side)
   -- Renforts = 5 axes : valeur (valueInc) / cadence (cdr) / réflexion (reflect) / largeur (radius) / surcharge.
   local casters = {} -- [slot] = { value, cd, reflect, overcharge, targetSlots }
   for _, p in ipairs(placed) do
-    local sm = LEVEL_MULT[p.level] or 1.0
-    for _, e in ipairs(Units[p.id].effects or {}) do
+    for _, e in ipairs(UnitResolver.effectsFor(p.id, p.level)) do
+      local sm = UnitResolver.legacyEffectLevelMult(e, p.level)
       if e.trigger == "combat_start" and e.op == "shield_caster" then
         local pa = e.params or {}
         local tgt = {}
@@ -1577,7 +1712,7 @@ function Build:buildComp(side)
   end
   if next(casters) then
     for _, p in ipairs(placed) do -- renforts : aura_shield d'un voisin du caster
-      for _, e in ipairs(Units[p.id].effects or {}) do
+      for _, e in ipairs(UnitResolver.effectsFor(p.id, p.level)) do
         if e.trigger == "combat_start" and e.op == "aura_shield" then
           local pa = e.params or {}
           for _, nb in ipairs(self.board:neighbors(p.slot)) do
@@ -1680,13 +1815,24 @@ function Build:buildComp(side)
     local sb = statBuf[slot]; if not sb then sb = {}; statBuf[slot] = sb end
     sb[stat] = (sb[stat] or 0) + value
   end
-  -- Résout les SLOTS-cibles du board selon `target` (neighbors/team/role:*/tier:N/level:N). `srcSlot` = la
+  -- Résout les SLOTS-cibles du board selon `target` (neighbors/team/role:*/tier:N/level:N/type:X + directions).
+  -- `srcSlot` = la
   -- source (pour neighbors) ; un commandant HORS graphe passe srcSlot=nil -> neighbors vide (pas de voisins).
   local function resolveTargets(target, srcSlot)
     local targets = {}
     if target == "neighbors" then
       if srcSlot then
         for _, nb in ipairs(self.board:neighbors(srcSlot)) do if byCell[nb] then targets[#targets + 1] = nb end end
+      end
+    elseif target == "ahead" or target == "behind" or target == "above" or target == "below" then
+      -- W5 (polarité directionnelle) : cible RELATIVE au porteur, pas au graphe. ahead/behind utilisent
+      -- l'axe X (exposition), above/below l'axe Y (rangée). Slot absent -> effet nul, jamais de crash.
+      local src = srcSlot and byCell[srcSlot]
+      if src then
+        local dc = (target == "ahead" and 1) or (target == "behind" and -1) or 0
+        local dr = (target == "below" and 1) or (target == "above" and -1) or 0
+        local slot = byColRow[(src.col + dc) .. ":" .. (src.row + dr)]
+        if slot and byCell[slot] then targets[1] = slot end
       end
     elseif target == "team" then
       for _, q in ipairs(placed) do targets[#targets + 1] = q.slot end
@@ -1724,8 +1870,8 @@ function Build:buildComp(side)
     end
   end
   for _, p in ipairs(placed) do
-    local sm = LEVEL_MULT[p.level] or 1.0 -- l'aura scale avec le NIVEAU de la source (duplicatas)
-    for _, e in ipairs(Units[p.id].effects or {}) do
+    for _, e in ipairs(UnitResolver.effectsFor(p.id, p.level)) do
+      local sm = UnitResolver.legacyEffectLevelMult(e, p.level) -- authored level effects already carry final values
       if e.trigger == "combat_start" and e.op == "aura_stat" then
         bakeAuraStat(e, sm, p.slot)
       elseif e.trigger == "combat_start" and e.op == "aura_per_unique_type" then
@@ -1746,19 +1892,51 @@ function Build:buildComp(side)
   -- l'arène à combat_start (firewall intact). L'aura est ajoutée AVANT le bake du comp -> statInc absorbé. ──
   local cmd = self.commanderSlot
   if cmd and self:commanderUnlocked() then
-    local cb = Units[cmd.id] and Units[cmd.id].commandBonus
+    local cb = UnitResolver.commandBonusFor(cmd.id, cmd.level or 1)
     if cb and cb.op == "aura_stat" then
-      local sm = LEVEL_MULT[cmd.level or 1] or 1.0
+      local sm = UnitResolver.legacyEffectLevelMult(cb, cmd.level or 1)
       bakeAuraStat(cb, sm, nil) -- srcSlot=nil : pas de voisins, jamais self-ciblé (hors board)
+    end
+  end
+
+  -- ── W3 — MÉTA-MULTIPLICATEUR (`amplify_auras`, plan §AXE 4) : le « Zenith-Stone » incarné en unité
+  -- (hollow_crown). APRÈS que TOUTES les auras du board (unités + rainbow + amplis d'école + commandant) sont
+  -- bakées, le porteur MULTIPLIE par (1+frac) les SORTIES d'aura déjà posées sur l'équipe. CAPS PRÉSERVÉS : on
+  -- amplifie la valeur BRUTE bakée ; le clamp final reste à la LECTURE en combat (ATK_INC_CAP 1.5 / HASTE 0.40 /
+  -- DMG_REDUCE 0.60 / DOT_CAP_MULT ×4 ...) -> un Zénith « +20% d'aura » ne franchit JAMAIS un cap. On amplifie les
+  -- stats CONTINUES (atkInc/haste/dmgReduce/regen/lifesteal) + les amplis d'école (poisonInc/...) + rainbowFlat +
+  -- shield. On N'amplifie PAS `multicast` (bascule ENTIÈRE : amplifier un seuil = double-snowball interdit, cf.
+  -- bakeAuraStat). frac CUMULÉ (plusieurs Zénith s'additionnent) puis BORNÉ (AMPLIFY_FRAC_CAP) -> magnitude lisible.
+  -- Build-résolu, déterministe (ipairs), zéro RNG. Gated : aucune unité golden ne porte amplify_auras.
+  local AMPLIFY_FRAC_CAP = 0.50 -- borne dure du gain d'aura cumulé (anti-empilage de méta-multiplicateurs)
+  local AMP_STATS = { atkInc = true, haste = true, dmgReduce = true, regen = true, lifesteal = true }
+  local ampFrac = 0
+  for _, p in ipairs(placed) do
+    for _, e in ipairs(UnitResolver.effectsFor(p.id, p.level)) do
+      if e.trigger == "combat_start" and e.op == "amplify_auras" then
+        ampFrac = ampFrac + ((e.params and e.params.frac) or 0)
+      end
+    end
+  end
+  if ampFrac > 0 then
+    local f = 1 + math.min(AMPLIFY_FRAC_CAP, ampFrac)
+    for _, sb in pairs(statBuf) do
+      for stat in pairs(AMP_STATS) do if sb[stat] then sb[stat] = sb[stat] * f end end
+    end
+    for _, buf in ipairs({ poisonInc, burnInc, bleedInc, rotInc }) do
+      for slot, v in pairs(buf) do buf[slot] = v * f end
+    end
+    for slot, v in pairs(shield) do shield[slot] = math.floor(v * f + 0.5) end
+    for _, rf in pairs(rainbowFlat) do
+      rf.dmg = math.floor(rf.dmg * f + 0.5); rf.hp = math.floor(rf.hp * f + 0.5)
     end
   end
 
   local comp = {}
   for _, p in ipairs(placed) do
-    local u = Units[p.id]
     local x, y = Place.pos(p.col, p.row, side, b)
     -- depth (0 = front) + row dérivés de la forme -> exposition portée par le sigil (ciblage déterministe).
-    local m = LEVEL_MULT[p.level] or 1.0 -- duplicatas : les stats scalent avec le niveau
+    local stats = UnitResolver.statsFor(p.id, p.level) -- duplicatas : les stats scalent avec le niveau
     local sb = statBuf[p.slot] -- champs combat-time bakés par K1 (nil = inerte, golden-safe)
     -- COMMANDANT (C0) : `statInc` (aura `aura_stat`) est CONSOMMÉ ICI, pas transmis inerte à l'arène. C'est un
     -- `increased` additif sur la base (même couche qu'atkInc), cappé STAT_INC_CAP. Il touche hp ET dmg (les
@@ -1770,9 +1948,9 @@ function Build:buildComp(side)
     -- APRÈS la couche multiplicative (comme un relic_flat_hp). nil = inerte -> hp/dmg base -> golden-safe.
     local rf = rainbowFlat[p.slot]
     comp[#comp + 1] = { id = p.id, slot = p.slot, level = p.level,
-      hp = math.floor(u.hp * m * sf + 0.5) + (rf and rf.hp or 0),
-      dmg = math.floor(u.dmg * m * sf + 0.5) + (rf and rf.dmg or 0), cd = u.cd,
-      depth = b.maxC - p.col, row = p.row, effects = auraEffects(p.id, p.slot),
+      hp = math.floor(stats.hp * sf + 0.5) + (rf and rf.hp or 0),
+      dmg = math.floor(stats.dmg * sf + 0.5) + (rf and rf.dmg or 0), cd = stats.cd,
+      depth = b.maxC - p.col, col = p.col, row = p.row, effects = auraEffects(p.id, p.slot),
       shield = shield[p.slot] or 0, poisonInc = poisonInc[p.slot], burnInc = burnInc[p.slot],
       bleedInc = bleedInc[p.slot], rotInc = rotInc[p.slot], -- TROU #1 : amplis bleed/rot (aura_stat team/role), lus par la pose de DoT
 
@@ -1795,12 +1973,11 @@ function Build:buildComp(side)
   -- double-pose). Si le commandBonus est un `grant_team` (Bris-Siège), on l'AJOUTE aux effects -> l'arène pose le
   -- drapeau d'équipe à combat_start. Position de rendu HORS grille (depth/row cosmétiques). ──
   if cmd and self:commanderUnlocked() then
-    local cu = Units[cmd.id]
-    local cb = cu and cu.commandBonus
-    local m = LEVEL_MULT[cmd.level or 1] or 1.0
+    local cb = UnitResolver.commandBonusFor(cmd.id, cmd.level or 1)
+    local stats = UnitResolver.statsFor(cmd.id, cmd.level or 1)
     -- effects du commandant = ses effects de BOARD (copie) + le grant_team éventuel (jamais l'aura_stat, déjà bakée).
     local cEff = {}
-    for _, e in ipairs(cu.effects or {}) do cEff[#cEff + 1] = e end
+    for _, e in ipairs(UnitResolver.effectsFor(cmd.id, cmd.level or 1)) do cEff[#cEff + 1] = e end
     if cb and cb.op == "grant_team" then cEff[#cEff + 1] = cb end
     -- depth volontairement HORS de la grille ennemie : le commandant n'a pas de colonne (il est intouchable).
     -- POSITION DE RENDU (cosmétique : la SIM cible via depth/row, jamais x/y -> golden-safe) : le commandant
@@ -1811,7 +1988,7 @@ function Build:buildComp(side)
     -- = coord DESIGN passée comme VIRTUEL -> ré-×4 par arena_draw -> hors écran.)
     local cmdX, cmdY = self:commanderCombatPos(side, comp)
     comp[#comp + 1] = { id = cmd.id, slot = nil, level = cmd.level or 1,
-      hp = math.floor(cu.hp * m + 0.5), dmg = math.floor(cu.dmg * m + 0.5), cd = cu.cd,
+      hp = stats.hp, dmg = stats.dmg, cd = stats.cd,
       depth = -1, row = 0, effects = #cEff > 0 and cEff or nil,
       isCommander = true, untargetable = true, cdMult = COMMANDER_CD_MULT,
       x = cmdX, y = cmdY,
@@ -1831,14 +2008,14 @@ function Build:buildRightComp(enc, levelBump)
   local b = Place.bounds(enc.units)
   local comp = {}
   for _, e in ipairs(enc.units) do
-    local u = Units[e.id]
     local lvl = math.min(MAX_LEVEL, (e.level or 1) + levelBump)
-    local m = LEVEL_MULT[lvl] or 1.0
+    local stats = UnitResolver.statsFor(e.id, lvl)
     local x, y = Place.pos(e.col, e.row, 1, b)
+    local effects = (lvl > 1 and UnitResolver.hasAuthoredLevel(e.id)) and UnitResolver.effectsFor(e.id, lvl) or nil
     comp[#comp + 1] = { id = e.id, level = lvl,
-      hp = math.floor(u.hp * m + 0.5), dmg = math.floor(u.dmg * m + 0.5), cd = u.cd,
+      hp = stats.hp, dmg = stats.dmg, cd = stats.cd,
       depth = b.maxC - e.col, row = e.row,
-      shield = 0, x = x, y = y, facing = -1 }
+      shield = 0, effects = effects, x = x, y = y, facing = -1 }
   end
   return comp
 end
@@ -1984,10 +2161,9 @@ end
 -- Sert à afficher le bonus CONCRET (valeur plate) d'une aura amplificatrice sur un voisin donné, au lieu d'un
 -- pourcentage abstrait (le moteur applique bien un multiplicateur `increased`, mais le JOUEUR lit une valeur
 -- réelle, cohérente avec le texte des cartes « +N dmg/s », retour user 2026-06).
-local function baseAfflDps(id, kind)
-  local U = Units[id]
+local function baseAfflDps(id, kind, level)
   local sum = 0
-  for _, e in ipairs((U and U.effects) or {}) do
+  for _, e in ipairs(UnitResolver.effectsFor(id, level or 1)) do
     if e.op == kind then sum = sum + ((e.params and (e.params.dps or e.params.base)) or 0) end
   end
   return sum
@@ -2006,8 +2182,8 @@ function Build:resolveAuraLinks()
   for i = 1, 9 do
     local sr = self.slotRigs[i]
     if sr and self.board.slots[i].unlocked then
-      local sm = LEVEL_MULT[sr.level or 1] or 1.0 -- l'aura scale avec le niveau de la SOURCE (duplicatas)
-      for _, e in ipairs(Units[sr.id].effects or {}) do
+      for _, e in ipairs(UnitResolver.effectsFor(sr.id, sr.level or 1)) do
+        local sm = UnitResolver.legacyEffectLevelMult(e, sr.level or 1) -- authored level effects already carry final values
         if e.trigger == "combat_start" and e.target == "neighbors" then
           local pa = e.params or {}
           local kind, fixed, inc
@@ -2032,7 +2208,7 @@ function Build:resolveAuraLinks()
               if nbr and self.board.slots[nb].unlocked then
                 local label = fixed
                 if inc then -- amplificateur : bonus PLAT concret = dps de base du voisin × multiplicateur (0 -> rien)
-                  local add = math.floor(baseAfflDps(nbr.id, kind) * inc + 0.5)
+                  local add = math.floor(baseAfflDps(nbr.id, kind, nbr.level or 1) * inc + 0.5)
                   label = (add > 0) and ("+" .. add) or nil
                 end
                 if label then links[#links + 1] = { from = i, to = nb, kind = kind, label = label } end
@@ -2135,6 +2311,11 @@ function Build:drawBack(view)
   end
   local spanCol = math.max(1, maxCol - minCol)
   local S = SLOT_HALF * 2
+  -- DÉBLOCABLE AU SURVOL (retour user) : pendant un grant de slot, la case VERROUILLÉE sous le curseur est
+  -- CLIQUABLE pour l'ouvrir -> on signale l'invitation. lockedCellAt = exactement la cible du clic (mousepressed),
+  -- donc l'état « déblocable » est STRICT : nil hors grant, et seulement la case verrouillée pointée (jamais une
+  -- case déjà ouverte/occupée ni une verrouillée non-survolée). RENDER pur.
+  local unlockHover = (run and run.pendingSlotGrant) and self:lockedCellAt(self.mx, self.my) or nil
   for i = 1, 9 do
     local p, slot = self.pos[i], b.slots[i]
     local x, y = p.x * 4 - SLOT_HALF, p.y * 4 - SLOT_HALF
@@ -2147,6 +2328,21 @@ function Build:drawBack(view)
     elseif sr then state = "selected"
     else state = "empty" end
     Slot.draw(x, y, S, state, sr and { tierCol = Rarity.tierColor(Units[sr.id].rank), level = sr.level or 1 } or nil)
+    -- INVITATION DE DÉBLOCAGE : la case verrouillée SURVOLÉE pendant un grant RESPIRE en OR (voile additif +
+    -- liseré qui pulse) -> « clique pour ouvrir ». Même langage que la portée du commandant (additif respirant,
+    -- PAS un disque de fond). Gate STRICT : i == unlockHover (déblocable + survolée). Subtil mais lisible.
+    if i == unlockHover and love.graphics.setBlendMode then
+      local pulse = 0.5 + 0.5 * math.sin(self.t / 60 * 5.0)
+      local gcol = c.gold
+      love.graphics.setBlendMode("add")
+      love.graphics.setColor(gcol[1], gcol[2], gcol[3], 0.10 + 0.16 * pulse)
+      love.graphics.rectangle("fill", x, y, S, S)
+      love.graphics.setColor(gcol[1], gcol[2], gcol[3], 0.40 + 0.35 * pulse)
+      love.graphics.setLineWidth(2)
+      love.graphics.rectangle("line", x - 1, y - 1, S + 2, S + 2)
+      love.graphics.setLineWidth(1)
+      love.graphics.setBlendMode("alpha"); love.graphics.setColor(1, 1, 1, 1)
+    end
     -- carte de risque : voile de sang d'autant plus dense que la case est avancée (front exposé au ciblage).
     local cell = b.shape.cells[i]
     if slot.unlocked and cell then
@@ -2648,7 +2844,7 @@ function Build:drawOverlay(view)
     -- C4 — SURVOL DU PIÉDESTAL (rempli) : la MÊME fiche de monstre qu'une unité du board (MonsterCard), qui
     -- contient déjà le bandeau « AT COMMAND » détaillant l'aura -> on COMPREND ce que fait le commandant (fix du
     -- retour user : « le hover ne marche pas dessus »). Les cases commandées pulsent en or en parallèle (drawBack).
-    self:drawTooltip(self.commanderSlot.id)
+    self:drawTooltip(self.commanderSlot.id, nil, { context = "commander" })
   else
     local id, boardSlot
     local oi = self:shopAt(self.mx, self.my)
@@ -2777,6 +2973,21 @@ function Build:drawShopCard(i, rect, o, hot)
   -- BADGE « LVL n » (haut-droite) : si l'achat aboutit à une fusion, on annonce le niveau atteint, en brillance.
   -- N'apparaît QUE quand previewMergeLevel renvoie un niveau (fusion réelle) -> le badge ne ment jamais.
   self:drawMergeBadge(x, y, w, self:previewMergeLevel(o))
+
+  -- FREEZE (relique frost_seal) : petite pastille cliquable, hors chemin d'achat. Clic sur la pastille =
+  -- verrouille/deverrouille cette offre au prochain reroll/round. Le RunState reste source de verite.
+  local run = self.host.run
+  if run and run.freezeSlots and run.freezeSlots > 0 then
+    local fr = self:shopFreezeRect(i)
+    local fx, fy, fw, fh = fr.x * 4, fr.y * 4, fr.w * 4, fr.h * 4
+    local frozen = o.frozen == true
+    local canFreeze = run:canFreezeOffer(i)
+    local edge = frozen and c.shield or (canFreeze and c.brass or c.ink5)
+    local fill = frozen and { c.shield[1], c.shield[2], c.shield[3], 0.18 } or { c.stone900[1], c.stone900[2], c.stone900[3], 0.88 }
+    Draw.rect(fx, fy, fw, fh, fill, edge, 1)
+    Draw.textC(T("ui.freeze_short"), fx + fw / 2, fy + math.floor((fh - 8) / 2), frozen and c.shield or (canFreeze and c.ink3 or c.ink5), Theme.label(7))
+    if frozen then Draw.rect(x + 2, y + 2, w - 4, h - 4, nil, c.shield, 1) end
+  end
 
   -- PIED (sous la zone d'art) : NOM (Cinzel 600, gauche, ajusté/ellipsé) + COÛT (gem or + nombre, droite).
   local fy = y + h - CARD_FOOT_H
@@ -3244,19 +3455,27 @@ end
 -- plus aucune duplication. C'est la réutilisation visée (même fiche pour build ET Chronique).
 Build.afflValue = MonsterCard.afflValue
 Build.tokenizeValues = MonsterCard.tokenizeValues
-function Build:drawDescLine(line, x, y, font, baseCol, aff, maxW)
-  return MonsterCard.drawDescLine(line, x, y, font, baseCol, aff, maxW)
+function Build:drawDescLine(line, x, y, font, baseCol, aff, maxW, activeTags)
+  return MonsterCard.drawDescLine(line, x, y, font, baseCol, aff, maxW, activeTags)
 end
 
 -- Infobulle d'unité (survol plateau / boutique) : la FICHE de monstre, ancrée au curseur. On passe le rig
 -- d'APERÇU (animé) pour que le portrait respire à l'identique de l'ancienne carte ; bake/bounds via MiniRig.
 -- boardSlot (optionnel) : si l'unité est POSÉE, on attache sous la fiche l'inspecteur d'adjacence (AURAS +
 -- EXPOSURE) — l'inspecteur du design, mais ANCRÉ AU CURSEUR (décision user : pas de panneau fixe à droite).
-function Build:drawTooltip(id, boardSlot)
+function Build:drawTooltip(id, boardSlot, opts)
+  opts = opts or {}
+  local tagOpts = opts.tagOpts or (opts.context and { context = opts.context }) or nil
   local box = MonsterCard.draw(self.view, self.palette, id, self.mx * 4, self.my * 4, self.t / 60,
-    { rig = self.previewRigs[id] })
+    { rig = self.previewRigs[id], keywordHint = true, tagOpts = tagOpts })
   if box and boardSlot and self.slotRigs[boardSlot] then
     self:drawBoardInspectorExtra(box, boardSlot)
+  end
+  local showKeywords = opts.showKeywords or self.forceKeywordGlossary
+    or (love and love.keyboard and love.keyboard.isDown and love.keyboard.isDown("lshift", "rshift"))
+  if box and showKeywords then
+    CardGlossary.drawMonster(self.view, box, id, self.t / 60,
+      { showKeywords = true, scroll = self.tagGlossaryScroll or 0, tagOpts = tagOpts })
   end
 end
 
@@ -3349,7 +3568,7 @@ function Build:drawRelicTooltip(id)
   local opts = {
     state = "identified",
     name = T("relic." .. id .. ".name"),
-    effect = T("relic." .. id .. ".effect"),
+    effect = table.concat(MechanicsText.relicLines(id), "\n"),
     flavor = T("relic." .. id .. ".flavor"),
     fam = RELIC_TYPE[id] or "bone",
     band = RelicsData[id] and RelicsData[id].band,
@@ -3362,7 +3581,10 @@ function Build:drawRelicTooltip(id)
   if x < 4 then x = 4 end
   if y + h > Draw.H then y = Draw.H - h - 6 end
   if y < 4 then y = 4 end
-  RelicCard.draw(math.floor(x), math.floor(y), W, h, opts)
+  local cardBox = { x = math.floor(x), y = math.floor(y), w = W, h = h }
+  RelicCard.draw(cardBox.x, cardBox.y, W, h, opts)
+  CardGlossary.drawRelic(self.view, cardBox, id, self.t / 60,
+    { scroll = self.tagGlossaryScroll or 0 })
 end
 
 return Build

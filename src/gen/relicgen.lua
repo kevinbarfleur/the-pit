@@ -540,6 +540,18 @@ local VIS = {
   pack_blood       = { m = "maw",       pal = "FLESH",  anim = { "chatter" } },          -- la meute affamée (gueule, chair)
   bile_orb         = { m = "bowl",      pal = "SHADOW", lp = "POISON", anim = { "brew" } }, -- globe d'eau noire (vase, venin)
   prismatic_wraith = { m = "gem",       pal = "SHADOW", anim = { "pulse" } },             -- le prisme multi-facettes
+  -- W3 - axe mimetisme/amplification : meta-multiplicateurs d'auras, append-only avec Relics.order.
+  zenith_stone     = { m = "gem",       pal = "GOLD",   anim = { "pulse", "spark" } },
+  forked_echo      = { m = "choir",     pal = "SHADOW", anim = { "echo", "chant" } },
+  link_cable       = { m = "nail",      pal = "IRON",   anim = { "spark" } },
+  -- W4 - axe tank/removal/execution : le finish d'equipe (cage thoracique pale = le faucheur) + l'anti-mur (bloc de
+  -- siege en fer, distinct du whetstone par la palette). Append-only avec Relics.order (reconciliation 1:1).
+  reapers_scythe   = { m = "ribs",      pal = "PALE",   anim = { "mist" } },             -- le faucheur d'equipe (os, brume froide)
+  siege_hammer     = { m = "whetstone", pal = "IRON",   anim = { "spark" } },            -- le marteau de siege (fer lourd, etincelle d'impact)
+  -- W5/W8 - positionnement + boutique : motifs existants, réconciliation 1:1 avec Relics.order.
+  rear_standard    = { m = "banner",    pal = "IRON",   anim = { "sway" } },
+  front_lance      = { m = "nail",      pal = "PALE",   anim = { "spark" } },
+  frost_seal       = { m = "letter",    pal = "PALE",   anim = { "sealpulse" }, seal = "SHADOW" },
 }
 RelicGen.VIS = VIS
 RelicGen.PAL = PAL
@@ -669,6 +681,12 @@ RelicGen.order = {
   "echo_crown", "gravediggers_due", "splitting_maw",
   -- W1 — axe type-identité (mono-type amps + rainbow team payoff ; plan big-update §AXE 2)
   "pack_blood", "bile_orb", "prismatic_wraith",
+  -- W3 - axe mimetisme/amplification (meta-multiplicateurs)
+  "zenith_stone", "forked_echo", "link_cable",
+  -- W4 - axe tank/removal/execution (finish d'equipe + anti-mur ; plan big-update §AXE 7)
+  "reapers_scythe", "siege_hammer",
+  -- W5/W8 - positionnement + boutique
+  "rear_standard", "front_lance", "frost_seal",
 }
 
 return RelicGen

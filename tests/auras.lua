@@ -424,6 +424,192 @@ local ok, err = pcall(function()
     restore()
   end
 
+  -- ════════ W3 — AXE MIMÉTISME / AMPLIFICATION (plan big-update §AXE 4) : repeat_ability + amplify_auras ════════
+  -- Tous deux BUILD-RÉSOLUS (comme aura_stat) : on les teste via buildComp (la sortie matérialisée), déterministe,
+  -- zéro RNG. repeat_ability COPIE les on_hit du voisin dans les effects du mimic (PROFONDEUR 1, viaCopy). amplify_auras
+  -- MULTIPLIE les sorties d'aura déjà bakées (caps préservés à la lecture combat).
+
+  local function withEffects(id, eff) local u = Units[id]; local s = u.effects; u.effects = eff; return function() u.effects = s end end
+  local function hasOnHitOp(spec, op)
+    if not spec.effects then return false end
+    for _, e in ipairs(spec.effects) do if e.trigger == "on_hit" and e.op == op then return true end end
+    return false
+  end
+  local function countOnHitOp(spec, op)
+    local n = 0
+    if spec.effects then for _, e in ipairs(spec.effects) do if e.trigger == "on_hit" and e.op == op then n = n + 1 end end end
+    return n
+  end
+
+  -- 21) repeat_ability who="ahead" : le mimic copie les on_hit de l'allié DEVANT lui (même row, col+1 vers le
+  -- front). Sur le carré : slots 4(col0)/5(col1)/6(col2) sont la ROW 1. Un mimic en slot 4 (arrière) avec witch
+  -- (poison on_hit) en slot 5 (devant) -> le mimic gagne un `poison` viaCopy dans ses effects, au niveau du mimic.
+  do
+    local restore = withEffects("soot_acolyte", { { trigger = "combat_start", op = "repeat_ability", params = { who = "ahead" } } })
+    local b = fresh()
+    b:placeId(4, "soot_acolyte") -- le MIMIC (arrière, col 0)
+    b:placeId(5, "witch")        -- le carry DEVANT (col 1), poison on_hit
+    local comp = b:buildComp(-1)
+    local mimic = compById(comp, "soot_acolyte")
+    assert(mimic and hasOnHitOp(mimic, "poison"), "repeat_ability ahead: le mimic copie le poison on_hit de la witch devant")
+    -- la copie porte viaCopy (PROFONDEUR 1 : un 2e mimic ne la recopierait pas).
+    local copied
+    for _, e in ipairs(mimic.effects) do if e.op == "poison" then copied = e end end
+    assert(copied and copied.viaCopy == true, "repeat_ability: la copie porte viaCopy=true (anti repeat-of-repeat)")
+    -- la witch (la source) est INCHANGÉE (pas de double-pose sur elle ; effects=nil/base).
+    local wit = compById(comp, "witch")
+    assert(wit.effects == nil or countOnHitOp(wit, "poison") == 1, "repeat_ability: la source witch garde 1 seul poison (pas de mutation)")
+    restore()
+  end
+
+  -- 22) repeat_ability ISOLÉ (rien devant) : aucun voisin "ahead" -> aucune copie -> effects = nil (base, golden-safe).
+  do
+    local restore = withEffects("soot_acolyte", { { trigger = "combat_start", op = "repeat_ability", params = { who = "ahead" } } })
+    local b = fresh()
+    b:placeId(6, "soot_acolyte") -- col 2 = FRONT : il n'y a personne DEVANT (col 3 n'existe pas) -> rien à copier
+    local comp = b:buildComp(-1)
+    local mimic = compById(comp, "soot_acolyte")
+    assert(mimic.effects == nil, "repeat_ability isolé (rien ahead): effects = nil (base, golden-safe)")
+    restore()
+  end
+
+  -- 23) repeat_ability who="neighbors" : le mimic copie le PLUS FORT voisin du GRAPHE qui porte un on_hit
+  -- (heuristique dmg, tie-break slot asc). Au centre (slot 5), voisins = 2,4,6,8. On place une witch (dmg 13,
+  -- poison) en 2 et un spore_tick (dmg 3, poison) en 8 -> le mimic copie la WITCH (dmg le plus haut).
+  do
+    local restore = withEffects("soot_acolyte", { { trigger = "combat_start", op = "repeat_ability", params = { who = "neighbors" } } })
+    local b = fresh()
+    b:placeId(5, "soot_acolyte") -- mimic au centre (4 voisins)
+    b:placeId(2, "witch")        -- voisin fort (dmg 13)
+    b:placeId(8, "spore_tick")   -- voisin faible (dmg 3)
+    local comp = b:buildComp(-1)
+    local mimic = compById(comp, "soot_acolyte")
+    assert(mimic and hasOnHitOp(mimic, "poison"), "repeat_ability neighbors: le mimic copie un on_hit du voisin")
+    -- on n'a copié QUE le plus fort (1 source) -> exactement 1 poison copié (witch), pas 2.
+    assert(countOnHitOp(mimic, "poison") == 1, "repeat_ability neighbors: copie le SEUL plus fort voisin (1 poison, pas 2)")
+    restore()
+  end
+
+  -- 24) ANTI repeat-of-repeat (PROFONDEUR 1) : deux mimics côte à côte. Le mimic B copie le carry ; le mimic A
+  -- (derrière B) ne doit PAS hériter de la copie de B (on ne copie que les on_hit de la DATA du voisin, jamais un
+  -- effet viaCopy ni un combat_start repeat_ability). Donc A reste sans copie (B n'a pas d'on_hit propre à copier).
+  do
+    local restore = withEffects("soot_acolyte", { { trigger = "combat_start", op = "repeat_ability", params = { who = "ahead" } } })
+    local b = fresh()
+    b:placeId(4, "soot_acolyte") -- mimic A (col 0, arrière)
+    b:placeId(5, "soot_acolyte") -- mimic B (col 1) -> copie le carry en col 2
+    b:placeId(6, "witch")        -- le carry (col 2, front), poison on_hit
+    local comp = b:buildComp(-1)
+    local A, B = nil, nil
+    for _, s in ipairs(comp) do if s.slot == 4 then A = s elseif s.slot == 5 then B = s end end
+    assert(B and hasOnHitOp(B, "poison"), "anti-repeat: le mimic B (devant le carry) copie bien le poison")
+    -- A copie les on_hit de la DATA de B (soot_acolyte = repeat_ability, AUCUN on_hit) -> A ne gagne RIEN.
+    assert((A.effects == nil) or (countOnHitOp(A, "poison") == 0),
+      "anti-repeat-of-repeat: le mimic A n'hérite PAS de la copie de B (profondeur 1)")
+    restore()
+  end
+
+  -- 25) amplify_auras (méta-multiplicateur, UNITÉ hollow_crown) : un porteur amplify_auras +0.20 MULTIPLIE les
+  -- sorties d'aura déjà bakées sur l'équipe. On pose une aura atkInc team (synthétique sur soot) + le porteur
+  -- amplify -> l'atkInc baké passe de v à v×1.20 (valeur BRUTE ; le cap ATK_INC_CAP=1.5 clampe à la LECTURE combat).
+  do
+    local rAura = withEffects("soot_acolyte", { { trigger = "combat_start", op = "aura_stat", target = "team", params = { stat = "atkInc", value = 0.20 } } })
+    local rAmp  = withEffects("rot_grub", { { trigger = "combat_start", op = "amplify_auras", params = { frac = 0.20 } } })
+    local b = fresh()
+    b:placeId(1, "soot_acolyte") -- pose atkInc team 0.20
+    b:placeId(2, "rot_grub")     -- amplify_auras +0.20
+    b:placeId(3, "marauder")
+    local comp = b:buildComp(-1)
+    local mar = compById(comp, "marauder")
+    -- atkInc baké = 0.20 (team) ; amplifié ×1.20 -> 0.24. SOUS le cap ATK_INC_CAP=1.5 (clampé seulement à la lecture).
+    assert(mar.atkInc and math.abs(mar.atkInc - 0.24) < 1e-9,
+      "amplify_auras: atkInc 0.20 ×1.20 = 0.24 (valeur brute, obtenu " .. tostring(mar.atkInc) .. ")")
+    rAmp(); rAura()
+  end
+
+  -- 26) amplify_auras SANS aura à amplifier = inerte (golden-safe) ; et sans porteur amplify, l'aura reste brute.
+  do
+    local rAura = withEffects("soot_acolyte", { { trigger = "combat_start", op = "aura_stat", target = "team", params = { stat = "atkInc", value = 0.20 } } })
+    local b = fresh()
+    b:placeId(1, "soot_acolyte"); b:placeId(2, "marauder")
+    local comp = b:buildComp(-1)
+    local mar = compById(comp, "marauder")
+    assert(mar.atkInc and math.abs(mar.atkInc - 0.20) < 1e-9, "amplify_auras absent: l'aura reste brute (0.20)")
+    rAura()
+  end
+
+  -- 27) amplify_auras CAP préservé (le point CRITIQUE du plan) : même un empilage d'auras + amplify ne franchit
+  -- JAMAIS le cap à la LECTURE combat. On bake un atkInc team ÉNORME (1.4) + amplify 0.50 -> 1.4×1.50 = 2.10 baké,
+  -- mais l'arène CLAMPE à ATK_INC_CAP=1.5 quand elle lit (makeUnit/hit). On vérifie la valeur lue via Arena.
+  do
+    local rAura = withEffects("soot_acolyte", { { trigger = "combat_start", op = "aura_stat", target = "team", params = { stat = "atkInc", value = 1.4 } } })
+    local rAmp  = withEffects("rot_grub", { { trigger = "combat_start", op = "amplify_auras", params = { frac = 0.50 } } })
+    local b = fresh()
+    b:placeId(1, "soot_acolyte"); b:placeId(2, "rot_grub"); b:placeId(3, "marauder")
+    local comp = b:buildComp(-1)
+    local mar = compById(comp, "marauder")
+    assert(mar.atkInc and mar.atkInc > 1.5, "amplify_auras: la valeur BRUTE bakée dépasse le cap (2.10), prouve l'ampli")
+    -- LECTURE COMBAT : Arena clampe atkInc à ATK_INC_CAP=1.5 -> le bonus effectif est ×(1+1.5)=2.5, JAMAIS plus.
+    -- effects={} (et non l'id marauder dont la DATA porte bonus_first/execute) pour ISOLER l'effet du seul atkInc.
+    local Arena = require("src.combat.arena")
+    local a = Arena.new({ left = { { id = "marauder", hp = 999, dmg = 10, cd = 60, atkInc = mar.atkInc, effects = {}, depth = 0, row = 0, x = 0, y = 0, facing = 1 } },
+      right = { { id = "skeleton", hp = 99999, dmg = 1, cd = 60, effects = {}, depth = 0, row = 0, x = 10, y = 0, facing = -1 } }, autoReset = false, seed = 9 })
+    local atk, tgt = a.units[1], a.units[2]
+    local hp0 = tgt.hp; a:hit(atk, tgt); local dealt = hp0 - tgt.hp
+    -- dmg base 10, atkInc clampé 1.5 -> 10×(1+1.5)=25 (mais HIT_DMG_CAP_MULT=7 -> max 70 ; ici 25 < 70). Le cap a MORDU.
+    assert(dealt == 25, "amplify_auras CAP: atkInc clampé à 1.5 à la lecture -> 10 ->25, le cap a mordu (obtenu " .. dealt .. ")")
+    rAmp(); rAura()
+  end
+
+  -- 28) DÉTERMINISME (W3) : deux builds identiques (mimic + amplify) -> sorties identiques.
+  do
+    local rA = withEffects("soot_acolyte", { { trigger = "combat_start", op = "repeat_ability", params = { who = "ahead" } } })
+    local function mimicCopies()
+      local b = fresh(); b:placeId(4, "soot_acolyte"); b:placeId(5, "witch")
+      local m = compById(b:buildComp(-1), "soot_acolyte")
+      return m.effects and countOnHitOp(m, "poison") or 0
+    end
+    assert(mimicCopies() == mimicCopies() and mimicCopies() == 1, "W3 repeat_ability déterministe (1 copie, stable)")
+    rA()
+  end
+
+  -- 29) W5 — cibles DIRECTIONNELLES relatives (ahead/behind/above/below). Sur carré, depuis le centre slot 5 :
+  -- ahead=6, behind=4, above=2, below=8. Elles ne dépendent PAS des arêtes du graphe, mais des coordonnées.
+  do
+    local restore = withAura("soot_acolyte", { stat = "atkInc", target = "behind", value = 0.15 })
+    local b = fresh()
+    for s = 1, 9 do b:placeId(s, s == 5 and "soot_acolyte" or "marauder") end
+    local hits = {}
+    for _, s in ipairs(b:buildComp(-1)) do if s.atkInc and s.atkInc > 0 then hits[#hits + 1] = s.slot end end
+    assert(#hits == 1 and hits[1] == 4, "W5 behind depuis slot 5 -> slot 4 (obtenu " .. tostring(hits[1]) .. ")")
+    restore()
+  end
+  do
+    local restore = withAura("soot_acolyte", { stat = "haste", target = "ahead", value = 0.12 })
+    local b = fresh()
+    for s = 1, 9 do b:placeId(s, s == 5 and "soot_acolyte" or "marauder") end
+    local hits = {}
+    for _, s in ipairs(b:buildComp(-1)) do if s.haste and s.haste > 0 then hits[#hits + 1] = s.slot end end
+    assert(#hits == 1 and hits[1] == 6, "W5 ahead depuis slot 5 -> slot 6 (obtenu " .. tostring(hits[1]) .. ")")
+    restore()
+  end
+  do
+    local restore = withEffects("soot_acolyte", {
+      { trigger = "combat_start", op = "aura_stat", target = "above", params = { stat = "dmgReduce", value = 0.12 } },
+      { trigger = "combat_start", op = "aura_stat", target = "below", params = { stat = "dmgReduce", value = 0.12 } },
+    })
+    local b = fresh()
+    for s = 1, 9 do b:placeId(s, s == 5 and "soot_acolyte" or "marauder") end
+    local got = {}
+    for _, s in ipairs(b:buildComp(-1)) do if s.dmgReduce and s.dmgReduce > 0 then got[s.slot] = s.dmgReduce end end
+    assert(got[2] and got[8] and not got[4] and not got[6], "W5 above/below depuis slot 5 -> slots 2 et 8 uniquement")
+    restore()
+  end
+
+  print("  auras W3: repeat_ability (ahead/neighbors, copie on_hit viaCopy, isolé=base, anti repeat-of-repeat profondeur 1) OK")
+  print("  auras W3: amplify_auras (multiplie l'aura bakée, inerte sans aura, CAP préservé à la lecture combat, déterministe) OK")
+  print("  auras W5: targets directionnels ahead/behind/above/below (relatifs au porteur, golden-safe) OK")
+
   print("  auras : ampli increased sur voisin (lu a la pose) / grant d'effet / isolé = base (golden-safe) OK")
   print("  auras K1: role front/back/center sur carré (unique+stable) / team / tier:N (spec §6.2.1) OK")
   print("  auras W1: target type:X (mono-type, exact+stable+école croisée) / rainbow self-aura (scale par count, borné) OK")

@@ -110,6 +110,7 @@ local ok, err = pcall(function()
       { id = "carrion_ledger",  runOp = "shop_xp",        tier = 3 },
       { id = "black_summons",   runOp = "shop_tier_up",   tier = 4 },
       { id = "beggars_lantern", runOp = "shop_tier_down", tier = 2 },
+      { id = "frost_seal",      runOp = "shop_freeze",    tier = 2 },
     }
     for _, want in ipairs(shopRelics) do
       local rel = Relics[want.id]
@@ -156,6 +157,13 @@ local ok, err = pcall(function()
       assert(rd:grantRelic("beggars_lantern"), "octroi de beggars_lantern")
       assert(rd.shopOddsShift == -1, "beggars_lantern : shopOddsShift = -1")
       assert(rd.shopTier == tier0, "beggars_lantern : le tier REEL est inchange (seul le decalage de cotes bouge)")
+    end
+    -- shop_freeze : débloque 1 verrou de boutique, hors combat.
+    do
+      local rf = RunState.new(106)
+      assert(rf.freezeSlots == 0, "frost_seal : aucun slot de gel au depart")
+      assert(rf:grantRelic("frost_seal"), "frost_seal : grant OK")
+      assert(rf.freezeSlots == 1, "frost_seal : debloque 1 slot de gel")
     end
 
     -- R.apply / applyRelics avec une relique runOp dans la compo : AUCUN crash, AUCUNE stat de combat modifiee.
@@ -300,6 +308,153 @@ local ok, err = pcall(function()
     assert(cmono[1].dmg == 9 + 3 and cmono[1].hp == 60 + 5, "prismatic_wraith mono-type: count=1 -> +3 dmg / +5 hp")
   end
 
+  -- 2d-ter) W3 — AXE MIMÉTISME/AMPLIFICATION (plan big-update §AXE 4) : les MÉTA-MULTIPLICATEURS (op
+  -- relic_amplify_auras). APRÈS buildComp (auras bakées en champs sur les specs), ils MULTIPLIENT les sorties
+  -- d'aura par (1+frac). CAPS PRÉSERVÉS : on amplifie la valeur BRUTE ; le clamp reste à la LECTURE en combat.
+  do
+    local Arena = require("src.combat.arena")
+    -- PIERRE-DU-ZÉNITH (relic_amplify_auras frac=0.15 team) : MULTIPLIE les auras CONTINUES + amplis d'école.
+    -- specs avec auras déjà bakées (atkInc 0.20, haste 0.10, poisonInc 0.30) -> ×1.15.
+    local zs = RunState.new(400); zs:grantRelic("zenith_stone")
+    local czs = { { id = "a", hp = 50, dmg = 10, cd = 36, depth = 0, row = 0, slot = 1, atkInc = 0.20, haste = 0.10, poisonInc = 0.30 },
+                  { id = "b", hp = 50, dmg = 10, cd = 36, depth = 1, row = 1, slot = 2 } } -- sans aura -> inerte (golden-safe)
+    zs:applyRelics(czs)
+    assert(math.abs(czs[1].atkInc - 0.23) < 1e-9, "zenith_stone: atkInc 0.20 ×1.15 = 0.23")
+    assert(math.abs(czs[1].haste - 0.115) < 1e-9, "zenith_stone: haste 0.10 ×1.15 = 0.115")
+    assert(math.abs(czs[1].poisonInc - 0.345) < 1e-9, "zenith_stone: poisonInc 0.30 ×1.15 = 0.345 (ampli d'école)")
+    assert((czs[2].atkInc or 0) == 0, "zenith_stone: une unité SANS aura n'est pas affectée (inerte, golden-safe)")
+    assert(Relics.zenith_stone.band == "high", "zenith_stone: band high")
+    -- multicast (bascule ENTIÈRE) N'est PAS amplifié (anti double-snowball).
+    local zm = RunState.new(401); zm:grantRelic("zenith_stone")
+    local czm = { { id = "a", hp = 50, dmg = 10, cd = 36, depth = 0, row = 0, slot = 1, multicast = 2 } }
+    zm:applyRelics(czm)
+    assert(czm[1].multicast == 2, "zenith_stone: multicast (bascule entière) JAMAIS amplifié (reste 2)")
+
+    -- DOUBLE-LANGUE / Onsetra (relic_amplify_auras frac=0.25 role:back) : amplifie SEULEMENT l'unité d'arrière.
+    -- back = depth max ; tie-break row asc/slot asc (identique chooseTarget). front (depth 0) intact.
+    local fe = RunState.new(402); fe:grantRelic("forked_echo")
+    local cfe = { { id = "front", hp = 50, dmg = 10, cd = 36, depth = 0, row = 0, slot = 1, atkInc = 0.20 },
+                  { id = "back",  hp = 50, dmg = 10, cd = 36, depth = 2, row = 0, slot = 5, atkInc = 0.20 } }
+    fe:applyRelics(cfe)
+    assert(math.abs(cfe[2].atkInc - 0.25) < 1e-9, "forked_echo: role:back atkInc 0.20 ×1.25 = 0.25")
+    assert(math.abs(cfe[1].atkInc - 0.20) < 1e-9, "forked_echo: le FRONT reste brut (0.20, focalisé arrière)")
+    assert(Relics.forked_echo.band == "high", "forked_echo: band high")
+
+    -- CÂBLE-DE-LIAISON / Link-Cable (relic_amplify_auras frac=0.20 dotOnly) : amplifie SEULEMENT les amplis d'école
+    -- (poison/burn/bleed/rot), pas les stats continues. atkInc intact, poisonInc ×1.20.
+    local lc = RunState.new(403); lc:grantRelic("link_cable")
+    local clc = { { id = "a", hp = 50, dmg = 10, cd = 36, depth = 0, row = 0, slot = 1, atkInc = 0.20, poisonInc = 0.30, burnInc = 0.10 } }
+    lc:applyRelics(clc)
+    assert(math.abs(clc[1].poisonInc - 0.36) < 1e-9, "link_cable: poisonInc 0.30 ×1.20 = 0.36 (dotOnly)")
+    assert(math.abs(clc[1].burnInc - 0.12) < 1e-9, "link_cable: burnInc 0.10 ×1.20 = 0.12 (dotOnly)")
+    assert(math.abs(clc[1].atkInc - 0.20) < 1e-9, "link_cable: atkInc INTACT (dotOnly n'amplifie PAS les stats continues)")
+    assert(Relics.link_cable.band == "high", "link_cable: band high")
+
+    -- CAP PRÉSERVÉ (le point CRITIQUE) : un atkInc déjà ÉNORME (1.4) ×1.15 = 1.61 baké, MAIS l'arène clampe à
+    -- ATK_INC_CAP=1.5 à la LECTURE -> l'ampli ne franchit JAMAIS le cap. On vérifie la valeur LUE en combat.
+    local zc = RunState.new(404); zc:grantRelic("zenith_stone")
+    local czc = { { id = "marauder", hp = 999, dmg = 10, cd = 60, depth = 0, row = 0, slot = 1, atkInc = 1.4, effects = {} } }
+    zc:applyRelics(czc)
+    assert(czc[1].atkInc > 1.5, "zenith_stone CAP: la valeur BRUTE bakée dépasse le cap (1.61), prouve l'ampli")
+    local a = Arena.new({ left = { czc[1] },
+      right = { { id = "skeleton", hp = 99999, dmg = 1, cd = 60, effects = {}, depth = 0, row = 0, x = 10, y = 0, facing = -1 } },
+      autoReset = false, seed = 11 })
+    local atk, tgt = a.units[1], a.units[2]
+    local hp0 = tgt.hp; a:hit(atk, tgt); local dealt = hp0 - tgt.hp
+    -- dmg 10, atkInc clampé 1.5 -> 10×2.5 = 25 (le cap a MORDU malgré l'ampli ; sans cap ce serait 10×2.61=26).
+    assert(dealt == 25, "zenith_stone CAP: atkInc clampé 1.5 à la lecture -> 25 (le cap CONTIENT l'ampli, obtenu " .. dealt .. ")")
+
+    -- DÉTERMINISME : deux applications identiques -> sorties identiques.
+    local function ampOnce()
+      local r = RunState.new(405); r:grantRelic("zenith_stone")
+      local c = { { id = "a", hp = 50, dmg = 10, cd = 36, slot = 1, atkInc = 0.33 } }
+      r:applyRelics(c); return c[1].atkInc
+    end
+    assert(math.abs(ampOnce() - ampOnce()) < 1e-12, "relic_amplify_auras déterministe (même entrée -> même sortie)")
+  end
+
+  -- 2d-quater) W4 — AXE TANK / REMOVAL / EXÉCUTION (plan big-update §AXE 7) : les reliques de FINISH / %-PV (le
+  -- counter du mur, SUMMARY §3). Toutes = relic_add_effect (effet lu en combat) : grant_team{teamExecute} ou
+  -- on_attack percent_hp_strike. On vérifie l'INJECTION + le PALIER + (point critique) que le %-PV est CAPPÉ à la
+  -- LECTURE en combat -> impossible de one-shot, quelle que soit la cible.
+  do
+    local Arena = require("src.combat.arena")
+    -- FAUX-DU-MOISSONNEUR (relic_add_effect -> combat_start grant_team{teamExecute}) : injecte le drapeau d'équipe.
+    local function injectsGrant(relic, key)
+      local r = RunState.new(500); r:grantRelic(relic)
+      local cc = { { id = "a", hp = 50, dmg = 7, cd = 36 } }; r:applyRelics(cc)
+      for _, e in ipairs(cc[1].effects or {}) do
+        if e.op == "grant_team" and e.params and e.params[key] ~= nil then return true end
+      end
+      return false
+    end
+    assert(injectsGrant("reapers_scythe", "teamExecute"), "reapers_scythe: injecte grant_team{teamExecute}")
+    assert(Relics.reapers_scythe.band == "high", "reapers_scythe: band high")
+
+    -- MARTEAU-DE-SIÈGE (relic_add_effect -> on_attack percent_hp_strike) : injecte l'op de frappe %-PV.
+    local function injectsAttack(relic, op)
+      local r = RunState.new(501); r:grantRelic(relic)
+      local cc = { { id = "a", hp = 50, dmg = 7, cd = 36 } }; r:applyRelics(cc)
+      for _, e in ipairs(cc[1].effects or {}) do if e.trigger == "on_attack" and e.op == op then return true end end
+      return false
+    end
+    assert(injectsAttack("siege_hammer", "percent_hp_strike"), "siege_hammer: injecte on_attack percent_hp_strike")
+    assert(Relics.siege_hammer.band == "mid", "siege_hammer: band mid")
+
+    -- CAP EN COMBAT (le point CRITIQUE, Q8) : siege_hammer pose percent_hp_strike frac=0.08/cap=10. Contre un mur
+    -- ÉNORME (maxHp 40000), 8% = 3200, MAIS le cap (min(10, PCT_STRIKE_CAP)=10) borne la contribution à 10. Le mur
+    -- N'EST PAS one-shot. On vérifie la valeur LUE en combat (relique appliquée à une vraie unité, hit() réel).
+    local sh = RunState.new(502); sh:grantRelic("siege_hammer")
+    local atkSpec = { id = "bandit", hp = 50, dmg = 5, cd = 36, depth = 0, row = 0, slot = 1, x = 10, y = 0, facing = 1 }
+    sh:applyRelics({ atkSpec }) -- injecte percent_hp_strike dans atkSpec.effects
+    local a = Arena.new({ left = { atkSpec },
+      right = { { id = "gravewarden", hp = 40000, dmg = 1, cd = 60, effects = {}, depth = 0, row = 0, x = 20, y = 0, facing = -1 } },
+      autoReset = false, seed = 13 })
+    local atk, wall = a.units[1], a.units[2]
+    local hp0 = wall.hp; a:hit(atk, wall); local dealt = hp0 - wall.hp
+    -- dmg base 5 + bite clampé 10 = 15 (PAS 5 + 3200). Le cap a MORDU -> aucun one-shot possible via la relique.
+    assert(dealt == 5 + 10, ("siege_hammer CAP: contribution %%PV CLAMPÉE au cap 10 -> 15 dégâts (obtenu %d, JAMAIS 3205)"):format(dealt))
+    assert(wall.alive and wall.hp > 39000, "siege_hammer CAP: le MUR n'est PAS one-shot par la relique (plafond absolu tient)")
+
+    -- DÉTERMINISME : deux frappes identiques (relique appliquée) -> même mordant.
+    local function bite()
+      local r = RunState.new(503); r:grantRelic("siege_hammer")
+      local s = { id = "bandit", hp = 50, dmg = 5, cd = 36, depth = 0, row = 0, slot = 1, x = 10, y = 0, facing = 1 }
+      r:applyRelics({ s })
+      local b = Arena.new({ left = { s }, right = { { id = "skeleton", hp = 5000, dmg = 1, cd = 60, effects = {}, depth = 0, row = 0, x = 20, y = 0, facing = -1 } }, autoReset = false, seed = 13 })
+      local h0 = b.units[2].hp; b:hit(b.units[1], b.units[2]); return h0 - b.units[2].hp
+    end
+    assert(bite() == bite(), "siege_hammer: déterministe (même frappe -> même mordant %PV)")
+  end
+
+  -- 2d-quinquies) W5 — AXE POSITION / POLARITÉ DIRECTIONNELLE : reliques directionnelles. Contrairement à une
+  -- aura de rôle, chaque unité du board devient SOURCE et buffe l'allié immédiat dans la direction donnée.
+  do
+    local rs = RunState.new(600); rs:grantRelic("rear_standard")
+    local c = {
+      { id = "marauder", hp = 60, dmg = 9, cd = 60, slot = 4 }, -- col 0,row 1
+      { id = "bandit", hp = 46, dmg = 7, cd = 36, slot = 5 },   -- col 1,row 1 -> buffe 4 derrière
+      { id = "husk", hp = 58, dmg = 4, cd = 72, slot = 6 },     -- col 2,row 1 -> buffe 5 derrière
+    }
+    rs:applyRelics(c)
+    assert(math.abs((c[1].atkInc or 0) - 0.10) < 1e-9, "rear_standard : slot 4 reçoit +0.10 du slot 5")
+    assert(math.abs((c[2].atkInc or 0) - 0.10) < 1e-9, "rear_standard : slot 5 reçoit +0.10 du slot 6")
+    assert((c[3].atkInc or 0) == 0, "rear_standard : slot 6 n'a personne devant pour le buffer derrière")
+    assert(Relics.rear_standard.band == "mid", "rear_standard: band mid")
+
+    local fl = RunState.new(601); fl:grantRelic("front_lance")
+    local d = {
+      { id = "marauder", hp = 60, dmg = 9, cd = 60, slot = 4 },
+      { id = "bandit", hp = 46, dmg = 7, cd = 36, slot = 5 },
+      { id = "husk", hp = 58, dmg = 4, cd = 72, slot = 6 },
+    }
+    fl:applyRelics(d)
+    assert((d[1].dmgReduce or 0) == 0, "front_lance : slot 4 n'est pas ciblé par ahead")
+    assert(math.abs((d[2].dmgReduce or 0) - 0.10) < 1e-9, "front_lance : slot 5 reçoit +0.10 du slot 4")
+    assert(math.abs((d[3].dmgReduce or 0) - 0.10) < 1e-9, "front_lance : slot 6 reçoit +0.10 du slot 5")
+    assert(Relics.front_lance.band == "mid", "front_lance: band mid")
+  end
+
   -- 2e) SURVEILLANCE D'EMPILEMENT (plan relics-overhaul §4) : les empilements dangereux restent BORNÉS au
   -- BUILD (les caps moteur a la LECTURE sont testés ailleurs : tests/synergies KEYSTONES). Ici on verifie la
   -- COMPOSITION des champs bakés (somme team + relique), qui DOIT rester sous les caps moteur.
@@ -347,11 +502,11 @@ local ok, err = pcall(function()
     local cl = l:rollRelicChoices(3)
     for _, id in ipairs(cl) do assert(tierOf(id) <= 4, "late : offre dans le plafond tier 4 (" .. id .. ")") end
     -- FALLBACK : si moins de 3 candidats sous le plafond (on possede presque tout le tier <=2), on elargit a TOUT.
-    -- (13 reliques tier<=2 existent : on en possede 11 -> 2 candidats sous plafond < 3 -> fallback force.)
+    -- (14 reliques tier<=2 existent : on en possede 12 -> 2 candidats sous plafond < 3 -> fallback force.)
     local f = RunState.new(99); f.wins = 0
     f.relics = { { id = "bloodstone" }, { id = "carapace" }, { id = "aegis" }, { id = "whetstone" },
       { id = "kings_bowl" }, { id = "ember_heart" }, { id = "weeping_nail" }, { id = "grave_cap" },
-      { id = "thornguard" }, { id = "beggars_lantern" }, { id = "tithe_bowl" } }
+      { id = "thornguard" }, { id = "beggars_lantern" }, { id = "tithe_bowl" }, { id = "frost_seal" } }
     local cf = f:rollRelicChoices(3)
     assert(#cf == 3, "fallback : l'offre reste a 3 choix meme a court de candidats tiérés")
     local sawAbove = false
@@ -367,6 +522,8 @@ local ok, err = pcall(function()
 
   Grimoire.wipe()
   print("  reliques : grant lisible / ops stats+amplis+paliers+defensives+transformatives(chain/burn/bleed/plague) / offre seedee / Grimoire OK")
+  print("  reliques W3: méta-multiplicateurs (zenith team / forked_echo role:back / link_cable dotOnly) -> amplifient l'aura bakée, CAP préservé à la lecture OK")
+  print("  reliques W4: removal/exécution (reapers_scythe teamExecute / siege_hammer percent_hp_strike) -> injectées, %PV CAPPÉ en combat (anti one-shot) OK")
 end)
 
 if ok then

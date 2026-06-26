@@ -135,6 +135,7 @@ function Arena:makeUnit(spec, team)
     depth = spec.depth or 0, row = spec.row or 0,
     aggro = spec.aggro or (u and u.aggro) or AGGRO_STD,
     taunt = spec.taunt or (u and u.taunt) or false,
+    strikeHighestHp = spec.strikeHighestHp or (u and u.strikeHighestHp) or false, -- W4/AXE 7 : ce chasseur vise le PV MAX le plus haut (le mur), pas la colonne avant. nil/false = ciblage standard (golden-safe).
     shield = spec.shield or 0, maxShield = spec.shield or 0,
     poisonInc = spec.poisonInc, burnInc = spec.burnInc, -- ampli d'aura (increased) lu par la pose de DoT (resolve+cap)
     bleedInc = spec.bleedInc, rotInc = spec.rotInc,     -- idem bleed/rot (aura OU relique team-wide) ; nil = inerte
@@ -257,6 +258,26 @@ end
 -- depth est DÉRIVÉ de la géométrie du sigil (maxCol - cell.x) -> chaque forme a son profil
 -- d'exposition. Tout est une fonction pure de l'état : pas de RNG, mirror-safe.
 function Arena:chooseTarget(a)
+  -- W4 / AXE 7 — CHASSEUR DE MUR (strike_highest_hp, le « Panther/Skunk » SAP « delete the biggest threat ») :
+  -- ce ciblage IGNORE la colonne avant ET le taunt pour viser le PV MAX le plus haut de l'ennemi — le counter
+  -- désigné du mur-regen (constat SUMMARY §3 ; il atteint le tank de fond que la colonne avant protège). Pure
+  -- fonction d'état, ZÉRO RNG, mirror-safe. Tie-break DÉTERMINISTE : maxHp desc -> row asc -> slot asc. Le
+  -- commandant reste UNTARGETABLE (exclu). Gated : strikeHighestHp false/nil -> on retombe sur le ciblage standard.
+  if a.strikeHighestHp then
+    local best
+    for _, o in ipairs(self.units) do
+      if o.alive and o.team ~= a.team and not o.isCommander then
+        if not best
+          or (o.maxHp or 0) > (best.maxHp or 0)
+          or ((o.maxHp or 0) == (best.maxHp or 0) and o.row < best.row)
+          or ((o.maxHp or 0) == (best.maxHp or 0) and o.row == best.row and (o.slot or 0) < (best.slot or 0))
+        then
+          best = o
+        end
+      end
+    end
+    return best
+  end
   -- COMMANDANT (K4, §6.4.1) : isCommander est UNTARGETABLE -> exclu AUX DEUX endroits (calcul de minDepth ET
   -- sélection). Sinon un commandant au front fausserait la colonne avant de TOUS les ennemis (minDepth=son depth).
   local minDepth
@@ -499,7 +520,18 @@ function Arena:hit(a, target)
   local ctx = self.ctx
   ctx.arena, ctx.source, ctx.victim = self, a, target
   ctx.amount, ctx.dealt = a.dmg, 0
-  Effects.run(a, "on_attack", ctx) -- peut modifier ctx.amount (ex. bonus 1re frappe, crit ×2, execute)
+  Effects.run(a, "on_attack", ctx) -- peut modifier ctx.amount (ex. bonus 1re frappe, crit ×2, execute, percent_hp_strike)
+  -- EXÉCUTION D'ÉQUIPE (W4/AXE 7) : un drapeau `teamExecute` (posé par grant_team, relique Faux-du-Moissonneur /
+  -- commandant Removal) donne à TOUTE l'équipe un petit execute sur les blessés. État pur, zéro RNG, AVANT empower
+  -- (cohérent avec l'op execute par-unité qui mute en on_attack). Additif BORNÉ (un seul bonus, le backstop ×7 reste).
+  -- Le commandant ennemi est untargetable (jamais une cible) -> jamais d'execute sur lui. Gated : flag nil -> inerte.
+  if self.teamFlags then
+    local stf = self.teamFlags[a.team]
+    local te = stf and stf.teamExecute
+    if te and target.maxHp and target.maxHp > 0 and (target.hp / target.maxHp) < (te.threshold or 0.25) then
+      ctx.amount = math.floor(ctx.amount * (1 + (te.bonus or 0)) + 0.5)
+    end
+  end
   -- EMPOWER (K2) : +% dégâts d'attaque SORTANTS en `increased` (additif) sur la base courante. Cap dur à la
   -- LECTURE (ATK_INC_CAP) -> anti-explosion. nil = inerte (Stats renvoie la base) -> golden-safe.
   if a.atkInc and a.atkInc > 0 then

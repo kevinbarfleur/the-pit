@@ -395,11 +395,14 @@ do
   -- (b) GOLDEN DE GÉNÉRATION : empreinte stable cross-process (hashId = FNV-1a 5.1-safe, IEEE déterministe).
   -- Re-baseline INTENTIONNEL au PIN (B.2 : la forme passe de hash-dérivée à ancrée-au-nom). Si tu changes un
   -- builder/une palette/un PIN VOLONTAIREMENT, regénère et colle la nouvelle valeur ici.
-  local EXPECTED_GEN = 3256988032 -- re-baseline W2 (2026-06-25) : +7 unités mort&engeance APPEND-ONLY (brood_mother/
-  -- larval_host/spore_sac/rat_warren/pit_shepherd/carrion_choir/bone_harvest). PROUVÉ golden-neutre sur les 89
-  -- pré-W2 (le fold des 89 d'origine = 541702824 INCHANGÉ) -> seul l'ajout des 7 nouvelles formes déplace
-  -- l'empreinte (les 9 tokens d'engeance ne sont PAS dans Units.order -> n'entrent pas dans le fold). Antérieurs :
-  -- 541702824 (W1, +6 type-identité) puis 1150543352 (PIN).
+  local EXPECTED_GEN = 3105545850 -- re-baseline W5/W6 (2026-06-26) : +6 unités position/fréquence APPEND-ONLY
+  -- (vanguard_drummer/rear_goad/spine_column/tide_caller_v2/storm_conductor/echo_warden). PROUVÉ golden-neutre
+  -- sur les 104 pré-W5/W6 (fold = 2109192272 INCHANGÉ, == baseline W4) -> seuls les 6 nouveaux sprites déplacent l'empreinte.
+  -- W4 : +5 unités tank/removal/exécution (headsman/culler/wallbreaker/siege_titan/reaper_shade), fold 2109192272.
+  -- family/arch = combos primgen ÉPROUVÉS (crane/skullking, colosse/cyclops, golem/sentinel, automate/juggernaut,
+  -- spectre/wraith) ; ids uniques -> seed=hashId(id) distinct -> sprites distincts (0 collision sur les 104).
+  -- Antérieurs : 1055948952 (W3, +3 mimétisme), 3256988032 (W2, +7 mort&engeance), 541702824 (W1, +6
+  -- type-identité), 1150543352 (PIN).
   local function roll(acc, s) return CreatureGen.hashId(string.format("%d|", acc) .. s) end
   local acc = 0
   for _, id in ipairs(Units.order) do acc = roll(acc, id .. "=" .. sigs[id]) end

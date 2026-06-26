@@ -142,6 +142,53 @@ local R = {
   -- sur CHAQUE unité). Récompense le toolbox multi-type (la stratégie opposée au mono-type). Réécrit « plus tu mélanges ».
   prismatic_wraith = { id = "prismatic_wraith", op = "relic_rainbow", tier = 4, band = "high",
     params = { dmgPerType = 3, hpPerType = 5 } },
+
+  -- ── W3 — AXE MIMÉTISME/AMPLIFICATION (plan big-update §AXE 4) — les MÉTA-MULTIPLICATEURS (« la combinatoire
+  -- broken qu'on n'avait pas », Batomon Zenith-Stone/Onsetra/Link-Cable). Tous = `relic_amplify_auras` : APRÈS
+  -- buildComp (qui a baké les auras en champs sur les specs : atkInc/haste/dmgReduce/regenAura/lifestealAura +
+  -- amplis d'école poisonInc/...), ils MULTIPLIENT ces sorties par (1+frac). CAPS PRÉSERVÉS : on amplifie la
+  -- valeur BRUTE ; le clamp final reste à la LECTURE en combat (ATK_INC_CAP 1.5 / HASTE 0.40 / DMG_REDUCE 0.60 /
+  -- DOT_CAP_MULT ×4 ...) -> un Zénith +15% d'aura ne franchit JAMAIS un cap. multicast (bascule ENTIÈRE) N'est
+  -- PAS amplifié (anti double-snowball). GOLDEN-SAFE : aucune relique n'est dans le scénario golden ; gated.
+  -- PLACEHOLDERS (à tuner via tools/relicsim.lua). ──
+  -- PIERRE-DU-ZÉNITH (high) : « toutes les voix résonnent plus fort » — +15% sur TOUTE aura d'équipe (le Zenith-Stone).
+  zenith_stone = { id = "zenith_stone", op = "relic_amplify_auras", tier = 4, band = "high",
+    params = { frac = 0.15, target = "team" } },
+  -- DOUBLE-LANGUE (high, Onsetra) : amplifie PLUS FORT (+25%) mais SEULEMENT l'unité d'ARRIÈRE (role:back) — le
+  -- méta-multiplicateur focalisé (le carry protégé à l'arrière voit ses auras doubler de voix). Borné (1 cible).
+  forked_echo = { id = "forked_echo", op = "relic_amplify_auras", tier = 4, band = "high",
+    params = { frac = 0.25, target = "role:back" } },
+  -- CÂBLE-DE-LIAISON (high, Link-Cable) : le « câble » qui fait porter les amplis d'AFFLICTION plus loin — +20% sur
+  -- les seuls amplis d'école (poison/burn/bleed/rot) d'équipe. Méta-multiplicateur de l'axe affliction (cappé DOT ×4).
+  link_cable = { id = "link_cable", op = "relic_amplify_auras", tier = 4, band = "high",
+    params = { frac = 0.20, target = "team", dotOnly = true } },
+
+  -- ── W4 — AXE TANK / REMOVAL / EXÉCUTION (plan big-update §AXE 7) — « donne du SENS aux caps » : quand les deux
+  -- boards sont CAPPÉS (late), on ne peut plus out-stat → la victoire passe au removal %-PV / exécution. Ces deux
+  -- reliques font du FINISH et du %-PV des AXES d'équipe (le counter du mur-regen, constat SUMMARY §3). Réutilisent
+  -- relic_add_effect (effet lu en combat) : grant_team{teamExecute} (combat_start) et on_attack percent_hp_strike.
+  -- GOLDEN-SAFE : aucune relique n'est dans le scénario golden ; les ops sont gated. CAPS PRÉSERVÉS (PCT_STRIKE_CAP
+  -- absolu côté op + HIT ×7 backstop ; teamExecute additif borné). PLACEHOLDERS (à tuner via tools/relicsim.lua). ──
+  -- FAUX-DU-MOISSONNEUR (high) : toute l'équipe achève les blessés — +40% contre tout ennemi sous 25% PV (le
+  -- payoff TEAM-WIDE de l'execute ; gravediggers_due fait pareil pour UNE unité, ceci pour l'ÉQUIPE). Réécrit la fin.
+  reapers_scythe = { id = "reapers_scythe", op = "relic_add_effect", tier = 4, band = "high",
+    params = { effect = { trigger = "combat_start", op = "grant_team", params = { teamExecute = { threshold = 0.25, bonus = 0.40 } } } } },
+  -- MARTEAU-DE-SIÈGE (mid) : chaque frappe ARRACHE 8% des PV MAX de la cible (cap absolu 10 -> mord un mur sans
+  -- one-shot un carry). L'anti-mur accessible (band mid). on_attack percent_hp_strike (rider de la frappe, borné).
+  siege_hammer = { id = "siege_hammer", op = "relic_add_effect", tier = 3, band = "mid",
+    params = { effect = { trigger = "on_attack", op = "percent_hp_strike", params = { frac = 0.08, cap = 10 } } } },
+
+  -- ── W5 — AXE POSITION / POLARITÉ DIRECTIONNELLE (plan big-update §AXE 5). Ces reliques utilisent les
+  -- nouveaux targets relatifs (ahead/behind) : chaque unité du board sert de source directionnelle et buffe
+  -- l'allié immédiatement devant/derrière elle. Build-résolu, zéro RNG, inerte si aucune cible dans la direction.
+  rear_standard = { id = "rear_standard", op = "relic_aura_stat", tier = 3, band = "mid",
+    params = { stat = "atkInc", target = "behind", value = 0.10 } },
+  front_lance = { id = "front_lance", op = "relic_aura_stat", tier = 3, band = "mid",
+    params = { stat = "dmgReduce", target = "ahead", value = 0.10 } },
+
+  -- ── W8 — ÉCO / TEMPO (Freeze). runOp pur côté RunState : débloque 1 verrou de boutique. R.apply ignore
+  -- volontairement cette relique (hors combat -> golden SIM inchangé).
+  frost_seal = { id = "frost_seal", runOp = "shop_freeze", params = { slots = 1 }, tier = 2, band = "mid" },
 }
 
 R.order = { "bloodstone", "carapace", "aegis", "kings_bowl", "ember_heart", "weeping_nail", "grave_cap",
@@ -154,7 +201,15 @@ R.order = { "bloodstone", "carapace", "aegis", "kings_bowl", "ember_heart", "wee
   "blood_banner", "seers_mark", "carrion_feast", "second_plague", "tide_caller", "bait_lantern",
   "echo_crown", "gravediggers_due", "splitting_maw",
   -- W1 — axe type-identité (mono-type amps + rainbow team payoff ; plan big-update §AXE 2)
-  "pack_blood", "bile_orb", "prismatic_wraith" }
+  "pack_blood", "bile_orb", "prismatic_wraith",
+  -- W3 — axe mimétisme/amplification (méta-multiplicateurs : Zenith / Onsetra / Link-Cable ; plan big-update §AXE 4)
+  "zenith_stone", "forked_echo", "link_cable",
+  -- W4 — axe tank/removal/exécution (le finish + le %-PV deviennent des axes ; plan big-update §AXE 7)
+  "reapers_scythe", "siege_hammer",
+  -- W5 — axe position/polarité directionnelle (reliques directionnelles)
+  "rear_standard", "front_lance",
+  -- W8 — éco/tempo (Freeze boutique)
+  "frost_seal" }
 
 -- ── relic_aura_stat : BAKE direct d'un CHAMP combat-time sur les specs (plan relics-overhaul §2.0). ──
 -- POINT DUR : applyRelics tourne APRÈS buildComp (qui a déjà baké aura_stat -> spec.atkInc/multicast/…).
@@ -191,9 +246,47 @@ local function resolveRoleSpec(comp, wantFront)
   return best
 end
 
+local function squareCoord(slot)
+  if not slot then return nil, nil end
+  slot = math.floor(slot)
+  if slot < 1 or slot > 9 then return nil, nil end
+  return (slot - 1) % 3, math.floor((slot - 1) / 3)
+end
+
+local function specCoord(spec)
+  if spec.col ~= nil and spec.row ~= nil then return spec.col, spec.row end
+  return squareCoord(spec.slot)
+end
+
+local bakeStat
+
+-- W5 : cible directionnelle relative. Pour une relique, chaque spec non-commandant devient source : la relique
+-- "lit" toute la formation et applique le bonus à l'allié immédiat dans la direction demandée. Si plusieurs
+-- sources pointent la même cible (formes futures), les valeurs se somment comme toute aura_stat.
+local function applyDirectionalAura(comp, target, stat, value)
+  local byKey = {}
+  for _, spec in ipairs(comp) do
+    if not spec.isCommander then
+      local col, row = specCoord(spec)
+      if col and row then byKey[col .. ":" .. row] = spec end
+    end
+  end
+  local dc = (target == "ahead" and 1) or (target == "behind" and -1) or 0
+  local dr = (target == "below" and 1) or (target == "above" and -1) or 0
+  for _, src in ipairs(comp) do
+    if not src.isCommander then
+      local col, row = specCoord(src)
+      if col and row then
+        local dst = byKey[(col + dc) .. ":" .. (row + dr)]
+        if dst and dst ~= src then bakeStat(dst, stat, value) end
+      end
+    end
+  end
+end
+
 -- Bake `value` du `stat` sur UNE spec (champ moteur résolu via STAT_FIELD ; multicast = somme entière, bornée
 -- à la lecture par MULTICAST_MAX comme une aura). Inerte si le stat n'est pas mappé (jamais de crash).
-local function bakeStat(spec, stat, value)
+function bakeStat(spec, stat, value)
   local field = STAT_FIELD[stat]
   if not (spec and field) then return end
   spec[field] = (spec[field] or 0) + value
@@ -209,6 +302,8 @@ function R.apply(comp, relic)
     local stat, target, value = p.stat, p.target or "team", p.value or 0
     if target == "team" then
       for _, spec in ipairs(comp) do bakeStat(spec, stat, value) end
+    elseif target == "ahead" or target == "behind" or target == "above" or target == "below" then
+      applyDirectionalAura(comp, target, stat, value)
     elseif target == "role:front" or target == "role:back" then
       local s = resolveRoleSpec(comp, target == "role:front")
       if s then bakeStat(s, stat, value) end
@@ -239,6 +334,30 @@ function R.apply(comp, relic)
     for _, spec in ipairs(comp) do
       if spec.dmg and addD > 0 then spec.dmg = spec.dmg + addD end
       if spec.hp and addH > 0 then spec.hp = spec.hp + addH end
+    end
+    return
+  end
+  -- relic_amplify_auras (W3 — MÉTA-MULTIPLICATEUR, plan §AXE 4) : APRÈS buildComp (auras bakées en champs sur les
+  -- specs), MULTIPLIE les SORTIES d'aura par (1+frac). CAPS PRÉSERVÉS : on amplifie la valeur BRUTE -> le clamp
+  -- reste à la LECTURE en combat (ATK_INC_CAP/HASTE_CAP/DMG_REDUCE_CAP/DOT_CAP_MULT). On amplifie les stats
+  -- CONTINUES (atkInc/haste/dmgReduce/regenAura/lifestealAura) + les amplis d'école (poisonInc/...). PAS `multicast`
+  -- (bascule ENTIÈRE : amplifier un seuil = double-snowball interdit). target="team" (déf.) | "role:back" (focalisé,
+  -- Onsetra) ; dotOnly => seulement les amplis d'école (Link-Cable). frac BORNÉ (anti-empilage). Déterministe (ipairs).
+  if op == "relic_amplify_auras" then
+    local frac = math.min(0.50, p.frac or 0) -- AMPLIFY_FRAC_CAP (miroir build.lua) : gain d'aura plafonné, lisible
+    if frac <= 0 then return end
+    local f = 1 + frac
+    local CONT = { "atkInc", "haste", "dmgReduce", "regenAura", "lifestealAura" } -- stats d'aura continues (jamais multicast)
+    local DOT = { "poisonInc", "burnInc", "bleedInc", "rotInc" }                   -- amplis d'école (lus par la pose de DoT)
+    local function amp(spec)
+      if not p.dotOnly then for _, k in ipairs(CONT) do if spec[k] then spec[k] = spec[k] * f end end end
+      for _, k in ipairs(DOT) do if spec[k] then spec[k] = spec[k] * f end end
+    end
+    if (p.target or "team") == "role:back" then
+      local s = resolveRoleSpec(comp, false) -- back = depth max ; tie-break identique chooseTarget
+      if s then amp(s) end
+    else
+      for _, spec in ipairs(comp) do if not spec.isCommander then amp(spec) end end -- commandant intouchable : hors amp
     end
     return
   end

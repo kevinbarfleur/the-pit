@@ -14,6 +14,7 @@ local Encounters = require("src.data.encounters")
 local Relics = require("src.data.relics")
 local Compositions = require("src.data.compositions")
 local Whispers = require("src.data.whispers") -- MURMURES : chaque key active doit avoir sa ligne cryptique
+local Keywords = require("src.ui.keywords")
 
 local ok, err = pcall(function()
   -- Locale par défaut = anglais.
@@ -88,6 +89,13 @@ local ok, err = pcall(function()
     "grimoire.facet_band", "grimoire.band_low", "grimoire.band_mid", "grimoire.band_high", "grimoire.hint" }) do
     need(k)
   end
+  for id in pairs(Keywords.tags) do
+    need("kw." .. id .. ".name")
+    need("kw." .. id .. ".blurb")
+  end
+  for _, cat in ipairs(Keywords.categoryOrder) do need("kw.category." .. cat) end
+  need("ui.keyword_hint")
+  need("ui.keyword_title")
 
   assert(#missing == 0, "cles de traduction manquantes : " .. table.concat(missing, ", "))
 

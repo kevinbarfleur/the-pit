@@ -738,8 +738,8 @@ local U = {
     -- ampli POISON (poisonInc, routé vers le buffer dédié, cappé DOT_CAP_MULT) à toutes les unités abyss : croise
     -- l'axe 1 (un « commandant toxique de type »). Mono-abyss = la marée venimeuse.
     effects = { { trigger = "combat_start", op = "aura_stat", target = "type:abyss", params = { stat = "poisonInc", value = 0.15 } } },
-    -- COMMANDANT (LE VENIN PROFOND) : ampli poison d'équipe (mono-école, TROU #1) ; chaque venin mord plus profond.
-    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "team", params = { stat = "poisonInc", value = 0.18 } } },
+    -- COMMANDANT W6 (type-porteur) : le venin abyssal ne commande que les Abyss -> l'axe type devient lisible.
+    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "type:abyss", params = { stat = "poisonInc", value = 0.18 } } },
   order_marshal = { id = "order_marshal", type = "order", family = "automate", arch = "automaton", rank = 2, cost = 2, hp = 58, dmg = 6, cd = 60, aggro = 20,
     -- sustain (regen, lu par tickDots) à toutes les unités order : l'empire qui se répare (mur regen mono-order).
     effects = { { trigger = "combat_start", op = "aura_stat", target = "type:order", params = { stat = "regen", value = 2 } } },
@@ -803,6 +803,111 @@ local U = {
     effects = { { trigger = "on_ally_death", op = "scavenge_on_ally_death", params = { stat = "hp", value = 3, cap = 12 } } },
     -- COMMANDANT : sustain team (la moisson d'os renforce ; regen 2, sans cap moteur).
     commandBonus = { trigger = "combat_start", op = "aura_stat", target = "team", params = { stat = "regen", value = 2 } } },
+
+  -- ── W3 — AXE MIMÉTISME/AMPLIFICATION (plan big-update §AXE 4). Le pattern « Tiger » SAP (une unité = FONCTION
+  -- d'une autre) + le méta-multiplicateur (Zenith-Stone). repeat_ability/amplify_auras sont BUILD-RÉSOLUS (comme
+  -- aura_stat, dans build.lua:buildComp) -> l'arène ne change pas, golden SIM inchangé tant qu'aucune unité golden
+  -- (templar/marauder/skeleton/witch/demon) ne les porte (gated). ANTI-BOUCLE (plan Q3) : repeat_ability copie
+  -- SEULEMENT les on_hit du voisin, PROFONDEUR 1 (un effet copié ne se re-copie pas : flag viaCopy) -> pas de
+  -- repeat-of-repeat, combat toujours terminant. CAPS PRÉSERVÉS pour amplify_auras (clamp à la lecture combat).
+  -- family/arch = combos primgen ÉPROUVÉS (ids uniques -> sprites distincts, seed=hashId(id) ; gen golden re-baseliné
+  -- APPEND-ONLY, sous-fold pré-W3 inchangé). chiffres = PLACEHOLDERS (à tuner via tools/sim.lua). ──
+  mimic_spawn = { -- ABYSS/gélatine : « il devient ce qu'il dévore » — copie le carry on_hit DEVANT lui (who="ahead").
+    id = "mimic_spawn", type = "abyss", family = "gelatine", arch = "blobmonster", rank = 3, cost = 3, hp = 48, dmg = 5, cd = 56, aggro = 5,
+    -- À PLACER DERRIÈRE un carry on_hit : il re-joue SES poses (poison/burn/choc...) au niveau du mimic. Inerte si rien devant.
+    effects = { { trigger = "combat_start", op = "repeat_ability", params = { who = "ahead" } } },
+    -- COMMANDANT : tempo team (l'imitation presse la meute ; haste 0.05, sans cap moteur).
+    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "team", params = { stat = "haste", value = 0.05 } } },
+  echo_flesh = { -- FLESH/colosse : copie le PLUS FORT voisin on_hit du graphe (who="neighbors", tie-break slot asc).
+    id = "echo_flesh", type = "flesh", family = "colosse", arch = "ogre", rank = 3, cost = 3, hp = 60, dmg = 5, cd = 58, aggro = 12,
+    effects = { { trigger = "combat_start", op = "repeat_ability", params = { who = "neighbors" } } },
+    -- COMMANDANT : empower l'avant-garde (l'écho de chair arme le front ; atkInc 0.10, 1 cible/cappé ATK_INC_CAP).
+    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "role:front", params = { stat = "atkInc", value = 0.10 } } },
+  hollow_crown = { -- ARCANE/œil : LE ZENITH-STONE incarné — « toutes les voix résonnent plus fort autour de lui ».
+    id = "hollow_crown", type = "arcane", family = "oeil", arch = "eyecluster", rank = 4, cost = 4, hp = 50, dmg = 5, cd = 60, aggro = 5,
+    -- amplify_auras : +20% sur TOUTE aura d'équipe déjà bakée (build-résolu). CAPS PRÉSERVÉS (clamp à la lecture combat).
+    effects = { { trigger = "combat_start", op = "amplify_auras", params = { frac = 0.20 } } },
+    -- COMMANDANT : arme le cœur du board (le prisme creux résonne au centre ; atkInc role:center, 1 cible/cappé).
+    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "role:center", params = { stat = "atkInc", value = 0.10 } } },
+
+  -- ── W4 — AXE TANK / REMOVAL / EXÉCUTION (plan big-update §AXE 7). « Donne du SENS aux caps » : quand les deux
+  -- boards sont CAPPÉS (late), on ne peut plus out-stat → la victoire passe au removal %-PV / exécution / ciblage
+  -- chirurgical. Ces unités IGNORENT les PV bruts → le counter du mur-regen+taunt (constat SUMMARY §3 : rien ne le
+  -- contrait jusqu'ici). Ops on_attack ÉTAT PUR, zéro RNG (execute/percent_hp_strike mutent ctx.amount AVANT damage ;
+  -- strikeHighestHp = ciblage pur dans chooseTarget). GOLDEN-SAFE : aucune unité golden (templar/marauder/skeleton/
+  -- witch/demon) ne porte ces verbes (gated) → empreinte SIM inchangée (1176281181). family/arch = combos primgen
+  -- ÉPROUVÉS (crane/skullking, colosse/cyclops, golem/sentinel, automate/juggernaut, spectre/wraith), ids uniques →
+  -- sprites distincts (seed=hashId(id), 0 collision sur les 99) → gen golden re-baseliné APPEND-ONLY (sous-fold pré-W4
+  -- inchangé). chiffres = PLACEHOLDERS (à tuner via tools/sim.lua : le removal doit ramener le mur vers la moyenne). ──
+  headsman = { -- BONE/crâne-roi : « le bourreau du Puits » — execute par-unité (achève les blessés sous 30% PV).
+    id = "headsman", type = "bone", family = "crane", arch = "skullking", rank = 3, cost = 3, hp = 56, dmg = 8, cd = 60, aggro = 12,
+    effects = { { trigger = "on_attack", op = "execute", params = { threshold = 0.30, bonus = 0.80 } } },
+    -- COMMANDANT : arme l'avant-garde à FINIR (le couperet du front ; atkInc role:front, 1 cible/cappé ATK_INC_CAP).
+    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "role:front", params = { stat = "atkInc", value = 0.12 } } },
+  culler = { -- FLESH/cyclope : le TUEUR DE MUR — il CHASSE le PV max le plus haut (strikeHighestHp) ET grignote ses GROS PV
+    -- (percent_hp_strike). Le mur de fond, que la colonne avant protège, est SA proie désignée (le counter, SUMMARY §3).
+    id = "culler", type = "flesh", family = "colosse", arch = "cyclops", rank = 3, cost = 3, hp = 64, dmg = 6, cd = 64, aggro = 15,
+    strikeHighestHp = true, -- W4 : vise le PV MAX le + haut (ignore le front+taunt) -> atteint le mur-regen de fond
+    -- frappe %-PV : dégâts = 10% des PV MAX de la cible par coup, CLAMPÉ (cap 12, sous PCT_STRIKE_CAP). Inerte sur une squishy.
+    effects = { { trigger = "on_attack", op = "percent_hp_strike", params = { frac = 0.10, cap = 12 } } },
+    -- COMMANDANT : durcit le front (le poids du tueur de gros ; dmgReduce role:front 0.10, cappé DMG_REDUCE_CAP).
+    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "role:front", params = { stat = "dmgReduce", value = 0.10 } } },
+  wallbreaker = { -- ABYSS/golem-sentinelle : ANTI-MUR pur — dissout le bouclier (strip_shield) ET frappe ∝ PV MAX.
+    id = "wallbreaker", type = "abyss", family = "golem", arch = "sentinel", rank = 3, cost = 3, hp = 58, dmg = 6, cd = 62, aggro = 12,
+    effects = {
+      { trigger = "on_hit", op = "strip_shield", params = { frac = 0.40 } },            -- dissout 40% du bouclier (anti-mur-de-boucliers)
+      { trigger = "on_attack", op = "percent_hp_strike", params = { frac = 0.08, cap = 12 } }, -- + dégâts = 8% des PV MAX, cappé (anti-mur-de-PV)
+    },
+    -- COMMANDANT : l'équipe perce les boucliers ennemis d'ouverture (le bélier ; stripEnemyShield, lu dans spawn).
+    commandBonus = { trigger = "combat_start", op = "grant_team", params = { stripEnemyShield = 0.30 } } },
+  siege_titan = { -- ORDER/automate-juggernaut : TANK-REMOVAL hybride — gros PV + TAUNT + perce le mur (percent_hp_strike).
+    id = "siege_titan", type = "order", family = "automate", arch = "juggernaut", rank = 4, cost = 4, hp = 104, dmg = 4, cd = 86, aggro = 40, taunt = true,
+    -- « le mur qui perce les murs » : il tient le front (taunt/aggro 40) ET frappe ∝ PV MAX de la cible (dégâts cappés 12).
+    effects = { { trigger = "on_attack", op = "percent_hp_strike", params = { frac = 0.10, cap = 12 } } },
+    -- COMMANDANT (LE BÉLIER DE SIÈGE) : armure FORTE sur l'avant (mur de front ; dmgReduce role:front 0.18, cappé).
+    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "role:front", params = { stat = "dmgReduce", value = 0.18 } } },
+  reaper_shade = { -- ABYSS/spectre : AURA d'exécution d'équipe — toute l'équipe achève les blessés (teamExecute, grant_team).
+    id = "reaper_shade", type = "abyss", family = "spectre", arch = "wraith", rank = 4, cost = 4, hp = 52, dmg = 5, cd = 60, aggro = 5,
+    -- grant_team teamExecute : +30% à TOUTE l'équipe contre un ennemi sous 25% PV (le finish devient un AXE d'équipe).
+    effects = { { trigger = "combat_start", op = "grant_team", params = { teamExecute = { threshold = 0.25, bonus = 0.30 } } } },
+    -- COMMANDANT (LE FAUCHEUR) : l'équipe entière achève plus fort (teamExecute renforcé ; le commandant Removal du plan §AXE 9).
+    commandBonus = { trigger = "combat_start", op = "grant_team", params = { teamExecute = { threshold = 0.25, bonus = 0.40 } } } },
+
+  -- ── W5 — AXE POSITION / POLARITÉ DIRECTIONNELLE (plan big-update §AXE 5). Ces unités utilisent les nouveaux
+  -- targets relatifs `ahead/behind/above/below`. Le placement devient un puzzle : X = exposition, Y = sécurité.
+  -- GOLDEN-SAFE : append-only, aucune unité golden ne porte ces cibles. chiffres = PLACEHOLDERS W9. ──
+  vanguard_drummer = { -- devant un carry : buffe l'allié DERRIÈRE lui (carry protégé).
+    id = "vanguard_drummer", type = "order", family = "automate", arch = "automaton", rank = 2, cost = 2, hp = 58, dmg = 4, cd = 64, aggro = 22,
+    effects = { { trigger = "combat_start", op = "aura_stat", target = "behind", params = { stat = "atkInc", value = 0.15 } } },
+    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "role:front", params = { stat = "dmgReduce", value = 0.10 } } },
+  rear_goad = { -- derrière un frontliner : presse l'allié DEVANT lui (exposition-couplé).
+    id = "rear_goad", type = "flesh", family = "culte", arch = "cultist", rank = 2, cost = 2, hp = 42, dmg = 5, cd = 54, aggro = 8,
+    effects = { { trigger = "combat_start", op = "aura_stat", target = "ahead", params = { stat = "haste", value = 0.12 } } },
+    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "role:back", params = { stat = "haste", value = 0.08 } } },
+  spine_column = { -- protège l'axe vertical : au-dessus ET au-dessous, exposition-neutre.
+    id = "spine_column", type = "bone", family = "crane", arch = "skullking", rank = 3, cost = 3, hp = 70, dmg = 4, cd = 70, aggro = 28,
+    effects = {
+      { trigger = "combat_start", op = "aura_stat", target = "above", params = { stat = "dmgReduce", value = 0.12 } },
+      { trigger = "combat_start", op = "aura_stat", target = "below", params = { stat = "dmgReduce", value = 0.12 } },
+    },
+    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "role:center", params = { stat = "dmgReduce", value = 0.10 } } },
+  tide_caller_v2 = { -- l'écho directionnel : donne +1 sous-coup à l'allié DEVANT.
+    id = "tide_caller_v2", type = "arcane", family = "cephalo", arch = "squid", rank = 3, cost = 3, hp = 46, dmg = 4, cd = 62, aggro = 6,
+    effects = { { trigger = "combat_start", op = "aura_stat", target = "ahead", params = { stat = "multicast", value = 1 } } },
+    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "role:center", params = { stat = "multicast", value = 1 } } },
+
+  -- ── W6 — FRÉQUENCE + commandants d'axe. Pas de nouvel op : multicast/haste existent déjà et restent sous caps.
+  storm_conductor = { -- cadence + choc : plus de frappes, plus de décharges.
+    id = "storm_conductor", type = "arcane", family = "oeil", arch = "eyecluster", rank = 3, cost = 3, hp = 44, dmg = 5, cd = 52, aggro = 6,
+    effects = {
+      { trigger = "combat_start", op = "aura_stat", target = "neighbors", params = { stat = "haste", value = 0.10 } },
+      { trigger = "on_hit", op = "shock", params = { add = 1, cap = 6, dur = 150 } },
+    },
+    commandBonus = { trigger = "combat_start", op = "grant_team", params = { shockChain = 1 } } },
+  echo_warden = { -- l'unité au cœur frappe deux fois : payoff de placement central.
+    id = "echo_warden", type = "abyss", family = "golem", arch = "sentinel", rank = 3, cost = 3, hp = 62, dmg = 5, cd = 66, aggro = 18,
+    effects = { { trigger = "combat_start", op = "aura_stat", target = "role:center", params = { stat = "multicast", value = 1 } } },
+    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "role:center", params = { stat = "multicast", value = 1 } } },
 }
 
 -- ══ FAMILLE DoT DÉCLARATIVE (M2/2.4 — « type » des synergies P1 + segmentation Grimoire). Porteur explicite,
@@ -813,7 +918,8 @@ local U = {
 -- = rot, ses bleed/poison à 0 dps sont utilitaires). Couverture + cohérence (op RÉEL vs famille déclarée)
 -- garanties par tests/dot_family.lua (lint dans check.sh). ⚠ pièges : `rot_grub` est POISON (op), pas rot
 -- (nom) ; les 4 auras (soot/clot/miasma/decay) portent leur famille mais ne sont PAS des poseurs actifs
--- (exclues du plancher rang). Audit complet : docs/roadmap-lab/audit/identity-audit.md.
+-- (exclues du plancher rang). Les anciens audits roadmap-lab ont ete retires; garder cette table
+-- synchronisee avec tests/dot_family.lua et les rapports de coherence.
 U.dotFamily = {
   -- BRÛLURE (13)
   emberling = "burn", cinder_cur = "burn", pyre_tender = "burn", ash_moth = "burn", bellows_priest = "burn",
@@ -836,7 +942,7 @@ U.dotFamily = {
   -- CHOC (11)
   stormcaller = "shock", live_wire = "shock", thunderhead = "shock", static_swarm = "shock",
   galvanizer = "shock", stormlord = "shock", dynamo_priest = "shock", arc_warden = "shock",
-  storm_anchor = "shock", siphon_jelly = "shock", rust_sentinel = "shock",
+  storm_anchor = "shock", siphon_jelly = "shock", rust_sentinel = "shock", storm_conductor = "shock",
 }
 
 -- Roster complet (ordre d'affichage). Les 6 premiers = vanille/v0 ; les suivants = familles de statuts.
@@ -876,7 +982,15 @@ U.order = { "marauder", "templar", "skeleton", "bandit", "witch", "demon",
   -- W1 — axe type-identité (mono-type amps + rainbow payoff ; plan big-update §AXE 2)
   "flesh_warband", "bone_choir", "arcane_seer", "abyss_maw", "order_marshal", "prism_horror",
   -- W2 — axe mort & engeance (invocateurs on_death + charognards faint-payoff ; plan big-update §AXE 3)
-  "brood_mother", "larval_host", "spore_sac", "rat_warren", "pit_shepherd", "carrion_choir", "bone_harvest" }
+  "brood_mother", "larval_host", "spore_sac", "rat_warren", "pit_shepherd", "carrion_choir", "bone_harvest",
+  -- W3 — axe mimétisme/amplification (mimics repeat_ability + méta-multiplicateur amplify_auras ; plan big-update §AXE 4)
+  "mimic_spawn", "echo_flesh", "hollow_crown",
+  -- W4 — axe tank/removal/exécution (execute + percent_hp_strike + strike_highest_hp + teamExecute ; plan big-update §AXE 7)
+  "headsman", "culler", "wallbreaker", "siege_titan", "reaper_shade",
+  -- W5 — axe position/polarité directionnelle (ahead/behind/above/below)
+  "vanguard_drummer", "rear_goad", "spine_column", "tide_caller_v2",
+  -- W6 — fréquence + commandants d'axe
+  "storm_conductor", "echo_warden" }
 
 -- Pool d'unités ACHETABLES en boutique (cf. src/run/state.lua). Identique au roster pour l'instant.
 -- NB : les 9 TOKENS d'engeance (src/data/spawn.lua) sont VOLONTAIREMENT ABSENTS du pool ET de l'order :
@@ -909,7 +1023,15 @@ U.pool = { "marauder", "templar", "skeleton", "bandit", "witch", "demon",
   -- W1 — axe type-identité (mono-type amps + rainbow payoff ; plan big-update §AXE 2)
   "flesh_warband", "bone_choir", "arcane_seer", "abyss_maw", "order_marshal", "prism_horror",
   -- W2 — axe mort & engeance (invocateurs + charognards ; plan big-update §AXE 3). Tokens NON inclus (summon-only).
-  "brood_mother", "larval_host", "spore_sac", "rat_warren", "pit_shepherd", "carrion_choir", "bone_harvest" }
+  "brood_mother", "larval_host", "spore_sac", "rat_warren", "pit_shepherd", "carrion_choir", "bone_harvest",
+  -- W3 — axe mimétisme/amplification (mimics + méta-multiplicateur ; plan big-update §AXE 4)
+  "mimic_spawn", "echo_flesh", "hollow_crown",
+  -- W4 — axe tank/removal/exécution (execute + percent_hp_strike + tank-hybride + aura teamExecute ; plan big-update §AXE 7)
+  "headsman", "culler", "wallbreaker", "siege_titan", "reaper_shade",
+  -- W5 — axe position/polarité directionnelle (ahead/behind/above/below)
+  "vanguard_drummer", "rear_goad", "spine_column", "tide_caller_v2",
+  -- W6 — fréquence + commandants d'axe
+  "storm_conductor", "echo_warden" }
 
 -- Visuel : les 6 vanille ont un rig DESSINÉ main (src/data/creatures.lua) ; toutes les autres unités
 -- sont GÉNÉRÉES procéduralement (src/gen/creaturegen.lua, déterministe par id), résolu côté rendu

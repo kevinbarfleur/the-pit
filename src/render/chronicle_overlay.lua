@@ -19,6 +19,7 @@ local OverlayFx = require("src.ui.overlay")   -- CHORÉGRAPHIE d'entrée unifié
 local Chronicle = require("src.render.chronicle")
 local ChronicleDraw = require("src.render.chronicle_draw")
 local MonsterCard = require("src.render.monstercard") -- fiche TCG flottante au survol d'un nom (J4)
+local CardGlossary = require("src.ui.card_glossary")
 local T = require("src.core.i18n").t
 local C = Theme.c
 
@@ -139,7 +140,8 @@ function Overlay:draw(view)
   local hid = self.panel:hoveredName()
   if hid then
     Draw.begin(view)
-    MonsterCard.draw(view, nil, hid, self.mx, self.my, self.t)
+    local box = MonsterCard.draw(view, nil, hid, self.mx, self.my, self.t, { keywordHint = true })
+    CardGlossary.drawMonster(view, box, hid, self.t)
     Draw.finish()
   end
 end

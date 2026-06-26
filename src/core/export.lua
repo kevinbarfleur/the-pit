@@ -24,8 +24,65 @@ local Units        = require("src.data.units")
 local CreatureGen  = require("src.gen.creaturegen")
 local Rig          = require("src.core.rig")
 local SystemButton = require("src.ui.system_button")
+local Draw         = require("src.ui.draw")
+local Theme        = require("src.ui.theme")
+local Viewport     = require("src.ui.viewport")
 
 local Export = {}
+
+local function bleedMode(name)
+  if name == "menu" then return "menu" end
+  if name == "combat" then return "combat" end
+  if name == "relicpick" then return "relic" end
+  if name == "runover" then return "runover" end
+  if name == "grimoire" or name == "designsystem" then return "grimoire" end
+  return "build"
+end
+
+local function drawBleedBackground(scene, name, view)
+  if not (scene and view and view.hasBleed and view.bleed) then return end
+  Draw.begin(view.bleed)
+  if scene.nightmareBg then
+    if name == "build" or name == "inspect" then
+      scene.nightmareBg:drawField(0, 0, Draw.W, Draw.H)
+    else
+      scene.nightmareBg:draw(0, 0, Draw.W, Draw.H)
+    end
+  elseif scene.ambient then
+    scene.ambient:draw(bleedMode(name))
+  else
+    local c = Theme.c
+    Draw.rect(0, 0, Draw.W, Draw.H, c and c.void or { 0.02, 0.012, 0.03, 1 })
+  end
+  Draw.finish()
+end
+
+local function drawGutterChrome(name, view)
+  if not (view and view.hasBleed and view.extra and love and love.graphics) then return end
+  if name ~= "build" and name ~= "inspect" then return end
+  local c = Theme.c
+  local topH = view.extra.t or 0
+  local bottomH = view.extra.b or 0
+  local sw, sh = view.screenW or 0, view.screenH or 0
+  if topH > 0 then
+    love.graphics.setColor(0x12 / 255, 0x0d / 255, 0x08 / 255, 0.98)
+    love.graphics.rectangle("fill", 0, 0, sw, topH + 1)
+    if c and c.iron then
+      love.graphics.setColor(c.iron[1], c.iron[2], c.iron[3], 0.95)
+      love.graphics.rectangle("fill", 0, topH, sw, 1)
+    end
+  end
+  if bottomH > 0 then
+    local y = sh - bottomH
+    love.graphics.setColor(0x0a / 255, 0x07 / 255, 0x10 / 255, 0.98)
+    love.graphics.rectangle("fill", 0, y, sw, bottomH)
+    if c and c.brassS then
+      love.graphics.setColor(c.brassS[1], c.brassS[2], c.brassS[3], 0.25)
+      love.graphics.rectangle("fill", 0, y, sw, 1)
+    end
+  end
+  love.graphics.setColor(1, 1, 1, 1)
+end
 
 -- Helper commun : décroche la cible courante, rend `fn` dans un canvas neuf, l'encode en PNG (save dir).
 -- `fn(w, h, target)` dessine dans l'espace [0..w]×[0..h] (origine à 0,0, fond transparent). `target` = le
@@ -126,10 +183,15 @@ function Export.shoot(name, buildScene, opts)
     if scene.update then scene:update(1.0) end
   end
 
-  local view = { scale = scale, ox = 0, oy = 0 }
-  local W, H = VW * scale, VH * scale
+  local W, H = tonumber(opts.w) or (VW * scale), tonumber(opts.h) or (VH * scale)
+  local view = (opts.w or opts.h)
+      and Viewport.update({}, VW, VH, W, H)
+      or { scale = scale, ox = 0, oy = 0 }
 
   renderToPng(W, H, dir .. "/" .. name .. ".png", function(_, _, target)
+    drawBleedBackground(scene, name, view)
+    drawGutterChrome(name, view)
+
     -- 1. Pré-passe ATMOSPHÈRE (résolution native), derrière le monde pixel — comme main.lua.
     if scene.drawBack then scene:drawBack(view) end
 
@@ -138,7 +200,7 @@ function Export.shoot(name, buildScene, opts)
     if scene.nativeWorld then
       love.graphics.push()
       love.graphics.translate(view.ox, view.oy)
-      love.graphics.scale(scale, scale)
+      love.graphics.scale(view.scale, view.scale)
       scene:drawWorld()
       love.graphics.pop()
     else
@@ -148,7 +210,7 @@ function Export.shoot(name, buildScene, opts)
       love.graphics.clear(0, 0, 0, 0)
       scene:drawWorld()
       love.graphics.setCanvas(target) -- RE-CIBLE notre canvas d'export (setCanvas(vcanvas) l'avait décroché)
-      love.graphics.draw(vcanvas, view.ox, view.oy, 0, scale, scale)
+      love.graphics.draw(vcanvas, view.ox, view.oy, 0, view.scale, view.scale)
       if vcanvas.release then vcanvas:release() end
     end
 
