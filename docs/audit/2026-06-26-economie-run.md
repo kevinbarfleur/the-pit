@@ -505,6 +505,190 @@ coute 5 gold.
 Pour trancher proprement, il faut mesurer la pression economique au lieu de
 debattre au ressenti.
 
+Etat implementation 2026-06-26:
+
+- `src/run/economy.lua` expose des profils opt-in pour simulation:
+  - `baseline`;
+  - `sap_cost` avec `costByRank = {2, 3, 4, 5, 6}`;
+  - `early_curve` avec revenu `6/6/8/8/8/10...`;
+  - `tiered_reroll` avec reroll `1/1/2/2/3`;
+  - `sap_cost_tiered_reroll`.
+- `RunState.new(seed, { economy = profileId })` applique ces variantes sans
+  changer le comportement live par defaut.
+- `tools/sim.lua economy [N]` ecrit `runs/report-economy.json` et compare les
+  profils sur les politiques reelles du `Rundriver`. Les seeds sont maintenant
+  apparies par run/profil pour que les policies comparees demarrent du meme
+  monde et divergent seulement par leurs actions.
+- Les metriques deja emises couvrent: `full_shop_cost_ratio`,
+  `full_shop_afford_rate`, `early_full_shop_afford_rate`,
+  `desired_buy_all_rate`, `desired_gold_afford_rate`,
+  `desired_slot_limited_rate`, `virtual_bench` pour tester des capacites de
+  reserve supplementaires `0/2/4/6` au-dessus du plateau + banc reel du driver
+  (`0` = gameplay actuel), `gold_leftover_wasted` via
+  `avg_leftover_gold`, `gold_pressure`, `spend_split`, `rerolls_per_run`,
+  `xp_buys_per_run`, `sells_per_run`, `sell_gold_per_run`,
+  `bench_sells_per_run`, `board_sells_per_run`, `pair_buys_per_run`,
+  `merge_buys_per_run`, accept/refus de slots, ventilation par tier, cohorts
+  `legacy_all` / `broad_naive` / `broad_prune` / `broad_plan` / `committed` /
+  `committed_plan`, `archetype_commitment_rate` et
+  `avg_archetype_commit_round`, plus la separation par archetype entre runs ou
+  le plan est forme et runs ou il ne l'est pas.
+- Le `Rundriver` utilise maintenant le banc existant de la scene build
+  (`Build:autoBuy`: plateau vide -> banc -> fusion si plein), au lieu de poser
+  les achats uniquement sur le plateau.
+- `Rundriver:sellBench` permet aux policies de vendre une reserve comme le
+  joueur le fait par drag hors plateau/banc; les ventes sont tracees dans les
+  metriques d'economie.
+- `Policies.analysisSet` ajoute des variantes `_prune` de `greedy`, `econ` et
+  `tall`: elles gardent les niveaux 2+, les paires proches de fusion, les
+  pieces premium ou les pieces du plan, et vendent surtout les singletons du
+  banc qui ne servent pas un merge immediat.
+- `Policies.analysisSet` ajoute aussi des variantes `_plan` qui scorent les
+  offres par paires, fusion immediate, rang/cout et appartenance au plan. Elles
+  peuvent vendre une faible unite de board seulement si l'offre achetee vaut
+  clairement mieux et si le board reste au-dessus d'un plancher de survie.
+
+Run local a `N=20` runs/politique/profil apres instrumentation des offres
+desirees, du banc reel et du commitment d'archetype:
+
+- `baseline`: ratio shop/or moyen `0.67`, shop complet achetable `89.0%`,
+  offres desirees achetables `21.9%`, desirees affordables en or `84.9%`,
+  bloquees par espace `75.7%`, desirees achetables avec +4 reserve virtuelle
+  `50.8%`, encore bloquees par espace avec +4 `42.4%`, commitment archetype
+  `80.0%`, wins moyens `4.17`, leftover `9.66`.
+- `sap_cost`: ratio `1.09`, shop complet achetable `62.5%`,
+  offres desirees achetables `18.9%`, desirees affordables en or `65.2%`,
+  bloquees par espace `75.3%`, desirees achetables avec +4 reserve virtuelle
+  `48.0%`, encore bloquees par espace avec +4 `36.7%`, commitment archetype
+  `73.8%`, wins moyens `4.08`, leftover `8.27`.
+- `early_curve`: ratio `0.75`, shop complet achetable `87.8%`,
+  offres desirees achetables `22.0%`, desirees affordables en or `84.4%`,
+  bloquees par espace `72.6%`, desirees achetables avec +4 reserve virtuelle
+  `50.2%`, encore bloquees par espace avec +4 `41.7%`, commitment archetype
+  `71.2%`, wins moyens `3.97`, leftover `9.08`.
+
+Interpretation provisoire:
+
+- La courbe de revenu reduit un peu le surplus, mais elle ne corrige presque pas
+  le probleme pedagogique du tier 1 tant que le shop complet coute 5g.
+- Le profil `sap_cost` est le premier levier qui transforme vraiment "je peux
+  tout acheter" en arbitrage sur le shop complet.
+- Brancher le vrai banc dans le driver a augmente les performances moyennes
+  (baseline `3.20 -> 4.17` wins moyens dans ce smoke) et le taux d'achat des
+  offres desirees (`14.2% -> 21.9%`). Le simulateur precedent etait donc trop
+  pessimiste sur l'accessibilite de run.
+- Meme avec le banc live, l'espace reste une contrainte majeure pour les
+  policies larges: `desired_slot_limited_rate` reste autour de `73-76%`. La
+  decision economique doit donc se lire avec `desired_gold_afford` ET les
+  metriques d'espace; `desired_buy_all_rate` seul reste insuffisant.
+- Ajouter quatre slots virtuels supplementaires ferait remonter les achats
+  desires a environ `50%`, mais il resterait encore `35-42%` de rounds
+  limites par l'espace. Cela suggere que le probleme n'est pas seulement "banc
+  trop petit"; il vient aussi des policies qui desirent trop d'offres a la fois
+  et du manque de tri/vente/merge intelligent.
+- Les policies `committed_*` sont presque resolues par le banc reel: elles
+  achetent souvent `85-100%` de leurs pieces desirees et restent contraintes
+  surtout par l'acces de tier/archetype, pas par la reserve. Les strategies
+  `greedy`, `econ` et surtout `tall_dense` restent beaucoup plus sensibles a
+  l'espace.
+- Les plans `poison`, `burn` et `rot` commit souvent autour des rounds 2-3.
+  `tank` reste beaucoup plus difficile: il n'a aucun rang 1, commit tard
+  autour du round 5, et gagne peu. C'est un vrai signal d'accessibilite et/ou
+  de tuning, pas seulement un probleme d'or.
+- Ces chiffres restent un smoke de design a `N=20`; monter `N` et raffiner les
+  policies avant de figer un changement live.
+
+Run local suivant a `N=20` runs/politique/profil avec 12 policies
+(`legacy_all` = les 9 policies precedentes; `broad_prune` = greedy/econ/tall
+avec nettoyage de banc):
+
+- Profil `baseline`, cohort `legacy_all`: wins moyens `4.17`, offres desirees
+  achetables `21.9%`, bloquees par espace `75.7%`.
+- Profil `baseline`, cohort `broad_naive`: wins moyens `7.38`, offres desirees
+  achetables `7.7%`, bloquees par espace `92.3%`, +4 reserve virtuelle
+  `47.6%`.
+- Profil `baseline`, cohort `broad_prune`: wins moyens `8.03`, offres desirees
+  achetables `12.8%`, bloquees par espace `87.2%`, +4 reserve virtuelle
+  `68.9%`, `28.6` ventes/run.
+- Profil `sap_cost`, cohort `broad_naive`: wins moyens `7.50`, offres desirees
+  achetables `8.4%`, bloquees par espace `91.6%`, +4 reserve virtuelle
+  `49.6%`.
+- Profil `sap_cost`, cohort `broad_prune`: wins moyens `7.50`, offres desirees
+  achetables `14.7%`, bloquees par espace `85.3%`, +4 reserve virtuelle
+  `70.1%`, `24.2` ventes/run.
+
+Interpretation ajoutee:
+
+- Le pruning prouve que le simulateur precedent etait encore trop naif sur le
+  banc pour les strategies larges: `tall_dense` passe par exemple de `5.1` a
+  `6.7` wins moyens en baseline, et `econ` / `greedy` gagnent un peu.
+- Le pruning ne suffit pas a faire disparaitre le probleme: meme avec vente de
+  singletons, les cohorts larges restent bloquees par l'espace `85-87%` du
+  temps. Cela pointe vers une combinaison de selection de shop trop large,
+  manque de plan de paires, absence de vraie priorisation de board, et peut-etre
+  taille de reserve.
+- Il ne faut donc pas buff automatiquement le banc tout de suite. La prochaine
+  passe doit distinguer: space vraiment insuffisant, policy trop gourmande,
+  pieces gardees sans plan, et manque d'incitation a des lignes de build plus
+  lisibles.
+- Le diagnostic `tank` est plus net avec `completion_given_plan` /
+  `avg_wins_given_plan`: en baseline, `tank` forme son plan dans `7/20` runs
+  seulement, au round moyen `5.57`, et ne monte qu'a `1.43` wins moyens une
+  fois forme. En `sap_cost`, il ne forme son plan que `5/20` runs et reste a
+  `0` win moyen meme quand le plan est forme. Ce n'est donc pas un simple
+  probleme d'espace: il faut soit un seed tank rang 1, soit une policy de rush
+  tank beaucoup plus survivable, soit un buff mecanique du shell tank.
+
+Dernier run local a `N=20` runs/politique/profil avec 19 policies et seeds
+apparies (`broad_plan` = greedy/econ/tall avec paires + priorisation de board;
+`committed_plan` = committed avec la meme logique):
+
+- Global `baseline`: wins moyens `5.16`, completion `6.1%`, shop complet
+  achetable `94.6%`, offres desirees achetables `23.6%`, bloquees par espace
+  `75.4%`, +4 reserve virtuelle `69.6%`, leftover `9.11`, pression or `35.1%`.
+- Global `sap_cost`: wins moyens `4.32`, completion `5.8%`, shop complet
+  achetable `66.8%`, offres desirees achetables `22.6%`, bloquees par espace
+  `74.9%`, +4 reserve virtuelle `67.8%`, leftover `8.68`, pression or `48.5%`.
+- Global `early_curve`: wins moyens `4.84`, completion `9.7%`, shop complet
+  achetable `93.8%`, offres desirees achetables `22.8%`, bloquees par espace
+  `75.0%`, +4 reserve virtuelle `69.0%`, leftover `9.64`, pression or `41.2%`.
+- Cohort `baseline/broad_naive`: wins `7.35`, completion `5.0%`, desired
+  buy-all `8.2%`, espace limite `91.8%`, paires `4.0`/run, fusions `3.7`/run.
+- Cohort `baseline/broad_prune`: wins `7.92`, completion `5.0%`, desired
+  buy-all `11.2%`, espace limite `88.8%`, `26.6` ventes/run, paires `6.9`,
+  fusions `6.0`.
+- Cohort `baseline/broad_plan`: wins `8.78`, completion `21.7%`, desired
+  buy-all `14.6%`, espace limite `85.4%`, `17.3` ventes/run dont `0.62`
+  board/run, paires `7.8`, fusions `6.4`, +4 reserve virtuelle `87.6%`.
+- Cohort `sap_cost/broad_naive`: wins `6.90`, completion `10.0%`, desired
+  buy-all `8.7%`, espace limite `91.3%`.
+- Cohort `sap_cost/broad_prune`: wins `7.32`, completion `11.7%`, desired
+  buy-all `11.8%`, espace limite `88.2%`, `19.9` ventes/run.
+- Cohort `sap_cost/broad_plan`: wins `7.77`, completion `10.0%`, desired
+  buy-all `17.2%`, espace limite `82.7%`, `13.3` ventes/run dont `0.30`
+  board/run, paires `7.5`, fusions `6.3`.
+- `committed_plan` n'est pas encore une revolution: en baseline il passe de
+  `2.16` a `2.21` wins moyens et garde le meme commitment global `76.2%`.
+  Son interet est surtout methodologique: il prouve que la logique de paires ne
+  degrade pas les plans committed quand aucune vente n'est necessaire.
+- `tank` reste l'outlier: en baseline, seulement `2/20` runs tank forment le
+  plan, round moyen `6`, completion `0%`, wins moyens `0.95`. En `sap_cost`,
+  seulement `3/20` forment le plan, wins moyens `0.05`. Le probleme tank est
+  donc un probleme d'accessibilite/power du shell, pas un probleme de banc.
+
+Interpretation ajoutee apres pair-planning:
+
+- Le simulateur est plus proche d'un joueur: il garde mieux les paires, complete
+  plus de fusions et vend moins que le pruning pur.
+- `broad_plan` change fortement le diagnostic du banc: avec une meilleure
+  selection, +4 reserve virtuelle monterait les achats desires a `87%` environ
+  sur les strategies larges, mais le jeu actuel reste encore limite par l'espace
+  `82-85%` du temps. On doit donc continuer a ameliorer decision/paires avant
+  de toucher la taille du banc live.
+- `sap_cost` reste le meilleur levier de pression economique (`66.8%` shop
+  complet achetable contre `94.6%` baseline), mais il reduit les wins moyens
+  tant que certains shells, surtout tank, ne sont pas plus accessibles.
+
 Metrics recommandees :
 
 - `full_shop_cost_ratio` : cout du shop entier / gold disponible par round.

@@ -136,16 +136,29 @@ local ok, err = pcall(function()
   local r1 = Rundriver.run(42, Policies.random_baseline(love.math.newRandomGenerator(7)), {})
   local r2 = Rundriver.run(42, Policies.random_baseline(love.math.newRandomGenerator(7)), {})
   assert(r1.wins == r2.wins and #r1.rounds == #r2.rounds, "rundriver deterministe (random, RNG re-seede)")
+  local intentDrv = Rundriver.new(20260626, {})
+  local desired = Policies.greedy_stats:desiredOffers(intentDrv)
+  assert(desired.visibleCount >= desired.count and desired.visibleCost >= desired.cost,
+    "policy intent: distingue offres visibles et placables")
+  assert(desired.count > 0 and desired.cost > 0, "policy intent: greedy expose les offres desirees")
+  local committed = Policies.committed_archetype("poison", "diamant")
+  intentDrv.build.board:unlock(3)
+  intentDrv.build:placeId(1, "spore_tick", 1)
+  intentDrv.build:placeId(2, "witch", 1)
+  intentDrv.build:placeId(3, "marauder", 1)
+  local commitment = committed:commitment(intentDrv)
+  assert(commitment.committed and commitment.hits == 2, "policy intent: commitment archetype detecte")
   print(string.format("  lab : rundriver deterministe OK (greedy %s en %d rounds)", tostring(t1.result), #t1.rounds))
 
   -- 8) LÉGALITÉ : chaque politique mène une run a une issue valide (win/lose), invariants tenus.
   local prng = love.math.newRandomGenerator(555)
-  for _, p in ipairs(Policies.defaultSet(prng)) do
+  local analysisPolicies = Policies.analysisSet(prng)
+  for _, p in ipairs(analysisPolicies) do
     local t = Rundriver.run(909, p, {})
     assert(t.result == "win" or t.result == "lose", "politique " .. p.name .. " : run conclut")
     assert(#t.rounds >= 1 and t.wins >= 0 and t.losses >= 0, "politique " .. p.name .. " : compteurs valides")
   end
-  print("  lab : 8 politiques menent des runs valides (win/lose)")
+  print(string.format("  lab : %d politiques menent des runs valides (win/lose)", #analysisPolicies))
 
   -- 9) API D'ACTIONS : refus propres + effets attendus + classifieur d'archétype (jamais d'exception).
   local drv = Rundriver.new(2025, {})
@@ -156,6 +169,73 @@ local ok, err = pcall(function()
     if o and not o.sold and drv.run.gold >= o.cost then boughtId = drv:buy(i); break end
   end
   assert(boughtId and drv.run.gold < before and drv.build:placedCount() >= 1, "buy: or debite + unite posee")
+  local benchDrv = Rundriver.new(20260627, {})
+  for i = 1, 9 do
+    if benchDrv.build.board.slots[i].unlocked then benchDrv.build:placeId(i, "marauder", 3) end
+  end
+  benchDrv.run.gold = 99
+  local benchOffer = benchDrv.run.shop[1].id
+  assert(benchDrv:buy(1) == benchOffer, "buy: plateau plein -> achat auto vers banc")
+  assert(benchDrv.build.bench[1] and benchDrv.build.bench[1].id == benchOffer, "buy: unite posee dans le banc")
+  local benchState = benchDrv:state()
+  assert(benchState.benchUsed == 1 and benchState.benchFree == #benchDrv.build.benchSlots - 1,
+    "state: expose occupation du banc")
+  local sellBefore = benchDrv.run.gold
+  assert(benchDrv:sellBench(1), "sellBench: vend une unite du banc")
+  assert(not benchDrv.build.bench[1] and benchDrv.run.gold > sellBefore, "sellBench: libere le banc + rembourse")
+  local sellMetrics = benchDrv:metricSnapshot()
+  assert(sellMetrics.sells == 1 and sellMetrics.sellGold > 0 and sellMetrics.benchSells == 1,
+    "sellBench: metrique vente tracee")
+  local function unlockedSlots(d)
+    local slots = {}
+    for i = 1, 9 do if d.build.board.slots[i].unlocked then slots[#slots + 1] = i end end
+    return slots
+  end
+  local pairDrv = Rundriver.new(20260628, {})
+  pairDrv.run.gold = 99
+  pairDrv.run.shop[1] = { id = "spore_tick", cost = 1, sold = false }
+  local ps = unlockedSlots(pairDrv)
+  pairDrv.build:placeId(ps[1], "spore_tick", 1)
+  assert(pairDrv:buy(1) == "spore_tick", "buy: achat d'une deuxieme copie")
+  local pairMetrics = pairDrv:metricSnapshot()
+  assert(pairMetrics.pairBuys == 1 and pairMetrics.mergeBuys == 0, "buy: metrique paire tracee")
+  local mergeDrv = Rundriver.new(20260629, {})
+  mergeDrv.run.gold = 99
+  mergeDrv.run.shop[1] = { id = "spore_tick", cost = 1, sold = false }
+  local ms = unlockedSlots(mergeDrv)
+  mergeDrv.build:placeId(ms[1], "spore_tick", 1)
+  mergeDrv.build:placeId(ms[2], "spore_tick", 1)
+  assert(mergeDrv:buy(1) == "spore_tick", "buy: achat d'une troisieme copie")
+  local mergeMetrics = mergeDrv:metricSnapshot()
+  assert(mergeMetrics.mergeBuys == 1 and mergeDrv:copyCount("spore_tick", 2) == 1,
+    "buy: metrique fusion tracee")
+  local boardSellDrv = Rundriver.new(20260630, {})
+  local bss = unlockedSlots(boardSellDrv)
+  boardSellDrv.build:placeId(bss[1], "skeleton", 1)
+  local boardSellBefore = boardSellDrv.run.gold
+  assert(boardSellDrv:sell(bss[1]), "sell: vend une unite du plateau")
+  local boardSellMetrics = boardSellDrv:metricSnapshot()
+  assert(boardSellMetrics.boardSells == 1 and boardSellDrv.run.gold > boardSellBefore,
+    "sell: metrique vente plateau tracee")
+  local planDrv = Rundriver.new(20260631, {})
+  planDrv.run.gold = 99
+  planDrv.run.slots = 5
+  planDrv.build.board:ensureOpen(5)
+  local ss = unlockedSlots(planDrv)
+  planDrv.build:placeId(ss[1], "spore_tick", 1)
+  planDrv.build:placeId(ss[2], "skeleton", 1)
+  planDrv.build:placeId(ss[3], "bandit", 1)
+  planDrv.build:placeId(ss[4], "marauder", 1)
+  planDrv.build:placeId(ss[5], "demon", 1)
+  for i = 1, #planDrv.build.benchSlots do
+    planDrv.build.bench[i] = { id = "templar", level = 2, char = planDrv.build:newRig("templar") }
+  end
+  planDrv.run.shop[1] = { id = "spore_tick", cost = 1, sold = false }
+  for i = 2, #planDrv.run.shop do planDrv.run.shop[i].sold = true end
+  assert(Policies.greedy_plan:act(planDrv).boardSold == 1, "planner: libere une case board faible pour une paire")
+  local planMetrics = planDrv:metricSnapshot()
+  assert(planMetrics.boardSells == 1 and planMetrics.pairBuys == 1,
+    "planner: trace vente board + achat de paire")
   if require("src.board.board").SIGILS_PAUSED then
     -- Sigils EN PAUSE : reshape est indisponible (refus propre) ; le plateau reste un carré.
     assert(drv:reshape("ligne") == false and drv.build.board.shape.name == "carre", "reshape refuse (sigils en pause)")
@@ -166,6 +246,7 @@ local ok, err = pcall(function()
   assert(Policies.archetypeOf("spore_tick") == "poison", "classifier: spore_tick = poison")
   assert(Policies.archetypeOf("gravewarden") == "tank", "classifier: gravewarden = tank")
   assert(Policies.archetypeOf("marauder") == "bruiser", "classifier: marauder = bruiser")
+  assert(Policies.minRankForArchetype("tank") == 2, "classifier: tank commence au rang 2")
   print("  lab : API d'actions OK (refus propres + reshape + classifieur)")
 
   -- 10) ENCODEUR JSON du daemon (Pilier C) : types + tri des cles + echappement (sortie parsee par Python).

@@ -1401,15 +1401,115 @@ Next implementation targets:
    - 50%;
    - 75%;
    - 100%.
-2. Add economy/run policies that emit:
-   - `buy_all_rate`;
-   - `gold_leftover_wasted`;
+2. Expand the economy/run report. First implementation exists:
+   - `src/run/economy.lua`;
+   - `tools/sim.lua economy [N]`;
+   - `runs/report-economy.json`;
+   - `force_level_fast` policy now exercises XP buying.
+   It already emits:
+   - `full_shop_afford_rate` / `early_full_shop_afford_rate`;
+   - true `desired_buy_all_rate`, plus `desired_gold_afford_rate` and
+     `desired_slot_limited_rate`;
+   - `virtual_bench` rates for hypothetical extra reserve capacities `0/2/4/6`
+     above the real board+bench capacity; cap `0` is the current gameplay
+     model;
+   - `gold_leftover_wasted` via `avg_leftover_gold`;
    - `gold_pressure`;
    - `spend_split`;
    - `reroll_rate_by_tier`;
    - `xp_buy_rate_by_tier`;
-   - `archetype_commit_round`;
-   - `committed_archetype_completion`.
+   - `sells_per_run` / `sell_gold_per_run`;
+   - `bench_sells_per_run`, `board_sells_per_run`;
+   - `pair_buys_per_run`, `merge_buys_per_run`;
+   - cohorts `legacy_all`, `broad_naive`, `broad_prune`, `broad_plan`,
+     `committed`, `committed_plan`;
+   - `archetype_commitment_rate`;
+   - `avg_archetype_commit_round`;
+   - per-archetype split: `plan_formed_runs`, `plan_unformed_runs`,
+     `avg_wins_given_plan`, `avg_wins_without_plan`,
+     `completion_given_plan`, `completion_without_plan`.
+   Latest N=20 learning:
+   - the first pass missed the existing build-scene bench; `Rundriver` now uses
+     `Build:autoBuy`, so purchases go board -> real bench -> merge if full;
+   - `sap_cost` still creates the clearest economic pressure:
+     full-shop affordability drops from `89.0%` baseline to `62.5%`;
+   - `early_curve` barely changes full-shop affordability (`87.8%`) while
+     `cost=rank` remains active;
+   - with the real bench wired, desired-offer buy-all rises to `21.9%`
+     baseline and `18.9%` sap_cost, and average wins rise materially;
+   - adding four extra virtual reserve slots would raise desired-offer buy-all
+     to about `50%`, but a large space limit remains, so the problem is also
+     policy selectivity / sell / merge intelligence, not only bench size;
+   - committed archetype policies can usually buy their wanted pieces with the
+     real bench, while greedy/econ/tall policies remain very space-sensitive;
+   - tank is still the outlier: no rank-1 tank, late commitment, weak outcomes.
+   Latest N=20 learning after adding `_prune` broad policies:
+   - `Rundriver:sellBench` now models the player selling reserves and records
+     sale metrics;
+   - `Policies.analysisSet` keeps the legacy 9 policies and adds
+     `greedy_prune`, `econ_prune`, `tall_dense_prune`;
+   - in `baseline`, broad naive policies average `7.38` wins, `7.7%`
+     desired-offer buy-all, and `92.3%` space-limited desired rounds;
+   - in `baseline`, broad prune policies average `8.03` wins, `12.8%`
+     desired-offer buy-all, `87.2%` space-limited desired rounds, and sell
+     `28.6` bench units/run;
+   - in `sap_cost`, broad pruning raises desired-offer buy-all from `8.4%` to
+     `14.7%`, but space limitation remains `85.3%`;
+   - conclusion: bench pruning fixes a player-policy naivety and especially
+     helps tall/econ, but it does not justify a bench-size change by itself.
+     The next pass needs smarter pair planning / board prioritization before a
+     gameplay economy change is locked.
+   Per-archetype learning from the same N=20:
+   - `tank` in baseline forms the plan only `7/20` times, around round `5.57`,
+     and averages only `1.43` wins even when formed;
+   - `tank` in `sap_cost` forms only `5/20` times and averages `0` wins even
+     when formed;
+   - this is not a bench-space issue. Tank needs either a rank-1 seed, a
+     smarter survivable rush policy, or actual mechanical power in the tank
+     shell before it can be evaluated as a healthy archetype.
+   Latest N=20 learning after adding paired seeds and `_plan` policies:
+   - `tools/scenarios/economy.lua` and `tools/scenarios/policy.lua` now use
+     paired world seeds per run/profile. Policies start from the same run seed
+     and diverge through their own actions, which makes policy comparisons less
+     noisy.
+   - `Rundriver` records `benchSells`, `boardSells`, `pairBuys`, and
+     `mergeBuys`; `buy` counts whether a purchase creates a second copy or
+     completes a level-up merge.
+   - `Policies.analysisSet` now has 19 policies: legacy 9, `_prune` broad
+     policies, `_plan` broad policies, and `_plan` committed archetype policies.
+   - `_plan` policies score offers by immediate merge, pair creation, rank/cost
+     and plan membership. They sell bench singletons only for high-value offers
+     and can sell one weak board unit when the board stays above a survival
+     floor and the offer is clearly better.
+   - in paired `baseline`, broad naive averages `7.35` wins, `8.2%`
+     desired-offer buy-all, `91.8%` space-limited desired rounds, `4.0`
+     pair buys/run, and `3.7` merge buys/run;
+   - in paired `baseline`, broad prune averages `7.92` wins, `11.2%`
+     desired-offer buy-all, `88.8%` space-limited rounds, `26.6` sells/run,
+     `6.9` pair buys/run, and `6.0` merge buys/run;
+   - in paired `baseline`, broad plan averages `8.78` wins, `21.7%`
+     completion, `14.6%` desired-offer buy-all, `85.4%` space-limited rounds,
+     only `17.3` sells/run, `0.62` board sells/run, `7.8` pair buys/run, and
+     `6.4` merge buys/run;
+   - in paired `sap_cost`, broad plan improves desired-offer buy-all to
+     `17.2%` versus `11.8%` prune and `8.7%` naive, while selling less than
+     prune (`13.3` vs `19.9` sells/run);
+   - global `sap_cost` still creates the strongest economy pressure
+     (`66.8%` full-shop affordability vs `94.6%` baseline) but drops average
+     wins while weak shells remain unresolved;
+   - `tank` is unchanged by planning: baseline tank forms only `2/20` plans,
+     round `6`, completion `0%`, `0.95` wins average; `sap_cost` tank forms
+     `3/20` plans and averages `0.05` wins. This is an accessibility/power
+     defect in the tank shell, not a reserve-management defect.
+   Remaining additions:
+   - turn the tank diagnosis into sim-only candidate variants: rank-1 tank seed,
+     stronger shield/taunt payoff, and/or tank rush policy that buys survivable
+     filler until tier 2;
+   - add a "pair completion over time" metric: pair formed -> merge completed
+     rate, not only raw pair/merge purchase counts;
+   - model relic access and relic tags in coherence/economy reports;
+   - make committed policies smarter about XP/reroll timing after the tank
+     candidate tests.
 3. Integrate relic tags and relic access into coherence scoring.
 4. Expand authored level-ups beyond the initial 6 units before drawing broad
    balance conclusions.

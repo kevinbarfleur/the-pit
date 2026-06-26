@@ -18,6 +18,7 @@
 
 local Units = require("src.data.units")
 local Relics = require("src.data.relics")
+local Economy = require("src.run.economy")
 
 local RunState = {}
 RunState.__index = RunState
@@ -101,9 +102,9 @@ for _, id in ipairs(POOL) do
   end
 end
 
-local function unitCost(id)
+local function unitCost(self, id)
   local u = Units[id]
-  return (u and u.cost) or DEFAULT_COST
+  return Economy.unitCost(self and self.economy, u, DEFAULT_COST)
 end
 
 -- Bonus d'or de série : streak 0-1 -> 0, 2 -> 1, 3 -> 2, 4+ -> STREAK_CAP. Victoires OU défaites.
@@ -113,10 +114,12 @@ local function streakBonus(self)
 end
 
 -- ── Construction : démarre directement au round 1 (or distribué, boutique tirée) ──
-function RunState.new(seed)
+function RunState.new(seed, opts)
   seed = seed or 0
+  opts = opts or {}
   local self = setmetatable({
     seed = seed,
+    economy = Economy.resolve(opts.economy),
     rng = love.math.newRandomGenerator(seed),
     gold = 0,
     lives = START_LIVES,
@@ -189,12 +192,12 @@ function RunState:roll()
   for i = 1, SHOP_SIZE do
     local frozen = self.frozenOffers and self.frozenOffers[i]
     if frozen then
-      shop[i] = { id = frozen.id, cost = frozen.cost or unitCost(frozen.id), sold = false, frozen = true }
+      shop[i] = { id = frozen.id, cost = frozen.cost or unitCost(self, frozen.id), sold = false, frozen = true }
     else
       local rank = rollRank(self, odds)
       local bucket = bucketForRank(rank)
       local id = bucket[self.rng:random(1, #bucket)]
-      shop[i] = { id = id, cost = unitCost(id), sold = false }
+      shop[i] = { id = id, cost = unitCost(self, id), sold = false }
     end
   end
   self.shop = shop
@@ -216,7 +219,7 @@ function RunState:startRound()
   local held = self.gold -- or de FIN de round (avant reset) : base du report ET de l'intérêt
   local kept = eco.carryover and held or 0
   local interest = eco.carryover and math.min(eco.interestCap, math.floor(held * eco.interest)) or 0
-  self.gold = GOLD_PER_ROUND + streakBonus(self) + kept + interest + eco.perRound + (self._pendingGold or 0)
+  self.gold = self:goldPerRoundFor(self.round) + streakBonus(self) + kept + interest + eco.perRound + (self._pendingGold or 0)
   self._pendingGold = 0
   self:roll()
   -- Grant d'emplacement timé (façon tier SAP) : à un round prévu, tant qu'il reste des offres, on présente
@@ -251,7 +254,7 @@ end
 -- REFUSE l'offre : +SLOT_DECLINE_GOLD or, capacité INCHANGÉE (slot renoncé définitivement = jeu « tall »).
 function RunState:declineSlotGrant()
   if not self.pendingSlotGrant then return false end
-  self.gold = self.gold + SLOT_DECLINE_GOLD
+  self.gold = self.gold + Economy.declineGold(self.economy, "slot")
   self.pendingSlotGrant = false
   self.slotGrantsResolved = self.slotGrantsResolved + 1
   return true
@@ -272,7 +275,7 @@ end
 -- REFUSE le piédestal : +COMMANDER_DECLINE_GOLD or, jamais débloqué cette run (renoncé définitivement).
 function RunState:declineCommanderGrant()
   if not self.pendingCommanderGrant then return false end
-  self.gold = self.gold + COMMANDER_DECLINE_GOLD
+  self.gold = self.gold + Economy.declineGold(self.economy, "commander")
   self.pendingCommanderGrant = false
   self.commanderGrantOffered = true
   return true
@@ -306,15 +309,17 @@ function RunState:raiseShopTier(n)
 end
 
 -- Peut-on acheter de l'XP ? Pas au tier max, et on a de quoi payer.
+function RunState:currentBuyXpCost() return Economy.buyXpCost(self.economy) end
+
 function RunState:canBuyXp()
-  return self.shopTier < MAX_TIER and self.gold >= BUY_XP_COST
+  return self.shopTier < MAX_TIER and self.gold >= self:currentBuyXpCost()
 end
 
 -- Achète BUY_XP_AMOUNT d'XP pour BUY_XP_COST or (peut faire monter un ou plusieurs tiers via la cascade).
 -- Renvoie true si effectué, false sinon. NE tire PAS de self.rng.
 function RunState:buyXp()
   if not self:canBuyXp() then return false end
-  self.gold = self.gold - BUY_XP_COST
+  self.gold = self.gold - self:currentBuyXpCost()
   self:addShopXp(BUY_XP_AMOUNT)
   return true
 end
@@ -363,11 +368,17 @@ function RunState:freezeOffer(i)
   return true
 end
 
-function RunState:canReroll() return self.gold >= REROLL_COST end
+function RunState:currentRerollCost() return Economy.rerollCost(self.economy, self.shopTier) end
+
+function RunState:goldPerRoundFor(round) return Economy.goldForRound(self.economy, round or self.round) end
+
+function RunState:unitCost(id) return unitCost(self, id) end
+
+function RunState:canReroll() return self.gold >= self:currentRerollCost() end
 
 function RunState:reroll()
   if not self:canReroll() then return false end
-  self.gold = self.gold - REROLL_COST
+  self.gold = self.gold - self:currentRerollCost()
   self:roll()
   return true
 end
@@ -375,7 +386,7 @@ end
 -- Remboursement à la revente d'une unité posée (la scène retire l'unité du plateau).
 function RunState:sellRefund(id)
   local frac = math.max(SELL_REFUND_FRAC, self:ecoMods().sellFrac) -- A3 : une relique d'éco peut rembourser plus (jusqu'à plein)
-  return math.max(1, math.floor(unitCost(id) * frac))
+  return math.max(1, math.floor(unitCost(self, id) * frac))
 end
 
 function RunState:sell(id) self.gold = self.gold + self:sellRefund(id) end
@@ -505,8 +516,9 @@ end
 -- REFUSE l'offre de relique : +DECLINE_RELIC_GOLD or (calque exact de declineSlotGrant : on échange le
 -- choix contre de l'or). N'inscrit RIEN au Grimoire (rien d'appris). Renvoie l'or accordé.
 function RunState:declineRelic()
-  self.gold = self.gold + DECLINE_RELIC_GOLD
-  return DECLINE_RELIC_GOLD
+  local gold = Economy.declineGold(self.economy, "relic")
+  self.gold = self.gold + gold
+  return gold
 end
 
 -- Octroie une relique (modèle LISIBLE : on ne stocke que l'id ; l'effet est affiché). Le host inscrit

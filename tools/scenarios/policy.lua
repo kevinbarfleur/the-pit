@@ -23,16 +23,7 @@ local HPM = tonumber(os.getenv("PIT_HP_MULT"))
 local function makePolicies(runIndex)
   -- RNG du baseline DÉRIVÉ du run (seed stable) -> chaque run du baseline est rejouable indépendamment.
   local brng = love.math.newRandomGenerator(7000 + runIndex)
-  return {
-    Policies.greedy_stats,
-    Policies.econ_streak,
-    Policies.tall_dense(5),
-    Policies.committed_archetype("poison", "diamant"),
-    Policies.committed_archetype("burn", "ligne"),
-    Policies.committed_archetype("rot", "carre"),
-    Policies.committed_archetype("tank", "carre"),
-    Policies.random_baseline(brng),
-  }
+  return Policies.analysisSet(brng)
 end
 
 -- agrégat par NOM de politique
@@ -52,8 +43,8 @@ print(string.format("== P2 PROGRESSIONS PAR POLITIQUE : %d runs/politique ==", N
 for run = 1, N do
   local pols = makePolicies(run)
   for _, p in ipairs(pols) do
-    -- seed de run DÉPENDANT de (politique, run) -> chaque politique voit un MONDE différent mais reproductible.
-    local seed = BASE_SEED + run * 131 + (#p.name) -- mélange simple stable (pas de RNG ici : pur déterminisme)
+    -- Seed apparié par run : toutes les politiques démarrent du même monde, puis divergent par leurs actions.
+    local seed = BASE_SEED + run * 131
     local traj = Rundriver.run(seed, p, { hpMult = HPM })
     local a = A(p.name)
     a.runs = a.runs + 1

@@ -7,6 +7,7 @@ package.path = "./?.lua;" .. package.path
 love = require("tests.mock_love")
 
 local RunState = require("src.run.state")
+local Units = require("src.data.units")
 
 local function shopIds(r)
   local t = {}
@@ -32,6 +33,38 @@ local ok, err = pcall(function()
     r.relicFromLevelThisRound = true -- simule la conso du round (une fusion a déjà offert)
     r:startRound()
     assert(r.relicFromLevelThisRound == false, "Lot 5 : startRound rearme la recompense de level-up")
+  end
+
+  -- ── Profils d'economie opt-in : le comportement par defaut reste identique, mais le simulateur peut
+  -- tester des variantes sans muter les constantes live.
+  do
+    local sap = RunState.new(101, { economy = "sap_cost" })
+    assert(sap.economy.id == "sap_cost", "profil eco: id sap_cost")
+    local full = 0
+    for _, o in ipairs(sap.shop) do
+      assert(Units[o.id].rank == 1, "sap_cost round 1: tier 1 -> rang 1")
+      assert(o.cost == 2, "sap_cost round 1: rang 1 coute 2")
+      full = full + o.cost
+    end
+    assert(full == 10, "sap_cost: shop tier 1 complet = 10 gold")
+    assert(sap:sellRefund(sap.shop[1].id) == 1, "sap_cost: sell refund suit le cout profile (50%, min 1)")
+
+    local curve = RunState.new(102, { economy = "early_curve" })
+    assert(curve.gold == 6, "early_curve: round 1 donne 6 gold")
+    curve:startRound()
+    assert(curve.round == 2 and curve.gold == 6, "early_curve: round 2 donne 6 gold")
+    curve:startRound()
+    assert(curve.round == 3 and curve.gold == 8, "early_curve: round 3 donne 8 gold")
+
+    local rr = RunState.new(103, { economy = "tiered_reroll" })
+    rr.shopTier = 3
+    rr.gold = 5
+    assert(rr:currentRerollCost() == 2, "tiered_reroll: tier 3 reroll coute 2")
+    assert(rr:reroll() and rr.gold == 3, "tiered_reroll: deduit le cout profile")
+
+    local custom = RunState.new(104, { economy = { id = "custom_test", base = "sap_cost", goldByRound = { [1] = 7 } } })
+    assert(custom.economy.id == "custom_test" and custom.gold == 7, "profil custom: override goldByRound")
+    assert(custom.shop[1].cost == 2, "profil custom: herite costByRank de sap_cost")
   end
 
   -- ── DÉTERMINISME : même seed + mêmes actions -> état strictement identique ──
