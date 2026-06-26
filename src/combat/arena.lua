@@ -13,6 +13,7 @@
 -- la frappe connecte à mi-animation, indépendamment de tout rig.
 
 local Units = require("src.data.units")
+local Spawn = require("src.data.spawn") -- PONT D'ENGEANCE (AXE 3) : token id -> stats/visuel (window.SPAWN porté en data)
 local Bus = require("src.core.bus")
 local Effects = require("src.effects.engine")
 local Stats = require("src.effects.stats") -- couche de modificateurs (empower/vuln en `increased` sur la base)
@@ -109,6 +110,8 @@ function Arena.new(opts)
   self.killCtx = {}  -- ctx DÉDIÉ on_kill (K5) : le killer agit à la mort de sa victime (soin/scavenger)
   self.allyDeathCtx = {} -- ctx DÉDIÉ on_ally_death (K6) : un allié vivant réagit à la mort d'un allié (stats only)
   self.deaths = {}   -- file des morts de la frame : enregistrements {victim,killer} résolus APRÈS la boucle (hors réentrance)
+  self.pendingSummons = {} -- ENGEANCE (AXE 3) : file des tokens à insérer, vidée APRÈS le broadcast (jamais une mutation de self.units en plein ipairs)
+  self.summonCtx = {} -- ctx DÉDIÉ au self-death summon (le MORT agit à sa propre mort : jaillir une engeance)
   if opts.autoReset ~= nil then
     self.autoReset = opts.autoReset
   else
@@ -177,6 +180,7 @@ function Arena:spawn()
   self.units = {}
   self.resetTimer = nil
   self.deaths = {}
+  self.pendingSummons = {} -- ENGEANCE (AXE 3) : reset à chaque (re)spawn (la démo se relance via spawn())
   self.over = false
   self.win = nil
   self.overAge = 0
@@ -297,6 +301,66 @@ function Arena:neighborsOf(u)
     end
   end
   return out
+end
+
+-- ── ENGEANCE (AXE 3) — invocation à la mort d'un porteur. Décision user : « 1 token, dans la case libérée
+-- du parent » (remplacement 1-pour-1 STRICT). queueSummon DIFFÈRE l'insertion (file vidée par flushSummons
+-- APRÈS le broadcast de la frame) → on ne mute JAMAIS self.units en plein ipairs. Déterministe : zéro RNG (la
+-- position EST celle du mort) ; la file est en array + ipairs (ordre de mort fixe). cf. plan §AXE 3, §6.5. ──
+
+-- Crée le combatant-token (mini-stats du pont Spawn) qui jaillit du cadavre `dead`. TERMINAL : imposance 0,
+-- aucun effet → ne ré-invoque jamais (anti-boucle). Hérite des coords de combat du mort (même depth/row/x/y/team
+-- → même profil de ciblage que la case libérée). Le visuel se résout côté RENDER via Units[token]/Spawn (family/arch).
+function Arena:makeToken(dead, tokenId)
+  local tk = Spawn.token(tokenId)
+  if not tk then return nil end
+  local hp = math.floor((tk.hp or 1) * self.hpMult + 0.5) -- BOUTON GLOBAL de PV (cohérent avec makeUnit)
+  return {
+    spec = false, team = dead.team, slot = dead.slot, x = dead.x, y = dead.y, facing = dead.facing,
+    id = tokenId, isToken = true, -- isToken : marqueur (le render/log peuvent distinguer une engeance ; SIM le lit pour la garde anti-boucle)
+    maxHp = hp, hp = hp, maxHp0 = hp, dmg = tk.dmg or 1, cd = tk.cd or 40,
+    effects = nil, -- AUCUN effet : le token est inerte (terminal). nil = pas de hook (Effects.run ignore gracieusement).
+    -- même profil de ciblage que le cadavre (1-pour-1) : il prend littéralement sa place dans la ligne.
+    depth = dead.depth or 0, row = dead.row or 0,
+    aggro = AGGRO_STD, taunt = false,
+    shield = 0, maxShield = 0,
+    atkTimer = self.rng:random() * (tk.cd or 40), -- décalage seedé (cohérent makeUnit) : pas de swing synchronisé
+    firstHit = true,
+    dots = { poison = {} },
+    weaken = 0, atkSlow = 0,
+    regen = 0, regenAcc = 0,
+    swinging = false, swingAge = 0, swingHit = false,
+    shieldReflect = 0,
+    alive = true, target = nil,
+  }
+end
+
+-- Met en file UNE invocation (le mort `dead` → token `tokenId`). Garde-fou TERMINAL : un token ne peut pas
+-- invoquer (même si une data future lui collait un `summon` par erreur) → la chaîne reste bornée profondeur 1.
+function Arena:queueSummon(dead, tokenId)
+  if dead.isToken then return end -- ANTI-BOUCLE : une engeance ne fait pas d'engeance (imposance 0, terminal)
+  if not Spawn.token(tokenId) then return end
+  self.pendingSummons[#self.pendingSummons + 1] = { dead = dead, token = tokenId }
+end
+
+-- Vide la file d'engeances : insère les tokens en FIN de self.units (array + ipairs → déterministe). Appelé
+-- APRÈS le broadcast de mort de la frame (hors réentrance) → l'insertion n'altère aucun ipairs en cours.
+-- Émet "spawned" (RENDER : (re)construit ses rigs) UNIQUEMENT s'il y a eu insertion (gated → golden-inerte
+-- tant qu'aucune unité golden n'invoque). Borné par construction : 1 token / mort, tokens terminaux.
+function Arena:flushSummons()
+  local q = self.pendingSummons
+  if #q == 0 then return end
+  local any = false
+  for i = 1, #q do
+    local tok = self:makeToken(q[i].dead, q[i].token)
+    if tok then
+      self.units[#self.units + 1] = tok
+      self.bus:emit("summoned", { unit = tok, from = q[i].dead, token = q[i].token }) -- RENDER : effet de jaillissement (golden-safe, aucun abonné SIM)
+      any = true
+    end
+  end
+  for i = #q, 1, -1 do q[i] = nil end -- vide la file (réutilisée la frame suivante)
+  if any then self.bus:emit("spawned", self.units) end -- le render rebuild ses rigs (inclut les tokens)
 end
 
 -- ── MURMURES (3e couche cachée) — dispatch PARALLÈLE à Effects.run, sur la liste `owner.whispers` (data
@@ -855,6 +919,22 @@ function Arena:update(frameDt, t)
           Effects.run(w, "on_death", dctx)
         end
       end
+      -- (2.5) ENGEANCE (AXE 3) — self-death summon : le MORT agit à SA PROPRE mort (jaillir un token). Pas
+      -- de double-emploi avec (2) : (2) vise les ENNEMIS du mort (spread_burn_on_death…), ici c'est le mort
+      -- LUI-MÊME (source = victim). On filtre op=="summon" (les autres on_death du mort restent muets — un mort
+      -- ne propage pas SES propres DoT). L'op QUEUE seulement (arena:queueSummon) ; l'insertion est différée
+      -- (flushSummons après la boucle) → jamais de mutation de self.units en plein ipairs. Tokens terminaux.
+      local de = dead.effects
+      if de then
+        self.summonCtx.arena, self.summonCtx.source, self.summonCtx.victim = self, dead, dead
+        for ei = 1, #de do
+          local e = de[ei]
+          if e.trigger == "on_death" and e.op == "summon" then
+            local op = Effects.ops[e.op]
+            if op and Effects.passCondition(e.condition, self.summonCtx) then op(self.summonCtx, e.params or {}, e) end
+          end
+        end
+      end
       -- (3) on_ally_death aux alliés vivants du mort (skip les morts de la frame), stats only. + MURMURES
       -- (THE HOLLOW VESSEL : HUSK se gorge du défunt, cumul borné). runWhispers est indépendant de w.effects
       -- (une unité sans effet public peut quand même porter un murmure) -> on l'appelle même si effects vide.
@@ -869,6 +949,12 @@ function Arena:update(frameDt, t)
     end
     for di = #self.deaths, 1, -1 do self.deaths[di] = nil end
   end
+
+  -- FLUSH des engeances (AXE 3) : insère les tokens en file APRÈS le broadcast (hors réentrance, jamais en
+  -- plein ipairs). Le décompte ci-dessous voit donc les tokens fraîchement nés (un board ne « gagne » pas tant
+  -- que des engeances vivent → l'attrition inversée fonctionne). Borné (1 token/mort, terminaux). Gated : file
+  -- vide tant qu'aucune unité n'invoque → golden inchangé (aucune émission "spawned"/"summoned").
+  self:flushSummons()
 
   -- Décompte des vivants par camp. COMMANDANT (K4, §6.4.5) : EXCLU du décompte -> le board mort = défaite même
   -- si le commandant vit (le fanal seul ne gagne rien). Un combat commandant-vs-commandant conclut dès que les

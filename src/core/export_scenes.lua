@@ -19,6 +19,7 @@ local Relicpick = require("src.scenes.relicpick")
 local Menu      = require("src.scenes.menu")
 local Gallery   = require("src.scenes.gallery")
 local GrimoireS = require("src.scenes.grimoire")
+local SystemMenu = require("src.ui.system_menu")
 
 local VW, VH = 320, 180
 local SEED = 13 -- seed FIXE -> capture reproductible (même build/boutique/adversaire à chaque export)
@@ -223,6 +224,31 @@ function Builders.build_relic_hover(host)
   return b
 end
 
+local function makeSystemShot(host, mode)
+  local b = makeBuild(host)
+  host.name = "build"
+  host.canResumeRun = function() return true end
+  host.suspendToMenu = function() end
+  host.abandonRun = function() end
+  host.musicEnabled = true
+  host.toggleMusic = function() host.musicEnabled = not host.musicEnabled; return host.musicEnabled end
+  host.postfxReady = function() return true end
+  host.postfxEnabled = function() return true end
+  host.togglePostFx = function() return true end
+  local ov = SystemMenu.new(host, { mode = mode or "pause" })
+  host.overlay = ov
+  return {
+    daChrome = true, nativeWorld = b.nativeWorld,
+    update = function(_, dt) ov:update(dt) end,
+    drawBack = function(_, view) b:drawBack(view) end,
+    drawWorld = function() b:drawWorld() end,
+    drawOverlay = function(_, view) b:drawOverlay(view); ov:draw(view) end,
+  }
+end
+
+function Builders.system(host) return makeSystemShot(host, "pause") end
+function Builders.settings(host) return makeSystemShot(host, "settings") end
+
 -- RUNOVER : écran de fin (ascension). On feed un run seedé + résultat.
 function Builders.runover(host)
   host.run = RunState.new(SEED)
@@ -322,7 +348,7 @@ local M = {}
 -- Liste des noms de scènes capturables (ordre stable, pour --shoot=all et les messages d'erreur).
 M.names = { "menu", "build", "combat", "combat_react", "summary", "relicpick", "runover", "grimoire", "grimoire_relics",
   "grimoire_bestiary",
-  "gallery", "designsystem", "build_relic_hover",
+  "gallery", "designsystem", "build_relic_hover", "system", "settings",
   "anim_attack", "anim_death", "anim_hurt",
   "combat_commander",
   "commander_empty", "commander_filled", "commander_hover", "commander_offer", "commander_refuse",

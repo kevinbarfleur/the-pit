@@ -48,11 +48,13 @@ local Badge = require("src.ui.badge")    -- coût (pièce+nombre) / pips de nive
 local Dividers = require("src.ui.dividers") -- séparateurs laiton/sang propres
 local Feel = require("src.ui.feel")      -- JUICE : survol (glow/lift) + press (squash/flash) + action différée
 local Juice = require("src.ui.juice")    -- MOUVEMENT « candy » : number-roll de l'or (scale-punch + valeur lissée)
+local P = require("src.ui.particles")    -- PARTICULES PIXEL (transplant Feel Lab) : explosion de level-up/fusion en SPRITES bakés
 local Drag = require("src.ui.drag")      -- RESSORT de drag « Balatro » (lab) : pièce traînée glisse+s'incline ; pose/swap glissés
 local Layout = require("src.ui.layout") -- MOTEUR de layout flex (alignement parfait, fill-to-container)
 local Keywords = require("src.ui.keywords") -- registre afflictions (mini-chips de carte)
 local Chip = require("src.ui.chip") -- pastilles keyword (icône d'affliction)
 local Ambient = require("src.fx.ambient")
+local NightmareBG = require("src.fx.nightmare_bg") -- champ cauchemardesque réutilisé derrière la zone de formation
 local Rarity = require("src.gen.rarity") -- rang -> couleur de cadre + glow (accent de rareté de la fiche)
 local MiniRig = require("src.render.minirig") -- mesure OPAQUE mutualisée des rigs (bounds/fit) : seule source de vérité
 local MonsterCard = require("src.render.monstercard") -- FICHE de monstre (extraite de drawTooltip) : réutilisée ici + Chronique
@@ -107,6 +109,13 @@ local LEVEL_MULT = { 1.0, 1.8, 3.0 } -- stats par niveau : 3 copies (même id+ni
 local STAT_INC_CAP = 1.0
 local COMMANDER_CD_MULT = 1.5
 
+-- ── W1 (axe Type-identité, plan §AXE 2) — RAINBOW (`aura_per_unique_type`). Le porteur (Prismagon/Spectre)
+-- se renforce de +dmg/+hp par TYPE DISTINCT du board (5 types max : flesh/bone/arcane/abyss/order). On compte
+-- au BUILD (Q4 : sur le plateau, déterministe, snapshot-gratuit comme les auras), jamais en combat. Le `count`
+-- est borné à RAINBOW_TYPE_CAP -> la magnitude reste lisible et plafonnée (discipline de cap §6.1). Flat
+-- additif sur hp/dmg (même couche que statInc, mais en plat) -> sous les caps relatifs existants par construction.
+local RAINBOW_TYPE_CAP = 5 -- nb de types distincts comptés (le jeu n'en a que 5 ; borne dure anti-extension)
+
 -- ── Courbe de difficulté (cold-start) — TUNABLES (cf. the-pit-balance-diagnosis). Le board joueur croît de
 -- façon PRÉVISIBLE (grants timés 3->9). L'ennemi suit : l'index d'encounter grimpe avec le round (taille),
 -- puis au-delà de la table le plus gros gagne des NIVEAUX (bump) pour suivre les merges du joueur fin de run. ──
@@ -131,6 +140,12 @@ function Build.new(palette, vw, vh, host)
     cmdCadence = 0,      -- C4 : phase 0..1 de la barre de cadence LENTE du commandant (cosmétique, dt-piloté)
     cmdShake = 0,        -- C4 : timer de SECOUSSE de refus (drop d'un non-chef) ; >0 = le socle tremble + sang
     fx = {},           -- GAME FEEL : effets ÉPHÉMÈRES (achat/vente/level-up) — { kind, x, y, t, dur, ... } (design)
+    -- LEVEL-UP : on DIFFÈRE l'ouverture de la pop-up de relique à la FIN de l'anim de fusion (retour user : ne plus
+    -- la cacher en plein « TAAA »). pendingLevelRelic (déjà existant) = l'offre est armée ; levelRelicCountdown =
+    -- buffer mural restant APRÈS la fin du FX (re-armé tant qu'un FX levelup/merge_fly vit -> couvre la cascade).
+    -- updating = le RENDER-loop a déjà tourné au moins une frame (vrai jeu) ; faux en headless (tests pilotés sans
+    -- update) -> FALLBACK synchrone (l'offre s'ouvre tout de suite, cf. armLevelRelic) pour ne pas casser l'e2e.
+    levelRelicCountdown = nil, updating = false,
     previewRigs = {},  -- [id] = char idle (aperçu boutique)
     drag = nil,        -- { id, char, fromSlot? | fromShop? }
     mx = -100, my = -100,
@@ -147,7 +162,8 @@ function Build.new(palette, vw, vh, host)
   -- self.button / rerollBtn / declineBtn + les rects du layout (orbe, cartes) sont calculés par
   -- computeShop() via le moteur Layout (déjà appelé ci-dessus) -> alignement parfait, fill-to-container.
   -- (les accents de liseré des cases sont désormais portés par les 6 ÉTATS de l'atome Slot — plus de cache forge.)
-  self.ambient = Ambient.new(3) -- fond calme (mode "build" : dégradé, pas de particules d'ambiance)
+  self.ambient = Ambient.new(3) -- fond calme (repli + hors zone de formation)
+  self.nightmareBg = NightmareBG.new(17) -- fosse animée derrière le plateau/banc ; RENDER pur, headless-safe
   if self.host.run then self:syncSlots() end
   return self
 end
@@ -431,6 +447,19 @@ local MERGE_ANTICIP = 0.12   -- creux d'anticipation du survivant avant la 1re a
 local MERGE_STAGGER = 0.13   -- espacement des DÉPARTS des âmes -> arrivées rythmées (« ta. ta. »)
 local MERGE_CLIMAX  = 0.50   -- fenêtre de climax (burst + onde) après la DERNIÈRE arrivée
 local MERGE_SETTLE  = 0.30   -- détente finale (overshoot doux du ressort)
+local MERGE_RELIC_BUFFER = 0.30 -- BUFFER (s murales) après la fin de l'anim de fusion avant d'ouvrir la pop-up de
+                                -- relique de level-up : on s'assure que l'user a VU l'explosion entière (couvre la
+                                -- DERNIÈRE fusion d'une cascade, pas la première). Cf. Build:levelUpActive/armLevelRelic.
+
+-- ── POP DE POSE (retour user) : petite VIBRATION LOCALE du monstre quand il APPARAÎT sur une case (achat/pose).
+-- Pas de screen-shake / pas de trauma (trop pour une simple pose) : c'est le RIG qui frémit en place. Réutilise
+-- la même mécanique de champ d'anim que la fusion (`.pop` sur le rig, avancé dans update, lu au DRAW) mais en
+-- VARIANTE LÉGÈRE et INDÉPENDANTE de `bounce` (la fusion n'est PAS touchée). Punchy, bref, settle rapide.
+-- Leviers : POP_DUR (durée), POP_SCALE (amplitude squash-stretch), POP_SHAKE (amplitude du frémissement px virtuels).
+local POP_DUR   = 0.30   -- durée totale de la vibration de pose (s) — brève
+local POP_SCALE = 0.18   -- amplitude du squash-stretch initial (pic à t=0, puis settle amorti)
+local POP_SHAKE = 1.4    -- amplitude du frémissement HORIZONTAL (px VIRTUELS) — petit tremblement qui se résorbe
+local function newPopAnim() return { t = 0, dur = POP_DUR } end
 
 -- Bézier quadratique scalaire (p0 -> contrôle c -> p1 ; e ∈ 0..1) — arc des âmes de fusion (cf. Feel Lab).
 local function bez2(p0, cc, p1, e)
@@ -443,6 +472,16 @@ function Build:spawnFx(kind, x, y, opts)
   self.fx[#self.fx + 1] = { kind = kind, x = x, y = y, t = 0, dur = opts.dur or 0.55,
     gold = opts.gold, level = opts.level, fromX = opts.fromX, fromY = opts.fromY, delay = opts.delay or 0,
     sfxClimax = opts.sfxClimax, idx = opts.idx, n = opts.n, big = opts.big, cx = opts.cx, cy = opts.cy }
+end
+
+-- POSE D'UNE UNITÉ (retour user) : quand un monstre APPARAÎT sur une case (achat au clic auto-placé OU lâcher du
+-- drag sur une case), il FRÉMIT en place (vibration locale du rig) + le son « place » sonne. PAS de particule
+-- d'achat (retirées : « c'est laid »), PAS de screen-shake (trop pour une pose). On pose juste `.pop` sur le rig
+-- (lu par mergeScale/popShakeX au DRAW, avancé dans update) et on joue la cue. SFX.play est no-op headless / sur
+-- cue inconnue -> golden-safe, pas de crash si la cue « place » arrive après. RENDER pur.
+function Build:popPlaced(rig)
+  if rig then rig.pop = newPopAnim() end
+  SFX.play("place") -- cue d'APPARITION sur la case (créée en parallèle par le sound-designer ; id = "place")
 end
 
 -- Centre (espace DESIGN) d'une position de jeu {kind, i} (case board ou slot banc) -> ancre des FX de fusion.
@@ -559,33 +598,95 @@ end
 -- `t`/`dur` avancés dans update() (frameDt/60) ; lus au DRAW. Tout est COSMÉTIQUE (golden-safe).
 local function newMergeAnim(n, big)
   -- climaxAt = MERGE_ANTICIP + (n-1)*MERGE_STAGGER + MERGE_FLY_DUR (cf. spawnMergeFx) ; dur englobe le settle.
-  local climaxAt = MERGE_ANTICIP + (math.max(1, n) - 1) * MERGE_STAGGER + MERGE_FLY_DUR
-  return { t = 0, climaxAt = climaxAt, dur = climaxAt + MERGE_CLIMAX + MERGE_SETTLE, big = big or false }
+  n = math.max(1, n or 1)
+  local climaxAt = MERGE_ANTICIP + (n - 1) * MERGE_STAGGER + MERGE_FLY_DUR
+  -- INSTANTS D'ARRIVÉE de chaque âme (alignés EXACTEMENT sur spawnMergeFx : depart_i + MERGE_FLY_DUR). Le rig
+  -- doit RÉAGIR à CHACUN (throb « ta ») -> on les stocke pour que mergeEnv somme un pulse amorti par arrivée
+  -- (la choré multi-étapes du lab : tspring + _pulse par beat). La DERNIÈRE arrivée == climaxAt (« TAAA »).
+  local arrivals = {}
+  for i = 1, n do arrivals[i] = MERGE_ANTICIP + (i - 1) * MERGE_STAGGER + MERGE_FLY_DUR end
+  return { t = 0, climaxAt = climaxAt, dur = climaxAt + MERGE_CLIMAX + MERGE_SETTLE, big = big or false, arrivals = arrivals }
 end
 
--- Enveloppe 0..1 de la chorégraphie -> (lift px VIRTUELS vers le haut, facteur de scale autour de 1, glow 0..1).
--- Anticipation : creux léger (scale<1) qui se charge. Climax (au franchissement de climaxAt) : pic de scale +
--- saut + glow plein, puis amortissement (overshoot). Tout dérivé de b.t -> aucune mutation, pur DRAW.
+-- Enveloppe de la chorégraphie MULTI-ÉTAPES (transplant FIDÈLE de feel-lab/lib/levelup.lua : tspring + _pulse).
+-- -> (lift px VIRTUELS vers le haut, facteur de scale autour de 1, glow 0..1). Au lieu d'une simple bosse au
+-- climax, le rig est un RESSORT amorti recevant des IMPULSIONS DISCRÈTES — reproduites en forme fermée par une
+-- SUPERPOSITION de pulses amortis (golden-safe, déterministe, dt-mural) :
+--   1) ANTICIPATION : un CREUX de charge net au tout début (le rig « inspire »).
+--   2) ARRIVÉE de CHAQUE âme (« ta ») : un THROB de scale + un bump de glow -> le rig PULSE à chaque beat
+--      (la DERNIÈRE arrivée == climax). C'est ça, le « ta-ta-ta » visible ABSENT de l'ancienne version.
+--   3) CLIMAX (« TAAA ») : gros pulse de scale + saut (lift) + glow plein, puis SETTLE en oscillant.
+-- Le ressort du lab (k=360, d=22) est sous-amorti : ζ≈0.58 -> chaque pulse décroît en ~0.09 s en oscillant à
+-- ~15.5 rad/s. On modélise un pulse par A·exp(-(t-ti)/TAU)·cos((t-ti)·OMEGA), sommé sur tous les beats franchis.
+local MERGE_TAU   = 0.10   -- décroissance d'un pulse (s) — sous-amorti, « vivant »
+local MERGE_OMEGA = 15.5   -- pulsation du ressort (rad/s) — overshoot organique
+-- amplitudes (calibrées sur _pulse(amt) du lab : peak ≈ amt·1.4) :
+local A_ANTICIP   = -0.14  -- creux d'anticipation (lab _pulse(-0.10))  ; big -> plus profond
+local A_BEAT      = 0.075  -- throb par arrivée d'âme (lab _pulse(0.05))
+local A_CLIMAX    = 0.34   -- gros pulse au climax (lab _pulse(0.24))    ; big -> 0.48
+
+-- contribution d'un pulse posé à `ti`, lue à `t` (0 si pas encore déclenché). Décroissance × oscillation.
+local function springPulse(t, ti, amp)
+  if t < ti then return 0 end
+  local a = t - ti
+  return amp * math.exp(-a / MERGE_TAU) * math.cos(a * MERGE_OMEGA)
+end
+
 local function mergeEnv(b)
   if not b then return 0, 1, 0 end
-  local ca = b.climaxAt or MERGE_FLY_DUR
   local t = b.t or 0
-  -- phase d'ANTICIPATION (avant la dernière arrivée) : creux progressif + glow qui monte.
-  if t < ca then
-    local e = math.max(0, math.min(1, t / math.max(0.001, ca)))
-    local dip = math.sin(e * math.pi) * 0.06           -- creux doux (squash d'inspiration), revient à 0 au climax
-    return 0, 1 - dip, e * 0.5
-  end
-  -- phase de CLIMAX -> SETTLE : impulsion amortie (ressort) après le « TAAA ».
-  local a = t - ca                                       -- temps écoulé DEPUIS le climax
-  local decay = math.exp(-a / 0.16)                      -- enveloppe d'amortissement (~0,16 s de tau)
-  local osc = math.cos(a * 26)                           -- oscillation du ressort (overshoot organique)
   local big = b.big
-  local amp = big and 0.42 or 0.30
-  local punch = amp * decay * (0.5 + 0.5 * osc)          -- pic à a=0 (stretch), puis revient en oscillant
-  local lift = math.sin(math.min(1, a / 0.42) * math.pi) * (big and 4 or 3) * decay  -- saut amorti
-  local glow = decay
-  return lift, 1 + punch, glow
+  local arrivals = b.arrivals
+  local ca = b.climaxAt or MERGE_FLY_DUR
+  local nA = arrivals and #arrivals or 1
+
+  -- SCALE = 1 + somme des pulses (anticipation + chaque arrivée + climax). Le climax = la DERNIÈRE arrivée :
+  -- on remplace son throb léger par le GROS pulse du « TAAA » (sinon double-compte).
+  local sc = 0
+  sc = sc + springPulse(t, 0.0, big and (A_ANTICIP * 1.35) or A_ANTICIP) -- 1) creux de charge (dès t=0)
+  if arrivals then
+    for i = 1, nA do
+      local ti = arrivals[i]
+      if i == nA then
+        sc = sc + springPulse(t, ti, big and 0.48 or A_CLIMAX)            -- 3) CLIMAX (dernière arrivée = « TAAA »)
+      else
+        sc = sc + springPulse(t, ti, A_BEAT)                              -- 2) THROB par arrivée d'âme (« ta »)
+      end
+    end
+  else
+    sc = sc + springPulse(t, ca, big and 0.48 or A_CLIMAX)
+  end
+
+  -- GLOW : rampe douce pendant la convergence + bump à chaque arrivée, plein au climax, puis décroît au settle.
+  local glow
+  if t < ca then
+    glow = math.max(0, math.min(1, (t / math.max(0.001, ca)) * 0.55)) -- rampe de base
+    if arrivals then
+      for i = 1, nA - 1 do if t >= arrivals[i] then glow = math.min(1, glow + 0.28 * math.exp(-(t - arrivals[i]) / 0.35)) end end
+    end
+  else
+    glow = math.exp(-(t - ca) / 0.16) -- plein (1) au climax puis settle
+  end
+
+  -- LIFT (saut) : seulement au CLIMAX (le rig « bondit » sur le TAAA), amorti. 0 avant.
+  local lift = 0
+  if t >= ca then
+    local a = t - ca
+    lift = math.sin(math.min(1, a / 0.42) * math.pi) * (big and 4 or 3) * math.exp(-a / 0.16)
+  end
+
+  return lift, 1 + sc, glow
+end
+
+-- Enveloppe du pop -> (scaleMul autour de 1, shakeX en px virtuels). No-op (1, 0) hors animation.
+-- Squash-stretch : pic de stretch à t=0 puis ressort amorti ; frémissement : sinus rapide × décroissance.
+local function popEnv(p)
+  if not p then return 1, 0 end
+  local e = math.max(0, math.min(1, (p.t or 0) / math.max(0.001, p.dur or POP_DUR)))
+  local decay = math.exp(-e * 4.0)                       -- amortissement rapide (≈ settle en ~1 dur)
+  local sc = 1 + POP_SCALE * decay * math.cos(e * 22)    -- stretch puis oscillation qui s'éteint
+  local shake = POP_SHAKE * decay * math.sin(e * 38)     -- frémissement horizontal bref
+  return sc, shake
 end
 
 -- Décalage vertical (px VIRTUELS, vers le HAUT) du saut de fusion. 0 hors animation. (Compat : nom historique.)
@@ -593,13 +694,22 @@ local function bounceLift(sr)
   local lift = mergeEnv(sr.bounce)
   return lift
 end
--- Facteur de scale (squash-stretch) du survivant pendant la fusion (1 au repos).
-local function mergeScale(sr) local _, sc = mergeEnv(sr.bounce); return sc end
--- Lueur 0..1 du survivant pendant la fusion (halo additif au climax).
+-- Facteur de scale (squash-stretch) total du rig : fusion (mergeEnv) × pop de pose (popEnv). 1 au repos.
+local function mergeScale(sr) local _, sc = mergeEnv(sr.bounce); local pc = popEnv(sr.pop); return sc * pc end
+-- Lueur 0..1 du survivant pendant la fusion (halo additif au climax). Le pop de pose n'a PAS de glow (sobre).
 local function mergeGlow(sr) local _, _, g = mergeEnv(sr.bounce); return g end
+-- Frémissement HORIZONTAL (px virtuels) du pop de pose. 0 hors animation.
+local function popShakeX(sr) local _, sx = popEnv(sr.pop); return sx end
 
 function Build:updateFx(frameDt)
   local dt = frameDt / 60 -- frames -> secondes
+  -- PARTICULES PIXEL (transplant Feel Lab) : avancées au MÊME dt que les FX. main.lua passe déjà frameDt
+  -- multiplié par Juice.timeScale() -> dt = 0 pendant un hitstop, donc les particules SE FIGENT au gel
+  -- exactement comme dans le lab (rooms/levelup.lua : P.update(dt*ts)). RENDER pur, headless-safe (P.update
+  -- est no-op si dt<=0 ; P.draw garde love.graphics). Le golden ne voit JAMAIS ces appels (drawFx/updateFx
+  -- ne tournent pas en headless).
+  P.update(dt)
+  local c = Theme.c
   local n, w = #self.fx, 0
   for i = 1, n do
     local f = self.fx[i]
@@ -610,6 +720,10 @@ function Build:updateFx(frameDt)
     -- (spawnMergeFx) ; ici on apporte le MOUVEMENT apparié. Juice = RENDER pur (dt mural) -> firewall respecté.
     if f.kind == "merge_fly" and was < f.dur and f.t >= f.dur then
       Juice.addTrauma(0.10)
+      -- « ta » : petite gerbe d'étincelles + motes dorées (sprites pixel), à l'IMPACT de l'âme sur le survivant
+      -- (= centre de la fusion f.x,f.y). Recette autoritaire de feel-lab/lib/levelup.lua (beats rythmiques).
+      P.burst(f.x, f.y, { type = "mote", count = 5, speed = { 50, 140 }, life = { 0.2, 0.4 }, drag = 3 })
+      P.burst(f.x, f.y, { type = "spark", count = 3, speed = { 80, 170 }, life = { 0.15, 0.3 }, drag = 3 })
     end
     -- CLIMAX (« TAAA ») : à l'IMPACT final (franchissement du delay du burst `levelup`), une seule fois —
     -- trauma² PLEIN + hitstop (gel bref) + SON success/thud, synchro <50 ms avec le burst/onde visuels (drawFx).
@@ -618,10 +732,45 @@ function Build:updateFx(frameDt)
       Juice.addTrauma(big and 0.85 or 0.55)
       Juice.freeze(big and 0.12 or 0.08)
       if f.sfxClimax then SFX.play("success"); SFX.play("thud", { vol = 0.8 }) end
+      -- EXPLOSION PIXEL (le gros de l'effet) — recette autoritaire de feel-lab/lib/levelup.lua, émise EN UNE
+      -- frame (synchro <50 ms avec le flash/le shake/le hitstop). On émet ICI (updateFx) plutôt que dans drawFx
+      -- pour ne tirer la salve QU'UNE fois (drawFx tourne sans état). big = climax PLEINE PUISSANCE (niveau 3/cascade).
+      local GOLD, EMBER = c.gold, c.ember
+      P.ring(f.x, f.y, { color = GOLD, r0 = 8, r1 = big and 150 or 90, life = big and 0.55 or 0.42 })
+      if big then P.ring(f.x, f.y, { color = EMBER, r0 = 4, r1 = 120, life = 0.5 }) end
+      -- éclats dorés (matière) qui jaillissent et retombent
+      P.burst(f.x, f.y, { type = "shard", count = big and 30 or 20, speed = { 90, big and 300 or 220 },
+        life = { 0.45, big and 0.9 or 0.7 }, gravity = 220, drag = 1.6, spin = 12 })
+      -- braises montantes (signature grimdark) — fan vers le haut, gravité négative
+      P.burst(f.x, f.y, { type = "ember", count = big and 22 or 14, dir = -math.pi / 2, spread = math.pi * 0.8,
+        speed = { 40, 130 }, life = { 0.5, big and 1.0 or 0.8 }, gravity = -50, drag = 2.2 })
+      -- cendres qui dérivent puis retombent
+      P.burst(f.x, f.y, { type = "ash", count = big and 16 or 10, speed = { 30, 110 }, life = { 0.6, 1.1 }, gravity = 120, drag = 1.8 })
+      -- motes dorées (éclat)
+      P.burst(f.x, f.y, { type = "mote", count = big and 14 or 8, speed = { 60, 180 }, life = { 0.3, 0.6 }, drag = 2.5 })
     end
     if f.t < f.dur then w = w + 1; self.fx[w] = f end
   end
   for i = w + 1, n do self.fx[i] = nil end
+
+  -- POP-UP DE RELIQUE DIFFÉRÉE (retour user) : on ouvre l'offre 1-parmi-3 SEULEMENT une fois l'anim de fusion
+  -- TERMINÉE + un buffer (MERGE_RELIC_BUFFER), pour ne pas la flasher en plein « TAAA ». Tant qu'un FX
+  -- levelup/merge_fly vit (y compris la DERNIÈRE fusion d'une CASCADE), on RE-arme le buffer à plein -> il ne
+  -- décompte qu'après la toute dernière explosion. dt MURAL (gelé pendant le hitstop comme le reste des FX,
+  -- donc le buffer ne grignote pas pendant le gel). RENDER pur (firewall : ne lit/écrit jamais la SIM).
+  if self.levelRelicCountdown ~= nil then
+    local animLive = false
+    for i = 1, #self.fx do
+      local k = self.fx[i].kind
+      if k == "levelup" or k == "merge_fly" then animLive = true; break end
+    end
+    if animLive then
+      self.levelRelicCountdown = MERGE_RELIC_BUFFER -- anim encore en cours (ou cascade) -> on repousse l'ouverture
+    else
+      self.levelRelicCountdown = self.levelRelicCountdown - dt
+      if self.levelRelicCountdown <= 0 then self:flushLevelRelicNow() end
+    end
+  end
 end
 
 function Build:drawFx()
@@ -630,13 +779,9 @@ function Build:drawFx()
   for _, f in ipairs(self.fx) do
     local p = math.min(1, f.t / f.dur) -- 0..1
     local a = 1 - p
-    if f.kind == "buy" then
-      -- ACHAT : anneau d'or qui s'ouvre et s'estompe (l'unité « atterrit » sur la case).
-      Draw.setColor({ c.gold[1], c.gold[2], c.gold[3], 0.55 * a })
-      love.graphics.setLineWidth(2); love.graphics.circle("line", f.x, f.y, 8 + p * 28); love.graphics.setLineWidth(1)
-      Draw.reset()
-    elseif f.kind == "sell" then
-      -- VENTE : « +N » d'or qui monte et s'estompe.
+    if f.kind == "sell" then
+      -- VENTE : « +N » d'or qui monte et s'estompe. (L'ancien FX « buy » a été RETIRÉ : la pose est désormais une
+      -- vibration LOCALE du rig — Build:popPlaced — pas un effet d'écran. Plus aucun `spawnFx("buy", …)`.)
       Draw.textC("+" .. tostring(f.gold or 0), f.x, f.y - p * 26, { c.gold[1], c.gold[2], c.gold[3], a }, Theme.value(16))
     elseif f.kind == "merge_fly" then
       -- ÂME qui FILE en ARC (Bézier quadratique) de la copie consommée vers le survivant, DÉCALÉE dans le temps
@@ -667,34 +812,31 @@ function Build:drawFx()
         Draw.reset()
       end
     elseif f.kind == "levelup" then
-      -- CLIMAX (« TAAA ») : burst DIFFÉRÉ (à la DERNIÈRE arrivée d'âme, cf. spawnMergeFx). Éclair + DOUBLE onde de
-      -- choc expansive (laiton + or si big) + « LVL n » qui pop. Le rig, lui, fait son squash-stretch (mergeEnv) au
-      -- même instant (drawWorld) + le screen-shake/hitstop (updateFx). big = climax PLEINE PUISSANCE (niveau 3/cascade).
+      -- CLIMAX (« TAAA ») : burst DIFFÉRÉ (à la DERNIÈRE arrivée d'âme, cf. spawnMergeFx). L'ONDE DE CHOC + LES
+      -- ÉCLATS sont désormais en PARTICULES PIXEL bakées (P.ring/P.burst, émises dans updateFx, dessinées par
+      -- P.draw() plus bas) -> rendu PIXEL net comme le Feel Lab, fini les cercles lisses anti-aliasés « cheap ».
+      -- Ici on ne garde QUE le FLASH BREF (disque additif local, comme self.flash du lab) + le « LVL n » qui pop
+      -- (texte UI net). Le rig fait son squash-stretch (mergeEnv) au même instant (drawWorld) + le shake/hitstop
+      -- (updateFx). big = climax PLEINE PUISSANCE (niveau 3/cascade).
       if f.t >= f.delay then
         local big = f.big
         local lp = math.min(1, (f.t - f.delay) / math.max(0.01, f.dur - f.delay))
         local la = 1 - lp
         local R = big and 1.5 or 1.0
+        -- FLASH local au climax (disque additif blanc-or qui s'estompe vite ; transplant de LU:draw self.flash)
         love.graphics.setBlendMode("add")
-        Draw.setColor({ 1, 0.95, 0.78, 0.7 * (1 - math.min(1, lp * 3.5)) }) -- flash blanc-or bref à l'impact
+        Draw.setColor({ 1, 0.95, 0.78, 0.7 * (1 - math.min(1, lp * 3.5)) })
         love.graphics.circle("fill", f.x, f.y, (8 + lp * 14) * R)
         love.graphics.setBlendMode("alpha")
-        Draw.setColor({ c.brassS[1], c.brassS[2], c.brassS[3], 0.55 * la })
-        love.graphics.circle("fill", f.x, f.y, (5 + lp * 16) * R)
-        -- onde de choc primaire (laiton) — easeOut pour un « pop » net qui ralentit
-        local eo = 1 - (1 - lp) * (1 - lp)
-        Draw.setColor({ c.brassS[1], c.brassS[2], c.brassS[3], 0.8 * la })
-        love.graphics.setLineWidth(3 * la + 1); love.graphics.circle("line", f.x, f.y, (10 + eo * 52) * R); love.graphics.setLineWidth(1)
-        if big then -- onde secondaire (or, décalée) pour le rank-up plein
-          local eo2 = 1 - (1 - math.min(1, lp * 1.3)) * (1 - math.min(1, lp * 1.3))
-          Draw.setColor({ c.gold[1], c.gold[2], c.gold[3], 0.6 * la })
-          love.graphics.setLineWidth(2 * la + 1); love.graphics.circle("line", f.x, f.y, (6 + eo2 * 70) * R); love.graphics.setLineWidth(1)
-        end
         Draw.reset()
         Draw.textC("LVL " .. tostring(f.level or 2), f.x, f.y - 30 - lp * 14, { c.gold[1], c.gold[2], c.gold[3], la }, Theme.value(big and 17 or 15))
       end
     end
   end
+  -- PARTICULES PIXEL par-dessus les transitoires (ember/shard/ash/spark/mote + onde dithérée). SOUS le même
+  -- contexte Draw que le reste de drawFx (drawFx est appelé entre Draw.begin/Draw.finish dans drawOverlay) :
+  -- coords en espace DESIGN, PX=4 = la grille-monde -> snap pixel net. RENDER pur (guard love.graphics).
+  P.draw()
 end
 
 -- Synchronise le rect de hit-test REROLL selon qu'un grant attend (ligne scindée) ou non (ligne pleine).
@@ -860,13 +1002,90 @@ function Build:checkMerges()
   return anyMerge
 end
 
--- Si une fusion en build a armé la récompense de level-up (checkMerges pose pendingLevelRelic), OUVRE l'offre
--- 1-parmi-3 mid-round (le host gère l'unicité 1/round). Partagé par le drag-drop ET l'achat au clic.
-function Build:flushLevelRelic()
-  if self.pendingLevelRelic then
-    self.pendingLevelRelic = false
-    if self.host.offerLevelUpRelic then self.host.offerLevelUpRelic() end
+-- ── PREVIEW de fusion (LECTURE PURE, zéro mutation) — pour le badge « LVL n » de la boutique. ──────────────
+-- Simule l'AJOUT d'1 copie de `offer.id` au NIVEAU 1 (ce que fait autoBuy/buyMergeWhenFull) et reproduit
+-- FIDÈLEMENT le groupage en cascade de checkMerges : 3 copies de MÊME id + MÊME niveau -> niveau+1, cap
+-- MAX_LEVEL, re-scan après chaque promotion (une promotion peut en armer une autre). On ne suit QUE la
+-- famille de `offer.id` : une fusion d'un AUTRE id ne peut jamais entrer dans un groupe de `offer.id` (clé
+-- = id+level) et ne change donc pas le niveau atteint par cette offre. On compte les copies de offer.id par
+-- niveau (board PUIS bench, comme checkMerges), on ajoute +1 au niveau 1, puis on applique la règle de trois
+-- jusqu'à stabilité. Renvoie le NIVEAU FINAL atteint (>=2) SI au moins une fusion a lieu, sinon nil.
+-- Invariant respecté : seuls les niveaux < MAX_LEVEL fusionnent (checkMerges:870 -> `scan` ignore le cap).
+function Build:previewMergeLevel(offer)
+  if not offer or not offer.id then return nil end
+  local id = offer.id
+  -- comptes[lvl] = nombre de copies de `id` à ce niveau (1..MAX_LEVEL). Lecture seule du board+banc.
+  local count = {}
+  for lvl = 1, MAX_LEVEL do count[lvl] = 0 end
+  for i = 1, 9 do
+    local sr = self.slotRigs[i]
+    if sr and sr.id == id then local lv = sr.level or 1; if count[lv] then count[lv] = count[lv] + 1 end end
   end
+  for i = 1, BENCH_SIZE do
+    local sr = self.bench[i]
+    if sr and sr.id == id then local lv = sr.level or 1; if count[lv] then count[lv] = count[lv] + 1 end end
+  end
+  count[1] = count[1] + 1 -- l'achat ajoute UNE copie de niveau 1
+
+  -- Règle de trois en cascade (comme checkMerges, mais sur des compteurs) : du plus bas au plus haut niveau
+  -- pouvant fusionner (< MAX_LEVEL), tant qu'un niveau a >=3 copies, on en consomme 3 et on promeut +1.
+  local merged, top = false, 1
+  local progressed = true
+  while progressed do
+    progressed = false
+    for lvl = 1, MAX_LEVEL - 1 do
+      while count[lvl] >= 3 do
+        count[lvl] = count[lvl] - 3
+        count[lvl + 1] = count[lvl + 1] + 1
+        if (lvl + 1) > top then top = lvl + 1 end
+        merged = true
+        progressed = true
+      end
+    end
+  end
+  return merged and top or nil
+end
+
+-- LECTURE PURE : possède-t-on DÉJÀ au moins 1 exemplaire de `id` (plateau OU banc, niveau quelconque) ?
+-- Sert à la brillance « déjà possédé » des cartes de boutique (indicateur passif). Zéro mutation.
+function Build:ownsAnyCopy(id)
+  if not id then return false end
+  for i = 1, 9 do local sr = self.slotRigs[i]; if sr and sr.id == id then return true end end
+  for i = 1, BENCH_SIZE do local sr = self.bench[i]; if sr and sr.id == id then return true end end
+  return false
+end
+
+-- L'ANIM de level-up tourne-t-elle ? = un FX `levelup` OU `merge_fly` est encore vivant (âmes qui filent /
+-- explosion en cours), OU le buffer post-anim (levelRelicCountdown) court encore. Source de vérité UNIQUE,
+-- lue par le verrou d'input (COMBAT grisé) ET par le déclenchement différé de la pop-up de relique. RENDER pur.
+function Build:levelUpActive()
+  if self.levelRelicCountdown ~= nil then return true end
+  for _, f in ipairs(self.fx) do
+    if f.kind == "levelup" or f.kind == "merge_fly" then return true end
+  end
+  return false
+end
+
+-- Si une fusion en build a armé la récompense de level-up (checkMerges pose pendingLevelRelic), on DIFFÈRE
+-- l'ouverture de l'offre 1-parmi-3 à la FIN de l'anim de fusion + un buffer (retour user : ne plus la cacher
+-- en plein « TAAA »). On ARME juste le buffer ici ; updateFx ouvre la pop-up une fois l'anim finie. FALLBACK
+-- HEADLESS : si le RENDER-loop n'a jamais tourné (tests pilotés sans update -> self.updating == false), il n'y
+-- a PAS d'animation à attendre -> on ouvre TOUT DE SUITE (l'e2e Lot 5 asserte la route synchrone après l'achat).
+-- Partagé par le drag-drop ET l'achat au clic. Le drapeau de run (relicFromLevelThisRound) reste inchangé.
+function Build:flushLevelRelic()
+  if not self.pendingLevelRelic then return end
+  if self.updating then
+    self.levelRelicCountdown = MERGE_RELIC_BUFFER -- diffère : updateFx ouvrira à la fin de l'anim (re-armé tant qu'un FX vit)
+  else
+    self:flushLevelRelicNow() -- headless / hors render-loop : aucune anim à attendre -> ouvre synchroniquement
+  end
+end
+
+-- Ouvre RÉELLEMENT l'offre (consomme pendingLevelRelic + le buffer). Le host gère l'unicité 1/round.
+function Build:flushLevelRelicNow()
+  self.pendingLevelRelic = false
+  self.levelRelicCountdown = nil
+  if self.host.offerLevelUpRelic then self.host.offerLevelUpRelic() end
 end
 
 -- Une offre est JOUABLE (retour user 2026-06) si l'achat aboutit à QUELQUE CHOSE : assez d'or ET (une case
@@ -905,10 +1124,10 @@ function Build:autoBuy(offerIndex)
     SFX.play("coin") -- ACHAT : pièce qui tombe (cloche grave Oniric)
     if bslot then
       self.slotRigs[bslot] = { id = id, level = 1, char = self:newRig(id) }; self.board.slots[bslot].unit = id
-      self:spawnFx("buy", self.pos[bslot].x * 4, self.pos[bslot].y * 4)
+      self:popPlaced(self.slotRigs[bslot]) -- APPARITION : le monstre frémit sur sa case + son « place »
     else
       self.bench[benchSlot] = { id = id, level = 1, char = self:newRig(id) }
-      local br = self.benchSlots[benchSlot]; self:spawnFx("buy", br.x * 4 + br.w * 2, br.y * 4 + br.h * 2)
+      self:popPlaced(self.bench[benchSlot]) -- APPARITION (banc) : frémissement + « place »
     end
     self:checkMerges()
     self:flushLevelRelic()
@@ -1000,6 +1219,11 @@ function Build:mousepressed(vx, vy, button)
     end
     return
   end
+  -- VERROU D'ANIM DE LEVEL-UP (retour user) : pendant la chorégraphie de fusion (« ta-ta-ta-TAAA » + buffer),
+  -- on GÈLE toute interaction de mutation — surtout COMBAT (changement de scène destructif) — pour que l'user
+  -- VOIE l'explosion entière sans la couper ni enchaîner une 2e fusion qui compliquerait le différé de la pop-up.
+  -- Court (~1-1,5 s). Le bouton COMBAT est aussi grisé visuellement (drawOverlay : disabled). RENDER pur.
+  if self:levelUpActive() then return end
   local run = self.host.run
   -- rect REROLL fidèle à l'état du grant (ligne pleine / scindée) AVANT le hit-test (mousepressed peut être
   -- appelé sans update, ex. tests headless).
@@ -1104,7 +1328,7 @@ function Build:mousereleased(vx, vy, button)
         if occ then -- piédestal occupé : l'ancien commandant repart au banc (sinon disparaît en sandbox).
           self:stowUnit(occ)
         end
-        self:spawnFx("buy", self.commanderRect.x * 4 + self.commanderRect.w * 2, self.commanderRect.y * 4 + self.commanderRect.h * 2)
+        self:popPlaced(self.commanderSlot) -- APPARITION au piédestal : frémissement + « place »
       else
         self:returnDrag(d) -- achat refusé (pas d'or) -> retour origine (rien pour fromShop, juste no-op propre)
       end
@@ -1128,10 +1352,10 @@ function Build:mousereleased(vx, vy, button)
         SFX.play("coin") -- ACHAT par drag sur une case/banc
         if toBoard then
           self.slotRigs[si] = { id = id, level = 1, char = d.char, d = d.d }; self.board.slots[si].unit = id -- ressort repris -> glisse dans la case
-          self:spawnFx("buy", self.pos[si].x * 4, self.pos[si].y * 4)
+          self:popPlaced(self.slotRigs[si]) -- APPARITION sur la case (lâcher du drag) : frémissement + « place »
         else
           self.bench[bi] = { id = id, level = 1, char = d.char, d = d.d } -- ressort repris -> glisse au banc
-          local br = self.benchSlots[bi]; self:spawnFx("buy", br.x * 4 + br.w * 2, br.y * 4 + br.h * 2)
+          self:popPlaced(self.bench[bi]) -- APPARITION au banc (lâcher du drag) : frémissement + « place »
         end
         self:checkMerges() -- 3 copies (même id+niveau, plateau OU banc) -> fusion niveau+1 (arme pendingLevelRelic 1×/round)
         self:flushLevelRelic() -- Lot 5 (§5.2) : une fusion arme l'offre 1-parmi-3 MID-ROUND (round préservé).
@@ -1286,6 +1510,18 @@ function Build:buildComp(side)
   -- (aura_stat bleedInc/rotInc team/role) puisse les poser, on ouvre leurs buffers — sommés comme burnInc/
   -- poisonInc et lus par la pose de DoT (arena.lua:130-131, ampDps, cappé DOT_CAP_MULT=3). nil = inerte.
   local bleedInc, rotInc = {}, {}
+  -- W1 — RAINBOW : [slot] = { dmg=, hp= } (flat baké par aura_per_unique_type sur le PORTEUR). nil = inerte.
+  local rainbowFlat = {}
+  -- Nombre de TYPES DISTINCTS du board, calculé UNE fois (déterministe : set d'unicité, ipairs). Borné au cap.
+  -- Lazy : seul un porteur de l'op le lit -> aucune unité golden ne le déclenche -> nombre jamais consommé -> golden inchangé.
+  local function uniqueTypeCount()
+    local seen, n = {}, 0
+    for _, q in ipairs(placed) do
+      local ty = Units[q.id].type
+      if ty and not seen[ty] then seen[ty] = true; n = n + 1 end
+    end
+    return math.min(RAINBOW_TYPE_CAP, n)
+  end
   for _, p in ipairs(placed) do
     local sm = LEVEL_MULT[p.level] or 1.0 -- l'aura scale avec le NIVEAU de la source (duplicatas) ; cap appliqué à la LECTURE
     for _, e in ipairs(Units[p.id].effects or {}) do
@@ -1462,6 +1698,12 @@ function Build:buildComp(side)
     elseif target:sub(1, 6) == "level:" then
       local n = tonumber(target:sub(7))
       for _, q in ipairs(placed) do if (q.level or 1) == n then targets[#targets + 1] = q.slot end end
+    elseif target:sub(1, 5) == "type:" then
+      -- W1 (axe Type-identité, plan §AXE 2) : cible les alliés du board dont le `type` data == X (mono-type).
+      -- ≈ branche tier:N (itère `placed`, compare un champ data de Units). Déterministe (ipairs), zéro RNG.
+      -- INERTE tant qu'aucun spec ne cible `type:` -> golden inchangé (les 83 types sont cosmétiques jusqu'ici).
+      local ty = target:sub(6)
+      for _, q in ipairs(placed) do if Units[q.id].type == ty then targets[#targets + 1] = q.slot end end
     end
     return targets
   end
@@ -1486,6 +1728,14 @@ function Build:buildComp(side)
     for _, e in ipairs(Units[p.id].effects or {}) do
       if e.trigger == "combat_start" and e.op == "aura_stat" then
         bakeAuraStat(e, sm, p.slot)
+      elseif e.trigger == "combat_start" and e.op == "aura_per_unique_type" then
+        -- W1 — RAINBOW : le porteur se renforce de +flat par type distinct du board (SELF-aura, Prismagon).
+        -- dmg/hp scalent avec le NIVEAU (sm, duplicatas) comme les stats. count borné (uniqueTypeCount).
+        local pa = e.params or {}
+        local count = uniqueTypeCount()
+        local rf = rainbowFlat[p.slot]; if not rf then rf = { dmg = 0, hp = 0 }; rainbowFlat[p.slot] = rf end
+        rf.dmg = rf.dmg + math.floor((pa.dmgPerType or 0) * count * sm + 0.5)
+        rf.hp  = rf.hp  + math.floor((pa.hpPerType  or 0) * count * sm + 0.5)
       end
     end
   end
@@ -1516,8 +1766,12 @@ function Build:buildComp(side)
     -- les duplicatas (déterministe, zéro couplage arène : le firewall SIM reste intact). cf. plan §1.3.
     local si = (sb and sb.statInc) or 0
     local sf = (si > 0) and (1 + math.min(STAT_INC_CAP, si)) or 1
+    -- W1 — RAINBOW : bonus PLAT (déjà borné par le count cappé + déjà scalé par le niveau au bake), ajouté
+    -- APRÈS la couche multiplicative (comme un relic_flat_hp). nil = inerte -> hp/dmg base -> golden-safe.
+    local rf = rainbowFlat[p.slot]
     comp[#comp + 1] = { id = p.id, slot = p.slot, level = p.level,
-      hp = math.floor(u.hp * m * sf + 0.5), dmg = math.floor(u.dmg * m * sf + 0.5), cd = u.cd,
+      hp = math.floor(u.hp * m * sf + 0.5) + (rf and rf.hp or 0),
+      dmg = math.floor(u.dmg * m * sf + 0.5) + (rf and rf.dmg or 0), cd = u.cd,
       depth = b.maxC - p.col, row = p.row, effects = auraEffects(p.id, p.slot),
       shield = shield[p.slot] or 0, poisonInc = poisonInc[p.slot], burnInc = burnInc[p.slot],
       bleedInc = bleedInc[p.slot], rotInc = rotInc[p.slot], -- TROU #1 : amplis bleed/rot (aura_stat team/role), lus par la pose de DoT
@@ -1630,6 +1884,7 @@ function Build:startCombat()
     love.math.newRandomGenerator(seed), aiComp)
   Snapstore.save(Snapshot.capture(self:snapshotUnits(), Shapes.order[self.shapeIdx], seed,
     { version = version, tier = tier }))
+  P.clear() -- on quitte vers le combat : purge les particules de fusion encore vivantes (singleton partagé inter-scènes)
   self.host.goto("combat",
     { left = left, right = right, enemyKey = enc.key, seed = seed, oppSource = oppMeta and oppMeta.source })
 end
@@ -1644,13 +1899,16 @@ end
 -- ── Update ──
 function Build:update(frameDt)
   self.t = self.t + frameDt
+  self.updating = true -- le RENDER-loop tourne (vrai jeu) -> flushLevelRelic peut DIFFÉRER l'offre via le buffer/anim
+                       -- (en headless, update n'est jamais appelé -> updating reste false -> fallback synchrone).
   -- synchronise le rect REROLL (ligne pleine sans grant / scindée avec) AVANT le survol/hit-test.
   self:syncEcoRects(self.host.run and self.host.run.pendingSlotGrant)
   -- JUICE (remplace Forge.uiTick) : avance easings + fire les actions différées (le COMBAT diffère de ~120 ms
   -- pour qu'on VOIE les yeux du CTA réagir avant la bascule de scène). Survol des 4 boutons -> glow/lift animés.
   Feel.update(frameDt)
   local run0 = self.host.run
-  Feel.hover("build.combat", inRect(self.mx, self.my, self.button))
+  -- COMBAT : pas de survol (yeux/glow) quand il est VERROUILLÉ par l'anim de level-up -> bouton vraiment inerte.
+  Feel.hover("build.combat", inRect(self.mx, self.my, self.button) and not self:levelUpActive())
   if run0 then
     Feel.hover("build.reroll", inRect(self.mx, self.my, self.rerollBtn))
     Feel.hover("build.raise", inRect(self.mx, self.my, self.raiseBtn))
@@ -1660,6 +1918,7 @@ function Build:update(frameDt)
   -- au lieu de sauter. À chaque CHANGEMENT de cible (achat/vente/reroll/budget de round), un petit PUNCH de scale
   -- (Juice "build.gold") + on relance le roulement. RENDER pur : on ne lit que run.gold (jamais écrit) ; le SON
   -- « coin » est déjà câblé ailleurs -> ici on apporte le MOUVEMENT apparié. frameDt en frames@60 -> /60 = s.
+  if self.nightmareBg then self.nightmareBg:update(frameDt / 60) end
   if run0 then
     local target = run0.gold or 0
     if self.goldShown == nil then
@@ -1694,13 +1953,20 @@ function Build:update(frameDt)
     sr.char.x, sr.char.y = p.x, p.y + 9
     Rig.update(sr.char, self.t, frameDt)
     if sr.bounce then sr.bounce.t = sr.bounce.t + frameDt / 60; if sr.bounce.t > sr.bounce.dur then sr.bounce = nil end end
+    if sr.pop then sr.pop.t = sr.pop.t + frameDt / 60; if sr.pop.t > sr.pop.dur then sr.pop = nil end end -- POSE : vibration d'apparition
   end
   for i = 1, BENCH_SIZE do -- anime les rigs du BANC (réserve)
     local sr = self.bench[i]
     if sr then
       Rig.update(sr.char, self.t, frameDt)
       if sr.bounce then sr.bounce.t = sr.bounce.t + frameDt / 60; if sr.bounce.t > sr.bounce.dur then sr.bounce = nil end end
+      if sr.pop then sr.pop.t = sr.pop.t + frameDt / 60; if sr.pop.t > sr.pop.dur then sr.pop = nil end end -- POSE : vibration d'apparition
     end
+  end
+  -- COMMANDANT (piédestal) : avance aussi sa vibration de pose si présente (apparition au piédestal).
+  if self.commanderSlot and self.commanderSlot.pop then
+    local cp = self.commanderSlot.pop
+    cp.t = cp.t + frameDt / 60; if cp.t > cp.dur then self.commanderSlot.pop = nil end
   end
   for _, c in pairs(self.previewRigs) do Rig.update(c, self.t, frameDt) end
   self:updateFx(frameDt)
@@ -1805,6 +2071,12 @@ function Build:drawBack(view)
   local b, run, c = self.board, self.host.run, Theme.c
   Draw.begin(view)
   self.ambient:draw("build")
+  if self.nightmareBg then
+    local y0 = TOPCHROME_H
+    self.nightmareBg:drawField(0, y0, Draw.W, math.max(1, BAR.y - y0))
+    -- Voile central pour garder les sockets lisibles tout en laissant vivre le champ.
+    Draw.rect(0, y0, Draw.W, BAR.y - y0, { c.void[1], c.void[2], c.void[3], 0.16 })
+  end
 
   -- Arêtes du graphe de synergies (la forme EST le graphe).
   love.graphics.setLineStyle("rough")
@@ -1975,6 +2247,17 @@ function Build:drawBack(view)
           local rank = (Units[o.id] and Units[o.id].rank) or 1
           local border = (not playable) and c.iron or (hot and Rarity.tierBright(rank) or Rarity.tierColor(rank))
           Draw.rect(x, y, w, h, nil, border, 1)
+          -- INDICATEUR A — « déjà possédé » (passif) : on détient ≥1 exemplaire de ce monstre sur le plateau OU
+          -- le banc -> un liseré laiton/or DORMANT respire doucement sur le bord (DA pierre-rune : la gravure
+          -- s'éveille). Discret (alpha bas, additif), sous le halo de survol et le badge LVL. RENDER pur.
+          local owned = self:ownsAnyCopy(o.id)
+          if owned and love.graphics and love.graphics.setBlendMode then
+            local pulse = 0.5 + 0.5 * math.sin(self.t / 60 * 1.9) -- respiration lente (~0,3 Hz)
+            local oa = (0.10 + 0.07 * pulse) * (playable and 1 or 0.55) -- sourd si hors budget (cohérent au dim)
+            love.graphics.setBlendMode("add"); love.graphics.setColor(c.brassS[1], c.brassS[2], c.brassS[3], oa)
+            love.graphics.rectangle("line", x + 1, y + 1, w - 2, h - 2)
+            love.graphics.setBlendMode("alpha"); love.graphics.setColor(1, 1, 1, 1)
+          end
           if hot and love.graphics and love.graphics.setBlendMode then
             local glow = Rarity.tierBright(rank)
             love.graphics.setBlendMode("add"); love.graphics.setColor(glow[1], glow[2], glow[3], 0.18)
@@ -2040,18 +2323,12 @@ local function withMergeScale(sr, gx, gy, body)
   love.graphics.pop()
 end
 
--- HALO additif du survivant au climax (mergeGlow) : disque doré doux DERRIÈRE le sprite (le rig « s'illumine »).
--- 0 hors animation -> rien dessiné. Centre RELEVÉ vers le torse (gy = pieds) pour cadrer le corps. RENDER pur.
-local function mergeHalo(sr, gx, gy, rise)
-  local g = mergeGlow(sr)
-  if g < 0.02 then return end
-  local cc = Theme.c
-  love.graphics.setBlendMode("add")
-  love.graphics.setColor(cc.gold[1], cc.gold[2], cc.gold[3], 0.30 * g)
-  love.graphics.circle("fill", gx, gy - (rise or 10), 13 + g * 5)
-  love.graphics.setBlendMode("alpha")
-  love.graphics.setColor(1, 1, 1, 1)
-end
+-- (RÈGLE DA : AUCUN halo/disque de fond « pour mettre en valeur » = banni.) L'ancien `mergeHalo` (disque doré
+-- additif derrière le rig au climax) est RETIRÉ. L'« illumination » du level-up est portée par l'EXPLOSION de
+-- particules pixel (onde + shards + braises + motes) + le punch de scale du rig, jamais par un backing rond.
+-- No-op conservé (call-sites inchangés) pour ne pas toucher la structure de drawWorld. `mergeGlow` reste lu par
+-- d'éventuels usages futurs, mais ne dessine plus rien ici.
+local function mergeHalo() end
 
 -- ── Rendu monde (canvas virtuel, pixel-perfect) : UNIQUEMENT les rigs (unités/aperçus/drag) ──
 -- Toutes les créatures sont AJUSTÉES À LEUR CONTENEUR (fit-to-box, cf. rigFitScale) -> aucune ne déborde
@@ -2072,6 +2349,7 @@ function Build:drawWorld()
       local ax, ay = self:boardAnchor(i)
       local groundX, groundY = springGround(sr.d, ax, ay)
       groundY = groundY - math.floor(bounceLift(sr) + 0.5) -- C3 : saut de fusion (chorégraphie)
+      groundX = groundX + popShakeX(sr) -- POSE : frémissement horizontal d'apparition (se résorbe en ~0,3 s)
       mergeHalo(sr, groundX, groundY, 11) -- lueur additive du survivant au climax (DERRIÈRE le sprite)
       withDragFx(sr.d, groundX, groundY, 16, function(gx, gy)
         withMergeScale(sr, gx, gy, function() -- squash-stretch du survivant pendant la fusion (pivot = pieds)
@@ -2107,6 +2385,7 @@ function Build:drawWorld()
       local ax, ay = self:benchAnchor(i)
       local gx0, gy0 = springGround(sr.d, ax, ay)
       gy0 = gy0 - math.floor(bounceLift(sr) + 0.5) -- -saut de fusion (chorégraphie)
+      gx0 = gx0 + popShakeX(sr) -- POSE : frémissement horizontal d'apparition (banc)
       mergeHalo(sr, gx0, gy0, 8) -- lueur additive du survivant au climax (banc)
       withDragFx(sr.d, gx0, gy0, 13, function(gx, gy)
         withMergeScale(sr, gx, gy, function() -- squash-stretch du survivant pendant la fusion (pivot = pieds)
@@ -2141,7 +2420,7 @@ function Build:drawWorld()
     local ax, ay = self:commanderAnchor()
     local sdx = sr.d and (sr.d.px - ax) or 0
     local sdy = sr.d and (sr.d.py - ay) or 0
-    boxX, boxY = boxX + sdx, boxY + sdy
+    boxX, boxY = boxX + sdx + popShakeX(sr), boxY + sdy -- + frémissement horizontal d'apparition (pose au piédestal)
     if Critter.has(sr.id) then
       -- commandant au piédestal = ta formation : regarde à DROITE / vers l'adversaire (wantDir=1), comme en combat.
       Critter.drawFit(nil, sr.id, boxX, boxY, boxW, boxH, self.t / 60, Critter.facingFor(sr.id, 1), 0.88, 2.4)
@@ -2346,12 +2625,16 @@ function Build:drawOverlay(view)
   -- Bouton COMBAT = le CTA propre (variant "primary") : sang + YEUX cauchemardesques qui s'ouvrent au survol
   -- (glow) et réagissent au clic (flash), regard qui suit le curseur (opts.mouse en espace design). Le juice
   -- (lift/squash/flash/glow) vient de Feel.state ; l'action est différée côté mousepressed. Button marque la box.
-  local enabled = self:placedCount() > 0
+  -- COMBAT VERROUILLÉ pendant l'anim de level-up (retour user) : grisé/inerte (pas un no-op silencieux) tant que
+  -- la chorégraphie de fusion tourne -> l'user ne peut pas couper l'explosion en lançant le combat. mousepressed
+  -- swallow le clic en miroir (levelUpActive). On garde le label « FIGHT » (l'intention reste), juste désactivé.
+  local hasUnits = self:placedCount() > 0
+  local enabled = hasUnits and not self:levelUpActive()
   local r = self.button
   local over = inRect(self.mx, self.my, r)
   Button.draw(r.x * 4, r.y * 4, r.w * 4, r.h * 4, "primary",
-    enabled and T("ui.fight") or T("ui.place_unit"),
-    { hover = over, disabled = not enabled, feel = Feel.state("build.combat"),
+    hasUnits and T("ui.fight") or T("ui.place_unit"), -- label « FIGHT » dès qu'il y a une unité (même verrouillé)
+    { hover = over and enabled, disabled = not enabled, feel = Feel.state("build.combat"),
       id = "build.combat", mouse = { mx = self.mx * 4, my = self.my * 4 }, t = self.t / 60 })
 
   -- Reliques rendues dans le bandeau de run (haut) ; ici on ne gère que l'infobulle au survol (prioritaire sur unité).
@@ -2431,6 +2714,49 @@ end
 -- (dégradé + zone d'art hachurée + bord) est dessiné en drawBack ; la CRÉATURE en drawWorld (calée à la zone
 -- d'art) ; ICI = le CONTENU par-dessus : tag de tier (haut-gauche) + pied [ NOM (Cinzel, ellipsé) | COÛT (gem) ].
 -- Plus de chips d'affliction ni de cadre rareté (épuré). rect = rect VIRTUEL ; o = offre {id,cost,sold} ; hot = survolée.
+-- BADGE « LVL n » BRILLANT (haut-droite de la zone d'art) — indicateur B : acheter cette offre déclenche une
+-- FUSION (3 copies -> niveau+1), et on annonce le NIVEAU EXACT atteint (preview = previewMergeLevel, fidèle à
+-- checkMerges). Cartouche sombre + liseré + chiffre en Space Mono, nimbé d'un SHIMMER additif qui pulse (dt
+-- mural via self.t -> framerate-correct). LVL 2 = brillance dorée standard ; LVL 3 = climax PLEINE PUISSANCE
+-- (sang clair sur or, glow plus intense = rank-up). Mesuré (getWidth) + clampé -> jamais coupé ni débordé.
+-- RENDER pur, headless-safe (love.graphics gardé par Draw/Badge ; ici on garde setBlendMode).
+function Build:drawMergeBadge(x, y, w, lvl)
+  if not lvl or lvl < 2 then return end
+  local c = Theme.c
+  local cap = (lvl >= MAX_LEVEL)
+  local f = Theme.value(11)
+  local label = T("ui.merge_to_lvl", { n = lvl })
+  local tw = (f and f:getWidth(label)) or (#label * 7)
+  local th = (f and f:getHeight()) or 11
+  local padX, padY = 5, 2
+  local bw, bh = tw + padX * 2, th + padY * 2
+  -- ancré haut-droite de la zone d'art, à 6px des bords ; clampé pour rester dans la carte.
+  local bx = x + w - 6 - bw
+  local by = y + 6
+  if bx < x + 2 then bx = x + 2 end
+  -- teintes : LVL 3 = or vif + accent sang (rank-up) ; LVL 2 = or sourd + accent laiton.
+  local accent = cap and c.gold or c.brassL
+  local textCol = cap and c.ctaText or c.gold
+  local pulse = 0.5 + 0.5 * math.sin(self.t / 60 * (cap and 4.6 or 3.4)) -- LVL 3 scintille plus vite
+  -- HALO additif derrière le cartouche (le « shimmer » qui respire) — sous le cartouche pour rester lisible.
+  if love.graphics and love.graphics.setBlendMode then
+    local ga = (cap and 0.22 or 0.13) + (cap and 0.16 or 0.10) * pulse
+    local gcol = cap and c.gold or c.brassS
+    love.graphics.setBlendMode("add"); love.graphics.setColor(gcol[1], gcol[2], gcol[3], ga)
+    love.graphics.rectangle("fill", bx - 2, by - 2, bw + 4, bh + 4)
+    love.graphics.setBlendMode("alpha"); love.graphics.setColor(1, 1, 1, 1)
+  end
+  -- cartouche opaque (le chiffre RESSORT) : fond sombre + liseré d'accent.
+  Draw.rect(bx, by, bw, bh, { 0x12 / 255, 0x0d / 255, 0x08 / 255, 0.96 }, accent, 1)
+  -- liseré additif qui s'avive avec le pulse (la gravure « s'illumine »).
+  if love.graphics and love.graphics.setBlendMode then
+    love.graphics.setBlendMode("add"); love.graphics.setColor(accent[1], accent[2], accent[3], 0.12 + 0.18 * pulse)
+    love.graphics.rectangle("line", bx, by, bw, bh)
+    love.graphics.setBlendMode("alpha"); love.graphics.setColor(1, 1, 1, 1)
+  end
+  Draw.text(label, bx + padX, by + padY, textCol, f)
+end
+
 function Build:drawShopCard(i, rect, o, hot)
   local c = Theme.c
   local x, y, w, h = rect.x * 4, rect.y * 4, rect.w * 4, rect.h * 4
@@ -2447,6 +2773,10 @@ function Build:drawShopCard(i, rect, o, hot)
   -- en Space Mono. C'est le SEUL rappel de tier sur la carte (le reste de l'info a été retiré -> carte épurée).
   Badge.diamond(x + 12, y + 12, 3, playable and Rarity.tierColor(rank) or c.stone600, c.brassD, c.brassS)
   Draw.text(T(Rarity.tierNameKey(rank)), x + 18, y + 8, playable and c.faint or c.fainter, Theme.label(8))
+
+  -- BADGE « LVL n » (haut-droite) : si l'achat aboutit à une fusion, on annonce le niveau atteint, en brillance.
+  -- N'apparaît QUE quand previewMergeLevel renvoie un niveau (fusion réelle) -> le badge ne ment jamais.
+  self:drawMergeBadge(x, y, w, self:previewMergeLevel(o))
 
   -- PIED (sous la zone d'art) : NOM (Cinzel 600, gauche, ajusté/ellipsé) + COÛT (gem or + nombre, droite).
   local fy = y + h - CARD_FOOT_H
@@ -2582,6 +2912,7 @@ function Build:drawRunBanner(run)
     { k = "streak", w = pad + math.max(fL:getWidth(T("ui.streak")), 12 + fSm:getWidth(streakStr)) + pad },
     { k = "tier",   w = pad + math.max(fL:getWidth(T("ui.tier_label") .. " " .. tierStr), Run.MAX_TIER * 12) + pad },
   }
+  local systemReserve = 52
 
   -- cluster GAUCHE packé depuis x=0 (filets iron entre segments, pas après le dernier).
   local x = 0
@@ -2592,11 +2923,12 @@ function Build:drawRunBanner(run)
   -- cluster DROITE aligné à droite (filets internes seulement).
   local rTot = #right - 1
   for _, s in ipairs(right) do rTot = rTot + s.w end
-  local rx = Draw.W - rTot
+  local rx = Draw.W - systemReserve - rTot
   for i, s in ipairs(right) do
     drawSeg(s, rx); rx = rx + s.w
     if i < #right then Draw.rect(rx, 6, 1, H - 12, C.iron); rx = rx + 1 end
   end
+  Draw.rect(Draw.W - systemReserve, 6, 1, H - 12, C.iron)
 end
 
 -- RELIQUES possédées dans le segment « RELICS » du bandeau : socle (dégradé brun + bord laiton, vif au survol)

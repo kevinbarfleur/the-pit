@@ -257,6 +257,49 @@ local ok, err = pcall(function()
     end
   end
 
+  -- 2d-bis) W1 — AXE TYPE-IDENTITÉ (plan big-update §AXE 2) : reliques gating PAR TYPE + rainbow team payoff.
+  -- Le gating de type n'existait pas ; ces reliques le posent. On utilise de VRAIES unités (Units[id].type lu).
+  do
+    -- PACK BLOOD (relic_aura_stat atkInc type:flesh) : +0.08 atkInc sur les SEULES unités flesh.
+    -- marauder/bandit = flesh (buffés) ; templar = order (intact).
+    local pb = RunState.new(300); pb:grantRelic("pack_blood")
+    local cpb = { { id = "marauder", hp = 60, dmg = 9, cd = 60, depth = 0, row = 0, slot = 1 },
+                  { id = "bandit",   hp = 46, dmg = 7, cd = 36, depth = 0, row = 1, slot = 2 },
+                  { id = "templar",  hp = 95, dmg = 12, cd = 82, depth = 1, row = 0, slot = 5 } }
+    pb:applyRelics(cpb)
+    assert(math.abs(cpb[1].atkInc - 0.08) < 1e-9 and math.abs(cpb[2].atkInc - 0.08) < 1e-9, "pack_blood: +0.08 atkInc sur flesh (marauder+bandit)")
+    assert((cpb[3].atkInc or 0) == 0, "pack_blood: n'atteint PAS templar (order)")
+    assert(Relics.pack_blood.band == "mid", "pack_blood: band mid")
+
+    -- BILE ORB (relic_aura_stat poisonInc type:abyss) : +0.12 poisonInc sur les SEULES unités abyss.
+    local bo = RunState.new(301); bo:grantRelic("bile_orb")
+    local cbo = { { id = "demon", hp = 64, dmg = 9, cd = 56, poisonInc = 0.10, slot = 1 }, -- abyss (additif à 0.10)
+                  { id = "witch", hp = 36, dmg = 13, cd = 72, slot = 2 } }                 -- arcane (intact)
+    bo:applyRelics(cbo)
+    assert(math.abs(cbo[1].poisonInc - 0.22) < 1e-9, "bile_orb: +0.12 poisonInc additif sur demon (abyss) -> 0.22")
+    assert((cbo[2].poisonInc or 0) == 0, "bile_orb: n'atteint PAS witch (arcane)")
+    assert(Relics.bile_orb.band == "mid", "bile_orb: band mid")
+
+    -- PRISMATIC WRAITH (relic_rainbow) : +3 dmg / +5 hp par TYPE DISTINCT, sur CHAQUE unité (payoff team).
+    -- Board : marauder(flesh) + skeleton(bone) + witch(arcane) + demon(abyss) = 4 types -> +12 dmg / +20 hp.
+    local pw = RunState.new(302); pw:grantRelic("prismatic_wraith")
+    local cpw = { { id = "marauder", hp = 60, dmg = 9, cd = 60, slot = 1 },
+                  { id = "skeleton", hp = 40, dmg = 6, cd = 44, slot = 2 },
+                  { id = "witch",    hp = 36, dmg = 13, cd = 72, slot = 3 },
+                  { id = "demon",    hp = 64, dmg = 9, cd = 56, slot = 4 } }
+    pw:applyRelics(cpw)
+    assert(cpw[1].dmg == 9 + 12 and cpw[1].hp == 60 + 20, "prismatic_wraith: marauder +12 dmg / +20 hp (4 types)")
+    assert(cpw[4].dmg == 9 + 12 and cpw[4].hp == 64 + 20, "prismatic_wraith: demon +12 dmg / +20 hp (team-wide)")
+    assert(Relics.prismatic_wraith.band == "high", "prismatic_wraith: band high")
+
+    -- borné : un board MONO-type -> count=1 -> +3 dmg / +5 hp seulement (le rainbow récompense le MÉLANGE).
+    local pw2 = RunState.new(303); pw2:grantRelic("prismatic_wraith")
+    local cmono = { { id = "marauder", hp = 60, dmg = 9, cd = 60, slot = 1 },
+                    { id = "bandit",   hp = 46, dmg = 7, cd = 36, slot = 2 } } -- 2× flesh -> 1 type
+    pw2:applyRelics(cmono)
+    assert(cmono[1].dmg == 9 + 3 and cmono[1].hp == 60 + 5, "prismatic_wraith mono-type: count=1 -> +3 dmg / +5 hp")
+  end
+
   -- 2e) SURVEILLANCE D'EMPILEMENT (plan relics-overhaul §4) : les empilements dangereux restent BORNÉS au
   -- BUILD (les caps moteur a la LECTURE sont testés ailleurs : tests/synergies KEYSTONES). Ici on verifie la
   -- COMPOSITION des champs bakés (somme team + relique), qui DOIT rester sous les caps moteur.

@@ -289,6 +289,17 @@ bandeau VICTOIRE/DEFAITE → round suivant (or/boutique renouvelés, **plateau c
 - **Reste** (cf. tâches P5-P6) : **équilibrage auto-itéré** (tests d'envergure : gros N → `lift` + drapeaux → tuner un
   levier à la fois) ; activer l'**aggro** ; (option) étendre le **ladder choc** à 5/3/2.
 
+**Type axis, death-spawn & scène chrome (v0.11)** — gros incrément d'intégration issu de `feat/types-axis` :
+- **Axe type-identité** : amplificateurs mono-type, payoff rainbow et reliques associées, avec commandes/aura
+  résolues et testées dans les harnais de synergies/auras.
+- **Axe mort/engeance** : tokens de sous-êtres invoqués, économie de mort bornée, sprites mini-corps et interactions
+  `summon × scavenge` déterministes.
+- **Feel & UI de run** : particules pixel pour level-up/fusion, ressorts de fusion multi-beat, SFX de pose et menu
+  système global (pause/settings/retour menu) sans quitter brutalement la partie.
+- **Cohérence de scène** : menu principal nettoyé, settings dans la liste principale, outils de travail en icônes,
+  bouton système global dans les scènes de run, fond cauchemardesque réutilisé en build/combat et bilan de combat
+  lisible par monstre (dégâts, encaissement, kills, afflictions).
+
 **Prochaines étapes moteur** (à faire quand un contenu l'exige — cf. `engine-architecture.md` §12) :
 - ~~**Valeurs d'aggro + archétype tank**~~ — **FAIT (P6/v0.8)** : `AGGRO_STD=10`, tank ~40 / bruiser ~15 / carry ~5 (data) ;
   unité tank `gravewarden` (**taunt** + épines). Reste : **passifs de ligne** (façade=armure / arrière=attaque), **contres**

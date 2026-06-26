@@ -63,6 +63,7 @@ local love = {
     newCanvas = function() return texture() end, newImage = function() return texture() end,
     setCanvas = function() end, clear = function() end,
     setColor = function() end, draw = function() end,
+    setBlendMode = function() end, getBlendMode = function() return "alpha", "alphamultiply" end,
     push = function() end, pop = function() end, origin = function() end,
     translate = function() end, rotate = function() end, scale = function() end,
     rectangle = function() end, circle = function() end, ellipse = function() end,

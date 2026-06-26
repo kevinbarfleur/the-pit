@@ -314,8 +314,119 @@ local ok, err = pcall(function()
     assert(n == 6, "6 commandants définis (obtenu " .. n .. ")")
   end
 
+  -- ════════ W1 — AXE TYPE-IDENTITÉ (plan big-update §AXE 2) : target `type:X` + rainbow ════════
+  -- Le moteur était à un `if` près : aura_stat sait cibler tier:/level:, on AJOUTE type:X (les 5 types
+  -- flesh/bone/arcane/abyss/order existent comme champ data). + l'op rainbow aura_per_unique_type.
+
+  -- 16) target=type:flesh : SEULES les unités de type "flesh" reçoivent l'aura (déterministe, ipairs).
+  -- marauder/bandit = flesh (buffées) ; templar = order, skeleton = bone, witch = arcane (exclues).
+  do
+    local restore = withAura("soot_acolyte", { stat = "atkInc", target = "type:flesh", value = 0.10 })
+    local b = fresh()
+    b:placeId(1, "soot_acolyte")
+    b:placeId(2, "marauder")  -- flesh -> buffée
+    b:placeId(3, "bandit")    -- flesh -> buffée
+    b:placeId(5, "templar")   -- order -> exclue
+    b:placeId(6, "skeleton")  -- bone  -> exclue
+    b:placeId(8, "witch")     -- arcane -> exclue
+    local comp = b:buildComp(-1)
+    local hits, flesh = {}, {}
+    for _, s in ipairs(comp) do
+      if s.atkInc and s.atkInc > 0 then hits[#hits + 1] = s.id end
+      if Units[s.id].type == "flesh" then flesh[s.id] = true end
+    end
+    table.sort(hits)
+    assert(#hits == 2 and hits[1] == "bandit" and hits[2] == "marauder",
+      "type:flesh touche EXACTEMENT marauder+bandit (obtenu " .. table.concat(hits, ",") .. ")")
+    -- garde-fou : aucune unité non-flesh touchée
+    for _, s in ipairs(comp) do
+      if not flesh[s.id] then assert((s.atkInc or 0) == 0, "type:flesh n'atteint PAS " .. s.id .. " (" .. Units[s.id].type .. ")") end
+    end
+    restore()
+  end
+
+  -- 17) DÉTERMINISME : deux builds identiques -> même ensemble de cibles type:X, à l'identique.
+  do
+    local restore = withAura("soot_acolyte", { stat = "atkInc", target = "type:flesh", value = 0.10 })
+    local function fleshHits()
+      local b = fresh()
+      b:placeId(1, "soot_acolyte"); b:placeId(2, "marauder"); b:placeId(3, "bandit"); b:placeId(5, "templar")
+      local set = {}
+      for _, s in ipairs(b:buildComp(-1)) do if s.atkInc and s.atkInc > 0 then set[#set + 1] = s.slot end end
+      table.sort(set); return table.concat(set, ",")
+    end
+    assert(fleshHits() == fleshHits(), "type:X stable (déterministe) sur deux résolutions")
+    restore()
+  end
+
+  -- 18) type:abyss avec un ampli d'ÉCOLE (poisonInc) : croise l'axe 1. demon = abyss -> reçoit poisonInc dans
+  -- son buffer dédié (pas dans statBuf). witch = arcane -> intacte.
+  do
+    local restore = withAura("soot_acolyte", { stat = "poisonInc", target = "type:abyss", value = 0.15 })
+    local b = fresh()
+    b:placeId(1, "soot_acolyte"); b:placeId(2, "demon"); b:placeId(5, "witch")
+    local comp = b:buildComp(-1)
+    local dem, wit = compById(comp, "demon"), compById(comp, "witch")
+    assert(dem.poisonInc and math.abs(dem.poisonInc - 0.15) < 1e-9, "type:abyss pose poisonInc 0.15 sur demon (abyss)")
+    assert((wit.poisonInc or 0) == 0, "type:abyss n'atteint PAS witch (arcane)")
+    restore()
+  end
+
+  -- 19) RAINBOW (aura_per_unique_type) : le PORTEUR gagne +dmg/+hp par TYPE DISTINCT du board (SELF-aura).
+  -- Board : prism_horror (abyss) + marauder (flesh) + skeleton (bone) + witch (arcane) = 4 types distincts.
+  -- dmgPerType=2, hpPerType=4 -> +8 dmg / +16 hp sur le porteur (et UNIQUEMENT lui).
+  do
+    local function withEffect(id, eff) local u = Units[id]; local s = u.effects; u.effects = eff; return function() u.effects = s end end
+    local restore = withEffect("soot_acolyte",
+      { { trigger = "combat_start", op = "aura_per_unique_type", params = { dmgPerType = 2, hpPerType = 4 } } })
+    local b = fresh()
+    b:placeId(1, "soot_acolyte") -- porteur (type abyss)
+    b:placeId(2, "marauder")     -- flesh
+    b:placeId(3, "skeleton")     -- bone
+    b:placeId(5, "witch")        -- arcane
+    -- types distincts = {abyss(soot+? ), flesh, bone, arcane}. soot_acolyte=arcane -> {arcane, flesh, bone} = 3.
+    -- on calcule le count attendu à partir des types réels (robuste au type du caster).
+    local seen, count = {}, 0
+    for _, pid in ipairs({ "soot_acolyte", "marauder", "skeleton", "witch" }) do
+      local ty = Units[pid].type; if not seen[ty] then seen[ty] = true; count = count + 1 end
+    end
+    local comp = b:buildComp(-1)
+    local u = Units.soot_acolyte
+    local carrier
+    for _, s in ipairs(comp) do if s.id == "soot_acolyte" then carrier = s end end
+    assert(carrier.dmg == u.dmg + 2 * count, "rainbow: porteur +2/type dmg (" .. carrier.dmg .. " att " .. (u.dmg + 2 * count) .. ", count=" .. count .. ")")
+    assert(carrier.hp == u.hp + 4 * count, "rainbow: porteur +4/type hp (" .. carrier.hp .. " att " .. (u.hp + 4 * count) .. ")")
+    -- garde-fou : les AUTRES unités ne reçoivent rien (self-aura).
+    for _, s in ipairs(comp) do
+      if s.id ~= "soot_acolyte" then
+        assert(s.dmg == Units[s.id].dmg and s.hp == Units[s.id].hp, "rainbow: " .. s.id .. " inchangé (self-aura)")
+      end
+    end
+    restore()
+  end
+
+  -- 20) RAINBOW borné + déterministe : un board MONO-type (1 seul type) -> count=1 -> bonus minimal ; et deux
+  -- builds identiques donnent le même résultat. Prouve le scaling par count (1 type vs N).
+  do
+    local function withEffect(id, eff) local u = Units[id]; local s = u.effects; u.effects = eff; return function() u.effects = s end end
+    local restore = withEffect("prism_horror",
+      { { trigger = "combat_start", op = "aura_per_unique_type", params = { dmgPerType = 2, hpPerType = 4 } } })
+    -- mono-abyss : prism_horror(abyss) + demon(abyss) -> 1 type distinct -> +2 dmg / +4 hp.
+    local function carrierStats()
+      local b = fresh(); b:placeId(1, "prism_horror"); b:placeId(2, "demon")
+      for _, s in ipairs(b:buildComp(-1)) do if s.id == "prism_horror" then return s.dmg, s.hp end end
+    end
+    local d1, h1 = carrierStats()
+    local d2, h2 = carrierStats()
+    local u = Units.prism_horror
+    assert(d1 == u.dmg + 2 and h1 == u.hp + 4, "rainbow mono-type: count=1 -> +2 dmg / +4 hp (d=" .. d1 .. ")")
+    assert(d1 == d2 and h1 == h2, "rainbow déterministe (deux builds identiques)")
+    restore()
+  end
+
   print("  auras : ampli increased sur voisin (lu a la pose) / grant d'effet / isolé = base (golden-safe) OK")
   print("  auras K1: role front/back/center sur carré (unique+stable) / team / tier:N (spec §6.2.1) OK")
+  print("  auras W1: target type:X (mono-type, exact+stable+école croisée) / rainbow self-aura (scale par count, borné) OK")
   print("  auras TROU#1: amplis d'école en aura_stat (poison/burn/bleed/rot team|role, routés+additifs, sans fuite) OK")
   print("  auras C0: commandant statInc baké (level:1 / tier:1 / cap, absorbé dans hp/dmg) OK")
   print("  auras C2: 6 commandBonus bien formés (haste/lifesteal/statInc×2/multicast/stripShield) OK")

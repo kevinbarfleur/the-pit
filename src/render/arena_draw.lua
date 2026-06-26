@@ -15,6 +15,7 @@ local Rig = require("src.core.rig")
 local Critter = require("src.render.critter") -- rendu vivant des créatures générées (idle + réactions de combat)
 local Creatures = require("src.data.creatures")
 local Units = require("src.data.units")
+local Spawn = require("src.data.spawn") -- tokens d'engeance (AXE 3) : pas dans Units -> visuel via le pont (family="sousetres"/arch dédié)
 local CreatureGen = require("src.gen.creaturegen") -- visuel généré pour les unités sans rig main
 local Theme = require("src.ui.theme")
 local Draw = require("src.ui.draw")
@@ -199,8 +200,8 @@ function ArenaDraw:rigFor(u)
     -- procéduralement, déterministe (seed = hashId de l'id), mémoïsée par id dans le générateur.
     local def = Creatures[u.id]
     if not def then
-      local spec = Units[u.id] or {}
-      def = CreatureGen.cached({ id = u.id, type = spec.type, family = spec.family, arch = spec.arch, effects = spec.effects, bodyplan = spec.bodyplan, rank = spec.rank })
+      local spec = Units[u.id] or Spawn.token(u.id) or {} -- engeance : Units[id] nil -> pont Spawn (family="sousetres"/arch dédié)
+      def = CreatureGen.cached({ id = u.id, type = spec.type, family = spec.family, arch = spec.arch, effects = spec.effects, bodyplan = spec.bodyplan, rank = spec.rank or 1 })
     end
     c = Rig.new(def, self.palette)
     c.x, c.y, c.facing = u.x, u.y, u.facing

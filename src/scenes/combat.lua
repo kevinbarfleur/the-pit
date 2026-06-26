@@ -33,6 +33,7 @@ local Panel = require("src.ui.panel")    -- surfaces propres (résumé post-comb
 local Overlay = require("src.ui.overlay") -- CHORÉGRAPHIE d'entrée unifiée (voile qui monte + groupe en back-ease)
 local Units = require("src.data.units")  -- type d'unité (pip de portrait) + noms
 local MiniRig = require("src.render.minirig") -- frimousse de créature (portraits MVP / 1re perte du résumé)
+local Keywords = require("src.ui.keywords") -- icônes/couleurs d'afflictions dans le bilan par monstre
 local Run = require("src.run.state")     -- WIN_TARGET (descente) pour le ruban de stats
 local SFX = require("src.audio.sfx")     -- SON (Oniric grave) : verdict VICTOIRE/DEFAITE — RENDER pur, no-op headless
 local T = require("src.core.i18n").t
@@ -106,13 +107,29 @@ function Combat:_track()
   self.dmgByCause = {}   -- [cause] = dégâts infligés par TON équipe (source.team == left)
   self.dealtByUnit = {}  -- [unité] = dégâts infligés (-> MVP)
   self.soakedByUnit = {} -- [unité] = dégâts encaissés par tes unités (-> MVP tank)
+  self.unitDealt = {}    -- [unité] = dégâts infligés, deux équipes
+  self.unitTaken = {}    -- [unité] = dégâts encaissés, deux équipes
+  self.unitKills = {}    -- [unité] = kills confirmés, deux équipes
+  self.unitAfflictions = {} -- [unité][family] = poses/propagations d'affliction
+  self.unitDeathTime = {} -- [unité] = seconde de mort
   self.dealtTotal, self.takenTotal = 0, 0
+  local function bump(map, unit, amount)
+    if unit and amount and amount > 0 then map[unit] = (map[unit] or 0) + amount end
+  end
+  local function bumpAff(unit, family)
+    if not (unit and family) then return end
+    local t = self.unitAfflictions[unit]
+    if not t then t = {}; self.unitAfflictions[unit] = t end
+    t[family] = (t[family] or 0) + 1
+  end
   local arena = self.arena
   arena.bus:on("damage", function(r)
     if r.target then self.lastHit[r.target] = { source = r.source, cause = r.cause or "attack" } end
     local amt = r.hp or 0
     if amt > 0 then
       local src, tgt, cause = r.source, r.target, r.cause or "attack"
+      bump(self.unitDealt, src, amt)
+      bump(self.unitTaken, tgt, amt)
       if src and src.team == "left" then
         self.dmgByCause[cause] = (self.dmgByCause[cause] or 0) + amt
         self.dealtByUnit[src] = (self.dealtByUnit[src] or 0) + amt
@@ -124,8 +141,12 @@ function Combat:_track()
       end
     end
   end)
+  arena.bus:on("affliction_applied", function(e) bumpAff(e.source, e.family) end)
+  arena.bus:on("spread", function(e) bumpAff(e.from, e.family) end)
   arena.bus:on("death", function(u)
     local h = self.lastHit[u]
+    self.unitDeathTime[u] = (arena.t or 0) / 60
+    if h and h.source then self.unitKills[h.source] = (self.unitKills[h.source] or 0) + 1 end
     self.killLog[#self.killLog + 1] =
       { victim = u, killer = h and h.source, cause = (h and h.cause) or "attack", tick = arena.t }
   end)
@@ -291,7 +312,7 @@ function Combat:_drawCombatHud()
   Draw.text("vs ", cx, 24, c.ink3, vf)
   Draw.text(name, cx + vw, 22, c.ink, nf)
   -- DROITE : count + pips + NOM (petit), aligné à droite.
-  local rx = Draw.W - 22
+  local rx = Draw.W - 64
   Draw.textR(name, rx, midY - 5, c.ink4, labF)
   local nr = math.min(9, rt)
   local pstart = rx - labF:getWidth(name) - 12 - nr * 9
@@ -367,6 +388,24 @@ local function portraitTile(view, x, y, sz, id, border, fallen)
   end
 end
 
+local function compactName(str, font, maxW)
+  if not (font and str) or font:getWidth(str) <= maxW then return str end
+  local ell = "..."
+  local out = str
+  while #out > 1 and font:getWidth(out .. ell) > maxW do out = out:sub(1, #out - 1) end
+  return out .. ell
+end
+
+local function afflictionList(map)
+  local out = {}
+  if map then
+    for _, key in ipairs(Keywords.order) do
+      if map[key] and map[key] > 0 then out[#out + 1] = { key = key, count = map[key] } end
+    end
+  end
+  return out
+end
+
 -- Résumé COMPLET (mémoïsé) : stats + dégâts par cause (triés) + MVP + 1re perte. Déterministe (ipairs ;
 -- pairs seulement pour des sommes commutatives).
 function Combat:_fullSummary()
@@ -386,6 +425,28 @@ function Combat:_fullSummary()
   for _, k in ipairs(self.killLog) do
     if k.victim.team == "left" then firstLoss = { id = k.victim.id, time = (k.tick or 0) / 60 }; break end
   end
+  local firstLossUnit = nil
+  for _, k in ipairs(self.killLog) do
+    if k.victim.team == "left" then firstLossUnit = k.victim; break end
+  end
+  local function roster(team)
+    local rows = {}
+    for _, u in ipairs(arena.units) do
+      if u.team == team and not u.isCommander then
+        rows[#rows + 1] = {
+          unit = u, id = u.id, alive = u.alive,
+          deathTime = self.unitDeathTime[u],
+          dealt = self.unitDealt[u] or 0,
+          taken = self.unitTaken[u] or 0,
+          kills = self.unitKills[u] or 0,
+          afflictions = afflictionList(self.unitAfflictions[u]),
+          mvp = (u == mvp),
+          firstLoss = (u == firstLossUnit),
+        }
+      end
+    end
+    return rows
+  end
   local run = self.host.run
   return {
     win = arena.win, duration = (arena.t or 0) / 60,
@@ -395,7 +456,117 @@ function Combat:_fullSummary()
     causes = causes, dealt = self.dealtTotal, taken = self.takenTotal,
     mvp = mvp and { id = mvp.id, dealt = self.dealtByUnit[mvp] or 0, soaked = self.soakedByUnit[mvp] or 0 } or nil,
     firstLoss = firstLoss,
+    leftRows = roster("left"),
+    rightRows = roster("right"),
   }
+end
+
+local function drawAfflictions(x, y, list, maxW)
+  local c = Theme.c
+  local f = Theme.label(8)
+  if not list or #list == 0 then
+    Draw.text(T("ui.no_afflictions"), x, y, c.ink5, f)
+    return
+  end
+  local cx, used = x, 0
+  for i, a in ipairs(list) do
+    if i > 3 then
+      Draw.text("+" .. tostring(#list - 3), cx + 2, y, c.ink4, f)
+      return
+    end
+    local kw = Keywords.get(a.key)
+    local col = (kw and kw.color) or c.ink3
+    local ic = Keywords.icon(a.key)
+    local iw = 10
+    if used + iw > maxW then return end
+    if ic and love and love.graphics then
+      love.graphics.setColor(1, 1, 1, 1)
+      love.graphics.draw(ic.image, math.floor(cx), math.floor(y + 1), 0, 1, 1)
+    else
+      Draw.rect(cx, y + 2, 7, 7, col)
+    end
+    cx = cx + 10; used = used + 10
+    if a.count and a.count > 1 then
+      local txt = "x" .. tostring(a.count)
+      local tw = f:getWidth(txt)
+      if used + tw > maxW then return end
+      Draw.text(txt, cx, y, col, f)
+      cx = cx + tw + 5; used = used + tw + 5
+    else
+      cx = cx + 5; used = used + 5
+    end
+  end
+end
+
+local function drawCauseStrip(s, x, y, w, h)
+  local c = Theme.c
+  Panel.vgrad(x, y, w, h, { 0x10 / 255, 0x0c / 255, 0x15 / 255, 0.96 }, { 0x09 / 255, 0x07 / 255, 0x0e / 255, 0.96 })
+  Draw.rect(x, y, w, h, nil, c.iron, 1)
+  Draw.text(T("ui.dmg_by_cause"), x + 12, y + 11, c.ink3, Theme.label(9))
+  local causeX = x + 174
+  local maxV = (s.causes[1] and s.causes[1].value) or 1
+  for i = 1, math.min(3, #s.causes) do
+    local cz = s.causes[i]
+    local col = causeColor(cz.cause)
+    local bx = causeX + (i - 1) * 178
+    Draw.text(causeLabel(cz.cause), bx, y + 8, col, Theme.label(8))
+    Draw.rect(bx, y + 23, 112, 6, { 0x05 / 255, 0x04 / 255, 0x08 / 255, 1 }, c.iron, 1)
+    local fw = math.floor(110 * (cz.value / maxV))
+    if fw > 0 then Draw.rect(bx + 1, y + 24, fw, 4, col) end
+    Draw.textR(tostring(cz.value), bx + 150, y + 7, c.ink, Theme.value(12))
+  end
+  local f = Theme.label(9)
+  local dt = T("ui.dealt") .. " " .. tostring(s.dealt) .. "  /  " .. T("ui.taken") .. " " .. tostring(s.taken)
+  Draw.textR(dt, x + w - 12, y + 12, c.ink4, f)
+end
+
+local function drawRosterPanel(view, x, y, w, h, title, rows, accent)
+  local c = Theme.c
+  Panel.vgrad(x, y, w, h, { 0x12 / 255, 0x0e / 255, 0x16 / 255, 0.96 }, { 0x08 / 255, 0x06 / 255, 0x0d / 255, 0.96 })
+  Draw.rect(x, y, w, h, nil, accent or c.iron, 1)
+  local hf, cf = Theme.label(11), Theme.label(8)
+  Draw.text(title, x + 12, y + 10, c.ink, hf)
+  local colKills = x + w - 24
+  local colTaken = x + w - 76
+  local colDealt = x + w - 130
+  local affX = x + w - 250
+  Draw.textR(T("ui.col_dealt"), colDealt, y + 13, c.ink4, cf)
+  Draw.textR(T("ui.col_taken"), colTaken, y + 13, c.ink4, cf)
+  Draw.textR(T("ui.col_kills"), colKills, y + 13, c.ink4, cf)
+  Draw.text(T("ui.col_affl"), affX, y + 13, c.ink4, cf)
+  Draw.rect(x + 10, y + 31, w - 20, 1, c.iron)
+
+  local n = math.max(1, #rows)
+  local avail = h - 40
+  local rowH = math.min(46, math.floor(avail / n))
+  if rowH < 28 then rowH = math.max(22, math.floor(avail / n)) end
+  local py = y + 38
+  for i, r in ipairs(rows) do
+    if py + rowH > y + h - 4 then break end
+    local fill = (i % 2 == 1) and { 0x0b / 255, 0x08 / 255, 0x10 / 255, 0.72 } or { 0x11 / 255, 0x0d / 255, 0x15 / 255, 0.72 }
+    Draw.rect(x + 8, py, w - 16, rowH - 2, fill, (r.mvp and c.brass) or (r.firstLoss and c.bloodD) or nil, 1)
+    local p = math.max(16, math.min(32, rowH - 8))
+    portraitTile(view, x + 13, py + math.floor((rowH - p) / 2), p, r.id, r.alive and c.iron or c.bloodD, not r.alive)
+    local nameX = x + 20 + p
+    local nameW = math.max(80, affX - nameX - 12)
+    local nf = Theme.subhead(rowH < 32 and 10 or 11)
+    Draw.text(compactName(unitName(r.id), nf, nameW), nameX, py + 5, r.alive and c.ink or c.ink3, nf)
+    local status
+    local sc = c.ink5
+    if r.alive then
+      status, sc = T("ui.status_alive"), c.regen
+    else
+      status, sc = T("ui.status_fell", { time = string.format("%.1f", r.deathTime or 0) }), c.bloodL
+    end
+    if r.mvp then status = T("ui.mvp") .. " · " .. status end
+    if r.firstLoss then status = T("ui.first_to_fall_short") .. " · " .. status end
+    Draw.text(compactName(status, cf, nameW), nameX, py + rowH - 16, sc, cf)
+    drawAfflictions(affX, py + math.floor(rowH / 2) - 5, r.afflictions, 104)
+    Draw.textR(tostring(r.dealt), colDealt, py + math.floor(rowH / 2) - 8, c.ink, Theme.value(12))
+    Draw.textR(tostring(r.taken), colTaken, py + math.floor(rowH / 2) - 8, r.taken > 0 and c.bloodL or c.ink4, Theme.value(12))
+    Draw.textR(tostring(r.kills), colKills, py + math.floor(rowH / 2) - 8, r.kills > 0 and c.gold or c.ink4, Theme.value(12))
+    py = py + rowH
+  end
 end
 
 function Combat:_drawSummary(view)
@@ -480,88 +651,27 @@ function Combat:_drawSummary(view)
     if i < #cells then Draw.rect(cxp, ry + 8, 1, rh - 16, c.iron); cxp = cxp + 1 end
   end
 
-  -- (3) COLONNES : DAMAGE BY CAUSE (gauche) | THE LEDGER (droite). Le contenu FLUE (compact, pas d'ancrage
-  -- en bas) -> avec peu de barres il n'y a JAMAIS de grand vide ; tout reste dans la moitié haute, soudé.
-  local colTop, PADX, divX = 234, 56, 700
-  local leftX, leftW = PADX, divX - PADX - 16
-  local rightX, rightW = divX + 16, W - PADX - (divX + 16)
-  local hf = Theme.label(11)
+  -- (3) POST-MORTEM LISIBLE : causes compactes, puis deux rosters symétriques avec stats par monstre.
+  drawCauseStrip(s, 180, 232, 920, 38)
+  local rosterTop, rosterH = 282, 312
+  drawRosterPanel(view, 56, rosterTop, 568, rosterH, T("ui.roster_host"), s.leftRows or {}, c.gold)
+  drawRosterPanel(view, 656, rosterTop, 568, rosterH, T("ui.roster_foe"), s.rightRows or {}, c.bloodD)
 
-  -- (3a) DAMAGE BY CAUSE : en-tête + barres + cartes DEALT/TAKEN, qui s'enchaînent.
-  Draw.text(T("ui.dmg_by_cause"), leftX, colTop, c.ink, hf)
-  Draw.text(T("ui.dmg_by_cause_sub"), leftX + hf:getWidth(T("ui.dmg_by_cause")) + 10, colTop + 2, c.ink4, Theme.bodyItalic(12))
-  local by, maxV = colTop + 30, (s.causes[1] and s.causes[1].value) or 1
-  for _, cz in ipairs(s.causes) do
-    local col = causeColor(cz.cause)
-    Draw.text(causeLabel(cz.cause), leftX, by + 1, col, Theme.label(9))
-    local bx = leftX + 66
-    local bw = leftW - 66 - 46
-    Draw.rect(bx, by, bw, 13, { 0x0a / 255, 0x08 / 255, 0x10 / 255, 1 }, c.iron, 1)
-    local fw = math.floor((bw - 2) * (cz.value / maxV))
-    if fw > 0 then Draw.rect(bx + 1, by + 1, fw, 11, col) end
-    Draw.textR(tostring(cz.value), leftX + leftW, by + 1, c.ink, Theme.value(13))
-    by = by + 26
-  end
-  -- DEALT / TAKEN (juste SOUS les barres, pas tout en bas).
-  local dtY, halfW = by + 12, (leftW - 9) / 2
-  local function dtCard(x, lab, val, vc)
-    Draw.rect(x, dtY, halfW, 46, { 0x0b / 255, 0x09 / 255, 0x12 / 255, 1 }, c.iron, 1)
-    Draw.text(lab, x + 12, dtY + 9, c.ink4, Theme.label(8))
-    Draw.text(tostring(val), x + 12, dtY + 22, vc, Theme.value(16))
-    Draw.text(" " .. T("ui.total_suffix"), x + 12 + Theme.value(16):getWidth(tostring(val)) + 2, dtY + 27, c.ink4, Theme.label(9))
-  end
-  dtCard(leftX, T("ui.dealt"), s.dealt, c.ink)
-  dtCard(leftX + halfW + 9, T("ui.taken"), s.taken, c.bloodL)
-  local leftBottom = dtY + 46
-
-  -- (3b) THE LEDGER : MVP + 1re perte + ACTIONS, qui s'enchaînent (pas d'ancrage bas).
-  Draw.text(T("ui.the_ledger"), rightX, colTop, c.ink, hf)
-  local ly, cardH = colTop + 22, 84
-  if s.mvp then
-    Panel.vgrad(rightX, ly, rightW, cardH, { 0x1a / 255, 0x14 / 255, 0x10 / 255, 1 }, { 0x0e / 255, 0x0b / 255, 0x09 / 255, 1 })
-    Draw.rect(rightX, ly, rightW, cardH, nil, c.brass, 1)
-    portraitTile(view, rightX + 12, ly + 11, 62, s.mvp.id, c.brassL)
-    local tx = rightX + 87
-    Draw.text(unitName(s.mvp.id), tx, ly + 12, c.ink, Theme.subhead(14))
-    local bf = Theme.label(8); local btxt = T("ui.mvp"); local bw2 = bf:getWidth(btxt) + 18
-    Draw.rect(rightX + rightW - bw2 - 12, ly + 11, bw2, 16, nil, c.brass, 1)
-    Draw.text(btxt, rightX + rightW - bw2 - 12 + 13, ly + 14, c.brassS, bf)
-    Draw.textWrap(T("ui.mvp_desc", { dealt = s.mvp.dealt, soaked = s.mvp.soaked }), tx, ly + 36, rightX + rightW - tx - 14, c.ink2, Theme.body(12))
-    ly = ly + cardH + 12
-  end
-  if s.firstLoss then
-    Panel.vgrad(rightX, ly, rightW, cardH, { 0x15 / 255, 0x0f / 255, 0x12 / 255, 1 }, { 0x0c / 255, 0x08 / 255, 0x10 / 255, 1 })
-    Draw.rect(rightX, ly, rightW, cardH, nil, c.iron, 1)
-    portraitTile(view, rightX + 12, ly + 11, 62, s.firstLoss.id, c.iron, true)
-    local tx = rightX + 87
-    Draw.text(unitName(s.firstLoss.id), tx, ly + 12, c.ink2, Theme.subhead(14))
-    local bf = Theme.label(8); local btxt = T("ui.first_to_fall") .. " · " .. string.format("%.1f", s.firstLoss.time) .. "s"
-    Draw.textR(btxt, rightX + rightW - 12, ly + 14, c.ink4, bf)
-    Draw.textWrap(T("ui.first_loss_desc", { time = string.format("%.1f", s.firstLoss.time) }), tx, ly + 36, rightX + rightW - tx - 14, c.ink3, Theme.body(12))
-    ly = ly + cardH + 12
-  end
-
-  -- ACTIONS (sous les cartes du ledger) : CLAIM (primary) PLEINE LARGEUR sur sa propre rangée -> l'action
-  -- principale est mise en avant ET ses gouttières restent GÉNÉREUSES pour les yeux du CTA (sur une rangée
-  -- partagée, le label long « CLAIM THE SPOILS » écrasait les yeux dans des gouttières étroites -> retour user).
-  -- [c] CHRONICLE + [r] REPLAY passent dessous. ⚠ DESSINÉES AVANT Draw.finish (transform design) -> jamais désalignées.
-  local byb, bh = ly + 4, 44
-  self._btnCont = { x = rightX, y = byb, w = rightW, h = bh }
-  Button.draw(self._btnCont.x, byb, rightW, bh, "primary", T("ui.claim_spoils"),
+  -- ACTIONS : CTA principal en bas-centre, secondaires dessous. Les yeux du bouton primary sont conservés.
+  local bw, bh = 520, 44
+  local bx, byb = math.floor(W / 2 - bw / 2), 614
+  self._btnCont = { x = bx, y = byb, w = bw, h = bh }
+  Button.draw(bx, byb, bw, bh, "primary", T("ui.claim_spoils"),
     { hover = inBtn(self.mx, self.my, self._btnCont), feel = Feel.state("combat.cont"), id = "combat.cont",
       mouse = { mx = self.mx, my = self.my }, t = self.t / 60 })
-  local by2, bh2 = byb + bh + 10, 38
-  local halfW = math.floor((rightW - 11) / 2)
-  self._btnChron = { x = rightX, y = by2, w = halfW, h = bh2 }
-  self._btnReplay = { x = rightX + halfW + 11, y = by2, w = rightW - halfW - 11, h = bh2 }
+  local by2, bh2, gap = byb + bh + 10, 36, 12
+  local halfW = math.floor((bw - gap) / 2)
+  self._btnChron = { x = bx, y = by2, w = halfW, h = bh2 }
+  self._btnReplay = { x = bx + halfW + gap, y = by2, w = bw - halfW - gap, h = bh2 }
   Button.draw(self._btnChron.x, by2, halfW, bh2, "secondary", T("ui.chronicle_btn"),
     { hover = inBtn(self.mx, self.my, self._btnChron), feel = Feel.state("combat.chron"), id = "combat.chron" })
   Button.draw(self._btnReplay.x, by2, self._btnReplay.w, bh2, "secondary", T("ui.replay_btn"),
     { hover = inBtn(self.mx, self.my, self._btnReplay), feel = Feel.state("combat.replay"), id = "combat.replay" })
-  local actionsBottom = by2 + bh2
-
-  -- séparateur entre colonnes : hauteur = celle du contenu réel (jamais un trait qui pend dans le vide).
-  Draw.rect(divX, colTop, 1, math.max(leftBottom, actionsBottom) - colTop, c.iron)
 
   -- (fin de l'enrobage du groupe) + FADE-UP : un wash sombre PAR-DESSUS le contenu, alpha = (1-anim)·force,
   -- qui s'efface à mesure que l'entrée se pose -> le bilan « remonte du noir » (le fade qui appaire la
