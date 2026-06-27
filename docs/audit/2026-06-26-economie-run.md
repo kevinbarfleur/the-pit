@@ -893,9 +893,9 @@ Ajout batch autonomie (`runs/long-2026-06-27b`) :
   endpoint late tres cher dont il faut mesurer l'accessibilite.
 - Mise a jour accessibilite de plan : `tools/sim.lua economy` expose maintenant
   `plan_access` et accepte `PIT_PLAN_TARGET_SPECS`. Sur
-  `runs/long-2026-06-27n/plan-access-targeted-v2`, la politique cible
-  `committed_cross_bleed_rot_plan` survit correctement (`7.8` wins baseline)
-  mais n'atteint que `21.9%` de couverture unite et `13.5%` de couverture
+  `runs/long-2026-06-27n/plan-access-targeted-v5`, la politique cible
+  `committed_cross_bleed_rot_plan` survit correctement (`8.75` wins baseline)
+  mais n'atteint que `22.5%` de couverture unite et `13.8%` de couverture
   niveau pour l'endpoint `cross_bleed_rot_filled`; `complete_rate` reste `0%`.
   Lecture : le probleme est l'accessibilite/progression, pas la puissance du
   board force-build.

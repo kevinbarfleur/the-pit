@@ -655,19 +655,25 @@ function Policies.committed_archetype_plan_with(archetype, sigil, opts)
       if sigil and drv.build.board.shape.name ~= sigil then drv:reshape(sigil) end
       resolveGrant(drv, true)
       local want = opts.want or function(id) return Policies.archetypeOf(id) == self.archetype end
+      local bought = 0
+      if drv.build:placedCount() == 0 then
+        bought = bought + buyFirstMatching(drv, want)
+        ensureNonEmpty(drv)
+      end
       local xpBuys = 0
       local minRank = opts.minRank or Policies.minRankForArchetype(self.archetype) or 1
       while drv.run.shopTier < minRank and drv.run:canBuyXp() and xpBuys < 2 do
         if not drv:buyXp() then break end
         xpBuys = xpBuys + 1
       end
-      local bought, sold, boardSold = buyMatchingPlanned(drv, want, {
+      local plannedBought, sold, boardSold = buyMatchingPlanned(drv, want, {
         protectWanted = true,
         allowBoardPrune = true,
         minBoard = 3,
         boardPruneMargin = 4,
         churnMinScore = 0,
       })
+      bought = bought + plannedBought
       local rerolls = 0
       while (drv:hasBuySpace() or #benchPruneCandidates(drv, { want = want, protectWanted = true }) > 0) and drv.run:canReroll() and rerolls < 2 do
         sold = sold + pruneBenchToReserve(drv, { want = want, protectWanted = true }, 1)
@@ -697,7 +703,11 @@ end
 function Policies.committed_unit_set_plan(name, archetype, sigil, unitIds, opts)
   opts = opts or {}
   local wanted = {}
-  for _, id in ipairs(unitIds or {}) do wanted[id] = true end
+  local maxRank = 1
+  for _, id in ipairs(unitIds or {}) do
+    wanted[id] = true
+    maxRank = math.max(maxRank, unitRank(id))
+  end
   local supports = opts.supportArchetypes or {}
   local want = function(id)
     return wanted[id] == true or supports[Policies.archetypeOf(id)] == true
@@ -707,7 +717,7 @@ function Policies.committed_unit_set_plan(name, archetype, sigil, unitIds, opts)
     name = name,
     want = want,
     commitWant = commitWant,
-    minRank = opts.minRank or 1,
+    minRank = opts.minRank or math.min(maxRank, 3),
   })
 end
 

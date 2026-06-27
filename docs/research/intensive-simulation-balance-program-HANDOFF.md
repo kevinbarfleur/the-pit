@@ -1847,11 +1847,12 @@ Next implementation targets:
    - A custom target spec for the filled rot/bleed endpoint
      (`cross_bleed_rot_filled=pit_maw:2+razorkin+gash_fiend+clot_mender+marrow_drinker:3+wither_bloom:2+blight_spreader:2+hookjaw`)
      confirms the access problem. In
-     `runs/long-2026-06-27n/plan-access-targeted-v2`, `committed_rot_plan`
+     `runs/long-2026-06-27n/plan-access-targeted-v5`, `committed_rot_plan`
      reaches `0%` of the target units because the broad rot policy ignores the
-     bleed enablers. The new `committed_cross_bleed_rot_plan` reaches about
-     `21.9%` unit coverage and `13.5%` level coverage in baseline, with
-     `7.8` average wins, but still never completes the endpoint.
+     bleed enablers. The new `committed_cross_bleed_rot_plan` now secures a
+     body before XP, keeps rot/bleed support units for tempo, and reaches about
+     `22.5%` unit coverage and `13.8%` level coverage in baseline, with
+     `8.75` average wins, but still never completes the endpoint.
    - Learning: the endpoint is combat-viable when force-built, but not naturally
      accessible under current shop/economy/policy pressure. The next useful
      work is not a direct buff to `cross_bleed_rot`; it is better target-aware
