@@ -23,7 +23,7 @@ love = require("tests.mock_love")
 local MODES = {
   invest = true, policy = true, godroll = true, commander = true,
   counter = true, economy = true, tank = true, pacing = true, sweep = true,
-  coherence = true,
+  coherence = true, bossrush = true,
 }
 local mode = arg and arg[1]
 if mode and MODES[mode] then

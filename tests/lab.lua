@@ -18,6 +18,7 @@ local Arena = require("src.combat.arena")
 local Match = require("src.combat.match")
 local Pacing = require("src.run.pacing")
 local Common = require("tools.scenarios.common")
+local Bossrush = require("src.lab.bossrush")
 
 local ARCH = {}; for _, a in ipairs(Compositions.archetypes) do ARCH[a] = true end
 local VARIANTS = { perfect = true, missing_minor = true, missing_clutch = true, wall = true, baseline = true, amp = true }
@@ -406,6 +407,15 @@ local ok, err = pcall(function()
   local mf = Common.finishMergeLifecycle(ml)
   assert(mf.exact_pairs == 1 and mf.exact_resolved == 1 and mf.exact_resolve_rate == 1,
     "copy lifecycle: merge_lifecycle resout la paire par identite exacte")
+  local bossComp = Compbuild.toComp(Compositions.byId["bruiser_carre"], -1)
+  local bossA = Bossrush.run(bossComp, "leviathan", 202606292, { scoreTicks = 120, tickCap = 2400 })
+  local bossB = Bossrush.run(bossComp, "leviathan", 202606292, { scoreTicks = 120, tickCap = 2400 })
+  assert(bossA.boss_key == "leviathan" and bossA.total_ticks > 0,
+    "bossrush: combat pve produit un resultat")
+  assert(bossA.boss_damage == bossB.boss_damage and bossA.total_ticks == bossB.total_ticks,
+    "bossrush: resultat deterministe a seed identique")
+  assert(type(bossA.damage_by_cause) == "table" and bossA.boss_hp_max > 0,
+    "bossrush: degats/capacite boss reportes")
   local boardSellDrv = Rundriver.new(20260630, {})
   local bss = unlockedSlots(boardSellDrv)
   boardSellDrv.build:placeId(bss[1], "skeleton", 1)

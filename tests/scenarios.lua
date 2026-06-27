@@ -2,7 +2,7 @@
 -- MOTEUR DE SCÉNARIOS d'équilibrage (Phase C.0) — garde-fous :
 --   1. COMMON : DESIGNED (counters intentionnels) + invest (Compcost) + résolution catalogue/bandes +
 --      percentile + archetypeOf + JSON diff-able (clés triées).
---   2. SMOKE de chaque MODE (invest/policy/godroll/commander/counter/economy/tank/pacing/sweep/coherence) à N MINIMAL via le driver unifié
+--   2. SMOKE de chaque MODE (invest/policy/godroll/commander/counter/economy/tank/pacing/sweep/coherence/bossrush) à N MINIMAL via le driver unifié
 --      (luajit tools/sim.lua <mode> 1) : tourne sans crash, écrit son report-<mode>.json (JSON parsable),
 --      et le P7 god-roll RESPECTE ses garde-fous (caps moteur : multicast bake <= cap, zéro 1-swing -> assert
 --      DUR dans le mode lui-même ; si un cap sautait, le smoke échouerait avec exit!=0).
@@ -71,9 +71,13 @@ local ok, err = pcall(function()
   local OUT = "runs/_test"
   local ENV = "PIT_SCEN_OUT=" .. OUT .. " "
   os.execute("rm -rf " .. OUT .. " && mkdir -p " .. OUT)
-  local MODES = { "invest", "policy", "godroll", "commander", "counter", "economy", "tank", "pacing", "sweep", "coherence" }
+  local MODES = { "invest", "policy", "godroll", "commander", "counter", "economy", "tank", "pacing", "sweep", "coherence", "bossrush" }
   for _, m in ipairs(MODES) do
-    local code = os.execute(ENV .. "luajit tools/sim.lua " .. m .. " 1 >/dev/null 2>&1")
+    local extraEnv = ""
+    if m == "bossrush" then
+      extraEnv = "PIT_BOSSRUSH_COMPS=bruiser_carre PIT_ABOMINATIONS=leviathan "
+    end
+    local code = os.execute(ENV .. extraEnv .. "luajit tools/sim.lua " .. m .. " 1 >/dev/null 2>&1")
     -- os.execute renvoie true (5.2+) ou 0 (5.1) au succes ; on accepte les deux conventions.
     assert(code == 0 or code == true, "mode " .. m .. " : driver tourne sans crash (exit 0)")
     local f = io.open(OUT .. "/report-" .. m .. ".json", "r")
@@ -132,9 +136,14 @@ local ok, err = pcall(function()
         "mode sweep : recommandations de pacing/economie reportees")
       assert(body:find('"selection_score"', 1, true),
         "mode sweep : score de selection des recommandations reporte")
+    elseif m == "bossrush" then
+      assert(body:find('"boss_score_damage"', 1, true),
+        "mode bossrush : score de degats boss reporte")
+      assert(body:find('"cleared_blockers"', 1, true),
+        "mode bossrush : nettoyage des generaux reporte")
     end
   end
-  print("  scenarios : SMOKE OK (10 modes tournent via le driver + ecrivent un rapport JSON ; garde-fous god-roll tenus)")
+  print("  scenarios : SMOKE OK (11 modes tournent via le driver + ecrivent un rapport JSON ; garde-fous god-roll tenus)")
 
   -- Alias ergonomiques du sweep : les noms dedies doivent filtrer le grid comme les noms generiques.
   local sweepAliasCode = os.execute(ENV ..
@@ -167,7 +176,7 @@ local ok, err = pcall(function()
 end)
 
 if ok then
-  print("=> SCENARIOS OK : moteur de scenarios (common + 10 modes + determinisme + golden de meta).")
+  print("=> SCENARIOS OK : moteur de scenarios (common + 11 modes + determinisme + golden de meta).")
 else
   print("=> SCENARIOS FAIL :")
   print(err)

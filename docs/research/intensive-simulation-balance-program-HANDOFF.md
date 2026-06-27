@@ -2164,6 +2164,46 @@ Next implementation targets:
      `85.3%` exact resolution; this unlocks the next pass: distinguish pairs
      that failed because the third copy never appeared, because one exact copy
      was sold, or because board/bench tempo crowded them out.
+   - PvE bossrush/scoring prototype:
+     the user added `docs/generation/generateur-abominations.html`, a seeded
+     visual generator for ten abomination families. The lab now has a pure data
+     bridge for these designs: each abomination is represented as one huge boss
+     plus three killable generals. The generals stand in front of the boss and
+     block the existing deterministic targeting; once every non-boss right-side
+     unit and summon is dead, a scoring window starts and the lab counts damage
+     dealt to the boss. This models the desired endgame fantasy: after a winning
+     run, the player should be able to test the build against thematic PvE
+     abominations, clear the support threats, then chase a satisfying damage
+     score on an enormous target.
+   - Bossrush implementation shape:
+     `src/data/abominations.lua` holds the lab catalogue, `src/lab/bossrush.lua`
+     runs deterministic bossrush fights without render/audio/wall-clock state,
+     and `tools/sim.lua bossrush` writes `report-bossrush.json` with clear rate,
+     survival rate, full scoring-window rate, boss kill rate, average boss
+     damage, score damage, score DPS, and score damage by cause. Environment
+     filters are `PIT_BOSSRUSH_COMPS` and `PIT_ABOMINATIONS`, so future sweeps
+     can isolate a single boss family, archetype, or policy.
+   - Bossrush first read:
+     in `runs/long-2026-06-27n/bossrush-prototype-v2` with five seeds per
+     comp/boss, `poison_diamant_perfect` dominates current PvE scoring
+     (`100%` clear, `90%` survival/full-window, `623.8` average score damage,
+     `31.65` score DPS). `cross_venom_pyre` is second (`90%` clear, `72%`
+     full-window, `437.6` score damage). Shock, burn, bleed, and rot can clear
+     some bosses but score far lower; tank/shield boards sometimes survive but
+     do not produce a score; brute bruiser fails the mode. Boss-side tuning is
+     now in a readable range after reducing Leviathan, Kraken, and Brasier, but
+     `ruche` remains a hard wall (`0%` full-window) and should be watched as an
+     add/cleave check rather than nerfed blindly.
+   - PvE design learning:
+     bossrush creates a new axis that PvP win rate cannot measure. A build can
+     win normal rounds, survive long fights, or generate a boss score, and those
+     are not the same thing. This is useful for endgame retention because it
+     gives completed builds another payoff surface without forcing the normal
+     PvP loop to become a DPS-meter game. The next product step is not only more
+     balance data: it is a juicy score presentation layer, with sequential
+     damage events, count-up, pitch-rising audio, shake/juice proportional to
+     score bursts, and boss-specific visual reactions. Keep the simulation pure;
+     put the Balatro-like feedback in the live presentation layer.
    Remaining additions:
    - use `rot_bleed_rat_core` as the baseline reroll target for the next
      balance pass, but investigate cheap mid-board outliers before nerfing it;
@@ -2172,6 +2212,9 @@ Next implementation targets:
    - extend exact lifecycle reporting from pair/merge resolution to explicit
      terminal causes: held to run end, sold exact copy, no third copy, or
      crowded out by bench/board pressure;
+   - promote bossrush from lab prototype to a product spec: mid-run thematic
+     PvE events, post-win boss chains, scoring windows, rewards, leaderboard
+     seeds, and the live feel/sound layer;
 3. Integrate actual relic access into economy scoring, now that relic semantic
    tags exist in coherence scoring.
 4. Expand authored level-ups beyond the initial 6 units before drawing broad
