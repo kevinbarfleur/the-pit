@@ -2224,6 +2224,20 @@ Next implementation targets:
      attainable, but by itself it can overfeed duplicate investment and should
      be paired with better policy/tuning around when a level-up is worth more
      than board stabilization. Do not ship this as a raw always-on rule yet.
+   - Level-up coverage audit:
+     added `tools/levelup_report.lua`, a deterministic headless report that
+     writes `runs/report-levelups.json` and lists authored level-up coverage,
+     clutch/transformative flags, coverage by rank, and priority candidates for
+     the next authored deltas. First read: only `12/110` monsters currently
+     have authored ability level-ups; low/mid rank coverage is `11/75`; only
+     `6` units are marked level-3 clutch and `0` are marked transformative.
+     Rank coverage is very uneven: rank 1 `4/12`, rank 2 `2/32`, rank 3
+     `5/31`, rank 4 `0/25`, rank 5 `1/10`. Top low-rank candidates that still
+     need authored progression include `ash_moth`, `demon`, `live_wire`,
+     `marauder`, and `skeleton`, followed by rank-2 plan pieces like
+     `bore_worm`, `byakhee`, `chitin_drone`, and `cinder_cur`. Current read:
+     before final economy conclusions, expand level-up deltas enough that
+     low-rank reroll and mid-rank bridge comps have real L2/L3 hooks.
    - PvE bossrush/scoring prototype:
      the user added `docs/generation/generateur-abominations.html`, a seeded
      visual generator for ten abomination families. The lab now has a pure data
