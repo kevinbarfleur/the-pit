@@ -1773,6 +1773,21 @@ Next implementation targets:
      `underleveled_high_coherence_weak` has `20` rows. The only true readable
      weak row left is `tank_carre_mid__leveled__tide_caller`; `cross_bleed_rot`
      should not be judged until a filled-board variant exists.
+   Outlier watchlist follow-up:
+   - `tools/sim.lua coherence` now writes `outlier_unit_frequency` for
+     `high_coherence_weak`, `low_coherence_strong`, `cheap_strong`, and
+     `expensive_weak`. Each row reports count, average level, average winrate,
+     stages, and archetypes.
+   - New read (`runs/long-2026-06-27h/unit-frequency`, same settings): the
+     `cheap_strong` midgame watchlist is led by `gravewarden`, `leech_thorn`,
+     `thunderhead`, `skeleton`, `marauder`, `witch`, and `stormcaller`. This
+     points at efficient midgame good-stuff/tank-shock shells rather than one
+     isolated offender.
+   - `low_coherence_strong` is led by `marauder`, `demon`, `brood_mother`,
+     `skeleton`, and `mimic_spawn`. This says high-stat/bruiser/summon/copy
+     packages can win without looking like a readable affliction plan. The next
+     design pass should either classify that as a real "bruiser/summon/copy"
+     plan in coherence, or reduce the raw efficiency if it remains too generic.
    Remaining additions:
    - upgrade pair lifecycle further from event matching to per-copy identity:
      pair formed -> held/sold/lost/merged, with exact sold-pair loss;

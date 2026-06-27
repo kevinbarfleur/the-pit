@@ -860,6 +860,9 @@ Ajout batch autonomie (`runs/long-2026-06-27b`) :
   separees dans `underfilled_high_coherence_weak`. Pour les runs, cela veut
   dire qu'il faut differencier "noyau de synergie trouve" et "board complet
   pret a gagner".
+- Mise a jour watchlist : le report `coherence` ecrit maintenant
+  `outlier_unit_frequency`, ce qui permet d'identifier les unites qui reviennent
+  souvent dans les piles peu coherentes mais fortes.
 
 Metrics recommandees :
 
@@ -885,6 +888,8 @@ Metrics recommandees :
   pour le stade teste.
 - `board_fit` : nombre d'unites posees / slots attendus pour le stade ou le
   board-level declare.
+- `outlier_unit_frequency` : frequence par unite dans les outliers
+  `cheap_strong`, `low_coherence_strong`, `high_coherence_weak`, etc.
 
 Policies minimales :
 

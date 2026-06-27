@@ -326,6 +326,46 @@ local function take(rows, n)
   return out
 end
 
+local function unitFrequency(compactRows, n)
+  local byId = {}
+  for _, row in ipairs(compactRows or {}) do
+    for _, u in ipairs(row.units or {}) do
+      local rec = byId[u.id]
+      if not rec then
+        rec = { id = u.id, count = 0, level_points = 0, winrate = 0, stages = {}, archetypes = {} }
+        byId[u.id] = rec
+      end
+      rec.count = rec.count + 1
+      rec.level_points = rec.level_points + (u.level or 1)
+      rec.winrate = rec.winrate + (row.winrate or 0)
+      rec.stages[row.stage or "?"] = true
+      rec.archetypes[row.archetype or "?"] = true
+    end
+  end
+  local out = {}
+  for _, rec in pairs(byId) do
+    local stages, archetypes = {}, {}
+    for k in pairs(rec.stages) do stages[#stages + 1] = k end
+    for k in pairs(rec.archetypes) do archetypes[#archetypes + 1] = k end
+    table.sort(stages)
+    table.sort(archetypes)
+    out[#out + 1] = {
+      id = rec.id,
+      count = rec.count,
+      avg_level = rec.count > 0 and (rec.level_points / rec.count) or 0,
+      avg_winrate = rec.count > 0 and (rec.winrate / rec.count) or 0,
+      stages = stages,
+      archetypes = archetypes,
+    }
+  end
+  table.sort(out, function(a, b)
+    if a.count ~= b.count then return a.count > b.count end
+    if a.avg_winrate ~= b.avg_winrate then return a.avg_winrate > b.avg_winrate end
+    return a.id < b.id
+  end)
+  return take(out, n or 16)
+end
+
 local function compactRow(r)
   return {
     id = r.id,
@@ -480,6 +520,12 @@ local payload = {
     cheap_strong = take(cheapStrong, 16),
     expensive_weak = take(expensiveWeak, 16),
   },
+  outlier_unit_frequency = {
+    high_coherence_weak = unitFrequency(highCoherenceWeak, 16),
+    low_coherence_strong = unitFrequency(lowCoherenceStrong, 16),
+    cheap_strong = unitFrequency(cheapStrong, 16),
+    expensive_weak = unitFrequency(expensiveWeak, 16),
+  },
   outlier_counts = {
     high_coherence_weak = #highCoherenceWeak,
     underleveled_high_coherence_weak = #underleveledWeak,
@@ -505,6 +551,11 @@ local summary = {
     low_coherence_strong = #lowCoherenceStrong,
     cheap_strong = #cheapStrong,
     expensive_weak = #expensiveWeak,
+  },
+  outlier_unit_frequency = {
+    low_coherence_strong = unitFrequency(lowCoherenceStrong, 8),
+    cheap_strong = unitFrequency(cheapStrong, 8),
+    high_coherence_weak = unitFrequency(highCoherenceWeak, 8),
   },
   top_low_coherence_strong = take(lowCoherenceStrong, 8),
   top_high_coherence_weak = take(highCoherenceWeak, 8),
