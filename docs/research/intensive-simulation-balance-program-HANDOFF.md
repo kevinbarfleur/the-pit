@@ -1788,6 +1788,24 @@ Next implementation targets:
      packages can win without looking like a readable affliction plan. The next
      design pass should either classify that as a real "bruiser/summon/copy"
      plan in coherence, or reduce the raw efficiency if it remains too generic.
+   Summon/mimicry and mid-field follow-up:
+   - The coherence graph now creates edges for `summon` + faint payoff,
+     summon-line stacking, `repeat_ability` + on-hit carriers, and
+     `amplify_auras` + aura-style units. This moves some summon/mimicry winners
+     out of the lowest coherence bucket and raises graph coverage from `2257`
+     to `2433` level-1 edges.
+   - `src/lab/bands.lua` now includes `mid_rot` and the mid field includes it
+     as an intended mid-caliber anti-wall probe. This removes the lone
+     `high_coherence_weak` row from the coherence report, but does not by
+     itself solve mid-tank dominance.
+   - `rot_hound`, `decay_tender`, and `necro_leech` now have the documented
+     level-aware rot scaling. Batch
+     `runs/long-2026-06-27k/rot-level-midfield` still shows `mid_tank` at
+     `100%` winrate in the representative field while `mid_rot` remains around
+     `42.9%` (`59.4%` for the leveled variant). Learning: the tank problem is
+     not only "rot levels were missing"; the midgame likely needs either a
+     stronger explicit anti-wall piece/composition or a direct efficiency pass
+     on the wall package.
    Remaining additions:
    - upgrade pair lifecycle further from event matching to per-copy identity:
      pair formed -> held/sold/lost/merged, with exact sold-pair loss;

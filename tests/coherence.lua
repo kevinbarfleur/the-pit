@@ -34,6 +34,14 @@ local ok, err = pcall(function()
   assert(hasEdge(shieldEdges, "shield_engine", "shield", "barrier_savant", "ward_weaver"),
     "barrier_savant + ward_weaver forms a shield engine edge")
 
+  local faintEdges = Coherence.edgesForPair("brood_mother", "carrion_choir")
+  assert(hasEdge(faintEdges, "faint_engine", "faint", "brood_mother", "carrion_choir"),
+    "summon units feed faint/scavenge payoff units")
+
+  local mimicEdges = Coherence.edgesForPair("mimic_spawn", "witch")
+  assert(hasEdge(mimicEdges, "mimicry_payoff", "mimicry", "mimic_spawn", "witch"),
+    "mimicry units connect to on-hit carriers")
+
   local poison = Coherence.scoreTeam({
     { id = "spore_tick", level = 3, slot = 2 },
     { id = "miasma_acolyte", level = 3, slot = 5 },

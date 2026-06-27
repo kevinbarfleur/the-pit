@@ -863,6 +863,11 @@ Ajout batch autonomie (`runs/long-2026-06-27b`) :
 - Mise a jour watchlist : le report `coherence` ecrit maintenant
   `outlier_unit_frequency`, ce qui permet d'identifier les unites qui reviennent
   souvent dans les piles peu coherentes mais fortes.
+- Mise a jour champ mid : ajout de `mid_rot` comme probe anti-mur. Meme avec
+  les nouveaux level-ups rot (`rot_hound`, `decay_tender`, `necro_leech`),
+  `mid_tank` reste a `100%` dans le batch `rot-level-midfield`. Il faut donc
+  traiter le mur mid comme un vrai sujet de counter/efficacite, pas comme un
+  simple artefact economique.
 
 Metrics recommandees :
 

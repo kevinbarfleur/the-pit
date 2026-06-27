@@ -150,6 +150,12 @@ local function deriveFact(into, fact)
     add(into.amplifies, "damage", 0.2)
   elseif op == "frenzy_gain" then
     add(into.supports, "growth")
+  elseif op == "summon" then
+    add(into.supports, "summon")
+    add(into.supports, "faint")
+  elseif op == "scavenge_on_ally_death" then
+    add(into.supports, "growth")
+    add(into.supports, "faint_payoff")
   elseif op == "spread_burn_on_death" then
     add(into.propagates, "burn", p.frac or 0.7)
     if p.alsoPoison then add(into.propagates, "poison", 0.5) end
@@ -182,6 +188,7 @@ local function deriveFact(into, fact)
     if p.invulnT then add(into.supports, "guard") end
   elseif op == "repeat_ability" then
     add(into.supports, "mimicry")
+    if p.who then add(into.targets, p.who) end
   elseif op == "amplify_auras" then
     add(into.supports, "aura")
   end
@@ -443,6 +450,38 @@ function Coherence.edgesForPair(a, b)
   end
   if has(b.amplifies, "damage") and (a.hasOnHit or hasAnyFamily(a)) then
     edge(out, b, a, "damage_marker", "damage", 0.8, b.id .. " makes " .. a.id .. " damage more valuable", false)
+  end
+
+  if has(a.supports, "summon") and has(b.supports, "faint_payoff") then
+    edge(out, a, b, "faint_engine", "faint", 1.35,
+      a.id .. " creates deaths that feed " .. b.id, false)
+  end
+  if has(b.supports, "summon") and has(a.supports, "faint_payoff") then
+    edge(out, b, a, "faint_engine", "faint", 1.35,
+      b.id .. " creates deaths that feed " .. a.id, false)
+  end
+  if has(a.supports, "summon") and has(b.supports, "summon") then
+    edge(out, a, b, "summon_line", "summon", 0.6,
+      a.id .. " and " .. b.id .. " both commit to a summon board", false)
+  end
+  if has(a.supports, "mimicry") and b.hasOnHit then
+    edge(out, a, b, "mimicry_payoff", "mimicry", 1.15,
+      a.id .. " can echo on-hit pressure from " .. b.id, has(a.targets, "ahead") or has(a.targets, "neighbors"))
+  end
+  if has(b.supports, "mimicry") and a.hasOnHit then
+    edge(out, b, a, "mimicry_payoff", "mimicry", 1.15,
+      b.id .. " can echo on-hit pressure from " .. a.id, has(b.targets, "ahead") or has(b.targets, "neighbors"))
+  end
+  local function auraLike(p)
+    return has(p.supports, "aura") or next(p.amplifies) ~= nil or next(p.grants) ~= nil
+  end
+  if has(a.supports, "aura") and auraLike(b) then
+    edge(out, a, b, "aura_amplifier", "aura", 0.9,
+      a.id .. " amplifies aura-style value from " .. b.id, false)
+  end
+  if has(b.supports, "aura") and auraLike(a) then
+    edge(out, b, a, "aura_amplifier", "aura", 0.9,
+      b.id .. " amplifies aura-style value from " .. a.id, false)
   end
 
   table.sort(out, function(x, y)

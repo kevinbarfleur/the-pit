@@ -50,6 +50,10 @@ local ok, err = pcall(function()
   assert(rat3.params.dps == 2 and rat3.params.aggravateMult == 1.5,
     "gnaw_rat level 3 gains bleed aggravate clutch rider")
 
+  local rot3 = Resolver.effectsFor("rot_hound", 3)[1]
+  assert(rot3.params.base == 4 and rot3.params.growth == 4 and rot3.params.capDps == 14,
+    "rot_hound L3 strengthens the rot tank-counter curve")
+
   local husk3 = Resolver.effectsFor("husk", 3)[1]
   assert(husk3.op == "aura_stat" and husk3.target == "team" and husk3.params.value == 0.08,
     "husk level 3 turns front guard into team wall clutch")
@@ -110,6 +114,14 @@ local ok, err = pcall(function()
     local md3 = Resolver.effectsFor("marrow_drinker", 3)[1]
     assert(md3 and md3.params.base == 5 and md3.params.growth == 4 and md3.params.capDps == 16,
       "marrow_drinker L3 strengthens bleed->rot conversion")
+  end
+
+  do
+    local dt3 = Resolver.effectsFor("decay_tender", 3)[1]
+    local nl3 = Resolver.effectsFor("necro_leech", 3)[1]
+    assert(dt3 and dt3.params.bonus == 3, "decay_tender L3 increases rot growth aura")
+    assert(nl3 and nl3.params.base == 4 and nl3.params.growth == 4 and nl3.params.maxHpFrac == 0.45,
+      "necro_leech L3 strengthens rot amputation")
   end
 
   -- grant_team command bonuses can now scale by commander level.

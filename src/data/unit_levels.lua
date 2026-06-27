@@ -38,6 +38,21 @@ return {
     },
   },
 
+  -- Low-rank rot seed: level-ups make the tank-counter identity show up
+  -- before the late-game rot package is complete.
+  rot_hound = {
+    [2] = {
+      effects = {
+        [1] = { params = { base = 3, growth = 3, capDps = 12 } },
+      },
+    },
+    [3] = {
+      effects = {
+        [1] = { params = { base = 4, growth = 4, capDps = 14 } },
+      },
+    },
+  },
+
   -- Low-rank bleed reroll seed: level 3 turns a cheap bleed applier into a
   -- small payoff piece without replacing higher-rank bleed carries.
   gnaw_rat = {
@@ -94,6 +109,32 @@ return {
     [3] = {
       effects = {
         [1] = { params = { dps = 3, dur = 210, slowPct = 0.15 } },
+      },
+    },
+  },
+
+  decay_tender = {
+    [2] = {
+      effects = {
+        [1] = { params = { bonus = 2 } },
+      },
+    },
+    [3] = {
+      effects = {
+        [1] = { params = { bonus = 3 } },
+      },
+    },
+  },
+
+  necro_leech = {
+    [2] = {
+      effects = {
+        [1] = { params = { base = 3, growth = 3, maxHpFrac = 0.40 } },
+      },
+    },
+    [3] = {
+      effects = {
+        [1] = { params = { base = 4, growth = 4, maxHpFrac = 0.45 } },
       },
     },
   },
