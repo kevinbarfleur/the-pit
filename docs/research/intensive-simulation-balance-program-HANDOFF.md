@@ -2184,7 +2184,7 @@ Next implementation targets:
      filters are `PIT_BOSSRUSH_COMPS` and `PIT_ABOMINATIONS`, so future sweeps
      can isolate a single boss family, archetype, or policy.
    - Bossrush first read:
-     in `runs/long-2026-06-27n/bossrush-prototype-v4` with twenty seeds per
+     in `runs/long-2026-06-27n/bossrush-prototype-v5` with twenty seeds per
      comp/boss, `poison_diamant_perfect` dominates current PvE scoring
      (`100%` clear/survival/full-window, `701.3` average score damage,
      `35.06` score DPS). `cross_venom_pyre` is second (`98.5%` clear, `76.5%`
@@ -2208,6 +2208,10 @@ Next implementation targets:
      meta: future boss/relic work should add boss families that test poison
      ramp, cleanse/anti-stack, burst windows, shield stripping, and cleave
      separately so "best PvE score" does not collapse into one affliction.
+     `tools/sim.lua bossrush` now writes a `recommendations` section; in v5 it
+     raises `dominant_scoring_archetype` for `poison_diamant_perfect`
+     (`1.46x` the second score) and a `post_clear_attrition_boss` watch on
+     `ossuaire`.
    - PvE design learning:
      bossrush creates a new axis that PvP win rate cannot measure. A build can
      win normal rounds, survive long fights, or generate a boss score, and those

@@ -162,6 +162,50 @@ for _, abom in ipairs(bosses) do
 end
 table.sort(bossRows, function(a, b) return a.key < b.key end)
 
+local function buildRecommendations()
+  local out = { warnings = {}, watches = {} }
+  local top, second = compRows[1], compRows[2]
+  if top and second and second.avg_score_damage > 0 then
+    local gap = top.avg_score_damage / second.avg_score_damage
+    out.top_comp = {
+      id = top.id,
+      avg_score_damage = top.avg_score_damage,
+      full_score_window_rate = top.full_score_window_rate,
+      gap_to_second = gap,
+    }
+    if gap >= 1.35 and top.full_score_window_rate >= 0.80 then
+      out.warnings[#out.warnings + 1] = {
+        kind = "dominant_scoring_archetype",
+        comp = top.id,
+        gap_to_second = gap,
+        note = "Top bossrush scorer is far ahead; test counters before treating this as final PvE meta.",
+      }
+    end
+  end
+  for _, b in ipairs(bossRows) do
+    if b.full_score_window_rate <= 0.10 and b.survival_rate <= 0.20 then
+      out.watches[#out.watches + 1] = {
+        kind = "hard_wall_boss",
+        boss = b.key,
+        clear_rate = b.clear_rate,
+        survival_rate = b.survival_rate,
+        full_score_window_rate = b.full_score_window_rate,
+      }
+    elseif b.clear_rate >= 0.60 and b.full_score_window_rate <= 0.20 then
+      out.watches[#out.watches + 1] = {
+        kind = "post_clear_attrition_boss",
+        boss = b.key,
+        clear_rate = b.clear_rate,
+        survival_rate = b.survival_rate,
+        full_score_window_rate = b.full_score_window_rate,
+      }
+    end
+  end
+  return out
+end
+
+local recommendations = buildRecommendations()
+
 print(string.format("%-28s %7s %8s %8s %9s %9s %8s",
   "comp", "clear%", "survive%", "full%", "score", "dps", "kill%"))
 for i = 1, math.min(12, #compRows) do
@@ -184,6 +228,7 @@ local payload = {
     "Generals and summoned adds block targeting; scoring starts once all non-boss right units are dead.",
     "The boss uses huge HP and the standard arena; no render/audio state participates in this report.",
   },
+  recommendations = recommendations,
   by_comp = compRows,
   by_boss = bossRows,
   matrix = matrix,
@@ -193,6 +238,7 @@ local payload = {
 local summary = {
   seeds_per_pair = N,
   top_comp = compRows[1],
+  recommendations = recommendations,
   bosses = bossRows,
 }
 

@@ -141,6 +141,8 @@ local ok, err = pcall(function()
         "mode bossrush : score de degats boss reporte")
       assert(body:find('"cleared_blockers"', 1, true),
         "mode bossrush : nettoyage des generaux reporte")
+      assert(body:find('"recommendations"', 1, true),
+        "mode bossrush : recommandations/warnings reportes")
     end
   end
   print("  scenarios : SMOKE OK (11 modes tournent via le driver + ecrivent un rapport JSON ; garde-fous god-roll tenus)")
