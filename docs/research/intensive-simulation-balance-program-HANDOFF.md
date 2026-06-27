@@ -1806,6 +1806,18 @@ Next implementation targets:
      not only "rot levels were missing"; the midgame likely needs either a
      stronger explicit anti-wall piece/composition or a direct efficiency pass
      on the wall package.
+   Economy/pacing follow-up:
+   - `runs/long-2026-06-27l/post-rot-economy`, `economy 30`, commander auto:
+     baseline remains stronger in this slice (`8.1%` completion, `5.58` avg
+     wins, `93.8%` full-shop afford). `sap_cost_tiered_reroll` creates real
+     pressure (`67.8%` afford, pressure ratio `1.02`) but falls to `4.7%`
+     completion and `5.21` avg wins. Do not promote it as default yet.
+   - `runs/long-2026-06-27l/post-rot-sweep`, `sweep 12`: `hp2_cd15_f24`
+     remains the safer pacing candidate for baseline (`8.3%` completion,
+     `6.05` wins, p50 combat `11.52s`, fatigue `2.5%`). The heavier
+     `hp2_cd2_f24` creates more readable-length fights and better baseline
+     completion (`13.2%`, `6.20` wins, p50 `15.22s`) but fatigue jumps to
+     `13.0%`. Treat it as an exploratory upper bound, not a default.
    Remaining additions:
    - upgrade pair lifecycle further from event matching to per-copy identity:
      pair formed -> held/sold/lost/merged, with exact sold-pair loss;

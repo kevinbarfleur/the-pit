@@ -868,6 +868,18 @@ Ajout batch autonomie (`runs/long-2026-06-27b`) :
   `mid_tank` reste a `100%` dans le batch `rot-level-midfield`. Il faut donc
   traiter le mur mid comme un vrai sujet de counter/efficacite, pas comme un
   simple artefact economique.
+- Mise a jour economie post-rot : `runs/long-2026-06-27l/post-rot-economy`
+  confirme que `sap_cost_tiered_reroll` cree une vraie pression
+  (`67.8%` shop complet achetable, ratio de pression `1.02`) mais reste moins
+  performant que baseline dans ce batch (`4.7%` completion, `5.21` wins contre
+  `8.1%` et `5.58`). Il ne faut donc pas le promouvoir comme economie live
+  sans corriger le throughput de build.
+- Mise a jour pacing post-rot : `runs/long-2026-06-27l/post-rot-sweep` garde
+  `hp2_cd15_f24` comme candidat prudent (`8.3%` completion, `6.05` wins,
+  combat p50 `11.52s`, fatigue `2.5%`). Le profil plus lourd `hp2_cd2_f24`
+  ameliore la duree lisible et la completion baseline (`13.2%`, `6.20` wins,
+  p50 `15.22s`) mais monte a `13.0%` de fatigue ; c'est un plafond
+  exploratoire, pas une recommandation par defaut.
 
 Metrics recommandees :
 
