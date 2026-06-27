@@ -2380,6 +2380,20 @@ Next implementation targets:
      PvE score remains access-gated; do not over-tune boss HP or affliction
      counters until economy/policy reachability is measured on larger paired
      panels.
+   - Expanded rank-2 bossrush-run read:
+     `runs/long-2026-06-27t/bossrush-run-rank2-n18` crossed `baseline`,
+     `pair_completion_light`, `pair_completion_delayed`, and `early_curve`
+     with nine broad/committed policies against four abominations. Overall
+     entry was still low (`12.5%`), while boss clear was `100%`, survival
+     `99.4%`, and full scoring-window rate `89.5%`. The top line was
+     `pair_completion_light` + `greedy_plan` (`27.8%` entry, `2934.3`
+     score/run, `10563.4` score/entry), followed by baseline broad plans.
+     By economy, `pair_completion_light` had the best score/run (`983.2`)
+     mostly by improving final-board quality, not by massively improving entry;
+     baseline entered slightly more often (`14.2%` vs `13.0%`) but scored less
+     per entry. Current read: pair-completion support remains promising as a
+     final-board quality lever, but the postgame loop is still too access-gated
+     to tune boss families from score/ranking alone.
    - Active memory guard:
      bossrush/scoring is a new payoff layer, not the whole balance project. The
      next passes must still keep the older open axes in view: economy pressure,

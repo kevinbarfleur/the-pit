@@ -254,3 +254,9 @@ Current warning examples:
   `early_curve` broad plans topped score/run because they entered more often,
   while overall postgame entry stayed low (`13.9%`). Boss tuning should stay
   paired with economy/policy reachability until entry rates are stable.
+- The expanded N=18 panel
+  `runs/long-2026-06-27t/bossrush-run-rank2-n18` had `100%` boss clear and
+  `99.4%` survival but only `12.5%` postgame entry. `pair_completion_light`
+  improved score/run through stronger final boards, while baseline entered
+  slightly more often. Current read: the boss side is readable enough for lab
+  iteration; the product blocker is still run access and final-board quality.
