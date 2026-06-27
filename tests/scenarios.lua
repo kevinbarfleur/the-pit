@@ -118,6 +118,16 @@ local ok, err = pcall(function()
         "mode economy : blocages de barriere XP reportes")
       assert(body:find('"sold_before_merge_rate"', 1, true),
         "mode economy : pertes de paires par vente reportees")
+    elseif m == "pacing" then
+      assert(body:find('"duration_fit"', 1, true),
+        "mode pacing : score de fit duration reporte")
+      assert(body:find('"duration_fit_score"', 1, true),
+        "mode pacing : score de fit duration expose dans le resume")
+    elseif m == "sweep" then
+      assert(body:find('"duration_fit"', 1, true),
+        "mode sweep : score de fit duration reporte")
+      assert(body:find('"duration_fit_score"', 1, true),
+        "mode sweep : score de fit duration expose dans le resume")
     end
   end
   print("  scenarios : SMOKE OK (10 modes tournent via le driver + ecrivent un rapport JSON ; garde-fous god-roll tenus)")

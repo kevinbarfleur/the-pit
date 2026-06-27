@@ -56,6 +56,8 @@ local function addRun(a, traj)
 end
 
 local function finish(a)
+  local duration = Common.finishDurationSet(a.duration)
+  local durationFit = Common.durationFit(duration)
   return {
     runs = a.runs,
     completion = (a.runs > 0) and (a.completions / a.runs) or 0,
@@ -65,7 +67,9 @@ local function finish(a)
     undecided_rate = (a.combatTotal > 0) and (a.undecided / a.combatTotal) or 0,
     avg_gold = (a.runs > 0) and (a.goldSum / a.runs) or 0,
     avg_score = (a.runs > 0) and (a.scoreSum / a.runs) or 0,
-    duration = Common.finishDurationSet(a.duration),
+    duration = duration,
+    duration_fit = durationFit,
+    duration_fit_score = durationFit.score,
   }
 end
 
@@ -115,6 +119,7 @@ for _, pace in ipairs(PACE_PROFILES) do
     p50_seconds = row.duration.all.p50_seconds,
     p90_seconds = row.duration.all.p90_seconds,
     fatigue_touch_rate = row.duration.all.fatigue_touch_rate,
+    duration_fit_score = row.duration_fit.score,
   }
   policies[pace.id] = {}
   for name, a in pairs(byPolicy[pace.id]) do
@@ -126,16 +131,18 @@ for _, pace in ipairs(PACE_PROFILES) do
       early_avg_seconds = pr.duration.early.avg_seconds,
       early_under_5s_rate = pr.duration.early.under_5s_rate,
       fatigue_touch_rate = pr.duration.all.fatigue_touch_rate,
+      duration_fit_score = pr.duration_fit.score,
     }
   end
 end
 
-print(string.format("%-16s %7s %7s %8s %9s %8s %8s %8s %8s",
-  "pace", "comp%", "wins", "combat%", "early_s", "<5s%", "p50_s", "p90_s", "fatigue"))
+print(string.format("%-16s %7s %7s %8s %7s %9s %8s %8s %8s %8s",
+  "pace", "comp%", "wins", "combat%", "fit", "early_s", "<5s%", "p50_s", "p90_s", "fatigue"))
 for _, pace in ipairs(PACE_PROFILES) do
   local row = paces[pace.id]
-  print(string.format("%-16s %6.1f%% %7.2f %7.1f%% %9.2f %7.1f%% %8.2f %8.2f %7.1f%%",
+  print(string.format("%-16s %6.1f%% %7.2f %7.1f%% %7.3f %9.2f %7.1f%% %8.2f %8.2f %7.1f%%",
     pace.id, row.completion * 100, row.avg_wins, row.combat_winrate * 100,
+    row.duration_fit.score,
     row.duration.early.avg_seconds, row.duration.early.under_5s_rate * 100,
     row.duration.all.p50_seconds, row.duration.all.p90_seconds,
     row.duration.all.fatigue_touch_rate * 100))

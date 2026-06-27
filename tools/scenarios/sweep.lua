@@ -110,6 +110,8 @@ end
 local function finish(a)
   local spend = a.buyGold + a.rerollGold + a.xpGold
   local mergeLifecycle = Common.finishMergeLifecycle(a.mergeLifecycle)
+  local duration = Common.finishDurationSet(a.duration)
+  local durationFit = Common.durationFit(duration)
   return {
     runs = a.runs,
     completion = (a.runs > 0) and (a.completions / a.runs) or 0,
@@ -143,7 +145,9 @@ local function finish(a)
     archetype_commitment_rate = (a.archetypeRuns > 0) and (a.archetypeCommitted / a.archetypeRuns) or 0,
     avg_archetype_commit_round = (a.archetypeCommitted > 0) and (a.archetypeCommitRoundSum / a.archetypeCommitted) or 0,
     merge_lifecycle = mergeLifecycle,
-    duration = Common.finishDurationSet(a.duration),
+    duration = duration,
+    duration_fit = durationFit,
+    duration_fit_score = durationFit.score,
   }
 end
 
@@ -211,19 +215,21 @@ for _, econ in ipairs(ECONOMY_ORDER) do
       p50_seconds = row.duration.all.p50_seconds,
       p90_seconds = row.duration.all.p90_seconds,
       fatigue_touch_rate = row.duration.all.fatigue_touch_rate,
+      duration_fit_score = row.duration_fit.score,
     }
     byPolicy[econ][pace.id] = {}
     for name, a in pairs(policyGrid[econ][pace.id]) do byPolicy[econ][pace.id][name] = finish(a) end
   end
 end
 
-print(string.format("%-24s %-16s %7s %7s %8s %8s %8s %8s %8s %8s",
-  "economy", "pace", "comp%", "wins", "combat%", "early_s", "p50_s", "fatigue", "desired", "merge"))
+print(string.format("%-24s %-16s %7s %7s %8s %7s %8s %8s %8s %8s %8s",
+  "economy", "pace", "comp%", "wins", "combat%", "fit", "early_s", "p50_s", "fatigue", "desired", "merge"))
 for _, econ in ipairs(ECONOMY_ORDER) do
   for _, pace in ipairs(PACE_PROFILES) do
     local r = cells[econ][pace.id]
-    print(string.format("%-24s %-16s %6.1f%% %7.2f %7.1f%% %8.2f %8.2f %7.1f%% %7.1f%% %7.1f%%",
+    print(string.format("%-24s %-16s %6.1f%% %7.2f %7.1f%% %7.3f %8.2f %8.2f %7.1f%% %7.1f%% %7.1f%%",
       econ, pace.id, r.completion * 100, r.avg_wins, r.combat_winrate * 100,
+      r.duration_fit.score,
       r.duration.early.avg_seconds, r.duration.all.p50_seconds,
       r.duration.all.fatigue_touch_rate * 100,
       r.desired_buy_all_rate * 100, r.merge_per_pair_buy * 100))

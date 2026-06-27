@@ -302,6 +302,51 @@ function Common.finishDurationSet(set)
   }
 end
 
+function Common.durationFit(duration)
+  duration = duration or {}
+  local early = duration.early or {}
+  local all = duration.all or {}
+  local penalties = {}
+  local score = 1
+
+  local function rangePenalty(v, lo, hi, scale)
+    v = v or 0
+    if v < lo then return (lo - v) / scale end
+    if v > hi then return (v - hi) / scale end
+    return 0
+  end
+
+  local function overPenalty(v, maxValue, scale)
+    v = v or 0
+    if v <= maxValue then return 0 end
+    return (v - maxValue) / scale
+  end
+
+  local function add(name, penalty, weight)
+    penalty = math.max(0, math.min(1, penalty or 0))
+    penalties[name] = penalty
+    score = score - penalty * weight
+  end
+
+  add("early_avg_seconds", rangePenalty(early.avg_seconds, 13, 16, 4), 0.30)
+  add("p50_seconds", rangePenalty(all.p50_seconds, 11, 14, 4), 0.20)
+  add("p90_seconds", overPenalty(all.p90_seconds, 22, 8), 0.20)
+  add("fatigue_touch_rate", overPenalty(all.fatigue_touch_rate, 0.05, 0.10), 0.20)
+  add("early_under_5s_rate", overPenalty(early.under_5s_rate, 0.06, 0.14), 0.10)
+
+  return {
+    score = math.max(0, math.min(1, score)),
+    target = {
+      early_avg_seconds = { min = 13, max = 16 },
+      p50_seconds = { min = 11, max = 14 },
+      p90_seconds_max = 22,
+      fatigue_touch_rate_max = 0.05,
+      early_under_5s_rate_max = 0.06,
+    },
+    penalties = penalties,
+  }
+end
+
 function Common.mergeLifecycleAgg()
   return {
     pairs = 0, resolved = 0, unresolved = 0, unpairedMerges = 0,
