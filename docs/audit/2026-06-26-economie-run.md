@@ -1106,6 +1106,17 @@ Ajout batch autonomie (`runs/long-2026-06-27b`) :
   `0.21` et des counters nets (`mid_tank`, `mid_shock`,
   `cross_venom_pyre`). Lecture : ne pas nerfer le pivot rot/bleed catalogue a
   ce stade ; les alertes restantes servent surtout a calibrer les bandes.
+- Mise a jour pacing fin : le sweep
+  `runs/long-2026-06-27n/pacing-fine-candidates-v1` compare
+  `baseline/sap_cost/early_curve`, six policies, et les profils cooldown autour
+  de la zone credible. Le meilleur candidat live preliminaire est
+  `cd1.5_f26` (`hp x2`, cooldown x1.5, fatigue a 26s) : baseline early
+  `14.87s`, p50 `11.97s`, p90 `19.42s`, fatigue `1.8%`, wins `8.47` ; SAP
+  early `14.96s`, p90 `19.40s`, fatigue `1.5%` ; early curve early `14.70s`,
+  fatigue `2.5%`. `cd1.35_f24` reste l'alternative prudente, et `cd1.65`
+  devient plutot un stress test car son p90 depasse souvent `21s`. Conclusion :
+  ne pas appliquer un `cd x4` global ; si on change le live, tester d'abord
+  `cd x1.5` avec fatigue repoussee vers `26s`.
 
 Metrics recommandees :
 

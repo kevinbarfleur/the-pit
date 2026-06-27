@@ -2060,6 +2060,18 @@ Next implementation targets:
      (`mid_poison__leveled`, `mid_rot__leveled`) with moderate deltas around
      `0.21` and clear losses into `mid_tank`, `mid_shock`, and
      `cross_venom_pyre`.
+   - Fine pacing sweep update:
+     `runs/long-2026-06-27n/pacing-fine-candidates-v1` crossed
+     `baseline/sap_cost/early_curve`, six focused policies, and cooldown/fatigue
+     profiles around the previous candidate range. The best first live
+     candidate is `cd1.5_f26` (`hp x2`, cooldown x1.5, fatigue at 26s):
+     baseline early avg `14.87s`, p50 `11.97s`, p90 `19.42s`, fatigue `1.8%`,
+     wins `8.47`; SAP early avg `14.96s`, p90 `19.40s`, fatigue `1.5%`; early
+     curve early avg `14.70s`, fatigue `2.5%`. `cd1.35_f24` is the conservative
+     alternative (early around `13-14s`, fatigue `1.5-2.5%`), while `cd1.65`
+     starts pushing p90 above `21s` and should remain a stress candidate. Do
+     not jump to the old suggested `cd x4`: prior tank/pacing runs already
+     showed it overuses fatigue.
    Remaining additions:
    - use `rot_bleed_rat_core` as the baseline reroll target for the next
      balance pass, but investigate cheap mid-board outliers before nerfing it;
