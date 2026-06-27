@@ -38,6 +38,7 @@ function Rundriver.new(seed, opts)
     compMutator = opts.compMutator, -- lab-only overlay appliqué aux deux camps avant Match.run (pacing, probes)
     leftMutator = opts.leftMutator, -- lab-only overlay appliqué au joueur seulement (candidate balance)
     rightMutator = opts.rightMutator, -- lab-only overlay appliqué à l'adversaire seulement
+    recordBoards = opts.recordBoards == true, -- lab-only: snapshots légers board+bench par round pour diagnostics
     relicsKnown = opts.relicsKnown or false, -- reliques pré-connues au Grimoire ? (le driver n'a pas d'IO)
     opponentFn = opts.opponent,              -- (driver) -> compo droite ; défaut PvE escaladante
     over = nil, pendingRelics = nil, lastResult = nil,
@@ -471,6 +472,19 @@ end
 
 function Rundriver:boardCost() return Compcost.of(self:boardComp()) end
 
+function Rundriver:heldComp()
+  local units = {}
+  for i = 1, 9 do
+    local sr = self.build.slotRigs[i]
+    if sr then units[#units + 1] = { id = sr.id, slot = i, level = sr.level or 1, where = "board" } end
+  end
+  for i = 1, #(self.build.benchSlots or {}) do
+    local sr = self.build.bench[i]
+    if sr then units[#units + 1] = { id = sr.id, slot = 9 + i, level = sr.level or 1, where = "bench" } end
+  end
+  return { sigil = self.build.board.shape.name, boardLevel = self.run.slots, units = units }
+end
+
 -- ── Run COMPLÈTE pilotée par une politique -> trajectoire (rounds + décisions + issue + investissement) ──
 -- policy = { name, act(self, drv) -> décisions, pickRelic?(self, drv, choices) -> index }.
 function Rundriver.run(seed, policy, opts)
@@ -500,13 +514,18 @@ function Rundriver.run(seed, policy, opts)
     local econ = metricDelta(metricAfter, metricBefore)
     if drv.build:placedCount() == 0 then traj.aborted = "empty_board"; break end
     local snap = drv:state()
+    local boardAfterBuild, holdingsAfterBuild
+    if drv.recordBoards then
+      boardAfterBuild = drv:boardComp()
+      holdingsAfterBuild = drv:heldComp()
+    end
     local fr = drv:fight()
     if fr.error then traj.aborted = fr.error; break end
     if fr.relicChoices then
       local pick = (policy.pickRelic and policy:pickRelic(drv, fr.relicChoices)) or 1
       drv:pickRelic(pick)
     end
-    traj.rounds[#traj.rounds + 1] = {
+    local row = {
       round = snap.round, gold = snap.gold, startGold = before.gold, buildGold = afterBuild.gold,
       shopTier = before.shopTier, shopFullCost = shopFullCost,
       couldAffordFullShop = before.gold >= shopFullCost,
@@ -524,10 +543,16 @@ function Rundriver.run(seed, policy, opts)
       win = fr.result and fr.result.win, decided = fr.result and fr.result.decided,
       ticks = fr.result and fr.result.ticks, enemyKey = fr.result and fr.result.enemyKey,
     }
+    if drv.recordBoards then
+      row.board = boardAfterBuild
+      row.holdings = holdingsAfterBuild
+    end
+    traj.rounds[#traj.rounds + 1] = row
   end
   traj.result = drv.run:isOver() or "incomplete"
   traj.wins, traj.losses, traj.slots = drv.run.wins, drv.run.losses, drv.run.slots
   traj.finalBoard = drv:boardComp()
+  if drv.recordBoards then traj.finalHoldings = drv:heldComp() end
   traj.finalCost = drv:boardCost()
   traj.metrics = drv:metricSnapshot()
   traj.pairEvents = drv.pairEvents

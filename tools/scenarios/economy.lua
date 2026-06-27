@@ -293,6 +293,197 @@ local function planCoverage(board, target)
   }
 end
 
+local function betterCoverage(a, b)
+  if not a then return false end
+  if not b then return true end
+  if (a.level_coverage or 0) ~= (b.level_coverage or 0) then return (a.level_coverage or 0) > (b.level_coverage or 0) end
+  if (a.unit_coverage or 0) ~= (b.unit_coverage or 0) then return (a.unit_coverage or 0) > (b.unit_coverage or 0) end
+  return (a.round or 9999) < (b.round or 9999)
+end
+
+local THRESHOLDS = {
+  { key = "25", value = 0.25 },
+  { key = "50", value = 0.50 },
+  { key = "75", value = 0.75 },
+  { key = "100", value = 1.00 },
+}
+
+local BAND_ORDER = {
+  { key = "lt25", min = 0, max = 0.25 },
+  { key = "p25_49", min = 0.25, max = 0.50 },
+  { key = "p50_74", min = 0.50, max = 0.75 },
+  { key = "p75_99", min = 0.75, max = 1.00 },
+  { key = "p100", min = 1.00, max = math.huge },
+}
+
+local function newThresholdMap()
+  local out = {}
+  for _, t in ipairs(THRESHOLDS) do out[t.key] = { hits = 0, round = 0 } end
+  return out
+end
+
+local function newLossThresholdMap()
+  local out = {}
+  for _, t in ipairs(THRESHOLDS) do out[t.key] = { before = 0, at_or_after = 0 } end
+  return out
+end
+
+local function newCombatBands()
+  local out = {}
+  for _, b in ipairs(BAND_ORDER) do out[b.key] = { total = 0, wins = 0, ticks = 0 } end
+  return out
+end
+
+local function coverageBand(c)
+  c = c or 0
+  for _, b in ipairs(BAND_ORDER) do
+    if c >= b.min and c < b.max then return b.key end
+  end
+  return "p100"
+end
+
+local function firstThresholdsFor(cov, round, first)
+  for _, t in ipairs(THRESHOLDS) do
+    if not first[t.key] and (cov.level_coverage or 0) >= t.value then first[t.key] = round end
+  end
+end
+
+local function addThresholdAgg(dst, first)
+  for _, t in ipairs(THRESHOLDS) do
+    local round = first and first[t.key]
+    if round then
+      dst[t.key].hits = dst[t.key].hits + 1
+      dst[t.key].round = dst[t.key].round + round
+    end
+  end
+end
+
+local function addLossThresholdAgg(dst, src)
+  for _, t in ipairs(THRESHOLDS) do
+    local s = src[t.key] or {}
+    dst[t.key].before = dst[t.key].before + (s.before or 0)
+    dst[t.key].at_or_after = dst[t.key].at_or_after + (s.at_or_after or 0)
+  end
+end
+
+local function addCombatBands(dst, src)
+  for _, b in ipairs(BAND_ORDER) do
+    local s = src[b.key] or {}
+    dst[b.key].total = dst[b.key].total + (s.total or 0)
+    dst[b.key].wins = dst[b.key].wins + (s.wins or 0)
+    dst[b.key].ticks = dst[b.key].ticks + (s.ticks or 0)
+  end
+end
+
+local function finishThresholdAgg(map, runs)
+  local out = {}
+  for _, t in ipairs(THRESHOLDS) do
+    local r = map[t.key] or {}
+    out[t.key] = {
+      hit_rate = (runs > 0) and ((r.hits or 0) / runs) or 0,
+      avg_round_when_hit = ((r.hits or 0) > 0) and ((r.round or 0) / r.hits) or 0,
+    }
+  end
+  return out
+end
+
+local function finishLossThresholdAgg(map, runs)
+  local out = {}
+  for _, t in ipairs(THRESHOLDS) do
+    local r = map[t.key] or {}
+    out[t.key] = {
+      before_per_run = (runs > 0) and ((r.before or 0) / runs) or 0,
+      at_or_after_per_run = (runs > 0) and ((r.at_or_after or 0) / runs) or 0,
+    }
+  end
+  return out
+end
+
+local function finishCombatBands(map)
+  local out = {}
+  for _, b in ipairs(BAND_ORDER) do
+    local r = map[b.key] or {}
+    out[b.key] = {
+      combats = r.total or 0,
+      winrate = ((r.total or 0) > 0) and ((r.wins or 0) / r.total) or 0,
+      avg_ticks = ((r.total or 0) > 0) and ((r.ticks or 0) / r.total) or 0,
+    }
+  end
+  return out
+end
+
+local function planTrajectory(traj, target, finalBoardCov, finalHeldCov)
+  local bestBoard, bestHeld = nil, nil
+  local everBoardComplete, everHeldComplete = false, false
+  local firstBoard, firstHeld = {}, {}
+  local combatBands = newCombatBands()
+  local lossThresholds = newLossThresholdMap()
+  for i, rd in ipairs(traj.rounds or {}) do
+    local round = rd.round or i
+    local boardCov
+    if rd.board then
+      boardCov = planCoverage(rd.board, target)
+      boardCov.round = round
+      if boardCov.complete then everBoardComplete = true end
+      firstThresholdsFor(boardCov, round, firstBoard)
+      if betterCoverage(boardCov, bestBoard) then bestBoard = boardCov end
+    end
+    if rd.holdings or rd.board then
+      local cov = planCoverage(rd.holdings or rd.board, target)
+      cov.round = round
+      if cov.complete then everHeldComplete = true end
+      firstThresholdsFor(cov, round, firstHeld)
+      if betterCoverage(cov, bestHeld) then bestHeld = cov end
+    end
+    if boardCov and rd.decided ~= nil then
+      local band = coverageBand(boardCov.level_coverage)
+      local br = combatBands[band]
+      br.total = br.total + 1
+      if rd.win then br.wins = br.wins + 1 end
+      br.ticks = br.ticks + (rd.ticks or 0)
+      if rd.win == false then
+        for _, t in ipairs(THRESHOLDS) do
+          if (boardCov.level_coverage or 0) < t.value then
+            lossThresholds[t.key].before = lossThresholds[t.key].before + 1
+          else
+            lossThresholds[t.key].at_or_after = lossThresholds[t.key].at_or_after + 1
+          end
+        end
+      end
+    end
+  end
+  bestBoard = bestBoard or {
+    unit_coverage = finalBoardCov.unit_coverage,
+    level_coverage = finalBoardCov.level_coverage,
+    complete = finalBoardCov.complete,
+    round = 0,
+  }
+  bestHeld = bestHeld or {
+    unit_coverage = finalHeldCov.unit_coverage,
+    level_coverage = finalHeldCov.level_coverage,
+    complete = finalHeldCov.complete,
+    round = 0,
+  }
+  everBoardComplete = everBoardComplete or finalBoardCov.complete
+  everHeldComplete = everHeldComplete or finalHeldCov.complete
+  local heldDrop = math.max(0, (bestHeld.level_coverage or 0) - (finalHeldCov.level_coverage or 0))
+  local boardDrop = math.max(0, (bestBoard.level_coverage or 0) - (finalBoardCov.level_coverage or 0))
+  return {
+    best_board = bestBoard,
+    best_held = bestHeld,
+    ever_board_complete = everBoardComplete,
+    ever_held_complete = everHeldComplete,
+    held_drop_from_peak = heldDrop,
+    board_drop_from_peak = boardDrop,
+    promising_lost = (bestHeld.level_coverage or 0) >= 0.50 and ((finalHeldCov.level_coverage or 0) + 0.20) < (bestHeld.level_coverage or 0),
+    undeployed_complete = finalHeldCov.complete and not finalBoardCov.complete,
+    first_board = firstBoard,
+    first_held = firstHeld,
+    combat_bands = combatBands,
+    loss_thresholds = lossThresholds,
+  }
+end
+
 local function addPlanAccess(a, traj)
   if #PLAN_TARGETS == 0 then return end
   local finalGold = (traj.finalCost and traj.finalCost.gold) or 0
@@ -303,20 +494,52 @@ local function addPlanAccess(a, traj)
         id = target.id,
         source = target.source,
         target_gold = (target.cost and target.cost.gold) or 0,
-        runs = 0, complete = 0,
-        unitCoverage = 0, levelCoverage = 0, finalGoldRatio = 0,
+        runs = 0, complete = 0, heldComplete = 0,
+        everBoardComplete = 0, everHeldComplete = 0,
+        promisingLost = 0, undeployedComplete = 0,
+        unitCoverage = 0, levelCoverage = 0,
+        heldUnitCoverage = 0, heldLevelCoverage = 0,
+        peakBoardUnitCoverage = 0, peakBoardLevelCoverage = 0, peakBoardRound = 0,
+        peakHeldUnitCoverage = 0, peakHeldLevelCoverage = 0, peakHeldRound = 0,
+        heldDropFromPeak = 0, boardDropFromPeak = 0,
+        firstBoard = newThresholdMap(),
+        firstHeld = newThresholdMap(),
+        combatBands = newCombatBands(),
+        lossThresholds = newLossThresholdMap(),
+        finalGoldRatio = 0,
         wins = 0, completeWins = 0,
         completions = 0, completeCompletions = 0,
       }
       a.planTargets[target.id] = rec
     end
     local cov = planCoverage(traj.finalBoard, target)
+    local heldCov = planCoverage(traj.finalHoldings or traj.finalBoard, target)
+    local path = planTrajectory(traj, target, cov, heldCov)
     rec.runs = rec.runs + 1
     rec.unitCoverage = rec.unitCoverage + cov.unit_coverage
     rec.levelCoverage = rec.levelCoverage + cov.level_coverage
+    rec.heldUnitCoverage = rec.heldUnitCoverage + heldCov.unit_coverage
+    rec.heldLevelCoverage = rec.heldLevelCoverage + heldCov.level_coverage
+    rec.peakBoardUnitCoverage = rec.peakBoardUnitCoverage + (path.best_board.unit_coverage or 0)
+    rec.peakBoardLevelCoverage = rec.peakBoardLevelCoverage + (path.best_board.level_coverage or 0)
+    rec.peakBoardRound = rec.peakBoardRound + (path.best_board.round or 0)
+    rec.peakHeldUnitCoverage = rec.peakHeldUnitCoverage + (path.best_held.unit_coverage or 0)
+    rec.peakHeldLevelCoverage = rec.peakHeldLevelCoverage + (path.best_held.level_coverage or 0)
+    rec.peakHeldRound = rec.peakHeldRound + (path.best_held.round or 0)
+    rec.heldDropFromPeak = rec.heldDropFromPeak + (path.held_drop_from_peak or 0)
+    rec.boardDropFromPeak = rec.boardDropFromPeak + (path.board_drop_from_peak or 0)
+    addThresholdAgg(rec.firstBoard, path.first_board)
+    addThresholdAgg(rec.firstHeld, path.first_held)
+    addCombatBands(rec.combatBands, path.combat_bands)
+    addLossThresholdAgg(rec.lossThresholds, path.loss_thresholds)
     rec.finalGoldRatio = rec.finalGoldRatio + ((rec.target_gold > 0) and (finalGold / rec.target_gold) or 0)
     rec.wins = rec.wins + (traj.wins or 0)
     if traj.result == "win" then rec.completions = rec.completions + 1 end
+    if heldCov.complete then rec.heldComplete = rec.heldComplete + 1 end
+    if path.ever_board_complete then rec.everBoardComplete = rec.everBoardComplete + 1 end
+    if path.ever_held_complete then rec.everHeldComplete = rec.everHeldComplete + 1 end
+    if path.promising_lost then rec.promisingLost = rec.promisingLost + 1 end
+    if path.undeployed_complete then rec.undeployedComplete = rec.undeployedComplete + 1 end
     if cov.complete then
       rec.complete = rec.complete + 1
       rec.completeWins = rec.completeWins + (traj.wins or 0)
@@ -405,6 +628,25 @@ local function finish(a)
       complete_rate = (rec.runs > 0) and (rec.complete / rec.runs) or 0,
       avg_unit_coverage = (rec.runs > 0) and (rec.unitCoverage / rec.runs) or 0,
       avg_level_coverage = (rec.runs > 0) and (rec.levelCoverage / rec.runs) or 0,
+      held_complete_rate = (rec.runs > 0) and (rec.heldComplete / rec.runs) or 0,
+      ever_board_complete_rate = (rec.runs > 0) and (rec.everBoardComplete / rec.runs) or 0,
+      ever_held_complete_rate = (rec.runs > 0) and (rec.everHeldComplete / rec.runs) or 0,
+      avg_final_held_unit_coverage = (rec.runs > 0) and (rec.heldUnitCoverage / rec.runs) or 0,
+      avg_final_held_level_coverage = (rec.runs > 0) and (rec.heldLevelCoverage / rec.runs) or 0,
+      avg_peak_board_unit_coverage = (rec.runs > 0) and (rec.peakBoardUnitCoverage / rec.runs) or 0,
+      avg_peak_board_level_coverage = (rec.runs > 0) and (rec.peakBoardLevelCoverage / rec.runs) or 0,
+      avg_peak_board_round = (rec.runs > 0) and (rec.peakBoardRound / rec.runs) or 0,
+      avg_peak_held_unit_coverage = (rec.runs > 0) and (rec.peakHeldUnitCoverage / rec.runs) or 0,
+      avg_peak_held_level_coverage = (rec.runs > 0) and (rec.peakHeldLevelCoverage / rec.runs) or 0,
+      avg_peak_held_round = (rec.runs > 0) and (rec.peakHeldRound / rec.runs) or 0,
+      avg_held_drop_from_peak = (rec.runs > 0) and (rec.heldDropFromPeak / rec.runs) or 0,
+      avg_board_drop_from_peak = (rec.runs > 0) and (rec.boardDropFromPeak / rec.runs) or 0,
+      promising_lost_rate = (rec.runs > 0) and (rec.promisingLost / rec.runs) or 0,
+      undeployed_complete_rate = (rec.runs > 0) and (rec.undeployedComplete / rec.runs) or 0,
+      first_board_level_round = finishThresholdAgg(rec.firstBoard, rec.runs),
+      first_held_level_round = finishThresholdAgg(rec.firstHeld, rec.runs),
+      combat_by_board_level_band = finishCombatBands(rec.combatBands),
+      losses_by_board_level_threshold = finishLossThresholdAgg(rec.lossThresholds, rec.runs),
       avg_final_gold_ratio = (rec.runs > 0) and (rec.finalGoldRatio / rec.runs) or 0,
       avg_wins = (rec.runs > 0) and (rec.wins / rec.runs) or 0,
       avg_wins_when_complete = (rec.complete > 0) and (rec.completeWins / rec.complete) or 0,
@@ -521,7 +763,12 @@ for run = 1, N do
       -- Same world seed for every policy in a profile/run pair: comparisons are paired,
       -- while policy actions still diverge deterministically through buys/rerolls/fights.
       local seed = BASE_SEED + pi * 100000 + run * 137
-      local traj = Rundriver.run(seed, p, { hpMult = HPM, economy = profileId, commanderMode = COMMANDER_MODE })
+      local traj = Rundriver.run(seed, p, {
+        hpMult = HPM,
+        economy = profileId,
+        commanderMode = COMMANDER_MODE,
+        recordBoards = #PLAN_TARGETS > 0,
+      })
       addRun(profileAgg[profileId], traj)
       local pa = policyAgg[profileId][p.name]
       if not pa then pa = newAgg(); policyAgg[profileId][p.name] = pa end

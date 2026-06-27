@@ -94,6 +94,10 @@ local ok, err = pcall(function()
     elseif m == "economy" then
       assert(body:find('"plan_access"', 1, true),
         "mode economy : accessibilite des plans cibles reportee")
+      assert(body:find('"first_held_level_round"', 1, true),
+        "mode economy : trajectoire d'accessibilite des plans reportee")
+      assert(body:find('"combat_by_board_level_band"', 1, true),
+        "mode economy : combat par bande de couverture de plan reporte")
     end
   end
   print("  scenarios : SMOKE OK (10 modes tournent via le driver + ecrivent un rapport JSON ; garde-fous god-roll tenus)")

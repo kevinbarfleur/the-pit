@@ -899,6 +899,18 @@ Ajout batch autonomie (`runs/long-2026-06-27b`) :
   niveau pour l'endpoint `cross_bleed_rot_filled`; `complete_rate` reste `0%`.
   Lecture : le probleme est l'accessibilite/progression, pas la puissance du
   board force-build.
+- Mise a jour trajectoire de plan : `plan_access` expose maintenant le peak
+  board/holdings, les premiers rounds ou le plan atteint `25/50/75/100%` de
+  couverture niveau, les pertes avant/apres seuil, et le winrate par bande de
+  couverture board. Sur `runs/long-2026-06-27n/plan-trajectory-v1`, la policy
+  `committed_cross_bleed_rot_plan` n'atteint `25%` de couverture niveau tenue
+  que dans `6.7%` des runs baseline (`30%` en holdings sous
+  `sap_cost_tiered_reroll`) et n'atteint jamais `50%`. Lecture : le plan n'est
+  pas "trouve puis perdu"; il n'entre presque jamais en phase de transition
+  reelle. Le signal tier est plus parlant : en baseline, tier 4 a `91.5%` de
+  rounds desired slot-limited malgre l'or disponible, et tier 5 `100%`.
+  Prochaine question : funnel d'apparition/achat par unite cible, puis oracle
+  combat force-build attache au meme target id.
 
 Metrics recommandees :
 
@@ -932,6 +944,12 @@ Metrics recommandees :
 - `plan_access` : couverture finale d'un target plan en run reelle
   (unites, niveaux, complete rate, ratio d'or final). Indispensable pour
   separer "endpoint fort" de "endpoint accessible".
+- `plan_access.first_held_level_round` / `first_board_level_round` :
+  premier round moyen ou une cible atteint `25/50/75/100%` de couverture niveau.
+- `plan_access.combat_by_board_level_band` : winrate et ticks moyens quand le
+  board est a `<25`, `25-49`, `50-74`, `75-99`, ou `100%` de la cible.
+- `plan_access.losses_by_board_level_threshold` : pertes avant/apres chaque
+  seuil, pour detecter les morts pendant la transition.
 
 Policies minimales :
 

@@ -1842,8 +1842,10 @@ Next implementation targets:
    Plan-access follow-up:
    - `tools/sim.lua economy` now reports `plan_access` for default critical
      targets and optional `PIT_PLAN_TARGET_SPECS` entries. It measures final
-     board unit coverage, level coverage, complete rate, and final-gold ratio
-     against a target plan.
+     board unit coverage, level coverage, complete rate, final-gold ratio,
+     peak board/held coverage, first `25/50/75/100%` level-coverage rounds,
+     losses before/after each threshold, and combat winrate by board coverage
+     band against a target plan.
    - A custom target spec for the filled rot/bleed endpoint
      (`cross_bleed_rot_filled=pit_maw:2+razorkin+gash_fiend+clot_mender+marrow_drinker:3+wither_bloom:2+blight_spreader:2+hookjaw`)
      confirms the access problem. In
@@ -1858,7 +1860,21 @@ Next implementation targets:
      work is not a direct buff to `cross_bleed_rot`; it is better target-aware
      reroll/XP timing and/or cheaper stepping-stone units that let the player
      progress toward the endpoint without dying.
+   - Trajectory update: `runs/long-2026-06-27n/plan-trajectory-v1` shows the
+     same endpoint almost never enters a real transition state. Under baseline,
+     `committed_cross_bleed_rot_plan` reaches held `25%` level coverage in only
+     `6.7%` of runs and never reaches `50%`; under `sap_cost_tiered_reroll`,
+     held `25%` improves to `30%`, but board `25%` is still only `6.7%`, and
+     `50%` remains `0%`. The tier breakdown points to space pressure rather
+     than gold: baseline tier 4 desired offers are `91.5%` slot-limited while
+     still gold-affordable, and tier 5 is `100%` slot-limited.
    Remaining additions:
+   - attach a forced-combat target oracle to each `plan_access` target id
+     (`forced_winrate`, duration, cost, coherence subscores) so low access can
+     be separated from low endpoint power even when complete_rate is `0%`;
+   - add a target acquisition funnel by unit/relic: first seen, offered,
+     affordable, playable, bought, sold, paired, merged, missed for gold, missed
+     for space, or missed by policy;
    - upgrade pair lifecycle further from event matching to per-copy identity:
      pair formed -> held/sold/lost/merged, with exact sold-pair loss;
    - model actual relic acquisition timing and relic offer access in
