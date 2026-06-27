@@ -11,6 +11,8 @@ local Compcost = require("src.lab.compcost")
 local Compbuild = require("src.lab.compbuild")
 local Coherence = require("src.lab.coherence")
 local Match = require("src.combat.match")
+local Relics = require("src.data.relics")
+local Units = require("src.data.units")
 
 local N = require("tools.scenarios.argn")(60)
 local BASE_SEED = 1060000
@@ -620,6 +622,403 @@ local function finishFunnel(row, runs)
   return out
 end
 
+local FOCUSED_SUPPORT_KINDS = {
+  producer_amplifier = true,
+  propagation_payoff = true,
+  transform_payoff = true,
+  command_amplifier = true,
+  command_propagation = true,
+  command_transform = true,
+}
+
+local function supportClassFromEdges(edges)
+  local focused, generic, weight = 0, 0, 0
+  for _, edge in ipairs(edges or {}) do
+    if edge.kind then
+      if FOCUSED_SUPPORT_KINDS[edge.kind] then focused = focused + 1
+      else generic = generic + 1 end
+      weight = weight + (edge.weight or 0)
+    end
+  end
+  if focused > 0 then return "focused", focused, generic, weight end
+  if generic > 0 then return "generic", focused, generic, weight end
+  return nil, 0, 0, 0
+end
+
+local function betterSupport(row, best)
+  if not best then return true end
+  local rf, bf = row.support_class == "focused", best.support_class == "focused"
+  if rf ~= bf then return rf end
+  local rs, bs = row.command_score or row.relic_score or 0, best.command_score or best.relic_score or 0
+  if rs ~= bs then return rs > bs end
+  return (row.level or 1) > (best.level or 1)
+end
+
+local SUPPORT_CATALOGS = {}
+
+local function supportCatalog(target)
+  local key = target.id or tostring(target)
+  if SUPPORT_CATALOGS[key] then return SUPPORT_CATALOGS[key] end
+  local catalog = { relics = {}, commanders = {} }
+
+  for _, relicId in ipairs(Relics.order or {}) do
+    local score = Coherence.scoreTeam(target.units or {}, { relics = { relicId } })
+    local class, focused, generic, weight = supportClassFromEdges(score.relicEdges)
+    if class then
+      catalog.relics[relicId] = {
+        id = relicId,
+        support_class = class,
+        edge_count = #(score.relicEdges or {}),
+        focused_edge_count = focused,
+        generic_edge_count = generic,
+        edge_weight = weight,
+        relic_score = score.subscores and score.subscores.relic or 0,
+      }
+    end
+  end
+
+  for _, unitId in ipairs(Units.order or {}) do
+    if Units[unitId] and Units[unitId].commandBonus then
+      local rec = { id = unitId, by_level = {} }
+      for level = 1, 3 do
+        local score = Coherence.scoreTeam(target.units or {}, { commander = { id = unitId, level = level } })
+        local class, focused, generic, weight = supportClassFromEdges(score.commandEdges)
+        if class then
+          local row = {
+            id = unitId,
+            level = level,
+            support_class = class,
+            edge_count = #(score.commandEdges or {}),
+            focused_edge_count = focused,
+            generic_edge_count = generic,
+            edge_weight = weight,
+            command_score = score.subscores and score.subscores.command or 0,
+          }
+          rec.by_level[level] = row
+          if betterSupport(row, rec.best) then rec.best = row end
+        end
+      end
+      if rec.best then
+        rec.support_class = rec.best.support_class
+        rec.best_level = rec.best.level
+        rec.edge_count = rec.best.edge_count
+        rec.focused_edge_count = rec.best.focused_edge_count
+        rec.generic_edge_count = rec.best.generic_edge_count
+        rec.edge_weight = rec.best.edge_weight
+        rec.command_score = rec.best.command_score
+        catalog.commanders[unitId] = rec
+      end
+    end
+  end
+
+  SUPPORT_CATALOGS[key] = catalog
+  return catalog
+end
+
+local RELIC_SUPPORT_KEYS = {
+  "offers", "picks", "offerRunHits", "pickRunHits",
+  "firstOfferHits", "firstOfferRound", "firstPickHits", "firstPickRound",
+}
+
+local COMMANDER_SUPPORT_KEYS = {
+  "candidates", "placements", "candidateRunHits", "placementRunHits",
+  "firstCandidateHits", "firstCandidateRound", "firstPlacementHits", "firstPlacementRound",
+}
+
+local function supportBucket(map, id)
+  local row = map[id]
+  if not row then row = {}; map[id] = row end
+  return row
+end
+
+local function noteRelicSupport(out, id, kind, round)
+  local row = supportBucket(out.relics.byRelic, id)
+  if kind == "offer" then
+    row.offers = (row.offers or 0) + 1
+    if not row.offerRunHits then
+      row.offerRunHits = 1
+      row.firstOfferHits = 1
+      row.firstOfferRound = round or 0
+    end
+  elseif kind == "pick" then
+    row.picks = (row.picks or 0) + 1
+    if not row.pickRunHits then
+      row.pickRunHits = 1
+      row.firstPickHits = 1
+      row.firstPickRound = round or 0
+    end
+  end
+end
+
+local function noteCommanderSupport(out, id, kind, round)
+  local row = supportBucket(out.commanders.byCommander, id)
+  if kind == "candidate" then
+    row.candidates = (row.candidates or 0) + 1
+    if not row.candidateRunHits then
+      row.candidateRunHits = 1
+      row.firstCandidateHits = 1
+      row.firstCandidateRound = round or 0
+    end
+  elseif kind == "placement" then
+    row.placements = (row.placements or 0) + 1
+    if not row.placementRunHits then
+      row.placementRunHits = 1
+      row.firstPlacementHits = 1
+      row.firstPlacementRound = round or 0
+    end
+  end
+end
+
+local function newSupportAccessAgg(target)
+  return {
+    catalog = supportCatalog(target),
+    relics = {
+      focusedOfferRuns = 0, focusedPickRuns = 0,
+      focusedOffers = 0, focusedPicks = 0,
+      missedFocusedPick = 0,
+      firstFocusedOfferHits = 0, firstFocusedOfferRound = 0,
+      firstFocusedPickHits = 0, firstFocusedPickRound = 0,
+      byRelic = {},
+    },
+    commanders = {
+      focusedCandidateRuns = 0, focusedPlacementRuns = 0,
+      focusedCandidates = 0, focusedPlacements = 0,
+      missedFocusedPlacement = 0,
+      firstFocusedCandidateHits = 0, firstFocusedCandidateRound = 0,
+      firstFocusedPlacementHits = 0, firstFocusedPlacementRound = 0,
+      byCommander = {},
+    },
+    timing = {
+      focusedSeenRuns = 0, focusedUsedRuns = 0,
+      focusedUsedByHeld25 = 0, focusedUsedByHeld50 = 0,
+      runsWithFocusedSupport = 0, winsWithFocusedSupport = 0,
+      runsWithoutFocusedSupport = 0, winsWithoutFocusedSupport = 0,
+    },
+  }
+end
+
+local function commanderInfo(catalog, id, level)
+  local rec = catalog.commanders[id]
+  if not rec then return nil end
+  return rec.by_level[level or 1] or rec.best
+end
+
+local function planSupportAccess(traj, target, path)
+  local catalog = supportCatalog(target)
+  local out = newSupportAccessAgg(target)
+  local focusedRelicOffer, focusedRelicPick = false, false
+  local focusedCommanderCandidate, focusedCommanderPlacement = false, false
+  local firstFocusedRelicOffer, firstFocusedRelicPick
+  local firstFocusedCommanderCandidate, firstFocusedCommanderPlacement
+
+  for _, rd in ipairs(traj.rounds or {}) do
+    local round = rd.round or 0
+    local rowFocusedRelicOffer, rowFocusedRelicPick = false, false
+    local rowFocusedCommanderCandidate, rowFocusedCommanderPlacement = false, false
+
+    for _, ev in ipairs(rd.events or {}) do
+      if ev.type == "relic_offer" then
+        for _, relicId in ipairs(ev.choices or {}) do
+          local info = catalog.relics[relicId]
+          if info then
+            noteRelicSupport(out, relicId, "offer", round)
+            if info.support_class == "focused" then
+              focusedRelicOffer, rowFocusedRelicOffer = true, true
+              out.relics.focusedOffers = out.relics.focusedOffers + 1
+              if not firstFocusedRelicOffer then firstFocusedRelicOffer = round end
+            end
+          end
+        end
+      elseif ev.type == "relic_pick" then
+        local info = catalog.relics[ev.id]
+        if info then
+          noteRelicSupport(out, ev.id, "pick", round)
+          if info.support_class == "focused" then
+            focusedRelicPick, rowFocusedRelicPick = true, true
+            out.relics.focusedPicks = out.relics.focusedPicks + 1
+            if not firstFocusedRelicPick then firstFocusedRelicPick = round end
+          end
+        end
+      elseif ev.type == "commander_window" then
+        for _, c in ipairs(ev.candidates or {}) do
+          local info = commanderInfo(catalog, c.id, c.level)
+          if info then
+            noteCommanderSupport(out, c.id, "candidate", round)
+            if info.support_class == "focused" then
+              focusedCommanderCandidate, rowFocusedCommanderCandidate = true, true
+              out.commanders.focusedCandidates = out.commanders.focusedCandidates + 1
+              if not firstFocusedCommanderCandidate then firstFocusedCommanderCandidate = round end
+            end
+          end
+        end
+      elseif ev.type == "commander_place" then
+        local info = commanderInfo(catalog, ev.id, ev.level)
+        if info then
+          noteCommanderSupport(out, ev.id, "placement", round)
+          if info.support_class == "focused" then
+            focusedCommanderPlacement, rowFocusedCommanderPlacement = true, true
+            out.commanders.focusedPlacements = out.commanders.focusedPlacements + 1
+            if not firstFocusedCommanderPlacement then firstFocusedCommanderPlacement = round end
+          end
+        end
+      end
+    end
+
+    if rowFocusedRelicOffer and not rowFocusedRelicPick then out.relics.missedFocusedPick = out.relics.missedFocusedPick + 1 end
+    if rowFocusedCommanderCandidate and not rowFocusedCommanderPlacement then
+      out.commanders.missedFocusedPlacement = out.commanders.missedFocusedPlacement + 1
+    end
+  end
+
+  if focusedRelicOffer then out.relics.focusedOfferRuns = 1 end
+  if focusedRelicPick then out.relics.focusedPickRuns = 1 end
+  if firstFocusedRelicOffer then
+    out.relics.firstFocusedOfferHits = 1
+    out.relics.firstFocusedOfferRound = firstFocusedRelicOffer
+  end
+  if firstFocusedRelicPick then
+    out.relics.firstFocusedPickHits = 1
+    out.relics.firstFocusedPickRound = firstFocusedRelicPick
+  end
+
+  if focusedCommanderCandidate then out.commanders.focusedCandidateRuns = 1 end
+  if focusedCommanderPlacement then out.commanders.focusedPlacementRuns = 1 end
+  if firstFocusedCommanderCandidate then
+    out.commanders.firstFocusedCandidateHits = 1
+    out.commanders.firstFocusedCandidateRound = firstFocusedCommanderCandidate
+  end
+  if firstFocusedCommanderPlacement then
+    out.commanders.firstFocusedPlacementHits = 1
+    out.commanders.firstFocusedPlacementRound = firstFocusedCommanderPlacement
+  end
+
+  local firstSeen = firstFocusedRelicOffer
+  if firstFocusedCommanderCandidate and (not firstSeen or firstFocusedCommanderCandidate < firstSeen) then
+    firstSeen = firstFocusedCommanderCandidate
+  end
+  local firstUsed = firstFocusedRelicPick
+  if firstFocusedCommanderPlacement and (not firstUsed or firstFocusedCommanderPlacement < firstUsed) then
+    firstUsed = firstFocusedCommanderPlacement
+  end
+  if firstSeen then out.timing.focusedSeenRuns = 1 end
+  if firstUsed then
+    out.timing.focusedUsedRuns = 1
+    out.timing.runsWithFocusedSupport = 1
+    out.timing.winsWithFocusedSupport = traj.wins or 0
+    local held25 = path.first_held and path.first_held["25"]
+    local held50 = path.first_held and path.first_held["50"]
+    if held25 and firstUsed <= held25 then out.timing.focusedUsedByHeld25 = 1 end
+    if held50 and firstUsed <= held50 then out.timing.focusedUsedByHeld50 = 1 end
+  else
+    out.timing.runsWithoutFocusedSupport = 1
+    out.timing.winsWithoutFocusedSupport = traj.wins or 0
+  end
+
+  return out
+end
+
+local function addKeyed(dst, src, keys)
+  for _, key in ipairs(keys) do dst[key] = (dst[key] or 0) + (src[key] or 0) end
+end
+
+local function addSupportAccessAgg(dst, src)
+  addKeyed(dst.relics, src.relics, {
+    "focusedOfferRuns", "focusedPickRuns", "focusedOffers", "focusedPicks", "missedFocusedPick",
+    "firstFocusedOfferHits", "firstFocusedOfferRound", "firstFocusedPickHits", "firstFocusedPickRound",
+  })
+  for id, row in pairs(src.relics.byRelic or {}) do
+    local d = supportBucket(dst.relics.byRelic, id)
+    addKeyed(d, row, RELIC_SUPPORT_KEYS)
+  end
+  addKeyed(dst.commanders, src.commanders, {
+    "focusedCandidateRuns", "focusedPlacementRuns", "focusedCandidates", "focusedPlacements", "missedFocusedPlacement",
+    "firstFocusedCandidateHits", "firstFocusedCandidateRound", "firstFocusedPlacementHits", "firstFocusedPlacementRound",
+  })
+  for id, row in pairs(src.commanders.byCommander or {}) do
+    local d = supportBucket(dst.commanders.byCommander, id)
+    addKeyed(d, row, COMMANDER_SUPPORT_KEYS)
+  end
+  addKeyed(dst.timing, src.timing, {
+    "focusedSeenRuns", "focusedUsedRuns", "focusedUsedByHeld25", "focusedUsedByHeld50",
+    "runsWithFocusedSupport", "winsWithFocusedSupport", "runsWithoutFocusedSupport", "winsWithoutFocusedSupport",
+  })
+end
+
+local function rate(n, d)
+  d = d or 0
+  return (d > 0) and ((n or 0) / d) or 0
+end
+
+local function finishSupportAccess(row, runs)
+  local relics, commanders, timing = row.relics, row.commanders, row.timing
+  local out = {
+    relics = {
+      focused_offer_run_rate = rate(relics.focusedOfferRuns, runs),
+      focused_pick_run_rate = rate(relics.focusedPickRuns, runs),
+      focused_offers_per_run = rate(relics.focusedOffers, runs),
+      focused_picks_per_run = rate(relics.focusedPicks, runs),
+      missed_focused_pick_per_run = rate(relics.missedFocusedPick, runs),
+      avg_first_focused_offer_round = rate(relics.firstFocusedOfferRound, relics.firstFocusedOfferHits),
+      avg_first_focused_pick_round = rate(relics.firstFocusedPickRound, relics.firstFocusedPickHits),
+      by_relic = {},
+    },
+    commanders = {
+      focused_candidate_run_rate = rate(commanders.focusedCandidateRuns, runs),
+      focused_placement_run_rate = rate(commanders.focusedPlacementRuns, runs),
+      focused_candidates_per_run = rate(commanders.focusedCandidates, runs),
+      focused_placements_per_run = rate(commanders.focusedPlacements, runs),
+      missed_focused_placement_per_run = rate(commanders.missedFocusedPlacement, runs),
+      avg_first_focused_candidate_round = rate(commanders.firstFocusedCandidateRound, commanders.firstFocusedCandidateHits),
+      avg_first_focused_placement_round = rate(commanders.firstFocusedPlacementRound, commanders.firstFocusedPlacementHits),
+      by_commander = {},
+    },
+    timing = {
+      focused_support_seen_run_rate = rate(timing.focusedSeenRuns, runs),
+      focused_support_used_run_rate = rate(timing.focusedUsedRuns, runs),
+      focused_support_used_by_held_25_rate = rate(timing.focusedUsedByHeld25, runs),
+      focused_support_used_by_held_50_rate = rate(timing.focusedUsedByHeld50, runs),
+      avg_wins_with_focused_support = rate(timing.winsWithFocusedSupport, timing.runsWithFocusedSupport),
+      avg_wins_without_focused_support = rate(timing.winsWithoutFocusedSupport, timing.runsWithoutFocusedSupport),
+    },
+  }
+
+  for relicId, info in pairs(row.catalog.relics or {}) do
+    local r = relics.byRelic[relicId] or {}
+    out.relics.by_relic[relicId] = {
+      support_class = info.support_class,
+      edge_count = info.edge_count,
+      focused_edge_count = info.focused_edge_count,
+      generic_edge_count = info.generic_edge_count,
+      relic_score = info.relic_score,
+      offer_run_rate = rate(r.offerRunHits, runs),
+      pick_run_rate = rate(r.pickRunHits, runs),
+      offers_per_run = rate(r.offers, runs),
+      picks_per_run = rate(r.picks, runs),
+      avg_first_offer_round = rate(r.firstOfferRound, r.firstOfferHits),
+      avg_first_pick_round = rate(r.firstPickRound, r.firstPickHits),
+    }
+  end
+
+  for unitId, info in pairs(row.catalog.commanders or {}) do
+    local r = commanders.byCommander[unitId] or {}
+    out.commanders.by_commander[unitId] = {
+      support_class = info.support_class,
+      best_level = info.best_level,
+      edge_count = info.edge_count,
+      focused_edge_count = info.focused_edge_count,
+      generic_edge_count = info.generic_edge_count,
+      command_score = info.command_score,
+      candidate_run_rate = rate(r.candidateRunHits, runs),
+      placement_run_rate = rate(r.placementRunHits, runs),
+      candidates_per_run = rate(r.candidates, runs),
+      placements_per_run = rate(r.placements, runs),
+      avg_first_candidate_round = rate(r.firstCandidateRound, r.firstCandidateHits),
+      avg_first_placement_round = rate(r.firstPlacementRound, r.firstPlacementHits),
+    }
+  end
+  return out
+end
+
 local function planTrajectory(traj, target, finalBoardCov, finalHeldCov)
   local bestBoard, bestHeld = nil, nil
   local everBoardComplete, everHeldComplete = false, false
@@ -715,6 +1114,7 @@ local function addPlanAccess(a, traj)
         combatBands = newCombatBands(),
         lossThresholds = newLossThresholdMap(),
         funnel = newFunnelAgg(),
+        support = newSupportAccessAgg(target),
         finalGoldRatio = 0,
         wins = 0, completeWins = 0,
         completions = 0, completeCompletions = 0,
@@ -725,6 +1125,7 @@ local function addPlanAccess(a, traj)
     local heldCov = planCoverage(traj.finalHoldings or traj.finalBoard, target)
     local path = planTrajectory(traj, target, cov, heldCov)
     local funnel = planFunnel(traj, target)
+    local support = planSupportAccess(traj, target, path)
     rec.runs = rec.runs + 1
     rec.unitCoverage = rec.unitCoverage + cov.unit_coverage
     rec.levelCoverage = rec.levelCoverage + cov.level_coverage
@@ -743,6 +1144,7 @@ local function addPlanAccess(a, traj)
     addCombatBands(rec.combatBands, path.combat_bands)
     addLossThresholdAgg(rec.lossThresholds, path.loss_thresholds)
     addFunnelAgg(rec.funnel, funnel)
+    addSupportAccessAgg(rec.support, support)
     rec.finalGoldRatio = rec.finalGoldRatio + ((rec.target_gold > 0) and (finalGold / rec.target_gold) or 0)
     rec.wins = rec.wins + (traj.wins or 0)
     if traj.result == "win" then rec.completions = rec.completions + 1 end
@@ -860,6 +1262,7 @@ local function finish(a)
       combat_by_board_level_band = finishCombatBands(rec.combatBands),
       losses_by_board_level_threshold = finishLossThresholdAgg(rec.lossThresholds, rec.runs),
       acquisition_funnel = finishFunnel(rec.funnel, rec.runs),
+      support_access = finishSupportAccess(rec.support, rec.runs),
       avg_final_gold_ratio = (rec.runs > 0) and (rec.finalGoldRatio / rec.runs) or 0,
       avg_wins = (rec.runs > 0) and (rec.wins / rec.runs) or 0,
       avg_wins_when_complete = (rec.complete > 0) and (rec.completeWins / rec.complete) or 0,

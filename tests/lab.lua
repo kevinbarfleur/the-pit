@@ -174,6 +174,46 @@ local ok, err = pcall(function()
   intentDrv.build:placeId(3, "marauder", 1)
   local commitment = committed:commitment(intentDrv)
   assert(commitment.committed and commitment.hits == 2, "policy intent: commitment archetype detecte")
+  local function findEvent(events, kind)
+    for _, ev in ipairs(events or {}) do if ev.type == kind then return ev end end
+    return nil
+  end
+  local relicEventDrv = Rundriver.new(20260632, {
+    recordEvents = true,
+    leftMutator = function(comp)
+      for _, s in ipairs(comp or {}) do s.hp = 999; s.dmg = 120 end
+    end,
+  })
+  relicEventDrv.build:placeId(5, "marauder", 3)
+  relicEventDrv.run.wins = 2
+  local relicFight = relicEventDrv:fight()
+  assert(relicFight.relicChoices and #relicFight.relicChoices > 0, "events: offre de relique forcee")
+  local relicOffer = findEvent(relicEventDrv.events, "relic_offer")
+  assert(relicOffer and relicOffer.choices[1] == relicFight.relicChoices[1],
+    "events: relic_offer trace les choix sans les modifier")
+  local pickedRelic = relicEventDrv:pickRelic(1)
+  assert(pickedRelic == relicFight.relicChoices[1], "events: pickRelic garde le meme resultat")
+  assert(findEvent(relicEventDrv.events, "relic_pick").id == pickedRelic,
+    "events: relic_pick trace la relique choisie")
+  local function commanderEventRun()
+    local d = Rundriver.new(20260633, { recordEvents = true, commanderMode = "auto" })
+    d.run.pendingCommanderGrant = true
+    d.build:placeId(5, "skeleton", 1)
+    d.build.bench[1] = { id = "witch", level = 1, char = d.build:newRig("witch") }
+    d:resolveCommanderMode()
+    return d
+  end
+  local commanderA, commanderB = commanderEventRun(), commanderEventRun()
+  local windowA, windowB = findEvent(commanderA.events, "commander_window"), findEvent(commanderB.events, "commander_window")
+  assert(windowA and windowB and windowA.candidates[1].id == windowB.candidates[1].id,
+    "events: ordre des candidats commandants stable")
+  assert(findEvent(commanderA.events, "commander_place").id == windowA.candidates[1].id,
+    "events: commander_place trace le candidat pose")
+  local commanderIgnore = Rundriver.new(20260634, { recordEvents = true, commanderMode = "ignore" })
+  commanderIgnore.run.pendingCommanderGrant = true
+  commanderIgnore.build:placeId(5, "skeleton", 1)
+  assert(commanderIgnore:resolveCommanderMode() == nil and not findEvent(commanderIgnore.events, "commander_place"),
+    "events: commanderMode ignore ne pose pas de commandant")
   print(string.format("  lab : rundriver deterministe OK (greedy %s en %d rounds)", tostring(t1.result), #t1.rounds))
 
   -- 8) LÉGALITÉ : chaque politique mène une run a une issue valide (win/lose), invariants tenus.

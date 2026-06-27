@@ -102,6 +102,12 @@ local ok, err = pcall(function()
         "mode economy : oracle combat force des plans cibles reporte")
       assert(body:find('"acquisition_funnel"', 1, true),
         "mode economy : funnel acquisition des plans cibles reporte")
+      assert(body:find('"support_access"', 1, true),
+        "mode economy : accessibilite des supports reliques/commandants reportee")
+      assert(body:find('"focused_offer_run_rate"', 1, true),
+        "mode economy : offres de reliques focus reportees")
+      assert(body:find('"focused_candidate_run_rate"', 1, true),
+        "mode economy : candidats commandants focus reportes")
     end
   end
   print("  scenarios : SMOKE OK (10 modes tournent via le driver + ecrivent un rapport JSON ; garde-fous god-roll tenus)")

@@ -943,6 +943,17 @@ Ajout batch autonomie (`runs/long-2026-06-27b`) :
   c'est un bon palier enseignable, pas un finisher. Le design devrait traiter
   `cross_bleed_rot_filled` comme evolution late supportee par command/relique,
   pas comme premiere cible que le joueur doit assembler.
+- Mise a jour support de plan : `plan_access.support_access` separe maintenant
+  les supports de reliques/commandants `focused` des supports generiques. Sur
+  `runs/long-2026-06-27n/support-access-v1`, `committed_cross_bleed_rot_plan`
+  voit un support focused pour `rot_bleed_mid` dans `80%` des runs baseline et
+  l'utilise dans `55%`; sous `sap_cost_tiered_reroll`, ces chiffres tombent a
+  `50%` vus / `20%` utilises. Les reliques les plus pertinentes vues sont
+  `grave_cap`, `weeping_nail`, `link_cable`, `plague_communion`; cote
+  commandants, `gash_fiend`, `razorkin`, `necro_leech`, `rot_hound` ressortent.
+  Lecture : le pont rot/bleed a deja des supports lisibles, mais la selection
+  actuelle de relique/commandant n'est pas target-aware et laisse passer trop de
+  supports focalises.
 
 Metrics recommandees :
 
@@ -988,6 +999,9 @@ Metrics recommandees :
 - `plan_access.acquisition_funnel` : offres/achats/manques par unite cible,
   pour distinguer rarete de shop, manque de place, manque d'or, erreur de
   policy, ou vente destructive.
+- `plan_access.support_access` : offres/picks de reliques, fenetres/placements
+  de commandants, split focused/generic, et timing par rapport aux seuils de
+  couverture du plan.
 
 Policies minimales :
 

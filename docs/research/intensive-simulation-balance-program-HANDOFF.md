@@ -1900,13 +1900,24 @@ Next implementation targets:
      a midgame bridge, not a finisher. The late `cross_bleed_rot_filled` target
      should be treated as an evolved version that needs commander/relic/scaling
      support.
+   - Support-access update: `plan_access.support_access` now records focused vs
+     generic relic and commander support. `Rundriver` emits `relic_offer`,
+     `relic_pick`, `commander_window`, and `commander_place` events when
+     `recordEvents=true`; economy reports classify each support through
+     `Coherence.scoreTeam`. In
+     `runs/long-2026-06-27n/support-access-v1`, baseline +
+     `committed_cross_bleed_rot_plan` sees focused support for `rot_bleed_mid`
+     in `80%` of runs and uses it in `55%`; under
+     `sap_cost_tiered_reroll`, this falls to `50%` seen / `20%` used. Relevant
+     focused relics were `grave_cap`, `weeping_nail`, `link_cable`,
+     `plague_communion`; focused commanders surfaced as `gash_fiend`,
+     `razorkin`, `necro_leech`, and `rot_hound`. Interpretation: support exists
+     but current relic/commander choice is not target-aware enough.
    Remaining additions:
-   - extend the acquisition funnel to relic offers/picks and commander
-     availability for target plans that require either support layer;
+   - add a target-aware relic/commander choice policy, now that support access
+     is observable;
    - upgrade pair lifecycle further from event matching to per-copy identity:
      pair formed -> held/sold/lost/merged, with exact sold-pair loss;
-   - model actual relic acquisition timing and relic offer access in
-     economy/run reports;
    - make committed policies smarter about XP/reroll timing and protected
      payload placement after the tank/payload tests.
 3. Integrate actual relic access into economy scoring, now that relic semantic

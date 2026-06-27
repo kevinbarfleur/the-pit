@@ -82,6 +82,12 @@ function Rundriver:_event(ev)
   self.events[#self.events + 1] = ev
 end
 
+local function copyList(list)
+  local out = {}
+  for i, v in ipairs(list or {}) do out[i] = v end
+  return out
+end
+
 function Rundriver:metricSnapshot()
   local out = {}
   for _, k in ipairs(METRIC_KEYS) do out[k] = self.metrics[k] or 0 end
@@ -374,6 +380,13 @@ function Rundriver:placeCommander(candidate)
   end
   self.build.commanderSlot = { id = sr.id, level = sr.level or 1 }
   self:_metric("commanderPlacements", 1)
+  self:_event({
+    type = "commander_place",
+    id = sr.id,
+    level = sr.level or 1,
+    from = candidate.where,
+    slot = candidate.slot,
+  })
   return true
 end
 
@@ -381,11 +394,17 @@ function Rundriver:resolveCommanderMode()
   local mode = self.commanderMode or "ignore"
   if mode == "ignore" then return nil end
   if self.run.pendingCommanderGrant then
+    local candidates = self:commanderCandidates()
+    self:_event({
+      type = "commander_window",
+      pending = true,
+      unlocked = self.run.commanderUnlocked,
+      candidates = candidates,
+    })
     if mode == "decline" then
       if self:declineCommanderGrant() then return { mode = mode, action = "decline" } end
       return { mode = mode, action = "decline_failed" }
     end
-    local candidates = self:commanderCandidates()
     if #candidates == 0 then
       if self:declineCommanderGrant() then return { mode = mode, action = "decline_no_candidate" } end
       return { mode = mode, action = "decline_failed" }
@@ -398,6 +417,12 @@ function Rundriver:resolveCommanderMode()
     return { mode = mode, action = "accept_failed" }
   elseif self.run.commanderUnlocked and not self.build.commanderSlot then
     local candidates = self:commanderCandidates()
+    self:_event({
+      type = "commander_window",
+      pending = false,
+      unlocked = true,
+      candidates = candidates,
+    })
     if #candidates > 0 then
       local c = candidates[1]
       local placed = self:placeCommander(c)
@@ -467,7 +492,11 @@ function Rundriver:fight()
   -- Acquisition : tous les 3 victoires, offre 1-parmi-3 (le round attend le choix).
   if res.win and self.run.wins % 3 == 0 then
     local choices = self.run:rollRelicChoices(3)
-    if #choices > 0 then self.pendingRelics = choices; return { result = res, relicChoices = choices } end
+    if #choices > 0 then
+      self.pendingRelics = choices
+      self:_event({ type = "relic_offer", choices = copyList(choices), reward_round = self.run.round, wins = self.run.wins })
+      return { result = res, relicChoices = choices }
+    end
   end
   self.run:startRound()
   return { result = res }
