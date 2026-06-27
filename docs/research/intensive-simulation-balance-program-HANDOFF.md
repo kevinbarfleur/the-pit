@@ -2436,6 +2436,21 @@ Next implementation targets:
      levers: target-aware relic picks, commander choice scoring against the
      committed target, and a stricter late-board replacement policy that keeps
      the reroll core while selling temporary support at the right time.
+   - Target-prioritized pair support:
+     `src/lab/rundriver.lua` now lets a policy reorder pair-completion
+     candidates before generic economy support replaces a shop slot. Committed
+     plan policies use this to prioritize target units, with higher-rank target
+     pairs first so scarce bridge pieces like `clot_mender`, `gash_fiend`, and
+     `razorkin` are not starved by abundant rank-1 pairs. In
+     `runs/long-2026-06-27u/rat-reroll-target-priority-n24`, the change nudged
+     target acquisition upward under `pair_completion_light`:
+     `rot_bleed_rat_core` aggregate level coverage moved to about `0.652`,
+     final held coverage to about `0.744`, merge resolution to `91.9%`, and
+     missed-space pressure down to `1.88` target offers/run. It still did not
+     produce stable exact board completion; one line reached held completion
+     without board completion. Current read: priority is worth keeping because
+     it matches how a player forces a plan, but the next missing feature is
+     late-board deployment/replacement, not more raw pair access.
    Remaining additions:
    - use `rot_bleed_rat_core` as the baseline reroll target for the next
      balance pass, but investigate cheap mid-board outliers before nerfing it;

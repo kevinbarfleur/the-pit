@@ -316,6 +316,29 @@ function Rundriver:_pairCompletionCandidates()
   return candidates
 end
 
+local function prioritizedPairSupportCandidates(policy, drv, candidates, source)
+  if policy and policy.prioritizePairSupport then
+    local candidateSet = {}
+    for _, id in ipairs(candidates or {}) do candidateSet[id] = true end
+    local rows = policy:prioritizePairSupport(drv, copyList(candidates), source)
+    local out, seen = {}, {}
+    if type(rows) == "table" then
+      for _, row in ipairs(rows) do
+        local id = type(row) == "table" and row.id or row
+        if candidateSet[id] and not seen[id] then
+          seen[id] = true
+          out[#out + 1] = id
+        end
+      end
+    end
+    for _, id in ipairs(candidates or {}) do
+      if not seen[id] then out[#out + 1] = id end
+    end
+    return out
+  end
+  return candidates
+end
+
 function Rundriver:_pairSupportCountForRound()
   local round = self.run.round or 0
   if self.pairSupportRound ~= round then
@@ -330,7 +353,7 @@ function Rundriver:applyShopSupport(source)
   if not cfg then return false end
   if (self.run.round or 0) < (cfg.minRound or 1) then return false end
   if self:_pairSupportCountForRound() >= (cfg.maxPerRound or 1) then return false end
-  local candidates = self:_pairCompletionCandidates()
+  local candidates = prioritizedPairSupportCandidates(self.policy, self, self:_pairCompletionCandidates(), source)
   if #candidates == 0 then return false end
   local candidateSet, offered = {}, {}
   for _, id in ipairs(candidates) do candidateSet[id] = true end
@@ -801,6 +824,7 @@ end
 -- policy = { name, act(self, drv) -> décisions, pickRelic?(self, drv, choices) -> index }.
 function Rundriver.run(seed, policy, opts)
   local drv = Rundriver.new(seed, opts)
+  drv.policy = policy
   local traj = { seed = seed, policy = policy.name, archetype = policy.archetype, rounds = {} }
   local guard = 0
   while not drv.over and guard < 300 do

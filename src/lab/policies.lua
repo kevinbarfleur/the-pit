@@ -206,6 +206,35 @@ local function sameLevelCount(counts, id, level)
   return counts[id .. "\0" .. (level or 1)] or 0
 end
 
+local function targetLevelMap(targetUnits)
+  local out = {}
+  for _, u in ipairs(targetUnits or {}) do
+    if u.id then out[u.id] = math.max(out[u.id] or 0, u.level or 1) end
+  end
+  return out
+end
+
+local function targetPairSupportPriority(candidates, targetUnits)
+  local targetLevels = targetLevelMap(targetUnits)
+  local rows = {}
+  for _, id in ipairs(candidates or {}) do
+    local targetLevel = targetLevels[id] or 0
+    local rank = unitRank(id)
+    local score = rank * 10
+    if targetLevel > 0 then
+      score = 1000 + rank * 120 + targetLevel * 20
+    end
+    rows[#rows + 1] = { id = id, score = score, rank = rank, targetLevel = targetLevel }
+  end
+  table.sort(rows, function(a, b)
+    if a.score ~= b.score then return a.score > b.score end
+    if a.targetLevel ~= b.targetLevel then return a.targetLevel > b.targetLevel end
+    if a.rank ~= b.rank then return a.rank > b.rank end
+    return a.id < b.id
+  end)
+  return rows
+end
+
 local function keepBenchUnit(drv, sr, opts, counts)
   opts = opts or {}
   if not sr then return true end
@@ -842,6 +871,9 @@ function Policies.committed_archetype_plan_with(archetype, sigil, opts)
         end
       end
       return best
+    end,
+    prioritizePairSupport = function(_, _, candidates)
+      return targetPairSupportPriority(candidates, targetUnits)
     end,
   }
 end
