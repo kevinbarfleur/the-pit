@@ -934,6 +934,15 @@ Ajout batch autonomie (`runs/long-2026-06-27b`) :
   `blight_spreader` `16.7%`. Lecture : cette comp ne peut pas etre un endpoint
   naturel avec autant de pieces rares/premium sans stepping-stones, meilleure
   odds curve, support de relique/command, ou target simplifie.
+- Test stepping-stone : ajout de `rot_bleed_mid` au catalogue et aux targets
+  economie par defaut. Sur `runs/long-2026-06-27n/stepping-target-v1`, cette
+  version 6 slots / sans rang 5 coute `24` or-equivalent (`cost_score 0.422`),
+  atteint `25%` de couverture niveau held dans `93.3%` des runs baseline et
+  `50%` dans `40%` (`60%` sous `sap_cost_tiered_reroll`). Son oracle gagne les
+  rounds 4/6 mais tombe face aux rounds 8/10 (`58.3%` force-build). Lecture :
+  c'est un bon palier enseignable, pas un finisher. Le design devrait traiter
+  `cross_bleed_rot_filled` comme evolution late supportee par command/relique,
+  pas comme premiere cible que le joueur doit assembler.
 
 Metrics recommandees :
 

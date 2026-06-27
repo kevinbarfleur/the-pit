@@ -26,7 +26,7 @@ for _, profileId in ipairs(ECONOMY_ORDER) do
   assert(Economy.profiles[profileId], "profil economie inconnu: " .. tostring(profileId))
 end
 
-local DEFAULT_PLAN_TARGETS = { "cross_bleed_rot", "rot_carre_perfect", "poison_diamant_perfect", "tank_carre" }
+local DEFAULT_PLAN_TARGETS = { "rot_bleed_mid", "cross_bleed_rot", "rot_carre_perfect", "poison_diamant_perfect", "tank_carre" }
 
 local function targetFromComp(id)
   local comp = Common.compByIdOrNil(id)

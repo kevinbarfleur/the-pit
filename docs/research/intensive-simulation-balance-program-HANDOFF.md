@@ -1890,6 +1890,16 @@ Next implementation targets:
      Interpretation: this cannot be a natural endpoint in the current economy
      unless it gets stepping-stone versions, support from commander/relic
      access, better odds/tier timing, or a simpler target definition.
+   - Stepping-stone target: `rot_bleed_mid` was added to the composition
+     catalog and to default economy plan targets. The env-only probe
+     `runs/long-2026-06-27n/stepping-target-v1` showed this 6-slot, no-rank-5
+     plan is much more teachable: `25%` held level coverage in `93.3%` of
+     baseline runs, `50%` in `40%` (`60%` under `sap_cost_tiered_reroll`),
+     target-unit seen rate `71.7%`, and cost `24` gold-equivalent. Its oracle
+     still falls off at rounds 8/10 (`58.3%` forced winrate overall), so it is
+     a midgame bridge, not a finisher. The late `cross_bleed_rot_filled` target
+     should be treated as an evolved version that needs commander/relic/scaling
+     support.
    Remaining additions:
    - extend the acquisition funnel to relic offers/picks and commander
      availability for target plans that require either support layer;

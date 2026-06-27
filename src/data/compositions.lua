@@ -214,6 +214,18 @@ Compositions.list = {
 
   -- ══ COMBO CROISÉ (T3 pivot) : bleed -> rot via marrow_drinker (convertit le bleed en pourriture) ══
   {
+    id = "rot_bleed_mid", archetype = "rot", variant = "perfect", sigil = "carre", boardLevel = 6,
+    units = {
+      { id = "clot_mender", slot = 5 },   -- AURA : grant bleed aux voisins (2,4,6)
+      { id = "razorkin", slot = 2, level = 2 },
+      { id = "gash_fiend", slot = 4, level = 2 },
+      { id = "hookjaw", slot = 6 },
+      { id = "rot_hound", slot = 1, level = 2 },
+      { id = "carrion_pecker", slot = 3 },
+    },
+    noteKey = "comp.rot_bleed_mid.note",
+  },
+  {
     id = "cross_bleed_rot", archetype = "rot", variant = "perfect", sigil = "carre", boardLevel = 8,
     units = {
       { id = "clot_mender", slot = 5 },   -- AURA : grant bleed aux voisins (2,4,6,8) = beaucoup de cibles saignantes
