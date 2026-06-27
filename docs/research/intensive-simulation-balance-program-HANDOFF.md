@@ -2199,6 +2199,31 @@ Next implementation targets:
      Current read: the next live knobs should be shop odds, targeted reroll
      support, or freeze/hold mechanics for pair-completion windows, not raw
      gold affordability or anti-sell policy fixes.
+   - Pair-completion support experiment:
+     the lab now has opt-in economy profiles that apply a run-driver-only shop
+     support rule after rolls: if the player holds exactly two level-1 copies
+     of a unit and no current shop offer completes that pair, the driver can
+     replace one unfrozen offer with the missing third copy. Profiles added:
+     `pair_completion_light`, `pair_completion_delayed`,
+     `sap_cost_pair_completion`, and `sap_cost_pair_completion_delayed`.
+     The delayed variants wait for two missed shop windows before injecting the
+     pair-completion offer. This is not live gameplay yet; it is a balance-lab
+     probe for pity/shop targeting. `tools/scenarios/economy.lua` now uses the
+     same world seed for every profile in a bench/run pair, so profile
+     comparisons are paired instead of being partially seed-noisy.
+   - Pair-completion first read:
+     `runs/long-2026-06-27p/pair-completion-paired-n30` (N=30, baseline/
+     pair-completion/SAP-cost profiles, same policies) showed the support does
+     exactly solve the level-up access problem but does not automatically
+     improve run completion. Baseline moved from `75.9%` merge resolution to
+     `93.8%` with `pair_completion_light` and `91.9%` with delayed support;
+     SAP-cost moved from `74.2%` to `94.2%`/`92.6%`. Average wins rose slightly
+     (`8.44 -> 8.57` baseline-light, `8.18 -> 8.37` SAP-light), but completion
+     stayed flat/slightly lower (`19.5% -> 18.1%`, `11.4% -> 11.0%`). Current
+     read: pair-completion support is promising for making level-ups feel
+     attainable, but by itself it can overfeed duplicate investment and should
+     be paired with better policy/tuning around when a level-up is worth more
+     than board stabilization. Do not ship this as a raw always-on rule yet.
    - PvE bossrush/scoring prototype:
      the user added `docs/generation/generateur-abominations.html`, a seeded
      visual generator for ten abomination families. The lab now has a pure data

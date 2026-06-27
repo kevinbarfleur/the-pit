@@ -211,7 +211,7 @@ local function newAgg()
     leftoverSum = 0, pressureSum = 0, pressureN = 0,
     buyGold = 0, sellGold = 0, benchSellGold = 0, boardSellGold = 0, rerollGold = 0, xpGold = 0,
     buys = 0, sells = 0, benchSells = 0, boardSells = 0, pairBuys = 0, mergeBuys = 0,
-    rerolls = 0, xpBuys = 0,
+    pairSupportOffers = 0, rerolls = 0, xpBuys = 0,
     commanderAccepts = 0, commanderDeclines = 0, commanderPlacements = 0, relicPicks = 0,
     slotDeclines = 0, slotAccepts = 0,
     xpGateBlocks = 0, xpGateObserved = 0, xpGateUnitCoverage = 0, xpGateLevelCoverage = 0,
@@ -1259,6 +1259,7 @@ local function addRun(a, traj)
     a.boardSells = a.boardSells + (e.boardSells or 0)
     a.pairBuys = a.pairBuys + (e.pairBuys or 0)
     a.mergeBuys = a.mergeBuys + (e.mergeBuys or 0)
+    a.pairSupportOffers = a.pairSupportOffers + (e.pairSupportOffers or 0)
     a.rerolls = a.rerolls + (e.rerolls or 0)
     a.xpBuys = a.xpBuys + (e.xpBuys or 0)
     a.commanderAccepts = a.commanderAccepts + (e.commanderAccepts or 0)
@@ -1378,6 +1379,7 @@ local function finish(a)
     board_sell_gold_per_run = (a.runs > 0) and (a.boardSellGold / a.runs) or 0,
     pair_buys_per_run = (a.runs > 0) and (a.pairBuys / a.runs) or 0,
     merge_buys_per_run = (a.runs > 0) and (a.mergeBuys / a.runs) or 0,
+    pair_support_offers_per_run = (a.runs > 0) and (a.pairSupportOffers / a.runs) or 0,
     merge_per_pair_buy = (a.pairBuys > 0) and (a.mergeBuys / a.pairBuys) or 0,
     rerolls_per_run = (a.runs > 0) and (a.rerolls / a.runs) or 0,
     xp_buys_per_run = (a.runs > 0) and (a.xpBuys / a.runs) or 0,
@@ -1422,9 +1424,9 @@ for run = 1, N do
   for _, variant in ipairs(VARIANTS) do
     local pols = makePolicies(run)
     for _, p in ipairs(pols) do
-      -- Same world seed for every policy in a profile+bench/run pair: comparisons are paired,
-      -- while policy actions still diverge deterministically through buys/rerolls/fights.
-      local seed = BASE_SEED + variant.profileIndex * 100000 + (variant.benchIndex - 1) * 10000 + run * 137
+      -- Same world seed for every policy/profile in a bench/run pair: profile comparisons are paired,
+      -- while economy changes and policy actions still diverge deterministically through buys/rerolls/fights.
+      local seed = BASE_SEED + (variant.benchIndex - 1) * 10000 + run * 137
       local traj = Rundriver.run(seed, p, {
         hpMult = HPM,
         economy = variant.profileId,

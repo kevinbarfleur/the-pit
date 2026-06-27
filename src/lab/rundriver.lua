@@ -56,6 +56,7 @@ function Rundriver.new(seed, opts)
       benchSells = 0, benchSellGold = 0,
       boardSells = 0, boardSellGold = 0,
       pairBuys = 0, mergeBuys = 0,
+      pairSupportOffers = 0,
       rerolls = 0, rerollGold = 0,
       xpBuys = 0, xpGold = 0,
       slotAccepts = 0, slotDeclines = 0, slotDeclineGold = 0,
@@ -71,7 +72,7 @@ end
 local METRIC_KEYS = {
   "buys", "buyGold", "sells", "sellGold",
   "benchSells", "benchSellGold", "boardSells", "boardSellGold",
-  "pairBuys", "mergeBuys",
+  "pairBuys", "mergeBuys", "pairSupportOffers",
   "rerolls", "rerollGold", "xpBuys", "xpGold",
   "slotAccepts", "slotDeclines", "slotDeclineGold",
   "commanderAccepts", "commanderDeclines", "commanderDeclineGold", "commanderPlacements",
@@ -192,7 +193,10 @@ end
 function Rundriver:shopSnapshot()
   local shop = {}
   for i, o in ipairs(self.run.shop) do
-    shop[i] = { id = o.id, cost = o.cost, sold = o.sold, playable = self:offerPlayable(i) }
+    shop[i] = {
+      id = o.id, cost = o.cost, sold = o.sold, playable = self:offerPlayable(i),
+      support = o.support, replacedId = o.replacedId,
+    }
   end
   return shop
 end
@@ -275,6 +279,100 @@ function Rundriver:copyCount(id, level)
     if sr and sr.id == id and (sr.level or 1) == level then n = n + 1 end
   end
   return n
+end
+
+local function pairSupportConfig(economy)
+  local cfg = economy and economy.pairCompletionSupport
+  if cfg == true then return {} end
+  if type(cfg) == "table" then return cfg end
+  return nil
+end
+
+local function unitRank(id)
+  local u = Units[id]
+  return u and (u.rank or 1) or 1
+end
+
+function Rundriver:_pairCompletionCandidates()
+  self:_ensureCopyIds()
+  local counts = {}
+  for i = 1, 9 do
+    local sr = self.build.slotRigs[i]
+    if sr and (sr.level or 1) == 1 then counts[sr.id] = (counts[sr.id] or 0) + 1 end
+  end
+  for i = 1, #(self.build.benchSlots or {}) do
+    local sr = self.build.bench[i]
+    if sr and (sr.level or 1) == 1 then counts[sr.id] = (counts[sr.id] or 0) + 1 end
+  end
+  local candidates = {}
+  for id, n in pairs(counts) do
+    if n == 2 then candidates[#candidates + 1] = id end
+  end
+  table.sort(candidates, function(a, b)
+    local ar, br = unitRank(a), unitRank(b)
+    if ar ~= br then return ar < br end
+    return a < b
+  end)
+  return candidates
+end
+
+function Rundriver:_pairSupportCountForRound()
+  local round = self.run.round or 0
+  if self.pairSupportRound ~= round then
+    self.pairSupportRound = round
+    self.pairSupportCount = 0
+  end
+  return self.pairSupportCount or 0
+end
+
+function Rundriver:applyShopSupport(source)
+  local cfg = pairSupportConfig(self.run.economy)
+  if not cfg then return false end
+  if (self.run.round or 0) < (cfg.minRound or 1) then return false end
+  if self:_pairSupportCountForRound() >= (cfg.maxPerRound or 1) then return false end
+  local candidates = self:_pairCompletionCandidates()
+  if #candidates == 0 then return false end
+  local candidateSet, offered = {}, {}
+  for _, id in ipairs(candidates) do candidateSet[id] = true end
+  for _, offer in ipairs(self.run.shop or {}) do
+    if offer and not offer.sold and candidateSet[offer.id] then offered[offer.id] = true end
+  end
+  self.pairSupportMisses = self.pairSupportMisses or {}
+  for id in pairs(self.pairSupportMisses) do
+    if not candidateSet[id] then self.pairSupportMisses[id] = nil end
+  end
+  local id
+  local minMissed = cfg.minMissedWindows or 0
+  for _, candidate in ipairs(candidates) do
+    if offered[candidate] then
+      self.pairSupportMisses[candidate] = 0
+    else
+      self.pairSupportMisses[candidate] = (self.pairSupportMisses[candidate] or 0) + 1
+      if not id and self.pairSupportMisses[candidate] >= minMissed then id = candidate end
+    end
+  end
+  if not id then return false end
+  local slot
+  for i = #(self.run.shop or {}), 1, -1 do
+    local offer = self.run.shop[i]
+    if offer and not offer.sold and not offer.frozen then slot = i; break end
+  end
+  if not slot then return false end
+  local old = self.run.shop[slot]
+  self.run.shop[slot] = {
+    id = id,
+    cost = self.run:unitCost(id),
+    sold = false,
+    support = "pair_completion",
+    replacedId = old and old.id or nil,
+  }
+  self.pairSupportCount = (self.pairSupportCount or 0) + 1
+  self:_metric("pairSupportOffers", 1)
+  self:_event({
+    type = "shop_support", support = "pair_completion", source = source,
+    id = id, slot = slot, replacedId = old and old.id or nil,
+  })
+  return true
 end
 
 function Rundriver:_recordBuyProgress(id, sameLevelCopies, level, existingRefs, newCopyId)
@@ -376,6 +474,7 @@ function Rundriver:reroll()
   local cost = self.run:currentRerollCost()
   local ok = self.run:reroll()
   if ok then
+    self:applyShopSupport("reroll")
     self:_metric("rerolls", 1)
     self:_metric("rerollGold", cost)
     self:_event({ type = "shop_roll", cost = cost, shop = self:shopSnapshot() })
@@ -584,6 +683,11 @@ function Rundriver:_mutateComp(comp, side)
   if side == "right" and self.rightMutator then self.rightMutator(comp, self) end
 end
 
+function Rundriver:_startRound(source)
+  self.run:startRound()
+  self:applyShopSupport(source or "start_round")
+end
+
 -- ── Combat + avancement de la méta-boucle (mirroir de host.finishCombat, SANS IO Grimoire) ──
 -- Renvoie { result, over?, relicChoices? }. Si relicChoices : le round N'EST PAS avancé -> il FAUT
 -- appeler pickRelic ensuite (l'agent/la politique choisit). Sinon le round suivant est ouvert (startRound).
@@ -617,7 +721,7 @@ function Rundriver:fight()
       return { result = res, relicChoices = choices }
     end
   end
-  self.run:startRound()
+  self:_startRound("combat")
   return { result = res }
 end
 
@@ -627,7 +731,7 @@ function Rundriver:pickRelic(choiceIndex)
   local id = self.pendingRelics[choiceIndex or 1]
   if id then self.run:grantRelic(id) end
   self.pendingRelics = nil
-  self.run:startRound()
+  self:_startRound("relic")
   if id then self:_metric("relicPicks", 1) end
   if id then self:_event({ type = "relic_pick", id = id, choice = choiceIndex or 1 }) end
   return id or false

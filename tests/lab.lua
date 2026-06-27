@@ -378,6 +378,45 @@ local ok, err = pcall(function()
   assert(pairDrv:buy(1) == "spore_tick", "buy: achat d'une deuxieme copie")
   local pairMetrics = pairDrv:metricSnapshot()
   assert(pairMetrics.pairBuys == 1 and pairMetrics.mergeBuys == 0, "buy: metrique paire tracee")
+  local supportDrv = Rundriver.new(202606281, {
+    economy = { id = "test_pair_support", pairCompletionSupport = { maxPerRound = 1, minRound = 1 } },
+  })
+  supportDrv.run.shop = {
+    { id = "husk", cost = 1, sold = false },
+    { id = "rot_hound", cost = 1, sold = false },
+    { id = "bore_worm", cost = 1, sold = false },
+    { id = "marauder", cost = 1, sold = false },
+    { id = "templar", cost = 1, sold = false },
+  }
+  local ss = unlockedSlots(supportDrv)
+  supportDrv.build:placeId(ss[1], "spore_tick", 1)
+  supportDrv.build:placeId(ss[2], "spore_tick", 1)
+  assert(supportDrv:applyShopSupport("test") == true and supportDrv.run.shop[5].id == "spore_tick",
+    "pair support: injecte une troisieme copie quand une paire est tenue")
+  assert(supportDrv.run.shop[5].support == "pair_completion" and supportDrv.run.shop[5].replacedId == "templar",
+    "pair support: marque l'offre supportee et l'offre remplacee")
+  assert(supportDrv:applyShopSupport("test") == false,
+    "pair support: une seule injection par round par defaut")
+  assert(supportDrv:metricSnapshot().pairSupportOffers == 1,
+    "pair support: metrique tracee")
+  local delayedDrv = Rundriver.new(202606282, {
+    economy = { id = "test_pair_support_delayed", pairCompletionSupport = { maxPerRound = 1, minRound = 1, minMissedWindows = 2 } },
+  })
+  delayedDrv.run.shop = {
+    { id = "husk", cost = 1, sold = false },
+    { id = "rot_hound", cost = 1, sold = false },
+    { id = "bore_worm", cost = 1, sold = false },
+    { id = "marauder", cost = 1, sold = false },
+    { id = "templar", cost = 1, sold = false },
+  }
+  local ds = unlockedSlots(delayedDrv)
+  delayedDrv.build:placeId(ds[1], "spore_tick", 1)
+  delayedDrv.build:placeId(ds[2], "spore_tick", 1)
+  assert(delayedDrv:applyShopSupport("test") == false,
+    "pair support delayed: attend une premiere fenetre ratee")
+  delayedDrv.run.shop[5] = { id = "templar", cost = 1, sold = false }
+  assert(delayedDrv:applyShopSupport("test") == true and delayedDrv.run.shop[5].id == "spore_tick",
+    "pair support delayed: injecte apres deux fenetres ratees")
   local mergeDrv = Rundriver.new(20260629, {})
   mergeDrv.run.gold = 99
   mergeDrv.run.shop[1] = { id = "spore_tick", cost = 1, sold = false }
