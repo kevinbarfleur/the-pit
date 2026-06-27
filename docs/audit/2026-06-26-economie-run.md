@@ -982,6 +982,20 @@ Ajout batch autonomie (`runs/long-2026-06-27b`) :
   verrou est corrige. Le verrou restant est structurel : `marrow_drinker` reste
   vu dans seulement `15%` des runs baseline (`12.5%` sous SAP) et ne peut donc
   pas porter a lui seul la transition late rot/bleed.
+- Mise a jour XP/tier policy : deux variantes diagnostiques ont ete ajoutees,
+  `committed_cross_bleed_rot_late_plan` (rush rang 5) et
+  `committed_cross_bleed_rot_staged_plan` (rang 3 early, rang 4 round 7, rang 5
+  round 10). Sur `runs/long-2026-06-27n/staged-tier-policy-v1`, le rush brut
+  voit beaucoup plus `marrow_drinker` (`60%` baseline) mais detruit le plan
+  global (`7.4` wins, held `50%` seulement `2.5%`). Le staged garde le meme
+  nombre de wins/completion que le plan actuel en baseline (`8.5`, `10%`) et
+  voit plus `marrow_drinker` (`32.5%`), mais ne bat pas le seuil held `50%`
+  (`25%` contre `27.5%` pour le plan actuel). Sous SAP, staged reste plus faible
+  que le plan actuel (`6.98` wins contre `7.18`, held `50%` `27.5%` contre
+  `37.5%`). Lecture : l'acceleration de boutique seule ne regle pas la
+  transition late rot/bleed. Le prochain levier doit etre un pivot de rang plus
+  bas, une cible late sans dependance unique a rang 5, ou une logique de
+  reroll/XP conditionnee a la couverture reelle du plan.
 
 Metrics recommandees :
 

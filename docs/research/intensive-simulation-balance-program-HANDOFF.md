@@ -1941,6 +1941,19 @@ Next implementation targets:
      remains too rare (`15%` seen in baseline, `12.5%` under SAP), so late
      rot/bleed still needs better XP/reroll timing, a lower-rank pivot, or an
      alternate endpoint that is not pinned to one rank-5 unit.
+   - XP/tier-policy probe: two diagnostic variants were added. The brute
+     `committed_cross_bleed_rot_late_plan` rushes rank 5; the staged
+     `committed_cross_bleed_rot_staged_plan` stays rank 3 early, then targets
+     rank 4 at round 7 and rank 5 at round 10. In
+     `runs/long-2026-06-27n/staged-tier-policy-v1`, brute late access sees
+     `marrow_drinker` much more often (`60%` baseline) but collapses the plan
+     (`7.4` wins, held `50%` only `2.5%`). Staged is healthier but still not
+     better than the current target-aware plan: baseline wins/completion stay
+     `8.5`/`10%`, `marrow_drinker` seen rises to `32.5%`, but held `50%` is
+     `25%` versus the current plan's `27.5%`; SAP staged is also worse than
+     current SAP. Learning: the issue is not simply "get to rank 5 sooner".
+     The late bridge needs a lower-rank pivot, an alternate endpoint, or
+     XP/reroll decisions gated by actual target coverage.
    Remaining additions:
    - make committed policies smarter about XP/reroll timing and late-rank
      pivot access, then revisit protected payload placement;

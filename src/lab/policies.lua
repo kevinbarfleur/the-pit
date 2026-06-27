@@ -688,6 +688,13 @@ end
 function Policies.committed_archetype_plan_with(archetype, sigil, opts)
   opts = opts or {}
   local targetUnits = opts.targetUnits or {}
+  local function scheduledMinRank(drv, base)
+    local rank = base or 1
+    for _, step in ipairs(opts.rankSchedule or {}) do
+      if drv.run.round >= (step.round or 0) then rank = math.max(rank, step.rank or rank) end
+    end
+    return rank
+  end
   local function planOpts()
     return {
       protectWanted = true,
@@ -725,8 +732,9 @@ function Policies.committed_archetype_plan_with(archetype, sigil, opts)
         ensureNonEmpty(drv)
       end
       local xpBuys = 0
-      local minRank = opts.minRank or Policies.minRankForArchetype(self.archetype) or 1
-      while drv.run.shopTier < minRank and drv.run:canBuyXp() and xpBuys < 2 do
+      local minRank = scheduledMinRank(drv, opts.minRank or Policies.minRankForArchetype(self.archetype) or 1)
+      local maxXpBuys = opts.maxXpBuysPerRound or 2
+      while drv.run.shopTier < minRank and drv.run:canBuyXp() and xpBuys < maxXpBuys do
         if not drv:buyXp() then break end
         xpBuys = xpBuys + 1
       end
@@ -796,6 +804,8 @@ function Policies.committed_unit_set_plan(name, archetype, sigil, unitIds, opts)
     minRank = opts.minRank or math.min(maxRank, 3),
     targetUnits = opts.targetUnits or targetUnitsFromIds(unitIds, opts),
     boardPruneMargin = opts.boardPruneMargin,
+    maxXpBuysPerRound = opts.maxXpBuysPerRound,
+    rankSchedule = opts.rankSchedule,
   })
 end
 
@@ -849,6 +859,34 @@ function Policies.analysisSet(rng)
     "pit_maw", "razorkin", "gash_fiend", "clot_mender",
     "marrow_drinker", "wither_bloom", "blight_spreader", "hookjaw",
   }, { supportArchetypes = { rot = true, bleed = true } })
+  out[#out + 1] = Policies.committed_unit_set_plan("committed_cross_bleed_rot_late_plan", "rot", "carre", {
+    "pit_maw", "razorkin", "gash_fiend", "clot_mender",
+    "marrow_drinker", "wither_bloom", "blight_spreader", "hookjaw",
+  }, {
+    supportArchetypes = { rot = true, bleed = true },
+    minRank = 5,
+    maxXpBuysPerRound = 3,
+    targetLevels = {
+      razorkin = 2, gash_fiend = 2, clot_mender = 2,
+      marrow_drinker = 2, rot_hound = 3, carrion_pecker = 3, necro_leech = 2,
+    },
+  })
+  out[#out + 1] = Policies.committed_unit_set_plan("committed_cross_bleed_rot_staged_plan", "rot", "carre", {
+    "pit_maw", "razorkin", "gash_fiend", "clot_mender",
+    "marrow_drinker", "wither_bloom", "blight_spreader", "hookjaw",
+  }, {
+    supportArchetypes = { rot = true, bleed = true },
+    minRank = 3,
+    maxXpBuysPerRound = 2,
+    rankSchedule = {
+      { round = 7, rank = 4 },
+      { round = 10, rank = 5 },
+    },
+    targetLevels = {
+      razorkin = 2, gash_fiend = 2, clot_mender = 2,
+      marrow_drinker = 2, rot_hound = 3, carrion_pecker = 3, necro_leech = 2,
+    },
+  })
   return out
 end
 
