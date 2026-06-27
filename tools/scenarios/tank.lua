@@ -9,6 +9,7 @@ local Common = require("tools.scenarios.common")
 local Rundriver = require("src.lab.rundriver")
 local Policies = require("src.lab.policies")
 local Shapes = require("src.board.shapes")
+local Pacing = require("src.run.pacing")
 
 local N = require("tools.scenarios.argn")(40)
 local BASE_SEED = 1260000
@@ -170,7 +171,12 @@ local DEFAULT_POLICY_VARIANTS = {
 }
 
 local DEFAULT_PACE_PROFILES = {
-  { id = "live_hp2_cd1", label = "current pacing, hp x2, cooldown x1", hpMult = 2, cdMult = 1, fatigueStart = 1020 },
+  { id = Pacing.profiles.legacy.id, label = Pacing.profiles.legacy.label,
+    hpMult = Pacing.profiles.legacy.hpMult, cdMult = Pacing.profiles.legacy.cooldownMult,
+    fatigueStart = Pacing.profiles.legacy.fatigue.start },
+  { id = Pacing.profiles.live.id, label = Pacing.profiles.live.label,
+    hpMult = Pacing.profiles.live.hpMult, cdMult = Pacing.profiles.live.cooldownMult,
+    fatigueStart = Pacing.profiles.live.fatigue.start },
   { id = "hp2_cd15_f24", label = "hp x2, cooldown x1.5, fatigue 24s", hpMult = 2, cdMult = 1.5, fatigueStart = 1440 },
   { id = "hp2_cd2", label = "hp x2, cooldown x2", hpMult = 2, cdMult = 2, fatigueStart = 1020 },
   { id = "hp2_cd3", label = "hp x2, cooldown x3", hpMult = 2, cdMult = 3, fatigueStart = 1020 },

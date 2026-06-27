@@ -8,17 +8,22 @@
 local Common = require("tools.scenarios.common")
 local Rundriver = require("src.lab.rundriver")
 local Policies = require("src.lab.policies")
+local Pacing = require("src.run.pacing")
 
 local N = require("tools.scenarios.argn")(30)
 local BASE_SEED = 1360000
 local COMMANDER_MODE = Common.env("PIT_COMMANDER_MODE") or "ignore"
 
 local DEFAULT_PACE_PROFILES = {
-  { id = "live_hp2_cd1_f17", label = "current hp x2, cd x1, fatigue 17s", hpMult = 2, cdMult = 1, fatigueStart = 1020 },
-  { id = "hp2_cd15_f17", label = "hp x2, cd x1.5, fatigue 17s", hpMult = 2, cdMult = 1.5, fatigueStart = 1020 },
-  { id = "hp2_cd2_f17", label = "hp x2, cd x2, fatigue 17s", hpMult = 2, cdMult = 2, fatigueStart = 1020 },
+  { id = Pacing.profiles.legacy.id, label = Pacing.profiles.legacy.label,
+    hpMult = Pacing.profiles.legacy.hpMult, cdMult = Pacing.profiles.legacy.cooldownMult,
+    fatigueStart = Pacing.profiles.legacy.fatigue.start },
+  { id = Pacing.profiles.live.id, label = Pacing.profiles.live.label,
+    hpMult = Pacing.profiles.live.hpMult, cdMult = Pacing.profiles.live.cooldownMult,
+    fatigueStart = Pacing.profiles.live.fatigue.start },
+  { id = "hp2_cd135_f24", label = "hp x2, cd x1.35, fatigue 24s", hpMult = 2, cdMult = 1.35, fatigueStart = 1440 },
   { id = "hp2_cd15_f24", label = "hp x2, cd x1.5, fatigue 24s", hpMult = 2, cdMult = 1.5, fatigueStart = 1440 },
-  { id = "hp2_cd2_f24", label = "hp x2, cd x2, fatigue 24s", hpMult = 2, cdMult = 2, fatigueStart = 1440 },
+  { id = "hp2_cd165_f26", label = "hp x2, cd x1.65, fatigue 26s", hpMult = 2, cdMult = 1.65, fatigueStart = 1560 },
 }
 
 local PACE_PROFILES = Common.paceProfiles(DEFAULT_PACE_PROFILES)

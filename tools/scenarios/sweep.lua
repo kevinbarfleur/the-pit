@@ -10,6 +10,7 @@ local Common = require("tools.scenarios.common")
 local Economy = require("src.run.economy")
 local Rundriver = require("src.lab.rundriver")
 local Policies = require("src.lab.policies")
+local Pacing = require("src.run.pacing")
 
 local N = require("tools.scenarios.argn")(20)
 local BASE_SEED = 1460000
@@ -22,9 +23,14 @@ for _, profileId in ipairs(ECONOMY_ORDER) do
 end
 
 local DEFAULT_PACE_PROFILES = {
-  { id = "live_hp2_cd1_f17", label = "current hp x2, cd x1, fatigue 17s", hpMult = 2, cdMult = 1, fatigueStart = 1020 },
+  { id = Pacing.profiles.legacy.id, label = Pacing.profiles.legacy.label,
+    hpMult = Pacing.profiles.legacy.hpMult, cdMult = Pacing.profiles.legacy.cooldownMult,
+    fatigueStart = Pacing.profiles.legacy.fatigue.start },
+  { id = Pacing.profiles.live.id, label = Pacing.profiles.live.label,
+    hpMult = Pacing.profiles.live.hpMult, cdMult = Pacing.profiles.live.cooldownMult,
+    fatigueStart = Pacing.profiles.live.fatigue.start },
   { id = "hp2_cd15_f24", label = "hp x2, cd x1.5, fatigue 24s", hpMult = 2, cdMult = 1.5, fatigueStart = 1440 },
-  { id = "hp2_cd2_f24", label = "hp x2, cd x2, fatigue 24s", hpMult = 2, cdMult = 2, fatigueStart = 1440 },
+  { id = "hp2_cd165_f26", label = "hp x2, cd x1.65, fatigue 26s", hpMult = 2, cdMult = 1.65, fatigueStart = 1560 },
 }
 local PACE_PROFILES = Common.paceProfiles(DEFAULT_PACE_PROFILES, {
   specEnv = "PIT_SWEEP_PACE_PROFILES",
@@ -265,7 +271,7 @@ end
 local function buildRecommendations(cells)
   local byEconomy, globalAgg = {}, {}
   for _, econ in ipairs(ECONOMY_ORDER) do
-    local live = cells[econ].live or cells[econ].live_hp2_cd1_f17
+    local live = cells[econ][Pacing.profiles.live.id] or cells[econ].live or cells[econ].live_hp2_cd1_f17
     local rows = {}
     for _, pace in ipairs(PACE_PROFILES) do
       local row = recommendationRow(econ, pace.id, cells[econ][pace.id], live)
