@@ -152,6 +152,18 @@ local ok, err = pcall(function()
   -- 7) PILOTE DE RUN : déterminisme (même seed+politique -> trajectoire identique).
   local Rundriver = require("src.lab.rundriver")
   local Policies = require("src.lab.policies")
+  local liveDriver = Rundriver.new(7, {})
+  assert(liveDriver.hpMult == Pacing.profiles.live.hpMult
+    and liveDriver.cooldownMult == Pacing.profiles.live.cooldownMult
+    and liveDriver.fatigue.start == Pacing.profiles.live.fatigue.start,
+    "rundriver pacing: defaut aligne sur le live")
+  local legacyDriver = Rundriver.new(7, { pacingProfile = "legacy" })
+  assert(legacyDriver.cooldownMult == Pacing.profiles.legacy.cooldownMult
+    and legacyDriver.fatigue.start == Pacing.profiles.legacy.fatigue.start,
+    "rundriver pacing: profil legacy disponible")
+  local overrideDriver = Rundriver.new(7, { cooldownMult = 2, fatigue = { start = 1200 } })
+  assert(overrideDriver.cooldownMult == 2 and overrideDriver.fatigue.start == 1200,
+    "rundriver pacing: overrides explicites prioritaires")
   local t1 = Rundriver.run(31337, Policies.greedy_stats, {})
   local t2 = Rundriver.run(31337, Policies.greedy_stats, {})
   assert(t1.result == t2.result and t1.wins == t2.wins and #t1.rounds == #t2.rounds

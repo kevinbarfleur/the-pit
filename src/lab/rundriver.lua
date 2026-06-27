@@ -17,6 +17,7 @@ local Match = require("src.combat.match")
 local Compcost = require("src.lab.compcost")
 local Palette = require("src.core.palette")
 local Units = require("src.data.units")
+local Pacing = require("src.run.pacing")
 
 local Rundriver = {}
 Rundriver.__index = Rundriver
@@ -25,6 +26,7 @@ local STUB_GOTO = function() end
 
 function Rundriver.new(seed, opts)
   opts = opts or {}
+  local pacing = Pacing.arenaOptions(opts.pacingProfile)
   local run = Run.new(seed or 0, { economy = opts.economy })
   local host = { goto = STUB_GOTO, run = run } -- le Build lit host.run (slots, pickEncounter)
   local build = Build.new(opts.palette or Palette, 320, 180, host)
@@ -32,9 +34,9 @@ function Rundriver.new(seed, opts)
   return setmetatable({
     run = run, build = build, host = host, opts = opts,
     tickCap = opts.tickCap or 8000,
-    hpMult = opts.hpMult, -- bouton global de PV (forwardé à Match.run dans fight) ; nil -> constante Arena.HP_MULT
-    cooldownMult = opts.cooldownMult, -- lab/live pacing : scale le cooldown au combat sans muter la compo
-    fatigue = opts.fatigue, -- lab-only pacing sweep { start?, base?, ramp? } forwardé à Match.run
+    hpMult = (opts.hpMult ~= nil) and opts.hpMult or pacing.hpMult, -- live by default; scenario opts may override
+    cooldownMult = (opts.cooldownMult ~= nil) and opts.cooldownMult or pacing.cooldownMult,
+    fatigue = (opts.fatigue ~= nil) and opts.fatigue or pacing.fatigue,
     commanderMode = opts.commanderMode or "ignore", -- lab-only policy: ignore | decline | auto
     compMutator = opts.compMutator, -- lab-only overlay appliqué aux deux camps avant Match.run (pacing, probes)
     leftMutator = opts.leftMutator, -- lab-only overlay appliqué au joueur seulement (candidate balance)
