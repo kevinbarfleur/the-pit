@@ -2033,6 +2033,21 @@ Next implementation targets:
      but held `75%` remains low (`0-15%`) and full completion stays `0`.
      Therefore the next lever is better space/reroll targeting and stage
      thresholds, not just "never sell pairs".
+   - Rat-core support-gate update: a pure strict rat-core policy was tested and
+     rejected. With heavy reroll (`rat-core-strict-policy-v1`) it improved
+     held `75%` coverage but spent about `33-37` rerolls/run and lost tempo;
+     with the standard reroll cap (`rat-core-strict-policy-v2`) it collapsed
+     wins because the board lacked enough early support. The retained candidate
+     is `committed_rot_bleed_rat_core_gated_plan`: it allows rot/bleed supports
+     early, then stops buying them once held rat-core level coverage reaches
+     `50%` unless the board still has fewer than `4` bodies. In
+     `runs/long-2026-06-27n/rat-core-gated-policy-v1`, baseline wins/completion
+     match the current rat-core plan (`8.267`, `11.7%`) while space misses fall
+     `2.32 -> 2.05`, avg final held level coverage rises `0.631 -> 0.642`, and
+     held `75%` improves `10% -> 15%`. SAP and tiered variants show the same
+     direction: small or neutral win changes, better coverage, fewer space
+     misses. Learning: the right lever is not removing supports, but staging
+     them so they stop competing with the core after the run has committed.
    Remaining additions:
    - use `rot_bleed_rat_core` as the baseline reroll target for the next
      balance pass, but investigate cheap mid-board outliers before nerfing it;

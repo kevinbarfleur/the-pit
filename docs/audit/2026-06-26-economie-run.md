@@ -1078,6 +1078,22 @@ Ajout batch autonomie (`runs/long-2026-06-27b`) :
   mais le `75%` reste faible (`0-15%`) et la completion totale reste a `0`.
   Prochain levier : regler espace/reroll/stage thresholds, pas seulement
   interdire la vente de paires.
+- Mise a jour support-gate rat-core : le diagnostic "strict target only" a ete
+  teste puis rejete. En version reroll forte
+  (`runs/long-2026-06-27n/rat-core-strict-policy-v1`), la couverture `75%`
+  augmente beaucoup mais le plan depense environ `33-37` rerolls/run et perd du
+  tempo. En version reroll standard
+  (`runs/long-2026-06-27n/rat-core-strict-policy-v2`), les wins chutent trop
+  parce que le board manque de supports early. Le compromis retenu est
+  `committed_rot_bleed_rat_core_gated_plan` : acheter les supports rot/bleed
+  tant que le board a moins de `4` corps ou que la couverture niveau rat-core
+  est sous `50%`, puis ne plus acheter que le coeur. Sur
+  `runs/long-2026-06-27n/rat-core-gated-policy-v1`, la baseline garde les memes
+  wins/completion que le plan standard (`8.267`, `11.7%`), reduit les manques
+  d'espace (`2.32 -> 2.05`), monte la couverture niveau finale tenue
+  (`0.631 -> 0.642`) et ameliore `held75` (`10% -> 15%`). Lecture : les
+  supports sont bons pour le tempo early, mais doivent etre stages pour ne pas
+  concurrencer le coeur apres commitment.
 
 Metrics recommandees :
 
@@ -1131,6 +1147,9 @@ Metrics recommandees :
 - `plan_access.acquisition_funnel` : offres/achats/manques par unite cible,
   pour distinguer rarete de shop, manque de place, manque d'or, erreur de
   policy, ou vente destructive.
+- `supportUntilLevelCoverage` sur une politique cible : seuil a partir duquel
+  les supports thematiques cessent d'etre achetes pour laisser l'espace et l'or
+  aux unites du coeur.
 - `plan_access.support_access` : offres/picks de reliques, fenetres/placements
   de commandants, split focused/generic, et timing par rapport aux seuils de
   couverture du plan.

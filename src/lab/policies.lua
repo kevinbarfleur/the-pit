@@ -756,11 +756,16 @@ function Policies.committed_archetype_plan_with(archetype, sigil, opts)
       churnMinScore = 0,
     }
   end
+  local function currentWant(self, drv)
+    local base = opts.want or function(id) return Policies.archetypeOf(id) == self.archetype end
+    if opts.wantForDriver then return opts.wantForDriver(drv, self, base) end
+    return base
+  end
   return {
     name = opts.name or ("committed_" .. archetype .. "_plan"),
     archetype = archetype, sigil = sigil,
     desiredOffers = function(self, drv)
-      local want = opts.want or function(id) return Policies.archetypeOf(id) == self.archetype end
+      local want = currentWant(self, drv)
       return smartDesiredShop(drv, want, {
         want = want,
         keepWant = opts.keepWant,
@@ -775,7 +780,7 @@ function Policies.committed_archetype_plan_with(archetype, sigil, opts)
     act = function(self, drv)
       if sigil and drv.build.board.shape.name ~= sigil then drv:reshape(sigil) end
       resolveGrant(drv, true)
-      local want = opts.want or function(id) return Policies.archetypeOf(id) == self.archetype end
+      local want = currentWant(self, drv)
       local bought = 0
       if drv.build:placedCount() == 0 then
         bought = bought + buyFirstMatching(drv, want)
@@ -799,7 +804,8 @@ function Policies.committed_archetype_plan_with(archetype, sigil, opts)
       local rerolls = 0
       local reserveOpts = planOpts()
       reserveOpts.want = want
-      while (drv:hasBuySpace() or #benchPruneCandidates(drv, reserveOpts) > 0) and drv.run:canReroll() and rerolls < 2 do
+      local maxRerolls = opts.maxRerollsPerRound or 2
+      while (drv:hasBuySpace() or #benchPruneCandidates(drv, reserveOpts) > 0) and drv.run:canReroll() and rerolls < maxRerolls do
         sold = sold + pruneBenchToReserve(drv, reserveOpts, 1)
         if not drv:reroll() then break end
         rerolls = rerolls + 1
@@ -857,16 +863,35 @@ function Policies.committed_unit_set_plan(name, archetype, sigil, unitIds, opts)
     return wanted[id] == true or supports[Policies.archetypeOf(id)] == true
   end
   local commitWant = function(id) return wanted[id] == true end
+  local targetUnits = opts.targetUnits or targetUnitsFromIds(unitIds, opts)
+  local wantForDriver
+  if opts.supportUntilLevelCoverage then
+    wantForDriver = function(drv)
+      local cov = targetCoverage(drv, targetUnits)
+      local allowSupport = (cov.levelCoverage or 0) < opts.supportUntilLevelCoverage
+        or drv.build:placedCount() < (opts.supportMinBoard or 4)
+      local counts = opts.supportPairsAfterGate and copyCounts(drv) or nil
+      return function(id, offer)
+        if wanted[id] == true then return true end
+        if supports[Policies.archetypeOf(id)] ~= true then return false end
+        if allowSupport then return true end
+        if counts and sameLevelCount(counts, id, 1) >= 1 then return true end
+        return false
+      end
+    end
+  end
   return Policies.committed_archetype_plan_with(archetype, sigil, {
     name = name,
     want = want,
+    wantForDriver = wantForDriver,
     keepWant = opts.keepWant or commitWant,
     coreWant = commitWant,
     commitWant = commitWant,
     minRank = opts.minRank or math.min(maxRank, 3),
-    targetUnits = opts.targetUnits or targetUnitsFromIds(unitIds, opts),
+    targetUnits = targetUnits,
     boardPruneMargin = opts.boardPruneMargin,
     maxXpBuysPerRound = opts.maxXpBuysPerRound,
+    maxRerollsPerRound = opts.maxRerollsPerRound,
     rankSchedule = opts.rankSchedule,
     xpCoverageGate = opts.xpCoverageGate,
   })
@@ -972,6 +997,21 @@ function Policies.analysisSet(rng)
     "rot_hound", "carrion_pecker", "gnaw_rat",
   }, {
     supportArchetypes = { rot = true, bleed = true },
+    minRank = 3,
+    maxXpBuysPerRound = 2,
+    xpCoverageGate = { holdRank = 3, minUnitCoverage = 0.5, minLevelCoverage = 0.5 },
+    targetLevels = {
+      clot_mender = 2, razorkin = 2, gash_fiend = 2,
+      rot_hound = 3, carrion_pecker = 3, gnaw_rat = 3,
+    },
+  })
+  out[#out + 1] = Policies.committed_unit_set_plan("committed_rot_bleed_rat_core_gated_plan", "rot", "carre", {
+    "clot_mender", "razorkin", "gash_fiend",
+    "rot_hound", "carrion_pecker", "gnaw_rat",
+  }, {
+    supportArchetypes = { rot = true, bleed = true },
+    supportUntilLevelCoverage = 0.50,
+    supportMinBoard = 4,
     minRank = 3,
     maxXpBuysPerRound = 2,
     xpCoverageGate = { holdRank = 3, minUnitCoverage = 0.5, minLevelCoverage = 0.5 },
