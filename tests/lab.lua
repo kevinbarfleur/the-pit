@@ -19,6 +19,8 @@ local Match = require("src.combat.match")
 local Pacing = require("src.run.pacing")
 local Common = require("tools.scenarios.common")
 local Bossrush = require("src.lab.bossrush")
+local Abominations = require("src.data.abominations")
+local Effects = require("src.effects.engine")
 
 local ARCH = {}; for _, a in ipairs(Compositions.archetypes) do ARCH[a] = true end
 local VARIANTS = { perfect = true, missing_minor = true, missing_clutch = true, wall = true, baseline = true, amp = true }
@@ -407,6 +409,17 @@ local ok, err = pcall(function()
   local mf = Common.finishMergeLifecycle(ml)
   assert(mf.exact_pairs == 1 and mf.exact_resolved == 1 and mf.exact_resolve_rate == 1,
     "copy lifecycle: merge_lifecycle resout la paire par identite exacte")
+  local function assertBossOps(list, owner)
+    for _, e in ipairs(list or {}) do
+      assert(Effects.ops[e.op], "bossrush: op inconnue " .. tostring(e.op) .. " dans " .. owner)
+    end
+  end
+  for _, abom in ipairs(Abominations.list) do
+    assertBossOps(abom.boss and abom.boss.effects, abom.key .. "/boss")
+    for gi, g in ipairs(abom.generals or {}) do
+      assertBossOps(g.effects, abom.key .. "/general" .. gi)
+    end
+  end
   local bossComp = Compbuild.toComp(Compositions.byId["bruiser_carre"], -1)
   local bossA = Bossrush.run(bossComp, "leviathan", 202606292, { scoreTicks = 120, tickCap = 2400 })
   local bossB = Bossrush.run(bossComp, "leviathan", 202606292, { scoreTicks = 120, tickCap = 2400 })

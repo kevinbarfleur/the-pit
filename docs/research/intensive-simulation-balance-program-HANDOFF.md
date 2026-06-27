@@ -2184,16 +2184,26 @@ Next implementation targets:
      filters are `PIT_BOSSRUSH_COMPS` and `PIT_ABOMINATIONS`, so future sweeps
      can isolate a single boss family, archetype, or policy.
    - Bossrush first read:
-     in `runs/long-2026-06-27n/bossrush-prototype-v2` with five seeds per
+     in `runs/long-2026-06-27n/bossrush-prototype-v3` with twenty seeds per
      comp/boss, `poison_diamant_perfect` dominates current PvE scoring
-     (`100%` clear, `90%` survival/full-window, `623.8` average score damage,
-     `31.65` score DPS). `cross_venom_pyre` is second (`90%` clear, `72%`
-     full-window, `437.6` score damage). Shock, burn, bleed, and rot can clear
+     (`99%` clear, `90%` survival/full-window, `622.7` average score damage,
+     `31.58` score DPS). `cross_venom_pyre` is second (`89.5%` clear, `75%`
+     full-window, `447.2` score damage). Shock, burn, bleed, and rot can clear
      some bosses but score far lower; tank/shield boards sometimes survive but
-     do not produce a score; brute bruiser fails the mode. Boss-side tuning is
-     now in a readable range after reducing Leviathan, Kraken, and Brasier, but
-     `ruche` remains a hard wall (`0%` full-window) and should be watched as an
-     add/cleave check rather than nerfed blindly.
+     do not produce a full scoring window; brute bruiser fails the mode. Boss
+     side tuning is now in a readable range after reducing Leviathan, Kraken,
+     and Brasier, but `ruche` remains a hard wall (`10%` clear, `0%`
+     full-window, `0%` survival) and should be watched as an add/cleave check
+     rather than nerfed blindly.
+   - Bossrush boss-family read:
+     `kraken` and `brasier` are the cleanest current scoring bosses (`66.7%`
+     and `40%` full-window respectively), while `idole` and `ossuaire` often let
+     teams clear but punish the transition into scoring (`66.7%`/`65%` clear
+     but only `26.7%`/`15.6%` full-window). `devoreur`, `floraison`,
+     `leviathan`, `regard`, and `vermine` sit in the hard-but-readable band.
+     `ruche` is currently outside the band and likely needs either clearer
+     cleave counterplay, lower add pressure, or an explicit "swarm boss" label
+     so players understand why it behaves differently.
    - PvE design learning:
      bossrush creates a new axis that PvP win rate cannot measure. A build can
      win normal rounds, survive long fights, or generate a boss score, and those
