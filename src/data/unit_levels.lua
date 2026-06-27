@@ -45,11 +45,14 @@ return {
       effects = {
         [1] = { params = { base = 3, growth = 3, capDps = 12 } },
       },
+      commandBonus = { params = { value = 0.22 } },
     },
     [3] = {
+      clutch = true,
       effects = {
-        [1] = { params = { base = 4, growth = 4, capDps = 14 } },
+        [1] = { params = { base = 4, growth = 4, capDps = 14, maxHpFrac = 0.20, passiveRamp = 1 } },
       },
+      commandBonus = { params = { value = 0.26 } },
     },
   },
 
@@ -105,10 +108,31 @@ return {
       effects = {
         [1] = { params = { dps = 2, slowPct = 0.12 } },
       },
+      commandBonus = { params = { value = 0.22 } },
     },
     [3] = {
+      clutch = true,
       effects = {
-        [1] = { params = { dps = 3, dur = 210, slowPct = 0.15 } },
+        [1] = { params = { dps = 3, dur = 240, slowPct = 0.15 } },
+      },
+      commandBonus = { params = { value = 0.26 } },
+    },
+  },
+
+  -- Low-rank rot reroll bridge: the fast, low-cap opener should remain
+  -- relevant long enough to bridge into the bleed->rot package.
+  carrion_pecker = {
+    [2] = {
+      effects = {
+        [1] = { params = { base = 3, capDps = 7, maxHpFrac = 0.12 } },
+        [2] = { params = { value = 5 } },
+      },
+    },
+    [3] = {
+      clutch = true,
+      effects = {
+        [1] = { params = { base = 3, growth = 3, dur = 210, capDps = 8, maxHpFrac = 0.14, passiveRamp = 1 } },
+        [2] = { params = { value = 6 } },
       },
     },
   },

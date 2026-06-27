@@ -1913,6 +1913,21 @@ Next implementation targets:
      `plague_communion`; focused commanders surfaced as `gash_fiend`,
      `razorkin`, `necro_leech`, and `rot_hound`. Interpretation: support exists
      but current relic/commander choice is not target-aware enough.
+   - Rot/bleed L3 update: `carrion_pecker` now has authored L2/L3 rot/heal
+     scaling, while `rot_hound` and `clot_mender` are marked as L3 clutch
+     pieces with command scaling to `0.26`. In
+     `runs/long-2026-06-27n/rot-bleed-l3-v1`, no new
+     `carrion_pecker`/`rot_hound`/`clot_mender` L3 appeared in `cheap_strong`.
+     The env target
+     `rot_bleed_bridge_late=clot_mender:2+razorkin:2+gash_fiend:2+hookjaw+rot_hound:3+carrion_pecker:3+marrow_drinker:2+necro_leech:2`
+     costs `74` gold-equivalent, has `0.663` coherence, wins force-build at
+     rounds 8/10, but still loses rounds 12/14 (`50%` oracle). Run access is
+     still the larger blocker: baseline held `50%` coverage is only `2.5%`
+     (`20%` under `sap_cost_tiered_reroll`), and `marrow_drinker` was seen in
+     only `7.5%` of baseline runs and bought `0/run` because it was not
+     playable when offered. Interpretation: the L3 bridge is safe, but late
+     rot/bleed still needs target-aware space management or a lower-rank late
+     pivot.
    Remaining additions:
    - add a target-aware relic/commander choice policy, now that support access
      is observable;

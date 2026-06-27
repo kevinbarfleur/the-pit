@@ -954,6 +954,19 @@ Ajout batch autonomie (`runs/long-2026-06-27b`) :
   Lecture : le pont rot/bleed a deja des supports lisibles, mais la selection
   actuelle de relique/commandant n'est pas target-aware et laisse passer trop de
   supports focalises.
+- Mise a jour L3 rot/bleed : `carrion_pecker` gagne une progression authored
+  L2/L3, `rot_hound` et `clot_mender` deviennent des clutch L3 et leurs bonus
+  de commandement montent a `0.26`. Sur
+  `runs/long-2026-06-27n/rot-bleed-l3-v1`, aucun nouveau L3
+  `carrion_pecker`/`rot_hound`/`clot_mender` n'apparait dans `cheap_strong`.
+  Le target env `rot_bleed_bridge_late` coute `74` or-equivalent, a une
+  coherence `0.663`, gagne encore les rounds 8/10 force-build mais perd les
+  rounds 12/14 (`50%` oracle). En run baseline, sa couverture held `50%` ne
+  monte qu'a `2.5%` (`20%` sous `sap_cost_tiered_reroll`) et `marrow_drinker`
+  reste le verrou dur : vu dans `7.5%` des runs baseline, achete `0/run` car
+  non-playable quand il apparait. Lecture : les clutch L3 sont sains mais ne
+  suffisent pas ; il faut soit une politique de place target-aware, soit un
+  pont late qui ne depend pas d'un rang 5 unique.
 
 Metrics recommandees :
 

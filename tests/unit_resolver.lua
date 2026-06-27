@@ -51,8 +51,15 @@ local ok, err = pcall(function()
     "gnaw_rat level 3 gains bleed aggravate clutch rider")
 
   local rot3 = Resolver.effectsFor("rot_hound", 3)[1]
-  assert(rot3.params.base == 4 and rot3.params.growth == 4 and rot3.params.capDps == 14,
+  assert(rot3.params.base == 4 and rot3.params.growth == 4 and rot3.params.capDps == 14
+    and rot3.params.maxHpFrac == 0.20 and rot3.params.passiveRamp == 1,
     "rot_hound L3 strengthens the rot tank-counter curve")
+
+  local pecker3 = Resolver.effectsFor("carrion_pecker", 3)
+  assert(pecker3[1].params.base == 3 and pecker3[1].params.growth == 3
+    and pecker3[1].params.capDps == 8 and pecker3[1].params.passiveRamp == 1
+    and pecker3[2].params.value == 6,
+    "carrion_pecker L3 gains a low-rank rot reroll clutch")
 
   local husk3 = Resolver.effectsFor("husk", 3)[1]
   assert(husk3.op == "aura_stat" and husk3.target == "team" and husk3.params.value == 0.08,
@@ -106,8 +113,15 @@ local ok, err = pcall(function()
     b:placeId(2, "marauder")
     local mar = compById(b:buildComp(-1), "marauder")
     local bleed = effectByOp(mar, "bleed")
-    assert(bleed and bleed.params.dps == 3 and bleed.params.dur == 210,
+    assert(bleed and bleed.params.dps == 3 and bleed.params.dur == 240,
       "clot_mender L3 grants level-aware bleed")
+  end
+
+  do
+    local rhCmd = Resolver.commandBonusFor("rot_hound", 3)
+    local cmCmd = Resolver.commandBonusFor("clot_mender", 3)
+    assert(rhCmd and rhCmd.params.value == 0.26 and cmCmd and cmCmd.params.value == 0.26,
+      "rot/bleed bridge command bonuses scale at L3")
   end
 
   do
