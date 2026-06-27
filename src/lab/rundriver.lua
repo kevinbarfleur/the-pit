@@ -247,7 +247,10 @@ function Rundriver:sell(slot)
   self:_metric("sellGold", self.run.gold - before)
   self:_metric("boardSells", 1)
   self:_metric("boardSellGold", self.run.gold - before)
-  self:_event({ type = "sell", id = sr.id, where = "board", slot = slot, gold = self.run.gold - before })
+  self:_event({
+    type = "sell", id = sr.id, level = sr.level or 1,
+    where = "board", slot = slot, gold = self.run.gold - before,
+  })
   self.build.slotRigs[slot] = nil
   self.build.board.slots[slot].unit = nil
   return true
@@ -262,7 +265,10 @@ function Rundriver:sellBench(slot)
   self:_metric("sellGold", self.run.gold - before)
   self:_metric("benchSells", 1)
   self:_metric("benchSellGold", self.run.gold - before)
-  self:_event({ type = "sell", id = sr.id, where = "bench", slot = slot, gold = self.run.gold - before })
+  self:_event({
+    type = "sell", id = sr.id, level = sr.level or 1,
+    where = "bench", slot = slot, gold = self.run.gold - before,
+  })
   self.build.bench[slot] = nil
   return true
 end

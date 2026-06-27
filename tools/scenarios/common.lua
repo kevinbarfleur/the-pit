@@ -305,7 +305,7 @@ end
 function Common.mergeLifecycleAgg()
   return {
     pairs = 0, resolved = 0, unresolved = 0, unpairedMerges = 0,
-    roundsToMerge = 0, tiersToMerge = 0,
+    soldBeforeMerge = 0, roundsToMerge = 0, tiersToMerge = 0,
     byUnit = {},
   }
 end
@@ -315,7 +315,7 @@ local function lifecycleBucket(map, id)
   if not b then
     b = {
       pairs = 0, resolved = 0, unresolved = 0, unpairedMerges = 0,
-      roundsToMerge = 0, tiersToMerge = 0,
+      soldBeforeMerge = 0, roundsToMerge = 0, tiersToMerge = 0,
     }
     map[id] = b
   end
@@ -327,9 +327,41 @@ local function sameMergeTrack(pair, merge)
     and (merge.round or 0) >= (pair.round or 0)
 end
 
+local function saleEvents(traj)
+  local out = {}
+  for _, rd in ipairs(traj.rounds or {}) do
+    for _, ev in ipairs(rd.events or {}) do
+      if ev.type == "sell" and ev.id then
+        out[#out + 1] = {
+          id = ev.id,
+          level = ev.level or 1,
+          round = ev.round or rd.round or 0,
+          shopTier = ev.shopTier or rd.shopTier or 0,
+        }
+      end
+    end
+  end
+  return out
+end
+
+local function hasSaleBeforeMerge(sales, pair, merge)
+  local startRound = pair and (pair.round or 0) or 0
+  local endRound = merge and (merge.round or math.huge) or math.huge
+  for _, sale in ipairs(sales or {}) do
+    if sale.id == pair.id and (sale.level or 1) == (pair.level or 1) then
+      local round = sale.round or 0
+      -- Same-round order is not identity-tracked; count only later rounds to avoid false positives
+      -- from policies that sell first, then buy the second copy in the same build phase.
+      if round > startRound and round < endRound then return true end
+    end
+  end
+  return false
+end
+
 function Common.addMergeLifecycle(agg, traj)
   local used = {}
   local merges = traj.mergeEvents or {}
+  local sales = saleEvents(traj)
   for _, pair in ipairs(traj.pairEvents or {}) do
     local best, bestGap
     for i, merge in ipairs(merges) do
@@ -344,8 +376,13 @@ function Common.addMergeLifecycle(agg, traj)
     local b = lifecycleBucket(agg.byUnit, pair.id or "?")
     agg.pairs = agg.pairs + 1
     b.pairs = b.pairs + 1
+    local merge = best and merges[best] or nil
+    local soldBeforeMerge = hasSaleBeforeMerge(sales, pair, merge)
+    if soldBeforeMerge then
+      agg.soldBeforeMerge = agg.soldBeforeMerge + 1
+      b.soldBeforeMerge = b.soldBeforeMerge + 1
+    end
     if best then
-      local merge = merges[best]
       used[best] = true
       local roundGap = math.max(0, (merge.round or 0) - (pair.round or 0))
       local tierGap = math.max(0, (merge.shopTier or 0) - (pair.shopTier or 0))
@@ -380,6 +417,8 @@ function Common.finishMergeLifecycle(agg, opts)
       resolved = b.resolved or 0,
       unresolved = b.unresolved or 0,
       unpaired_merges = b.unpairedMerges or 0,
+      sold_before_merge = b.soldBeforeMerge or 0,
+      sold_before_merge_rate = ((b.pairs or 0) > 0) and ((b.soldBeforeMerge or 0) / b.pairs) or 0,
       resolve_rate = ((b.pairs or 0) > 0) and ((b.resolved or 0) / b.pairs) or 0,
       avg_rounds_to_merge = ((b.resolved or 0) > 0) and ((b.roundsToMerge or 0) / b.resolved) or 0,
       avg_tiers_to_merge = ((b.resolved or 0) > 0) and ((b.tiersToMerge or 0) / b.resolved) or 0,
@@ -391,6 +430,8 @@ function Common.finishMergeLifecycle(agg, opts)
         pairs = row.pairs,
         resolved = row.resolved,
         unresolved = row.unresolved,
+        sold_before_merge = row.sold_before_merge,
+        sold_before_merge_rate = row.sold_before_merge_rate,
         resolve_rate = row.resolve_rate,
         avg_rounds_to_merge = row.avg_rounds_to_merge,
       }
@@ -398,6 +439,7 @@ function Common.finishMergeLifecycle(agg, opts)
   end
   table.sort(watch, function(a, b)
     if a.resolve_rate ~= b.resolve_rate then return a.resolve_rate < b.resolve_rate end
+    if a.sold_before_merge_rate ~= b.sold_before_merge_rate then return a.sold_before_merge_rate > b.sold_before_merge_rate end
     if a.unresolved ~= b.unresolved then return a.unresolved > b.unresolved end
     if a.pairs ~= b.pairs then return a.pairs > b.pairs end
     return a.id < b.id
@@ -409,6 +451,8 @@ function Common.finishMergeLifecycle(agg, opts)
     resolved = agg.resolved or 0,
     unresolved = agg.unresolved or 0,
     unpaired_merges = agg.unpairedMerges or 0,
+    sold_before_merge = agg.soldBeforeMerge or 0,
+    sold_before_merge_rate = ((agg.pairs or 0) > 0) and ((agg.soldBeforeMerge or 0) / agg.pairs) or 0,
     resolve_rate = ((agg.pairs or 0) > 0) and ((agg.resolved or 0) / agg.pairs) or 0,
     avg_rounds_to_merge = ((agg.resolved or 0) > 0) and ((agg.roundsToMerge or 0) / agg.resolved) or 0,
     avg_tiers_to_merge = ((agg.resolved or 0) > 0) and ((agg.tiersToMerge or 0) / agg.resolved) or 0,

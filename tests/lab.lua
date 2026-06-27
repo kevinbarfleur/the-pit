@@ -351,6 +351,19 @@ local ok, err = pcall(function()
   local boardSellMetrics = boardSellDrv:metricSnapshot()
   assert(boardSellMetrics.boardSells == 1 and boardSellDrv.run.gold > boardSellBefore,
     "sell: metrique vente plateau tracee")
+  local sellEventDrv = Rundriver.new(20260638, { recordEvents = true })
+  sellEventDrv.build.bench[1] = { id = "spore_tick", level = 2, char = sellEventDrv.build:newRig("spore_tick") }
+  assert(sellEventDrv:sellBench(1), "events: vend une unite de banc niveau 2")
+  local benchSellEvent = findEvent(sellEventDrv.events, "sell")
+  assert(benchSellEvent and benchSellEvent.where == "bench" and benchSellEvent.level == 2,
+    "events: sellBench trace le niveau vendu")
+  local boardSellEventDrv = Rundriver.new(20260639, { recordEvents = true })
+  local eventSellSlot = unlockedSlots(boardSellEventDrv)[1]
+  boardSellEventDrv.build:placeId(eventSellSlot, "rot_hound", 3)
+  assert(boardSellEventDrv:sell(eventSellSlot), "events: vend une unite de plateau niveau 3")
+  local boardSellEvent = findEvent(boardSellEventDrv.events, "sell")
+  assert(boardSellEvent and boardSellEvent.where == "board" and boardSellEvent.level == 3,
+    "events: sell plateau trace le niveau vendu")
   local planDrv = Rundriver.new(20260631, {})
   planDrv.run.gold = 99
   planDrv.run.slots = 5

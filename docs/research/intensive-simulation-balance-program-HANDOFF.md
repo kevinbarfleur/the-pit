@@ -2018,6 +2018,21 @@ Next implementation targets:
      reaches `92.5%` held `50%`. Interpretation: use rat-core as the active
      rot/bleed reroll baseline; keep rank-5 conversion as premium evolution
      unless a later economy/pass makes it reliably reachable.
+   - Pair-lifecycle diagnostic update: `Rundriver` sell events now include the
+     sold unit level, and `merge_lifecycle` reports `sold_before_merge` plus
+     `sold_before_merge_rate` globally, by unit, and in the watch list. This is
+     an event-level diagnostic, not exact per-copy identity: it counts later
+     sales compatible with a formed pair before its matching merge. Batch
+     `runs/long-2026-06-27n/pair-loss-rat-core-v1` shows
+     `sold_before_merge_rate = 0` across the targeted policies. Learning:
+     unresolved pairs in the committed rot/bleed plans are not mainly caused by
+     destructive resale after pair formation. The bigger issue is trajectory
+     pressure: committed plans resolve only about `49-60%` of pairs, while
+     `greedy_stats` resolves about `85-93%`; rat-core reaches held `50%`
+     coverage often (`75-92.5%` depending economy under its dedicated policy)
+     but held `75%` remains low (`0-15%`) and full completion stays `0`.
+     Therefore the next lever is better space/reroll targeting and stage
+     thresholds, not just "never sell pairs".
    Remaining additions:
    - use `rot_bleed_rat_core` as the baseline reroll target for the next
      balance pass, but investigate cheap mid-board outliers before nerfing it;

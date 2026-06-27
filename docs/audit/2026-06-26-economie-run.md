@@ -1063,6 +1063,21 @@ Ajout batch autonomie (`runs/long-2026-06-27b`) :
   `50%` de couverture tenue. Lecture : le pivot rat-core est le meilleur chemin
   testable actuel pour rot/bleed ; le rang 5 doit rester une evolution premium,
   pas le coeur obligatoire du plan.
+- Mise a jour cycle de paires : les evenements de vente du `Rundriver`
+  embarquent maintenant le niveau vendu, et `merge_lifecycle` expose
+  `sold_before_merge` / `sold_before_merge_rate` au global, par unite, et dans
+  la watchlist. C'est un diagnostic par evenement, pas une identite exacte de
+  copie : il detecte une vente ulterieure compatible avec une paire formee
+  avant son merge. Sur
+  `runs/long-2026-06-27n/pair-loss-rat-core-v1`, le taux reste a `0` sur les
+  politiques ciblees. Donc les paires non resolues des plans engages ne sont
+  pas principalement detruites par revente ; elles restent surtout bloquees par
+  pression de trajectoire. Les plans engages resolvent environ `49-60%` des
+  paires, contre `85-93%` pour `greedy_stats`. Le plan rat-core atteint souvent
+  `50%` de couverture tenue (`75-92.5%` selon economie avec sa policy dediee),
+  mais le `75%` reste faible (`0-15%`) et la completion totale reste a `0`.
+  Prochain levier : regler espace/reroll/stage thresholds, pas seulement
+  interdire la vente de paires.
 
 Metrics recommandees :
 
@@ -1086,6 +1101,9 @@ Metrics recommandees :
 - `merge_lifecycle.avg_rounds_to_merge` : delai moyen entre paire et fusion.
 - `merge_lifecycle.watch` : unites qui generent des paires mais les convertissent
   mal.
+- `merge_lifecycle.sold_before_merge_rate` : part de paires suivies d'une vente
+  compatible avant merge. Diagnostic approximatif tant que les copies n'ont pas
+  d'identite unique.
 - `level_fit` : adequation entre les niveaux reels du board et le niveau attendu
   pour le stade teste.
 - `board_fit` : nombre d'unites posees / slots attendus pour le stade ou le
