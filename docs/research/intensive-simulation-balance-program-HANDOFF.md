@@ -1712,13 +1712,35 @@ Next implementation targets:
      pacing candidate remains `hp2_cd15_f24`. Baseline improves from `7.4%`
      completion live to `11.1%` with `cd1.5/f24`; `sap_cost_tiered_reroll`
      improves from `5.8%` to `8.2%`. Fatigue stays low (`~2-3%`) in this grid.
+   Relic coherence follow-up:
+   - `src/lab/coherence.lua` now derives lightweight semantic profiles for
+     relics. Relic ops such as affliction amplification, aura stats, haste,
+     few-units bonuses, rainbow/type-mix bonuses, thorns, cleave, execute,
+     percent-HP strike, and relic-added effects can now create explicit
+     `relicEdges` against matching units.
+   - `scoreTeam(..., { relics = { ... } })` now returns `subscores.relic` and
+     `relicEdges`. The relic score adds only a small bonus to final coherence;
+     it is meant to validate "this relic supports this plan", not to hide a bad
+     unit graph.
+   - `tools/sim.lua coherence [N]` creates matching relic variants for fixed
+     authored candidates by default. Disable this with
+     `PIT_COHERENCE_RELIC_VARIANTS=0` when comparing pure unit/commandant
+     coherence. Compact rows now include selected relic ids.
+   - Smoke reading after the relic pass: a small `coherence 1` run produces
+     65 candidates, includes rows such as `mid_tank__tide_caller`,
+     `end_poison__kings_bowl`, and `end_shock_multicast__forked_tongue`, and
+     keeps the scenario deterministic. This is not a balance verdict yet; it
+     confirms the report can now separate "readable plan without relic" from
+     "readable plan with matching relic".
    Remaining additions:
    - upgrade pair lifecycle further from event matching to per-copy identity:
      pair formed -> held/sold/lost/merged, with exact sold-pair loss;
-   - model relic access and relic tags in coherence/economy reports;
+   - model actual relic acquisition timing and relic offer access in
+     economy/run reports;
    - make committed policies smarter about XP/reroll timing and protected
      payload placement after the tank/payload tests.
-3. Integrate relic tags and relic access into coherence scoring.
+3. Integrate actual relic access into economy scoring, now that relic semantic
+   tags exist in coherence scoring.
 4. Expand authored level-ups beyond the initial 6 units before drawing broad
    balance conclusions.
 5. Start massive simulation only after the generator can intentionally produce

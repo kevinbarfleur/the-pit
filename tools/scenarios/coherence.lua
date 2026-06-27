@@ -16,12 +16,22 @@ local Units = require("src.data.units")
 
 local N = require("tools.scenarios.argn")(24) -- generated candidates per stage
 local MATCHES = Common.envNumber("PIT_COHERENCE_MATCHES", 4)
+local RELIC_VARIANTS = Common.envNumber("PIT_COHERENCE_RELIC_VARIANTS", 1) ~= 0
 local BASE_SEED = 1560000
 local HPM = Common.envNumber("PIT_HP_MULT", nil)
 
 local STAGES = { "early", "mid", "end_" }
 local STAGE_LABEL = { early = "early", mid = "mid", end_ = "end" }
 local ARCHETYPES = { "poison", "burn", "bleed", "rot", "shock", "tank", "bruiser" }
+local RELIC_BY_ARCHETYPE = {
+  poison = "kings_bowl",
+  burn = "ember_heart",
+  bleed = "weeping_nail",
+  rot = "grave_cap",
+  shock = "forked_tongue",
+  tank = "tide_caller",
+  bruiser = "blood_banner",
+}
 local STAGE_LEVEL = {
   early = { board = 4, maxRank = 2, size = 4, l2 = 0, l3 = 0 },
   mid = { board = 6, maxRank = 4, size = 6, l2 = 20, l3 = 0 },
@@ -106,7 +116,7 @@ local function addCandidate(out, seen, comp, source)
     sigil = comp.sigil,
     boardLevel = comp.boardLevel,
     commander = comp.commander,
-    relics = comp.relics,
+    relics = Common.clone(comp.relics or {}),
     units = cloneUnits(comp.units),
   }
   seen[c.id] = true
@@ -126,6 +136,21 @@ local function fixedCandidates()
   return out, seen
 end
 
+local function addRelicVariants(out, seen)
+  local base = Common.clone(out)
+  for _, c in ipairs(base) do
+    local relic = RELIC_BY_ARCHETYPE[c.archetype]
+    if relic then
+      local v = Common.clone(c)
+      v.id = c.id .. "__" .. relic
+      v.source = (c.source or "fixed") .. "_relic"
+      v.relics = Common.clone(c.relics or {})
+      v.relics[#v.relics + 1] = relic
+      addCandidate(out, seen, v, v.source)
+    end
+  end
+end
+
 local function generatedCandidates(out, seen)
   local rng = love.math.newRandomGenerator(91573)
   for _, stage in ipairs(STAGES) do
@@ -138,6 +163,7 @@ local function generatedCandidates(out, seen)
 end
 
 local candidates, seen = fixedCandidates()
+if RELIC_VARIANTS then addRelicVariants(candidates, seen) end
 generatedCandidates(candidates, seen)
 
 local rightCache, leftCache = {}, {}
@@ -219,6 +245,7 @@ local function compactRow(r)
     avg_seconds = r.avg_seconds,
     subscores = r.subscores,
     units = r.units,
+    relics = r.relics,
   }
 end
 
@@ -233,7 +260,7 @@ for _, stage in ipairs(STAGES) do byStage[stage] = newBucket() end
 for _, comp in ipairs(candidates) do
   local stage = comp.band
   local foes = Bands.field[stage] or {}
-  local score = Coherence.scoreTeam(comp.units, { commander = comp.commander })
+  local score = Coherence.scoreTeam(comp.units, { commander = comp.commander, relics = comp.relics })
   local inv = Common.invest(comp)
   local L = leftOf(comp)
   local wins, fights, ticks, tickN = 0, 0, 0, 0
@@ -257,6 +284,7 @@ for _, comp in ipairs(candidates) do
     wins = wins, fights = fights, winrate = (fights > 0) and (wins / fights) or 0,
     ticks = ticks, tickN = tickN, avg_seconds = (tickN > 0) and (ticks / tickN / Common.FPS) or 0,
     units = cloneUnits(comp.units),
+    relics = Common.clone(comp.relics or {}),
   }
   rows[#rows + 1] = row
   addBucket(byBucket[bucketFor(row.coherence)], row)
@@ -319,6 +347,7 @@ local payload = {
   config = {
     hp_mult = HPM,
     matches = Common.env("PIT_COHERENCE_MATCHES"),
+    relic_variants = RELIC_VARIANTS,
   },
   correlation = corr,
   buckets = bucketOut,

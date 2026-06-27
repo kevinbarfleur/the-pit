@@ -45,6 +45,18 @@ local ok, err = pcall(function()
   assert(poison.subscores.level_plan > 0, "authored/clutch levels contribute to level_plan")
   assert(poison.economy.accessibility == "reroll_low_rank", "L3 spore makes the shell visible as low-rank reroll")
 
+  local kingsBowl = Coherence.profileForRelic("kings_bowl")
+  assert(kingsBowl and kingsBowl.amplifies.poison, "kings_bowl reads as a poison relic amplifier")
+  local poisonRelic = Coherence.scoreTeam({
+    { id = "spore_tick", level = 3, slot = 2 },
+    { id = "miasma_acolyte", level = 3, slot = 5 },
+    { id = "witch", level = 1, slot = 4 },
+    { id = "corruptor", level = 3, slot = 6 },
+  }, { commander = { id = "corruptor", level = 3 }, relics = { "kings_bowl" } })
+  assert(poisonRelic.subscores.relic > 0, "matching relics contribute a relic coherence subscore")
+  assert(hasEdge(poisonRelic.relicEdges, "producer_amplifier", "poison", "relic:kings_bowl"),
+    "matching relics produce explicit relic->unit edges")
+
   local poisonBadPlacement = Coherence.scoreTeam({
     { id = "spore_tick", level = 3, slot = 1 },
     { id = "miasma_acolyte", level = 3, slot = 9 },

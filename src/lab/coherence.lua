@@ -7,6 +7,7 @@ local Units = require("src.data.units")
 local Resolver = require("src.core.unit_resolver")
 local RunState = require("src.run.state")
 local Economy = require("src.run.economy")
+local Relics = require("src.data.relics")
 
 local Coherence = {}
 
@@ -133,6 +134,22 @@ local function deriveFact(into, fact)
   elseif op == "grant_vuln" then
     add(into.debuffs, "vulnerable", p.value or 0.15)
     add(into.amplifies, "damage", p.value or 0.15)
+  elseif op == "grant_affliction_if_absent" then
+    add(into.produces, p.family)
+  elseif op == "execute" or op == "teamExecute" then
+    add(into.supports, "execute")
+    add(into.amplifies, "damage", p.bonus or 0.25)
+  elseif op == "percent_hp_strike" then
+    add(into.supports, "removal")
+    add(into.counters, "tank")
+  elseif op == "cleave" then
+    add(into.supports, "cleave")
+    add(into.amplifies, "damage", p.frac or 0.1)
+  elseif op == "thorns" then
+    add(into.supports, "guard")
+    add(into.amplifies, "damage", 0.2)
+  elseif op == "frenzy_gain" then
+    add(into.supports, "growth")
   elseif op == "spread_burn_on_death" then
     add(into.propagates, "burn", p.frac or 0.7)
     if p.alsoPoison then add(into.propagates, "poison", 0.5) end
@@ -260,6 +277,58 @@ function Coherence.profileFor(id, level)
     transforms = listFromSet(profile.transforms, FAMILIES),
     commandAmplifies = listFromSet(profile.command.amplifies, FAMILIES),
     commandTransforms = listFromSet(profile.command.transforms, FAMILIES),
+  }
+  return profile
+end
+
+function Coherence.profileForRelic(id)
+  local relic = type(id) == "table" and id or Relics[id]
+  if not relic then return nil end
+  local profile = newBucket()
+  profile.id = "relic:" .. relic.id
+  profile.relicId = relic.id
+  profile.role = "relic"
+  profile.relicTarget = relic.params and relic.params.target or nil
+  local op, p = relic.op, relic.params or {}
+
+  if op == "relic_affliction_inc" then
+    add(profile.amplifies, p.family, p.inc or 0.2)
+  elseif op == "relic_aura_stat" then
+    addStat(profile, p.stat, p.value or 1)
+  elseif op == "relic_more_dmg" then
+    add(profile.amplifies, "damage", p.mult or 0.1)
+  elseif op == "relic_flat_hp" or op == "relic_dmg_reduce" then
+    add(profile.supports, "guard", p.value or p.frac or 1)
+  elseif op == "relic_haste" then
+    add(profile.supports, "haste", p.value or 0.1)
+  elseif op == "relic_few_units" then
+    add(profile.supports, "growth", (p.dmgInc or 0) + (p.hpInc or 0))
+    add(profile.amplifies, "damage", p.dmgInc or 0)
+    add(profile.supports, "guard", p.hpInc or 0)
+  elseif op == "relic_rainbow" then
+    add(profile.supports, "growth", 1)
+    add(profile.supports, "type_mix", 1)
+  elseif op == "relic_amplify_auras" then
+    add(profile.supports, "aura", p.frac or 0.15)
+    if p.dotOnly then
+      for _, f in ipairs(FAMILIES) do add(profile.amplifies, f, p.frac or 0.15) end
+    end
+  elseif op == "relic_second_breath" then
+    add(profile.supports, "guard", 1)
+  elseif op == "relic_add_effect" and p.effect then
+    deriveFact(profile, { op = p.effect.op, trigger = p.effect.trigger, values = p.effect.params or {} })
+  elseif relic.runOp then
+    add(profile.supports, "economy", 1)
+  elseif relic.eco then
+    add(profile.supports, "economy", 1)
+  end
+
+  profile.summary = {
+    amplifies = listFromSet(profile.amplifies, FAMILIES),
+    produces = listFromSet(profile.produces, FAMILIES),
+    propagates = listFromSet(profile.propagates, FAMILIES),
+    transforms = listFromSet(profile.transforms, FAMILIES),
+    supports = listFromSet(profile.supports),
   }
   return profile
 end
@@ -426,6 +495,21 @@ local function squareNeighbors(a, b)
   return math.abs(ax - bx) + math.abs(ay - by) == 1
 end
 
+local function targetMatches(target, profile, entry)
+  if not target or target == "team" then return true end
+  if target:sub(1, 5) == "type:" then
+    local u = Units[profile.id]
+    return u and u.type == target:sub(6)
+  end
+  if target == "role:front" or target == "role:back" then
+    local slot = entry and entry.slot
+    if not slot then return false end
+    local col = (slot - 1) % 3
+    return (target == "role:front" and col == 2) or (target == "role:back" and col == 0)
+  end
+  return false
+end
+
 local function teamEntries(team)
   local out = {}
   for _, entry in ipairs(team or {}) do
@@ -588,12 +672,28 @@ function Coherence.scoreTeam(team, opts)
     end
   end
 
+  local relicEdges = {}
+  for _, rid in ipairs(opts.relics or {}) do
+    local rp = Coherence.profileForRelic(rid)
+    if rp then
+      for _, p in ipairs(profiles) do
+        local entry = byId[p.id] and byId[p.id].entry
+        if targetMatches(rp.relicTarget, p, entry) then
+          local row = Coherence.edgesForPair(rp, p)
+          for _, e in ipairs(row) do relicEdges[#relicEdges + 1] = e end
+        end
+      end
+    end
+  end
+
   local n = #profiles
   local counts, familyCounts = archetypeCounts(profiles)
   local rawEdge = edgeWeight(edges)
   local rawCommand = edgeWeight(cmdEdges)
+  local rawRelic = edgeWeight(relicEdges)
   local tagScore = clamp01(rawEdge / math.max(1, n * 2.1))
   local commandScore = commander and clamp01(rawCommand / math.max(1, n * 1.0)) or 0
+  local relicScore = (#relicEdges > 0) and clamp01(rawRelic / math.max(1, n * 1.0)) or 0
   local positionScore = 1
   if positionRequired > 0 then
     positionScore = (positionSatisfied + positionUnknown * 0.5) / positionRequired
@@ -605,12 +705,17 @@ function Coherence.scoreTeam(team, opts)
     + commandScore * 0.14
     + levelScore * 0.14
     + readabilityScore * 0.16
+  if relicScore > 0 then coherence = coherence + relicScore * 0.08 end
 
   table.sort(edges, function(a, b)
     if a.weight ~= b.weight then return a.weight > b.weight end
     return (a.from .. a.to .. a.kind) < (b.from .. b.to .. b.kind)
   end)
   table.sort(cmdEdges, function(a, b)
+    if a.weight ~= b.weight then return a.weight > b.weight end
+    return (a.from .. a.to .. a.kind) < (b.from .. b.to .. b.kind)
+  end)
+  table.sort(relicEdges, function(a, b)
     if a.weight ~= b.weight then return a.weight > b.weight end
     return (a.from .. a.to .. a.kind) < (b.from .. b.to .. b.kind)
   end)
@@ -622,6 +727,7 @@ function Coherence.scoreTeam(team, opts)
       tags = r3(tagScore),
       position = r3(positionScore),
       command = r3(commandScore),
+      relic = r3(relicScore),
       level_plan = r3(levelScore),
       readability = r3(readabilityScore),
     },
@@ -629,6 +735,7 @@ function Coherence.scoreTeam(team, opts)
     familyCounts = familyCounts,
     edges = edges,
     commandEdges = cmdEdges,
+    relicEdges = relicEdges,
     economy = Coherence.economyForTeam(entries, { variant = opts.economyVariant or DEFAULT_VARIANT }),
   }
 end

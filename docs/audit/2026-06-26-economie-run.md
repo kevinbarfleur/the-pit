@@ -844,6 +844,13 @@ Ajout batch autonomie (`runs/long-2026-06-27b`) :
   `shock_nuke_croix`, `burn_ligne_perfect`, `bleed_lock_anneau` sous-performent
   malgre une coherence lisible. Cela pointe vers un probleme de reward des
   plans DoT/cross-tag par rapport aux shells defensifs/good-stuff midgame.
+- Mise a jour suivante : le score de coherence sait maintenant lire des
+  reliques comme amplificateurs semantiques (`subscores.relic`, `relicEdges`)
+  et le scenario `coherence` peut generer des variantes avec reliques adaptees.
+  Attention : cela ne modele pas encore le timing d'obtention des reliques dans
+  une run. Pour l'economie, il faut encore mesurer l'acces reel aux reliques et
+  ne pas confondre "la relique rend le plan coherent" avec "le joueur peut
+  l'obtenir assez souvent au bon moment".
 
 Metrics recommandees :
 
