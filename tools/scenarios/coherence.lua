@@ -465,6 +465,7 @@ local function compactRow(r)
     relics = r.relics,
     filled_from = r.filled_from,
     fill_units = r.fill_units,
+    foe_breakdown = r.foe_breakdown,
   }
 end
 
@@ -485,17 +486,35 @@ for _, comp in ipairs(candidates) do
   local fill, underfilled = boardFit(comp)
   local L = leftOf(comp)
   local wins, fights, ticks, tickN = 0, 0, 0, 0
+  local foeBreakdown = {}
   for _, foeId in ipairs(foes) do
     local foe = Common.compByIdOrNil(foeId)
     if foe and foe.id ~= comp.id then
       local R = rightOf(foe)
+      local foeWins, foeFights, foeTicks, foeTickN = 0, 0, 0, 0
       for _ = 1, MATCHES do
         seedCounter = seedCounter + 1
         local res = Common.fight(L, R, BASE_SEED + seedCounter, HPM)
         fights = fights + 1
-        if res.win then wins = wins + 1 end
-        if res.ticks then ticks = ticks + res.ticks; tickN = tickN + 1 end
+        foeFights = foeFights + 1
+        if res.win then
+          wins = wins + 1
+          foeWins = foeWins + 1
+        end
+        if res.ticks then
+          ticks = ticks + res.ticks
+          tickN = tickN + 1
+          foeTicks = foeTicks + res.ticks
+          foeTickN = foeTickN + 1
+        end
       end
+      foeBreakdown[#foeBreakdown + 1] = {
+        id = foeId,
+        wins = foeWins,
+        fights = foeFights,
+        winrate = (foeFights > 0) and (foeWins / foeFights) or 0,
+        avg_seconds = (foeTickN > 0) and (foeTicks / foeTickN / Common.FPS) or 0,
+      }
     end
   end
   local row = {
@@ -510,6 +529,7 @@ for _, comp in ipairs(candidates) do
     relics = Common.clone(comp.relics or {}),
     filled_from = comp.filled_from,
     fill_units = Common.clone(comp.fill_units or {}),
+    foe_breakdown = foeBreakdown,
   }
   rows[#rows + 1] = row
   addBucket(byBucket[bucketFor(row.coherence)], row)

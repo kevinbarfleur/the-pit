@@ -91,6 +91,8 @@ local ok, err = pcall(function()
         "mode coherence : cross_bleed_rot peut etre teste avec fillers naturels")
       assert(body:find('"filled_resolutions"', 1, true),
         "mode coherence : les noyaux sous-remplis ont un diagnostic de resolution par fillers")
+      assert(body:find('"foe_breakdown"', 1, true),
+        "mode coherence : chaque ligne expose le diagnostic par adversaire")
     elseif m == "economy" then
       assert(body:find('"plan_access"', 1, true),
         "mode economy : accessibilite des plans cibles reportee")
