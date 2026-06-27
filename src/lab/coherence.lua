@@ -6,6 +6,7 @@
 local Units = require("src.data.units")
 local Resolver = require("src.core.unit_resolver")
 local RunState = require("src.run.state")
+local Economy = require("src.run.economy")
 
 local Coherence = {}
 
@@ -15,30 +16,19 @@ for _, id in ipairs(FAMILIES) do FAMILY_SET[id] = true end
 
 local LEVEL_COPIES = { 1, 3, 9 }
 local DEFAULT_COST = 3
-local DEFAULT_VARIANT = "current"
-
-local ECON_VARIANTS = {
-  current = {
-    id = "current",
-    label = "current cost=rank / 10 gold",
-    gold = 10,
-    costByRank = { 1, 2, 3, 4, 5 },
-  },
-  sap_like = {
-    id = "sap_like",
-    label = "SAP-like floor cost / 10 gold",
-    gold = 10,
-    costByRank = { 2, 3, 4, 5, 6 },
-  },
-  curved_income = {
-    id = "curved_income",
-    label = "cost=rank / curved early income",
-    gold = 10,
-    incomeByShopTier = { 6, 8, 10, 10, 10 },
-    costByRank = { 1, 2, 3, 4, 5 },
-  },
+local DEFAULT_VARIANT = "baseline"
+local ECON_ALIASES = {
+  current = "baseline",
+  sap_like = "sap_cost",
+  curved_income = "early_curve",
 }
-Coherence.ECON_VARIANTS = ECON_VARIANTS
+Coherence.ECON_VARIANTS = Economy.profiles
+Coherence.ECON_ORDER = Economy.order
+
+local function resolveEconomyProfile(id)
+  local key = ECON_ALIASES[id or DEFAULT_VARIANT] or id or DEFAULT_VARIANT
+  return Economy.resolve(key), key
+end
 
 local function clamp01(x)
   if x < 0 then return 0 end
@@ -79,9 +69,7 @@ end
 local function unitCost(id, variant)
   local u = Units[id]
   if not u then return DEFAULT_COST end
-  local rank = u.rank or u.cost or DEFAULT_COST
-  if variant and variant.costByRank then return variant.costByRank[rank] or rank end
-  return u.cost or rank or DEFAULT_COST
+  return Economy.unitCost(variant, u, DEFAULT_COST)
 end
 
 local function factTargetIsNeighbor(fact)
@@ -248,6 +236,7 @@ function Coherence.profileFor(id, level)
   end
 
   profile.frontline = u.taunt == true or (u.aggro or 0) >= 40
+  if profile.frontline then add(profile.supports, "guard", u.taunt and 0.35 or 0.25) end
   profile.hasOnHit = false
   for _, fact in ipairs(profile.facts) do
     if fact.trigger == "on_hit" then profile.hasOnHit = true end
@@ -350,6 +339,30 @@ function Coherence.edgesForPair(a, b)
   if has(b.grants, "shield") and a.frontline then
     edge(out, b, a, "frontline_cover", "shield", 0.75, b.id .. " shields frontline " .. a.id, has(b.targets, "neighbors"))
   end
+  local function tankish(p)
+    return p.frontline or p.role == "tank" or has(p.supports, "guard")
+      or has(p.supports, "sustain") or has(p.supports, "shield")
+  end
+  if has(a.supports, "guard") and tankish(b) then
+    edge(out, a, b, "guard_frontline", "guard", 0.75,
+      a.id .. " reinforces the frontline role of " .. b.id, has(a.targets, "neighbors"))
+  end
+  if has(b.supports, "guard") and tankish(a) then
+    edge(out, b, a, "guard_frontline", "guard", 0.75,
+      b.id .. " reinforces the frontline role of " .. a.id, has(b.targets, "neighbors"))
+  end
+  if has(a.supports, "sustain") and tankish(b) then
+    edge(out, a, b, "sustain_wall", "sustain", 0.65,
+      a.id .. " helps a defensive front stay alive", has(a.targets, "neighbors"))
+  end
+  if has(b.supports, "sustain") and tankish(a) then
+    edge(out, b, a, "sustain_wall", "sustain", 0.65,
+      b.id .. " helps a defensive front stay alive", has(b.targets, "neighbors"))
+  end
+  if a.frontline and b.frontline then
+    edge(out, a, b, "frontline_wall", "guard", 0.45,
+      a.id .. " and " .. b.id .. " form a readable defensive front", false)
+  end
   if has(a.supports, "haste") and b.hasOnHit then
     edge(out, a, b, "tempo_support", "haste", 0.65, a.id .. " accelerates on-hit pressure from " .. b.id, has(a.targets, "neighbors"))
   end
@@ -424,7 +437,8 @@ end
 
 function Coherence.economyForTeam(team, opts)
   opts = opts or {}
-  local variant = ECON_VARIANTS[opts.variant or DEFAULT_VARIANT] or ECON_VARIANTS.current
+  local variant, variantId = resolveEconomyProfile(opts.variant)
+  local baseline = Economy.resolve("baseline")
   local entries = teamEntries(team)
   local gold, baseGold, maxRank, maxLevel, lowRankCopies = 0, 0, 0, 1, 0
   local rankCounts = {}
@@ -436,7 +450,7 @@ function Coherence.economyForTeam(team, opts)
       local copies = LEVEL_COPIES[lvl] or 1
       local c = unitCost(entry.id, variant)
       gold = gold + c * copies
-      baseGold = baseGold + unitCost(entry.id, ECON_VARIANTS.current) * copies
+      baseGold = baseGold + unitCost(entry.id, baseline) * copies
       rankCounts[rank] = (rankCounts[rank] or 0) + 1
       if rank > maxRank then maxRank = rank end
       if lvl > maxLevel then maxLevel = lvl end
@@ -451,6 +465,8 @@ function Coherence.economyForTeam(team, opts)
   elseif maxRank >= 4 then accessibility = "advanced" end
   return {
     variant = variant.id,
+    requestedVariant = opts.variant,
+    resolvedVariant = variantId,
     assemblyGold = gold,
     currentRulesGold = baseGold,
     maxRank = maxRank,
@@ -463,21 +479,24 @@ function Coherence.economyForTeam(team, opts)
 end
 
 function Coherence.shopPressure(variantId)
-  local variant = ECON_VARIANTS[variantId or DEFAULT_VARIANT] or ECON_VARIANTS.current
+  local variant = resolveEconomyProfile(variantId)
   local out = {}
   for tier = 1, RunState.MAX_TIER do
     local odds = RunState.ODDS[tier]
     local avg = 0
     for rank = 1, RunState.MAX_TIER do
-      local cost = variant.costByRank and variant.costByRank[rank] or rank
+      local cost = Economy.unitCost(variant, { rank = rank, cost = rank }, rank)
       avg = avg + ((odds[rank] or 0) / 100) * cost
     end
-    local gold = (variant.incomeByShopTier and variant.incomeByShopTier[tier]) or variant.gold or RunState.GOLD_PER_ROUND
+    local gold = Economy.goldForRound(variant, tier)
     out[#out + 1] = {
+      profile = variant.id,
       tier = tier,
       avgOfferCost = r3(avg),
       fullShopCost = r3(avg * RunState.SHOP_SIZE),
       gold = gold,
+      rerollCost = Economy.rerollCost(variant, tier),
+      buyXpCost = Economy.buyXpCost(variant),
       fullShopCostRatio = r3((avg * RunState.SHOP_SIZE) / gold),
     }
   end

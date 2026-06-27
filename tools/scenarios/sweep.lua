@@ -43,6 +43,7 @@ local function newAgg(fatigueStart)
     buys = 0, pairBuys = 0, mergeBuys = 0, rerolls = 0, xpBuys = 0,
     commanderAccepts = 0, commanderDeclines = 0, commanderPlacements = 0, relicPicks = 0,
     archetypeRuns = 0, archetypeCommitted = 0, archetypeCommitRoundSum = 0,
+    mergeLifecycle = Common.mergeLifecycleAgg(),
     duration = Common.durationSet(fatigueStart),
   }
 end
@@ -60,6 +61,7 @@ local function addRun(a, traj)
   a.runs = a.runs + 1
   a.wins = a.wins + (traj.wins or 0)
   a.relicPicks = a.relicPicks + ((traj.metrics and traj.metrics.relicPicks) or 0)
+  Common.addMergeLifecycle(a.mergeLifecycle, traj)
   if traj.result == "win" then a.completions = a.completions + 1 end
   addCommitment(a, traj)
   for _, rd in ipairs(traj.rounds or {}) do
@@ -102,6 +104,7 @@ end
 
 local function finish(a)
   local spend = a.buyGold + a.rerollGold + a.xpGold
+  local mergeLifecycle = Common.finishMergeLifecycle(a.mergeLifecycle)
   return {
     runs = a.runs,
     completion = (a.runs > 0) and (a.completions / a.runs) or 0,
@@ -118,6 +121,9 @@ local function finish(a)
     pair_buys_per_run = (a.runs > 0) and (a.pairBuys / a.runs) or 0,
     merge_buys_per_run = (a.runs > 0) and (a.mergeBuys / a.runs) or 0,
     merge_per_pair_buy = (a.pairBuys > 0) and (a.mergeBuys / a.pairBuys) or 0,
+    pair_resolve_rate = mergeLifecycle.resolve_rate,
+    avg_pair_rounds_to_merge = mergeLifecycle.avg_rounds_to_merge,
+    unresolved_pairs_per_run = (a.runs > 0) and (mergeLifecycle.unresolved / a.runs) or 0,
     rerolls_per_run = (a.runs > 0) and (a.rerolls / a.runs) or 0,
     xp_buys_per_run = (a.runs > 0) and (a.xpBuys / a.runs) or 0,
     commander_accepts_per_run = (a.runs > 0) and (a.commanderAccepts / a.runs) or 0,
@@ -131,6 +137,7 @@ local function finish(a)
     },
     archetype_commitment_rate = (a.archetypeRuns > 0) and (a.archetypeCommitted / a.archetypeRuns) or 0,
     avg_archetype_commit_round = (a.archetypeCommitted > 0) and (a.archetypeCommitRoundSum / a.archetypeCommitted) or 0,
+    merge_lifecycle = mergeLifecycle,
     duration = Common.finishDurationSet(a.duration),
   }
 end
@@ -190,6 +197,8 @@ for _, econ in ipairs(ECONOMY_ORDER) do
       desired_slot_limited_rate = row.desired_slot_limited_rate,
       gold_pressure = row.gold_pressure,
       merge_per_pair_buy = row.merge_per_pair_buy,
+      pair_resolve_rate = row.pair_resolve_rate,
+      unresolved_pairs_per_run = row.unresolved_pairs_per_run,
       commander_placements_per_run = row.commander_placements_per_run,
       relic_picks_per_run = row.relic_picks_per_run,
       early_avg_seconds = row.duration.early.avg_seconds,

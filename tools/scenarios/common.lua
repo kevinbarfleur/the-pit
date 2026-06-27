@@ -1,6 +1,6 @@
 -- tools/scenarios/common.lua
 -- SOCLE PARTAGÉ du MOTEUR DE SCÉNARIOS d'équilibrage (Phase C.0). Tous les modes (invest/policy/godroll/
--- commander/counter/economy/tank/pacing/sweep) en dépendent. PUR-par-dépendance : aucun love.graphics ; le seul hasard est un RNG
+-- commander/counter/economy/tank/pacing/sweep/coherence) en dépendent. PUR-par-dépendance : aucun love.graphics ; le seul hasard est un RNG
 -- SEEDÉ injecté par chaque mode (love.math.newRandomGenerator) — JAMAIS math.random global pour la sim.
 --
 -- Réutilise l'EXISTANT (ne réinvente rien) :
@@ -289,6 +289,121 @@ function Common.finishDurationSet(set)
   }
 end
 
+function Common.mergeLifecycleAgg()
+  return {
+    pairs = 0, resolved = 0, unresolved = 0, unpairedMerges = 0,
+    roundsToMerge = 0, tiersToMerge = 0,
+    byUnit = {},
+  }
+end
+
+local function lifecycleBucket(map, id)
+  local b = map[id]
+  if not b then
+    b = {
+      pairs = 0, resolved = 0, unresolved = 0, unpairedMerges = 0,
+      roundsToMerge = 0, tiersToMerge = 0,
+    }
+    map[id] = b
+  end
+  return b
+end
+
+local function sameMergeTrack(pair, merge)
+  return pair and merge and pair.id == merge.id and (pair.level or 1) == (merge.level or 1)
+    and (merge.round or 0) >= (pair.round or 0)
+end
+
+function Common.addMergeLifecycle(agg, traj)
+  local used = {}
+  local merges = traj.mergeEvents or {}
+  for _, pair in ipairs(traj.pairEvents or {}) do
+    local best, bestGap
+    for i, merge in ipairs(merges) do
+      if not used[i] and sameMergeTrack(pair, merge) then
+        local gap = (merge.round or 0) - (pair.round or 0)
+        if not bestGap or gap < bestGap then
+          best, bestGap = i, gap
+        end
+      end
+    end
+
+    local b = lifecycleBucket(agg.byUnit, pair.id or "?")
+    agg.pairs = agg.pairs + 1
+    b.pairs = b.pairs + 1
+    if best then
+      local merge = merges[best]
+      used[best] = true
+      local roundGap = math.max(0, (merge.round or 0) - (pair.round or 0))
+      local tierGap = math.max(0, (merge.shopTier or 0) - (pair.shopTier or 0))
+      agg.resolved = agg.resolved + 1
+      agg.roundsToMerge = agg.roundsToMerge + roundGap
+      agg.tiersToMerge = agg.tiersToMerge + tierGap
+      b.resolved = b.resolved + 1
+      b.roundsToMerge = b.roundsToMerge + roundGap
+      b.tiersToMerge = b.tiersToMerge + tierGap
+    else
+      agg.unresolved = agg.unresolved + 1
+      b.unresolved = b.unresolved + 1
+    end
+  end
+
+  for i, merge in ipairs(merges) do
+    if not used[i] then
+      agg.unpairedMerges = agg.unpairedMerges + 1
+      lifecycleBucket(agg.byUnit, merge.id or "?").unpairedMerges =
+        lifecycleBucket(agg.byUnit, merge.id or "?").unpairedMerges + 1
+    end
+  end
+end
+
+function Common.finishMergeLifecycle(agg, opts)
+  opts = opts or {}
+  local minWatchPairs = opts.minWatchPairs or 3
+  local byUnit, watch = {}, {}
+  for id, b in pairs(agg.byUnit or {}) do
+    local row = {
+      pairs = b.pairs or 0,
+      resolved = b.resolved or 0,
+      unresolved = b.unresolved or 0,
+      unpaired_merges = b.unpairedMerges or 0,
+      resolve_rate = ((b.pairs or 0) > 0) and ((b.resolved or 0) / b.pairs) or 0,
+      avg_rounds_to_merge = ((b.resolved or 0) > 0) and ((b.roundsToMerge or 0) / b.resolved) or 0,
+      avg_tiers_to_merge = ((b.resolved or 0) > 0) and ((b.tiersToMerge or 0) / b.resolved) or 0,
+    }
+    byUnit[id] = row
+    if row.pairs >= minWatchPairs then
+      watch[#watch + 1] = {
+        id = id,
+        pairs = row.pairs,
+        resolved = row.resolved,
+        unresolved = row.unresolved,
+        resolve_rate = row.resolve_rate,
+        avg_rounds_to_merge = row.avg_rounds_to_merge,
+      }
+    end
+  end
+  table.sort(watch, function(a, b)
+    if a.resolve_rate ~= b.resolve_rate then return a.resolve_rate < b.resolve_rate end
+    if a.unresolved ~= b.unresolved then return a.unresolved > b.unresolved end
+    if a.pairs ~= b.pairs then return a.pairs > b.pairs end
+    return a.id < b.id
+  end)
+  local top = {}
+  for i = 1, math.min(opts.watchLimit or 12, #watch) do top[i] = watch[i] end
+  return {
+    pairs = agg.pairs or 0,
+    resolved = agg.resolved or 0,
+    unresolved = agg.unresolved or 0,
+    unpaired_merges = agg.unpairedMerges or 0,
+    resolve_rate = ((agg.pairs or 0) > 0) and ((agg.resolved or 0) / agg.pairs) or 0,
+    avg_rounds_to_merge = ((agg.resolved or 0) > 0) and ((agg.roundsToMerge or 0) / agg.resolved) or 0,
+    avg_tiers_to_merge = ((agg.resolved or 0) > 0) and ((agg.tiersToMerge or 0) / agg.resolved) or 0,
+    by_unit = byUnit,
+    watch = top,
+  }
+end
+
 -- ── ÉCRITURE d'un rapport de scénario. `name` = clé de mode ("invest"/"policy"/...). On écrit
 -- runs/report-<name>.json (le rapport DÉTAILLÉ du mode) ET on MET À JOUR le bloc <name> dans le golden de
 -- méta runs/report-ref.json (agrégat diff-able multi-modes). Le ref est lu/édité bloc par bloc (chaque mode
@@ -310,7 +425,7 @@ end
 -- et on remplace le bloc du mode par regénération complète depuis un cache disque. Pour rester SANS décodeur,
 -- on stocke chaque résumé de mode dans son PROPRE fichier runs/ref-<mode>.json, et report-ref.json est leur
 -- CONCATÉNATION ordonnée régénérée à chaque écriture. Simple, déterministe, diff-able.
-local REF_MODES = { "meta", "invest", "policy", "godroll", "commander", "counter", "economy", "tank", "pacing", "sweep" }
+local REF_MODES = { "meta", "invest", "policy", "godroll", "commander", "counter", "economy", "tank", "pacing", "sweep", "coherence" }
 function Common.updateRef(name, summary)
   local dir = OUT_DIR
   os.execute("mkdir -p " .. dir)

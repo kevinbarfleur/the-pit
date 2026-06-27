@@ -809,6 +809,42 @@ Ajout batch long avec commandants (`runs/long-2026-06-27`,
   `rear_goad`, `corruptor`, `pyre_herald` comme paires peu converties dans ce
   batch. Ce sont des pistes d'investigation, pas des verdicts automatiques.
 
+Ajout batch autonomie (`runs/long-2026-06-27b`) :
+
+- Le funnel de paires a ete remplace dans `economy` et `sweep` par une premiere
+  vraie lecture lifecycle : `merge_lifecycle.resolve_rate`,
+  `avg_rounds_to_merge`, paires non resolues et watchlist par unite. Ce n'est
+  pas encore une identite de copie vendue/perdue, mais c'est meilleur que
+  `merge_per_pair_buy` seul.
+- `economy N=40`, commandants auto, profils `baseline`, `early_curve`,
+  `sap_cost_tiered_reroll` :
+  - `baseline` : completion `9.3%`, wins `5.75`, full-shop afford `93.7%`,
+    pression `0.35`, leftover `9.52`, pair resolve `76.4%`.
+  - `early_curve` : completion `4.5%`, wins `5.26`, full-shop afford `94.4%`,
+    pression `0.42`, leftover `9.97`, pair resolve `77.9%`.
+  - `sap_cost_tiered_reroll` : completion `10.1%`, wins `5.41`, full-shop
+    afford `69.1%`, pression `0.52`, leftover `8.01`, pair resolve `76.9%`.
+- Lecture : `sap_cost_tiered_reroll` est le meilleur candidat de pression, mais
+  il ne bat pas baseline en wins moyens dans ce batch. La bonne prochaine etape
+  n'est pas de le passer live immediatement, mais de le garder comme candidat
+  principal pendant que les policies/roster corrigent les shells sous-puissants.
+- `sweep N=20`, live pacing vs `hp2_cd15_f24` :
+  - `baseline` passe de `7.4%` completion live a `11.1%` en `cd1.5/f24`.
+  - `early_curve` tombe de `8.9%` live a `6.6%` en `cd1.5/f24`.
+  - `sap_cost_tiered_reroll` passe de `5.8%` live a `8.2%` en `cd1.5/f24`.
+  - La fatigue reste basse (`~2-3%`), donc `cd1.5/f24` reste le candidat
+    pacing prudent.
+- Nouveau mode `tools/sim.lua coherence [N]` : la puissance est encore trop peu
+  reliee a la coherence semantique. `coherence N=36`, matches `8`, donne une
+  correlation coherence/winrate de seulement `0.075`. Les piles endgame cheres
+  expliquent une partie des low-coherence winners; les vrais signaux a lire
+  sont `cheap_strong` et `high_coherence_weak`.
+- Outliers a inspecter : `mid_tank`, `mid_shock` et plusieurs generated mixed
+  mid piles surperforment; `cross_bleed_rot`, `rot_carre_perfect`,
+  `shock_nuke_croix`, `burn_ligne_perfect`, `bleed_lock_anneau` sous-performent
+  malgre une coherence lisible. Cela pointe vers un probleme de reward des
+  plans DoT/cross-tag par rapport aux shells defensifs/good-stuff midgame.
+
 Metrics recommandees :
 
 - `full_shop_cost_ratio` : cout du shop entier / gold disponible par round.
@@ -824,8 +860,11 @@ Metrics recommandees :
 - `archetype_commit_round` : round ou le build devient identifiable.
 - `committed_archetype_completion` : taux ou poison/tank/rot/etc. arrivent a
   constituer leur plan avant mort/victoire.
-- `merge_per_pair_buy` : conversions de paires en fusions ; a remplacer plus
-  tard par un suivi par unite et temps de conversion.
+- `merge_lifecycle.resolve_rate` : paires formees qui deviennent vraiment une
+  fusion.
+- `merge_lifecycle.avg_rounds_to_merge` : delai moyen entre paire et fusion.
+- `merge_lifecycle.watch` : unites qui generent des paires mais les convertissent
+  mal.
 
 Policies minimales :
 

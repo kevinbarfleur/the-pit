@@ -6,6 +6,7 @@ package.path = "./?.lua;" .. package.path
 
 local Coherence = require("src.lab.coherence")
 local Common = require("tools.scenarios.common")
+local Economy = require("src.run.economy")
 
 local function take(list, n)
   local out = {}
@@ -85,11 +86,11 @@ local SAMPLES = {
 }
 
 local function economyVariants()
-  local order = { "current", "sap_like", "curved_income" }
   local out = {}
-  for _, id in ipairs(order) do
+  for _, id in ipairs(Economy.order) do
     out[#out + 1] = {
       id = id,
+      label = Economy.profiles[id].label,
       pressure = Coherence.shopPressure(id),
     }
   end

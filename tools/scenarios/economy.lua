@@ -67,6 +67,7 @@ local function newAgg()
     slotDeclines = 0, slotAccepts = 0,
     archetypeRuns = 0, archetypeCommitted = 0, archetypeCommitRoundSum = 0,
     virtualBench = {}, tiers = {}, archetypes = {}, unitMerge = {},
+    mergeLifecycle = Common.mergeLifecycleAgg(),
   }
 end
 
@@ -223,6 +224,7 @@ local function addRun(a, traj)
   a.relicPicks = a.relicPicks + ((traj.metrics and traj.metrics.relicPicks) or 0)
   for _, ev in ipairs(traj.pairEvents or {}) do addUnitMergeEvent(a.unitMerge, ev, "pair") end
   for _, ev in ipairs(traj.mergeEvents or {}) do addUnitMergeEvent(a.unitMerge, ev, "merge") end
+  Common.addMergeLifecycle(a.mergeLifecycle, traj)
   if traj.result == "win" then a.completions = a.completions + 1 end
   addCommitment(a, traj)
   for _, rd in ipairs(traj.rounds or {}) do
@@ -285,6 +287,7 @@ end
 local function finish(a)
   local spend = a.buyGold + a.rerollGold + a.xpGold
   local byUnitMerge, unitMergeWatch = finishUnitMerge(a.unitMerge)
+  local mergeLifecycle = Common.finishMergeLifecycle(a.mergeLifecycle)
   local tiers = {}
   for tier, t in pairs(a.tiers) do
     tiers[tostring(tier)] = {
@@ -372,6 +375,7 @@ local function finish(a)
     by_archetype = archetypes,
     by_unit_merge = byUnitMerge,
     unit_merge_watch = unitMergeWatch,
+    merge_lifecycle = mergeLifecycle,
   }
 end
 
@@ -470,6 +474,12 @@ for _, profileId in ipairs(ECONOMY_ORDER) do
     pair_buys_per_run = p.pair_buys_per_run,
     merge_buys_per_run = p.merge_buys_per_run,
     merge_per_pair_buy = p.merge_per_pair_buy,
+    merge_lifecycle = {
+      resolve_rate = p.merge_lifecycle.resolve_rate,
+      avg_rounds_to_merge = p.merge_lifecycle.avg_rounds_to_merge,
+      unresolved = p.merge_lifecycle.unresolved,
+      watch = p.merge_lifecycle.watch,
+    },
     unit_merge_watch = p.unit_merge_watch,
     commander_placements_per_run = p.commander_placements_per_run,
     relic_picks_per_run = p.relic_picks_per_run,

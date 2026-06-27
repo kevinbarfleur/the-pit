@@ -1670,9 +1670,51 @@ Next implementation targets:
      and `rat_warren` as pair-heavy but merge-poor in this sample. These are
      not automatic nerf/buff decisions; they are targets for reroll-policy and
      roster-access investigation.
+   New update (`runs/long-2026-06-27b`, commandants enabled where relevant):
+   - `economy` and `sweep` now include true pair lifecycle metrics:
+     `merge_lifecycle.resolve_rate`, `avg_rounds_to_merge`, unresolved pair
+     counts, and per-unit watchlists. This replaces the old raw
+     `merge_per_pair_buy` as the first signal to read.
+   - `tools/sim.lua coherence [N]` is now a scenario mode. It bins fixed and
+     generated teams by semantic coherence, then measures win-rate, combat
+     length, and cost against representative band fields. Outliers include
+     full unit/slot/level lists so generated failures are reproducible.
+   - `src/lab/coherence.lua` now reads economy profiles from
+     `src/run/economy.lua`; the real profile ids are `baseline`, `sap_cost`,
+     `early_curve`, `tiered_reroll`, and `sap_cost_tiered_reroll`. Legacy
+     aliases (`current`, `sap_like`, `curved_income`) still resolve, but new
+     reports should use the run profile ids.
+   - Tank coherence was corrected: `guard_frontline`, `sustain_wall`, and
+     `frontline_wall` edges make readable defensive shells visible to the
+     semantic model. This fixed a false low-coherence reading on `mid_tank`
+     without changing gameplay.
+   - `coherence N=36`, `PIT_COHERENCE_MATCHES=8`: coherence/winrate
+     correlation is only `0.075`. Buckets: `00_25` wins `57.8%`, `25_50`
+     `39.2%`, `50_75` `58.5%`. Interpretation: power is still too weakly tied
+     to readable plans. Many low-coherence strong outliers are expensive
+     endgame piles, so inspect `cheap_strong` and `high_coherence_weak` before
+     making roster decisions.
+   - Cheap strong examples from the coherence report: `mid_tank` (`100%`
+     winrate in this field), generated mixed mid piles, `gen_focused_mid_shock`,
+     `gen_focused_mid_burn`, `gen_focused_mid_bleed`, and `mid_shock`.
+     High-coherence weak examples include `cross_bleed_rot`, `rot_carre_perfect`,
+     `shock_nuke_croix`, `burn_ligne_perfect`, and `bleed_lock_anneau`.
+     Immediate design read: mid defensive/good-stuff shells are over-rewarded,
+     while several readable DoT/cross-tag showcase comps are under-rewarded.
+   - `economy N=40`, profiles `baseline`, `early_curve`,
+     `sap_cost_tiered_reroll`: `sap_cost_tiered_reroll` is still the best
+     pressure candidate in this slice. It reaches completion `10.1%`, avg wins
+     `5.41`, full-shop afford `69.1%`, gold pressure `0.52`, leftover `8.01`.
+     Baseline has higher avg wins (`5.75`) but lower pressure and much more
+     affordance (`93.7%` full-shop afford). `early_curve` underperforms here
+     (`4.5%` completion, `5.26` wins).
+   - `sweep N=20`, same economies, live pacing vs `hp2_cd15_f24`: the safer
+     pacing candidate remains `hp2_cd15_f24`. Baseline improves from `7.4%`
+     completion live to `11.1%` with `cd1.5/f24`; `sap_cost_tiered_reroll`
+     improves from `5.8%` to `8.2%`. Fatigue stays low (`~2-3%`) in this grid.
    Remaining additions:
-   - upgrade the merge funnel from event ratios to true per-copy lifecycle:
-     pair formed -> merge completed, with time-to-merge and sold-pair loss;
+   - upgrade pair lifecycle further from event matching to per-copy identity:
+     pair formed -> held/sold/lost/merged, with exact sold-pair loss;
    - model relic access and relic tags in coherence/economy reports;
    - make committed policies smarter about XP/reroll timing and protected
      payload placement after the tank/payload tests.
