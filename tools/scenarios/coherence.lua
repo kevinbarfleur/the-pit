@@ -454,6 +454,7 @@ local function compactRow(r)
     coherence = r.coherence,
     winrate = r.winrate,
     cost_score = r.cost_score,
+    win_cost_delta = r.win_cost_delta,
     weighted_score = r.weighted_score,
     rank_pressure = r.rank_pressure,
     duplicate_pressure = r.duplicate_pressure,
@@ -537,6 +538,7 @@ for _, comp in ipairs(candidates) do
     fill_units = Common.clone(comp.fill_units or {}),
     foe_breakdown = foeBreakdown,
   }
+  row.win_cost_delta = row.winrate - row.cost_score
   rows[#rows + 1] = row
   addBucket(byBucket[bucketFor(row.coherence)], row)
   addBucket(byStage[stage], row)
@@ -554,7 +556,9 @@ for _, r in ipairs(rows) do
   if r.coherence >= 0.65 and r.winrate <= 0.35 and not r.underleveled and r.underfilled then
     underfilledWeak[#underfilledWeak + 1] = compactRow(r)
   end
-  if r.coherence <= 0.35 and r.winrate >= 0.55 then lowCoherenceStrong[#lowCoherenceStrong + 1] = compactRow(r) end
+  if r.coherence <= 0.35 and r.winrate >= 0.55 and r.win_cost_delta >= 0.10 then
+    lowCoherenceStrong[#lowCoherenceStrong + 1] = compactRow(r)
+  end
   if r.cost_score <= 0.45 and r.winrate >= 0.60 then cheapStrong[#cheapStrong + 1] = compactRow(r) end
   if r.cost_score >= 0.70 and r.winrate <= 0.35 then expensiveWeak[#expensiveWeak + 1] = compactRow(r) end
 end
@@ -563,6 +567,7 @@ table.sort(highCoherenceWeak, function(a, b)
   return a.coherence > b.coherence
 end)
 table.sort(lowCoherenceStrong, function(a, b)
+  if a.win_cost_delta ~= b.win_cost_delta then return a.win_cost_delta > b.win_cost_delta end
   if a.winrate ~= b.winrate then return a.winrate > b.winrate end
   return a.coherence < b.coherence
 end)

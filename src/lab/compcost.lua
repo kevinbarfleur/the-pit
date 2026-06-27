@@ -85,7 +85,7 @@ function Compcost.of(comp)
   local duplicateDensity = (unitCount > 0) and (duplicateCopies / math.max(1, unitCount * 2)) or 0
   local duplicatePressure = 0
   if duplicateCopies > 0 then
-    duplicatePressure = math.min(0.90, math.max(LEVEL_ACCESS_PRESSURE[maxLevel] or 0, 0.20 + 0.45 * duplicateDensity))
+    duplicatePressure = math.min(0.90, math.max(LEVEL_ACCESS_PRESSURE[maxLevel] or 0, 0.20 + 0.60 * duplicateDensity))
   end
 
   local weightedScore =

@@ -2048,6 +2048,18 @@ Next implementation targets:
      direction: small or neutral win changes, better coverage, fewer space
      misses. Learning: the right lever is not removing supports, but staging
      them so they stop competing with the core after the run has committed.
+   - Cost-aware outlier update: duplicate-pressure density was raised so
+     multi-L2 mid boards are no longer underpriced (`three L2 in six slots`
+     reads about `0.50` instead of `0.425`, while one L2 remains at the
+     `0.30` floor). Coherence rows now expose `win_cost_delta`, and
+     `low_coherence_strong` requires a positive cost-adjusted overperformance
+     (`>= 0.10`) instead of flagging expensive stat boards that merely win at
+     high investment. In `runs/long-2026-06-27n/coherence-cost-aware-outliers-v1`,
+     `rot_bleed_mid` leaves `cheap_strong`, `low_coh strong` drops `3 -> 0`,
+     and the remaining `cheap_strong` rows are only generated band variants
+     (`mid_poison__leveled`, `mid_rot__leveled`) with moderate deltas around
+     `0.21` and clear losses into `mid_tank`, `mid_shock`, and
+     `cross_venom_pyre`.
    Remaining additions:
    - use `rot_bleed_rat_core` as the baseline reroll target for the next
      balance pass, but investigate cheap mid-board outliers before nerfing it;

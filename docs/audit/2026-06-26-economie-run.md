@@ -1094,6 +1094,18 @@ Ajout batch autonomie (`runs/long-2026-06-27b`) :
   (`0.631 -> 0.642`) et ameliore `held75` (`10% -> 15%`). Lecture : les
   supports sont bons pour le tempo early, mais doivent etre stages pour ne pas
   concurrencer le coeur apres commitment.
+- Mise a jour lecture des outliers : la pression de copies tient mieux compte
+  des boards mid avec plusieurs L2. Une seule L2 reste au plancher `0.30`, deux
+  L2 dans six slots lisent environ `0.40`, et trois L2 environ `0.50`. Le
+  rapport coherence expose aussi `win_cost_delta`, et `low_coherence_strong`
+  ignore les boards tres investis qui ne surperforment pas leur cout. Sur
+  `runs/long-2026-06-27n/coherence-cost-aware-outliers-v1`,
+  `rot_bleed_mid` sort de `cheap_strong`, `low-coh strong` passe de `3` a `0`,
+  et il ne reste que deux `cheap_strong` generes par bandes
+  (`mid_poison__leveled`, `mid_rot__leveled`) avec delta modere autour de
+  `0.21` et des counters nets (`mid_tank`, `mid_shock`,
+  `cross_venom_pyre`). Lecture : ne pas nerfer le pivot rot/bleed catalogue a
+  ce stade ; les alertes restantes servent surtout a calibrer les bandes.
 
 Metrics recommandees :
 
@@ -1132,6 +1144,8 @@ Metrics recommandees :
 - `duplicate_pressure` : pression d'acces aux copies necessaires aux L2/L3 ;
   a lire avec `rank_pressure` pour eviter les faux "cheap" sur des boards tres
   leveles.
+- `win_cost_delta` : `winrate - cost_score`, utile pour separer un vrai
+  overperform d'un board cher qui gagne parce qu'il est tres investi.
 - `plan_access` : couverture finale d'un target plan en run reelle
   (unites, niveaux, complete rate, ratio d'or final). Indispensable pour
   separer "endpoint fort" de "endpoint accessible".
