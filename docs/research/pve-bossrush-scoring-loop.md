@@ -1,0 +1,228 @@
+# PvE Bossrush And Scoring Loop
+
+Date: 2026-06-27
+
+Status: active product/design spec. This document promotes the bossrush lab
+prototype into a future gameplay loop. The historical balance details remain in
+`intensive-simulation-balance-program-HANDOFF.md`.
+
+## Purpose
+
+The Pit should not end the moment a build finally becomes satisfying.
+
+The core async PvP loop remains the backbone, but PvE abominations add two
+important surfaces:
+
+- **run texture**: occasional thematic PvE events during the normal run;
+- **post-win payoff**: after a successful run, the player can push the build
+  into boss scoring instead of immediately stopping.
+
+The target feeling is: "my build is online, now let me see how deep it bites."
+
+## Current Prototype
+
+Implemented lab pieces:
+
+- visual source: `docs/generation/generateur-abominations.html`;
+- boss data: `src/data/abominations.lua`;
+- deterministic runner: `src/lab/bossrush.lua`;
+- scenario mode: `tools/sim.lua bossrush`;
+- report: `report-bossrush.json` with `by_comp`, `by_boss`, `matrix`,
+  samples, and `recommendations`.
+
+Fight shape:
+
+1. The abomination side has one huge boss and three generals.
+2. Generals occupy the front and block normal deterministic targeting.
+3. Summoned adds also block scoring.
+4. When every non-boss right-side unit is dead, the scoring window starts.
+5. During the scoring window, the lab counts damage to the boss.
+
+This uses the normal arena and normal effects. No render/audio/wall-clock state
+participates in the lab.
+
+## Product Loop
+
+### Mid-Run PvE Events
+
+Use abominations as scheduled run texture, not constant interruptions.
+
+Recommended first cadence:
+
+- one minor PvE event after the player has a real board shape, around the early
+  middle of the run;
+- one stronger PvE event near the late transition;
+- no PvE event before the player understands shop, merge, and positioning.
+
+Event outcome should not be "win or lose the run" at first. It should be a
+reward fork:
+
+- clear cleanly: choose a strong reward;
+- clear barely: choose a modest reward;
+- fail: take chip damage or lose reward quality, but do not instantly end the
+  run unless this is a deliberate boss gate.
+
+Good reward candidates:
+
+- one-of-three relic offer;
+- one-of-three temporary boon for the next PvP round;
+- heal one life or protect one future life loss;
+- gold burst;
+- shop manipulation: freeze, discounted rerolls, targeted shop family.
+
+Avoid making PvE rewards mandatory for all winning runs. They should add route
+texture and build identity, not become the only optimal economy line.
+
+### Post-Win Boss Chain
+
+After the player wins the normal run, offer a descent choice:
+
+- **Claim Victory**: end the run and record the win.
+- **Descend Further**: enter bossrush with the same build.
+
+Bossrush can then loop:
+
+1. Choose or reveal the next abomination.
+2. Fight generals.
+3. Score damage on the boss for a fixed window.
+4. Record score and award depth.
+5. Offer to continue to the next boss/depth or retire.
+
+The boss itself does not need to die in v1. The scoring fantasy is stronger if
+the boss is a huge target that measures the build. Later bosses can become
+killable thresholds if the chain needs clearer milestones.
+
+## Scoring
+
+Initial score should be easy to understand:
+
+```text
+score = boss damage during scoring window
+```
+
+Secondary metrics should be shown but not dominate:
+
+- time to clear generals;
+- survival through full scoring window;
+- damage by cause;
+- MVP unit;
+- afflictions applied;
+- boss family reached;
+- chain depth.
+
+Do not start with a complicated score formula. Players need to understand that
+"bigger number = my build hit harder". If we add bonuses later, they should be
+visible as separate additive lines after the core count-up:
+
+- `+ Clear Bonus`
+- `+ Full Window Bonus`
+- `+ Depth Bonus`
+
+## Boss Families
+
+Each boss should test one or two dimensions clearly.
+
+Current catalogue direction:
+
+- `leviathan`: poison/rot attrition and lifesteal body.
+- `regard`: vulnerability and shock marks.
+- `ossuaire`: thorns, shield, defensive attrition.
+- `kraken`: slow, shock arcs, control pressure.
+- `idole`: shield/invulnerability opening.
+- `ruche`: summons, swarm, poison pressure.
+- `brasier`: burn and propagation pressure.
+- `floraison`: poison/rot hybrid.
+- `devoreur`: execute and percent-HP threat.
+- `vermine`: anti-tank max-HP pressure.
+
+Guardrail: bossrush must not collapse into "play the one best affliction".
+Reports should keep warning when one archetype scores far above the rest.
+
+Needed future counters:
+
+- poison ramp / anti-stack / cleanse boss;
+- shield stripping boss;
+- burst-window boss;
+- cleave/spread boss;
+- sustain-check boss;
+- anti-tank boss;
+- anti-summon or anti-wide-board boss.
+
+## Feel And Presentation
+
+The scoring phase should be treated as a product moment, not a plain combat log.
+
+Presentation rule:
+
+- SIM stays pure and deterministic.
+- Presentation listens to events and displays score, sound, shake, and boss
+  reactions.
+
+Recommended live flow:
+
+1. **General clear**: each general death produces a heavy cue, small freeze,
+   and a visible "seal broken" reaction on the boss.
+2. **Scoring opens**: boss shifts pose, top score meter appears, sound bed rises.
+3. **Damage ladder**: damage-to-boss events feed a count-up meter, with pitch
+   rising on grouped bursts.
+4. **Milestones**: score thresholds trigger larger boss reactions, screen trauma,
+   short hitstop, and a visible tier mark.
+5. **Window close**: count-up settles, final score stamps into the run record.
+
+Reuse existing systems first:
+
+- `src/render/arena_draw.lua` already has damage numbers, hit flashes, death
+  bursts, throttled combat SFX, and local shake.
+- `src/ui/juice.lua` already has trauma shake, hitstop, scale/nudge/tilt.
+- `src/audio/sfx.lua` already has success/defeat/thud/drop and ladder sounds.
+
+Do not create a second unrelated feel stack. Add a score director that listens
+to boss damage and drives these existing systems.
+
+## Simulation Requirements
+
+Bossrush reports should stay deterministic and machine-readable.
+
+Required report dimensions:
+
+- clear rate;
+- survival rate;
+- full scoring-window rate;
+- score damage;
+- score DPS;
+- boss kill rate if killable bosses are added;
+- damage by cause;
+- recommendations/warnings.
+
+Current warning examples:
+
+- `dominant_scoring_archetype`: one comp is too far ahead in score.
+- `hard_wall_boss`: boss blocks too many runs before score.
+- `post_clear_attrition_boss`: teams can clear generals but die before a full
+  score window.
+
+## Implementation Sequence
+
+1. Keep iterating the lab until boss families are readable and not dominated by
+   one archetype.
+2. Add a product-facing bossrush spec scene only after the lab metrics are
+   stable enough to justify the flow.
+3. Add score director in presentation layer:
+   event aggregation, count-up, milestone pulses, audio ladder, boss reactions.
+4. Add one mid-run PvE event with modest rewards.
+5. Add post-win "Descend Further" choice.
+6. Add saved score records and seeds.
+7. Add leaderboard/daily/weekly variants only after deterministic score records
+   are stable.
+
+## Current Open Warnings
+
+- `poison_diamant_perfect` is currently the best bossrush scorer by a large
+  margin.
+- `cross_venom_pyre` is strong and healthy, but may become the second half of a
+  narrow poison/cross endgame meta.
+- Tank and shield boards survive more than they score; this can be good if
+  bossrush is meant to reward output, but bad if defensive builds need a PvE
+  scoring identity.
+- Brute bruiser has no bossrush identity yet.
+

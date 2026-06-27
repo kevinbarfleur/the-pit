@@ -30,6 +30,8 @@ Pour une session agent:
 - `research/love2d-tech.md` - notes techniques LÖVE/Lua.
 - `research/balance-sim-design.md` - principes de lecture des rapports de
   simulation.
+- `research/pve-bossrush-scoring-loop.md` - boucle PvE, abominations,
+  bossrush post-win et scoring.
 
 ## References techniques conservees
 
@@ -49,6 +51,7 @@ contrat technique. Ils ne remplacent pas `CLAUDE.md`.
 - `generation/generateur-bestiaire.html`
 - `generation/generateur-reliques.html`
 - `generation/generateur-icones-tags.html`
+- `generation/generateur-abominations.html`
 
 Quand une reference technique parait contredire le code actuel, le code et les
 tests gagnent.
