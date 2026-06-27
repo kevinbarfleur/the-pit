@@ -1030,6 +1030,19 @@ Ajout batch autonomie (`runs/long-2026-06-27b`) :
   vraies alertes restantes sont surtout `rot_bleed_mid__leveled`,
   `rot_bleed_mid`, quelques boards bleed/bruiser low-rank, et des noyaux poison
   mid qui gagnent sous leur cout.
+- Mise a jour pression de copies : ablation locale de `rot_bleed_mid__leveled`
+  montre que le saut `75% -> 100%` vient surtout de l'ajout d'un quatrieme L2
+  (`clot_mender` central), meme si l'aura L2 est ramenee aux valeurs L1. Le
+  probleme est donc au moins autant une sous-estimation du cout d'acces aux
+  copies qu'un probleme de wording ou de valeur d'aura. `Compcost` expose
+  maintenant `duplicatePressure` et l'utilise comme plancher de `score` pour
+  les boards denses en L2/L3.
+  Sur `runs/long-2026-06-27n/duplicate-pressure-coherence-v1`, `cheap_strong`
+  passe de `7` a `5`, et `rot_bleed_mid__leveled` sort de cette liste
+  (`cost_score 0.50`, `duplicate_pressure 0.50`) sans toucher aux valeurs de
+  monstre. `rot_bleed_mid` reste une vraie alerte (`cost_score 0.425`,
+  `winrate 75%`) mais il perd encore contre `mid_tank` et `cross_venom_pyre` :
+  a surveiller, pas a nerfer sans test economie/accessibilite.
 - Mise a jour timing XP/reroll : `committed_unit_set_plan` accepte maintenant
   `xpCoverageGate`, une barriere optionnelle qui autorise le rush jusqu'a un
   rang plancher puis bloque les achats d'XP tant que la couverture reelle du
@@ -1082,6 +1095,9 @@ Metrics recommandees :
 - `filled_resolutions` : pour un noyau coherent mais sous-rempli, comparaison
   entre le noyau brut et sa meilleure variante remplie/nivellee ; a croiser
   avec le cout et les runs economie pour savoir si le plan est atteignable.
+- `duplicate_pressure` : pression d'acces aux copies necessaires aux L2/L3 ;
+  a lire avec `rank_pressure` pour eviter les faux "cheap" sur des boards tres
+  leveles.
 - `plan_access` : couverture finale d'un target plan en run reelle
   (unites, niveaux, complete rate, ratio d'or final). Indispensable pour
   separer "endpoint fort" de "endpoint accessible".

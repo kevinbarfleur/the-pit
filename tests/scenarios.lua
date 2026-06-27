@@ -95,6 +95,8 @@ local ok, err = pcall(function()
         "mode coherence : chaque ligne expose le diagnostic par adversaire")
       assert(body:find('"rank_pressure"', 1, true),
         "mode coherence : chaque ligne expose la pression d'acces par rang")
+      assert(body:find('"duplicate_pressure"', 1, true),
+        "mode coherence : chaque ligne expose la pression de copies")
     elseif m == "economy" then
       assert(body:find('"plan_access"', 1, true),
         "mode economy : accessibilite des plans cibles reportee")

@@ -1986,6 +1986,18 @@ Next implementation targets:
      low/mid-rank candidates (`rot_bleed_mid__leveled`, `rot_bleed_mid`, some
      generated bleed/bruiser/poison boards), while tank/shock rank-4 access
      false positives leave the list.
+   - Duplicate-pressure correction: ablation of `rot_bleed_mid__leveled` showed
+     the `75% -> 100%` jump is mostly caused by adding a fourth L2
+     (`clot_mender` at center) to an already leveled mid board; reverting the
+     L2 aura values alone did not fix it. `Compcost` now returns
+     `duplicatePressure` and uses it as another access floor for `score`, and
+     coherence rows expose `duplicate_pressure`. This should reduce false
+     "cheap" reads on boards that require many duplicated copies before we
+     reach for data nerfs. In
+     `runs/long-2026-06-27n/duplicate-pressure-coherence-v1`, `cheap_strong`
+     drops from `7` to `5`; `rot_bleed_mid__leveled` leaves the cheap list at
+     `cost_score 0.50`, while base `rot_bleed_mid` remains a watch item
+     (`75%` winrate, but still loses to `mid_tank` and `cross_venom_pyre`).
    - XP coverage-gate update: `committed_unit_set_plan` now supports
      `xpCoverageGate`, which can let a policy reach a base shop rank and then
      block further XP buys until real target coverage reaches unit/level

@@ -34,7 +34,7 @@ regen/taunt/aggro→tank, sinon bruiser). Sert aux politiques *committed* ET à 
 
 ## 3. Modèle d'investissement (`compcost.lua`)
 
-`Compcost.of(comp) → { gold, maxLevel, slots, relicDep, sigilDep, placementSens, rankPressure, score }`.
+`Compcost.of(comp) → { gold, maxLevel, slots, relicDep, sigilDep, placementSens, rankPressure, duplicatePressure, score }`.
 
 - **gold** = `Σ coût_unité · facteur_niveau` (facteur `{1,3,9}` : 3 copies→niv2, 9→niv3).
   Les slots de board sont désormais débloqués par le rythme de run, pas achetés en or, donc ils ne sont plus
@@ -44,12 +44,16 @@ regen/taunt/aggro→tank, sinon bruiser). Sert aux politiques *committed* ET à 
 - **sigilDep** = 1 si sigil ≠ carré (topologie spécifique exigée). **relicDep** = 1 si reliques déclarées.
 - **rankPressure** = plancher d'accessibilité dérivé du rang de boutique. Il empêche une composition avec une
   pièce rang 4/5 d'être lue comme "cheap" seulement parce que son prix brut en gemmes est faible.
+- **duplicatePressure** = plancher d'accessibilite derive du nombre de copies necessaires aux niveaux 2/3.
+  Il evite qu'un board avec plusieurs L2/L3 soit lu comme cheap seulement parce que le prix brut `3 copies`
+  ne compte pas les rerolls, la place de banc et la variance d'acquisition.
 - **score** ∈ (0,1] = mélange pondéré (poids nommés dans `compcost.lua`) :
   `0.40·norm(gold) + 0.25·(maxLevel-1)/2 + 0.10·(slots/9) + 0.05·relicDep + 0.05·sigilDep + 0.15·placementSens`.
-  Le score final est le maximum entre ce mélange et `rankPressure`.
+  Le score final est le maximum entre ce mélange, `rankPressure` et `duplicatePressure`.
 
-Les boutons à tuner : `LEVEL_GOLD = {1,3,9}`, `RANK_ACCESS_PRESSURE`, `RANK_GATE_MULT` et les 6 poids du
-score pondéré. Tout le reste est data-driven (coûts/rangs réels des unités + largeur/placement/reliques).
+Les boutons à tuner : `LEVEL_GOLD = {1,3,9}`, `RANK_ACCESS_PRESSURE`, `RANK_GATE_MULT`,
+`LEVEL_ACCESS_PRESSURE` et les 6 poids du score pondéré. Tout le reste est data-driven
+(coûts/rangs/niveaux réels des unités + largeur/placement/reliques).
 
 ## 4. Counters INTENTIONNELS (ne jamais flaguer)
 
