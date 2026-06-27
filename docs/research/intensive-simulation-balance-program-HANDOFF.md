@@ -1877,10 +1877,22 @@ Next implementation targets:
      `pit_sovereign`), for `50%` total forced winrate over the oracle window.
      This means the target is both poorly accessible and not a complete
      late-endpoint without additional commander/relic/scaling support.
+   - Acquisition-funnel update: `plan_access.acquisition_funnel` now reports
+     target offers, gold affordability, playable-space rate, buys, pair/merge
+     buys, sells, first-seen rounds, and per-unit miss reasons. In
+     `runs/long-2026-06-27n/acquisition-funnel-v3`, baseline +
+     `committed_cross_bleed_rot_plan` sees only `39.6%` of distinct target
+     units per run (`3.17/8`), buys `3.87` target pieces/run, has no gold issue
+     (`100%` gold-affordable), almost no policy misses (`0.1/run`), and no
+     target sells. The blockers are space (`2.0` missed-space offers/run) and
+     rare piece access: `pit_maw` seen in only `10%` of runs, `marrow_drinker`
+     `6.7%`, `wither_bloom` `16.7%`, and `blight_spreader` `16.7%`.
+     Interpretation: this cannot be a natural endpoint in the current economy
+     unless it gets stepping-stone versions, support from commander/relic
+     access, better odds/tier timing, or a simpler target definition.
    Remaining additions:
-   - add a target acquisition funnel by unit/relic: first seen, offered,
-     affordable, playable, bought, sold, paired, merged, missed for gold, missed
-     for space, or missed by policy;
+   - extend the acquisition funnel to relic offers/picks and commander
+     availability for target plans that require either support layer;
    - upgrade pair lifecycle further from event matching to per-copy identity:
      pair formed -> held/sold/lost/merged, with exact sold-pair loss;
    - model actual relic acquisition timing and relic offer access in

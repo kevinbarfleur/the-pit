@@ -39,9 +39,10 @@ function Rundriver.new(seed, opts)
     leftMutator = opts.leftMutator, -- lab-only overlay appliqué au joueur seulement (candidate balance)
     rightMutator = opts.rightMutator, -- lab-only overlay appliqué à l'adversaire seulement
     recordBoards = opts.recordBoards == true, -- lab-only: snapshots légers board+bench par round pour diagnostics
+    recordEvents = opts.recordEvents == true, -- lab-only: achats/ventes/reliques par round pour funnels de plan
     relicsKnown = opts.relicsKnown or false, -- reliques pré-connues au Grimoire ? (le driver n'a pas d'IO)
     opponentFn = opts.opponent,              -- (driver) -> compo droite ; défaut PvE escaladante
-    over = nil, pendingRelics = nil, lastResult = nil,
+    over = nil, pendingRelics = nil, lastResult = nil, events = {},
     pairEvents = {}, mergeEvents = {},
     metrics = {
       buys = 0, buyGold = 0,
@@ -73,6 +74,14 @@ function Rundriver:_metric(key, n)
   self.metrics[key] = (self.metrics[key] or 0) + (n or 1)
 end
 
+function Rundriver:_event(ev)
+  if not self.recordEvents then return end
+  ev = ev or {}
+  ev.round = ev.round or self.run.round
+  ev.shopTier = ev.shopTier or self.run.shopTier
+  self.events[#self.events + 1] = ev
+end
+
 function Rundriver:metricSnapshot()
   local out = {}
   for _, k in ipairs(METRIC_KEYS) do out[k] = self.metrics[k] or 0 end
@@ -83,6 +92,14 @@ local function metricDelta(after, before)
   local out = {}
   for _, k in ipairs(METRIC_KEYS) do out[k] = (after[k] or 0) - (before[k] or 0) end
   return out
+end
+
+function Rundriver:shopSnapshot()
+  local shop = {}
+  for i, o in ipairs(self.run.shop) do
+    shop[i] = { id = o.id, cost = o.cost, sold = o.sold, playable = self:offerPlayable(i) }
+  end
+  return shop
 end
 
 function Rundriver.shopFullCost(shop)
@@ -108,8 +125,7 @@ function Rundriver:state()
     if sr then benchUsed = benchUsed + 1 end
     bench[i] = { slot = i, id = sr and sr.id or nil, level = sr and (sr.level or 1) or nil }
   end
-  local shop = {}
-  for i, o in ipairs(self.run.shop) do shop[i] = { id = o.id, cost = o.cost, sold = o.sold } end
+  local shop = self:shopSnapshot()
   return {
     round = self.run.round, gold = self.run.gold, lives = self.run.lives,
     wins = self.run.wins, losses = self.run.losses, slots = self.run.slots,
@@ -170,12 +186,15 @@ function Rundriver:_recordBuyProgress(id, sameLevelCopies, level)
     self.mergeEvents[#self.mergeEvents + 1] = {
       id = id, level = level or 1, round = self.run.round, shopTier = self.run.shopTier,
     }
+    return "merge"
   elseif sameLevelCopies == 1 then
     self:_metric("pairBuys", 1)
     self.pairEvents[#self.pairEvents + 1] = {
       id = id, level = level or 1, round = self.run.round, shopTier = self.run.shopTier,
     }
+    return "pair"
   end
+  return "single"
 end
 
 -- ── Actions joueur (toutes renvoient un résultat exploitable ; refus = false/nil, jamais d'exception) ──
@@ -193,7 +212,8 @@ function Rundriver:buy(shopIndex, slot)
     if not self.build:autoBuy(shopIndex) then return false end
     self:_metric("buys", 1)
     self:_metric("buyGold", cost)
-    self:_recordBuyProgress(id, sameLevelCopies, 1)
+    local progress = self:_recordBuyProgress(id, sameLevelCopies, 1)
+    self:_event({ type = "buy", id = id, cost = cost, progress = progress })
     return id
   end
   slot = slot or self:firstEmptySlot()
@@ -204,7 +224,8 @@ function Rundriver:buy(shopIndex, slot)
   if not id then return false end
   self:_metric("buys", 1)
   self:_metric("buyGold", cost)
-  self:_recordBuyProgress(id, sameLevelCopies, 1)
+  local progress = self:_recordBuyProgress(id, sameLevelCopies, 1)
+  self:_event({ type = "buy", id = id, cost = cost, progress = progress, slot = slot })
   self.build:placeId(slot, id, 1)
   self.build:checkMerges() -- 3 copies (même id+niveau) -> niveau+1 (cascade)
   return id
@@ -220,6 +241,7 @@ function Rundriver:sell(slot)
   self:_metric("sellGold", self.run.gold - before)
   self:_metric("boardSells", 1)
   self:_metric("boardSellGold", self.run.gold - before)
+  self:_event({ type = "sell", id = sr.id, where = "board", slot = slot, gold = self.run.gold - before })
   self.build.slotRigs[slot] = nil
   self.build.board.slots[slot].unit = nil
   return true
@@ -234,6 +256,7 @@ function Rundriver:sellBench(slot)
   self:_metric("sellGold", self.run.gold - before)
   self:_metric("benchSells", 1)
   self:_metric("benchSellGold", self.run.gold - before)
+  self:_event({ type = "sell", id = sr.id, where = "bench", slot = slot, gold = self.run.gold - before })
   self.build.bench[slot] = nil
   return true
 end
@@ -244,6 +267,7 @@ function Rundriver:reroll()
   if ok then
     self:_metric("rerolls", 1)
     self:_metric("rerollGold", cost)
+    self:_event({ type = "shop_roll", cost = cost, shop = self:shopSnapshot() })
   end
   return ok
 end
@@ -457,6 +481,7 @@ function Rundriver:pickRelic(choiceIndex)
   self.pendingRelics = nil
   self.run:startRound()
   if id then self:_metric("relicPicks", 1) end
+  if id then self:_event({ type = "relic_pick", id = id, choice = choiceIndex or 1 }) end
   return id or false
 end
 
@@ -498,6 +523,7 @@ function Rundriver.run(seed, policy, opts)
     local desired = policy.desiredOffers and policy:desiredOffers(drv) or nil
     local desiredGoldBudget = desired and (desired.goldBudget or before.gold) or nil
     local metricBefore = drv:metricSnapshot()
+    local eventBefore = #drv.events
     local commanderDecision = drv:resolveCommanderMode()
     local decisions = policy:act(drv) -- la politique achète/place/reroll/level/reshape via l'API d'actions
     if commanderDecision then
@@ -546,6 +572,11 @@ function Rundriver.run(seed, policy, opts)
     if drv.recordBoards then
       row.board = boardAfterBuild
       row.holdings = holdingsAfterBuild
+    end
+    if drv.recordEvents then
+      row.shop = before.shop
+      row.events = {}
+      for i = eventBefore + 1, #drv.events do row.events[#row.events + 1] = drv.events[i] end
     end
     traj.rounds[#traj.rounds + 1] = row
   end

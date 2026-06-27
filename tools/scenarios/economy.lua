@@ -481,6 +481,145 @@ local function finishCombatBands(map)
   return out
 end
 
+local FUNNEL_KEYS = {
+  "offered", "goldAffordable", "playable", "bought", "pairBuys", "mergeBuys",
+  "sold", "missedGold", "missedSpace", "missedPolicy", "firstSeenHits", "firstSeenRound",
+}
+
+local function newFunnelAgg()
+  local out = { byUnit = {}, targetUnits = 0 }
+  for _, key in ipairs(FUNNEL_KEYS) do out[key] = 0 end
+  return out
+end
+
+local function targetUnitSet(target)
+  local set, order = {}, {}
+  for _, u in ipairs(target.units or {}) do
+    if u.id and not set[u.id] then
+      set[u.id] = true
+      order[#order + 1] = u.id
+    end
+  end
+  table.sort(order)
+  return set, order
+end
+
+local function funnelUnit(f, id)
+  local u = f.byUnit[id]
+  if not u then
+    u = newFunnelAgg()
+    u.byUnit = nil
+    u.targetUnits = nil
+    f.byUnit[id] = u
+  end
+  return u
+end
+
+local function addFunnelValue(f, id, key, n)
+  n = n or 1
+  f[key] = (f[key] or 0) + n
+  if id then
+    local u = funnelUnit(f, id)
+    u[key] = (u[key] or 0) + n
+  end
+end
+
+local function addFunnelAgg(dst, src)
+  dst.targetUnits = math.max(dst.targetUnits or 0, src.targetUnits or 0)
+  for _, key in ipairs(FUNNEL_KEYS) do dst[key] = (dst[key] or 0) + (src[key] or 0) end
+  for id, row in pairs(src.byUnit or {}) do
+    local d = funnelUnit(dst, id)
+    for _, key in ipairs(FUNNEL_KEYS) do d[key] = (d[key] or 0) + (row[key] or 0) end
+  end
+end
+
+local function planFunnel(traj, target)
+  local wanted, order = targetUnitSet(target)
+  local out = newFunnelAgg()
+  out.targetUnits = #order
+  local firstSeen = {}
+  local function scanOffer(offer, rd, boughtRemaining)
+    if not (offer and not offer.sold and wanted[offer.id]) then return end
+    local id = offer.id
+    addFunnelValue(out, id, "offered", 1)
+    if not firstSeen[id] then
+      firstSeen[id] = true
+      addFunnelValue(out, id, "firstSeenHits", 1)
+      addFunnelValue(out, id, "firstSeenRound", rd.round or 0)
+    end
+    local goldOk = (rd.startGold or 0) >= (offer.cost or 0)
+    local spaceOk = offer.playable == true
+    if goldOk then addFunnelValue(out, id, "goldAffordable", 1)
+    else addFunnelValue(out, id, "missedGold", 1) end
+    if spaceOk then addFunnelValue(out, id, "playable", 1) end
+    if goldOk and not spaceOk then addFunnelValue(out, id, "missedSpace", 1) end
+    if goldOk and spaceOk then
+      if (boughtRemaining[id] or 0) > 0 then
+        boughtRemaining[id] = boughtRemaining[id] - 1
+      else
+        addFunnelValue(out, id, "missedPolicy", 1)
+      end
+    end
+  end
+  for _, rd in ipairs(traj.rounds or {}) do
+    local buysById = {}
+    for _, ev in ipairs(rd.events or {}) do
+      if wanted[ev.id] then
+        if ev.type == "buy" then
+          buysById[ev.id] = (buysById[ev.id] or 0) + 1
+          addFunnelValue(out, ev.id, "bought", 1)
+          if ev.progress == "pair" then addFunnelValue(out, ev.id, "pairBuys", 1) end
+          if ev.progress == "merge" then addFunnelValue(out, ev.id, "mergeBuys", 1) end
+        elseif ev.type == "sell" then
+          addFunnelValue(out, ev.id, "sold", 1)
+        end
+      end
+    end
+    local boughtRemaining = {}
+    for id, n in pairs(buysById) do boughtRemaining[id] = n end
+    for _, offer in ipairs(rd.shop or {}) do
+      scanOffer(offer, rd, boughtRemaining)
+    end
+    for _, ev in ipairs(rd.events or {}) do
+      if ev.type == "shop_roll" then
+        for _, offer in ipairs(ev.shop or {}) do scanOffer(offer, rd, boughtRemaining) end
+      end
+    end
+  end
+  return out
+end
+
+local function finishFunnelUnit(row, runs)
+  local offered = row.offered or 0
+  return {
+    offers_per_run = (runs > 0) and (offered / runs) or 0,
+    gold_afford_rate = (offered > 0) and ((row.goldAffordable or 0) / offered) or 0,
+    playable_rate = (offered > 0) and ((row.playable or 0) / offered) or 0,
+    buy_rate_per_offer = (offered > 0) and ((row.bought or 0) / offered) or 0,
+    bought_per_run = (runs > 0) and ((row.bought or 0) / runs) or 0,
+    pair_buys_per_run = (runs > 0) and ((row.pairBuys or 0) / runs) or 0,
+    merge_buys_per_run = (runs > 0) and ((row.mergeBuys or 0) / runs) or 0,
+    sold_per_run = (runs > 0) and ((row.sold or 0) / runs) or 0,
+    missed_gold_per_run = (runs > 0) and ((row.missedGold or 0) / runs) or 0,
+    missed_space_per_run = (runs > 0) and ((row.missedSpace or 0) / runs) or 0,
+    missed_policy_per_run = (runs > 0) and ((row.missedPolicy or 0) / runs) or 0,
+    seen_rate = (runs > 0) and ((row.firstSeenHits or 0) / runs) or 0,
+    avg_first_seen_round = ((row.firstSeenHits or 0) > 0) and ((row.firstSeenRound or 0) / row.firstSeenHits) or 0,
+  }
+end
+
+local function finishFunnel(row, runs)
+  local out = finishFunnelUnit(row, runs)
+  local targetUnits = math.max(1, row.targetUnits or 0)
+  out.target_units = row.targetUnits or 0
+  out.target_units_seen_per_run = out.seen_rate
+  out.seen_rate = nil
+  out.target_unit_seen_rate = (runs > 0) and ((row.firstSeenHits or 0) / (runs * targetUnits)) or 0
+  out.by_unit = {}
+  for id, u in pairs(row.byUnit or {}) do out.by_unit[id] = finishFunnelUnit(u, runs) end
+  return out
+end
+
 local function planTrajectory(traj, target, finalBoardCov, finalHeldCov)
   local bestBoard, bestHeld = nil, nil
   local everBoardComplete, everHeldComplete = false, false
@@ -575,6 +714,7 @@ local function addPlanAccess(a, traj)
         firstHeld = newThresholdMap(),
         combatBands = newCombatBands(),
         lossThresholds = newLossThresholdMap(),
+        funnel = newFunnelAgg(),
         finalGoldRatio = 0,
         wins = 0, completeWins = 0,
         completions = 0, completeCompletions = 0,
@@ -584,6 +724,7 @@ local function addPlanAccess(a, traj)
     local cov = planCoverage(traj.finalBoard, target)
     local heldCov = planCoverage(traj.finalHoldings or traj.finalBoard, target)
     local path = planTrajectory(traj, target, cov, heldCov)
+    local funnel = planFunnel(traj, target)
     rec.runs = rec.runs + 1
     rec.unitCoverage = rec.unitCoverage + cov.unit_coverage
     rec.levelCoverage = rec.levelCoverage + cov.level_coverage
@@ -601,6 +742,7 @@ local function addPlanAccess(a, traj)
     addThresholdAgg(rec.firstHeld, path.first_held)
     addCombatBands(rec.combatBands, path.combat_bands)
     addLossThresholdAgg(rec.lossThresholds, path.loss_thresholds)
+    addFunnelAgg(rec.funnel, funnel)
     rec.finalGoldRatio = rec.finalGoldRatio + ((rec.target_gold > 0) and (finalGold / rec.target_gold) or 0)
     rec.wins = rec.wins + (traj.wins or 0)
     if traj.result == "win" then rec.completions = rec.completions + 1 end
@@ -717,6 +859,7 @@ local function finish(a)
       first_held_level_round = finishThresholdAgg(rec.firstHeld, rec.runs),
       combat_by_board_level_band = finishCombatBands(rec.combatBands),
       losses_by_board_level_threshold = finishLossThresholdAgg(rec.lossThresholds, rec.runs),
+      acquisition_funnel = finishFunnel(rec.funnel, rec.runs),
       avg_final_gold_ratio = (rec.runs > 0) and (rec.finalGoldRatio / rec.runs) or 0,
       avg_wins = (rec.runs > 0) and (rec.wins / rec.runs) or 0,
       avg_wins_when_complete = (rec.complete > 0) and (rec.completeWins / rec.complete) or 0,
@@ -838,6 +981,7 @@ for run = 1, N do
         economy = profileId,
         commanderMode = COMMANDER_MODE,
         recordBoards = #PLAN_TARGETS > 0,
+        recordEvents = #PLAN_TARGETS > 0,
       })
       addRun(profileAgg[profileId], traj)
       local pa = policyAgg[profileId][p.name]

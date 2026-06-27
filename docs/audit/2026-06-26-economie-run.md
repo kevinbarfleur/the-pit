@@ -921,6 +921,19 @@ Ajout batch autonomie (`runs/long-2026-06-27b`) :
   seulement ameliorer son accessibilite ; en endpoint late sans relique/command,
   il manque aussi une source de scaling ou une meilleure transition vers le
   mur de fin.
+- Mise a jour funnel acquisition : `plan_access.acquisition_funnel` detaille les
+  offres vues, l'or, la place, les achats, paires/fusions, ventes et le premier
+  round vu par unite cible. Sur
+  `runs/long-2026-06-27n/acquisition-funnel-v3`, baseline +
+  `committed_cross_bleed_rot_plan` voit seulement `39.6%` des unites cibles par
+  run (`3.17/8` unites cibles distinctes), achete `3.87` pieces/run, n'a aucun
+  probleme d'or (`100%` gold-affordable), tres peu de misses policy (`0.1/run`)
+  et aucune vente cible. Les vrais blocages sont la place (`2.0` misses
+  space/run) et surtout l'apparition des pieces premium : `pit_maw` vu dans
+  `10%` des runs, `marrow_drinker` `6.7%`, `wither_bloom` `16.7%`,
+  `blight_spreader` `16.7%`. Lecture : cette comp ne peut pas etre un endpoint
+  naturel avec autant de pieces rares/premium sans stepping-stones, meilleure
+  odds curve, support de relique/command, ou target simplifie.
 
 Metrics recommandees :
 
@@ -963,6 +976,9 @@ Metrics recommandees :
 - `plan_access.oracle` : combat force-build du target complet contre des rounds
   PvE representatifs. Sert a separer "plan inaccessible" de "plan faible meme
   quand complet".
+- `plan_access.acquisition_funnel` : offres/achats/manques par unite cible,
+  pour distinguer rarete de shop, manque de place, manque d'or, erreur de
+  policy, ou vente destructive.
 
 Policies minimales :
 
