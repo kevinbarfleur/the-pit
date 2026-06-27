@@ -312,9 +312,9 @@ for run = 1, N do
       local seed = BASE_SEED + run * 137 + vi * 10000 + pi * 100000
       local opts = {
         hpMult = pace.hpMult,
+        cooldownMult = pace.cdMult,
         commanderMode = COMMANDER_MODE,
         fatigue = Common.fatigueOptions(pace.fatigueStart, pace.fatigueBase, pace.fatigueRamp),
-        compMutator = Common.cooldownMutator(pace.cdMult),
         leftMutator = pv.leftMutator,
       }
       local traj = Rundriver.run(seed, pv.policy(), opts)

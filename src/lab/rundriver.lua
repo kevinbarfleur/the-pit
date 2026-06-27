@@ -33,6 +33,7 @@ function Rundriver.new(seed, opts)
     run = run, build = build, host = host, opts = opts,
     tickCap = opts.tickCap or 8000,
     hpMult = opts.hpMult, -- bouton global de PV (forwardé à Match.run dans fight) ; nil -> constante Arena.HP_MULT
+    cooldownMult = opts.cooldownMult, -- lab/live pacing : scale le cooldown au combat sans muter la compo
     fatigue = opts.fatigue, -- lab-only pacing sweep { start?, base?, ramp? } forwardé à Match.run
     commanderMode = opts.commanderMode or "ignore", -- lab-only policy: ignore | decline | auto
     compMutator = opts.compMutator, -- lab-only overlay appliqué aux deux camps avant Match.run (pacing, probes)
@@ -496,7 +497,12 @@ function Rundriver:fight()
   local right, enemyKey = self:opponent()
   self:_mutateComp(right, "right")
   local seed = self.run:nextCombatSeed()
-  local res = Match.run(left, right, seed, { tickCap = self.tickCap, hpMult = self.hpMult, fatigue = self.fatigue })
+  local res = Match.run(left, right, seed, {
+    tickCap = self.tickCap,
+    hpMult = self.hpMult,
+    cooldownMult = self.cooldownMult,
+    fatigue = self.fatigue,
+  })
   res.enemyKey = enemyKey
   self.lastResult = res
 

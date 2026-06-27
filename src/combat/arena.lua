@@ -79,6 +79,10 @@ local FATIGUE_RAMP  = 0.01 -- +dps par tick au-delà du seuil (l'usure s'accél�
 
 local ROWS_Y = { 70, 104, 138 }
 
+local function scaledCooldown(cd, mult)
+  return math.max(1, math.floor((cd or 1) * (mult or 1) + 0.5))
+end
+
 -- Compo de démonstration (si aucune compo fournie) : reprend les stats de units.lua.
 local function demoComp(side)
   local ids = (side == "left") and { "marauder", "templar", "skeleton" }
@@ -105,6 +109,7 @@ function Arena.new(opts)
   self.bus = opts.bus or Bus.new() -- bus d'événements par combat (render + event-log s'y abonnent)
   self.fatigue = opts.fatigue -- override optionnel { start?, base?, ramp? } (le lab peut balayer ; sinon constantes)
   self.hpMult = opts.hpMult or HP_MULT -- bouton global de PV (rallonge les combats) ; override par combat, sinon constante
+  self.cooldownMult = opts.cooldownMult or 1 -- bouton global de cadence : scale la copie combat, jamais les specs/data
   self.ctx = {} -- contexte d'effets RÉUTILISÉ (aucune allocation par hook)
   self.deathCtx = {} -- ctx DÉDIÉ au broadcast on_death (n'écrase pas self.ctx pendant hit/tick)
   self.killCtx = {}  -- ctx DÉDIÉ on_kill (K5) : le killer agit à la mort de sa victime (soin/scavenger)
@@ -124,10 +129,11 @@ end
 function Arena:makeUnit(spec, team)
   local u = Units[spec.id]
   local hp = math.floor((spec.hp or 0) * self.hpMult + 0.5) -- BOUTON GLOBAL : scale les PV sur la COPIE (jamais le spec)
+  local cd = scaledCooldown(spec.cd, self.cooldownMult)
   local unit = {
     spec = spec, team = team, slot = spec.slot, x = spec.x, y = spec.y, facing = spec.facing,
     id = spec.id,
-    maxHp = hp, hp = hp, maxHp0 = hp, dmg = spec.dmg, cd = spec.cd, -- maxHp0 = PV max d'origine (plancher de nécrose rot)
+    maxHp = hp, hp = hp, maxHp0 = hp, dmg = spec.dmg, cd = cd, -- maxHp0 = PV max d'origine (plancher de nécrose rot)
     -- effets : du spec si fourni (build résolu avec reliques, plus tard), sinon la base.
     effects = spec.effects or (u and u.effects),
     -- ciblage déterministe : depth (0 = colonne avant), row (tie-break haut->bas),
@@ -141,7 +147,7 @@ function Arena:makeUnit(spec, team)
     bleedInc = spec.bleedInc, rotInc = spec.rotInc,     -- idem bleed/rot (aura OU relique team-wide) ; nil = inerte
     dmgReduce = spec.dmgReduce,                          -- DÉFENSE : -frac dégâts d'ATTAQUE subis (relique/aura K1) ; nil = inerte
     haste = spec.haste, secondBreath = spec.secondBreath, -- WHETSTONE (cadence) / SECOND BREATH (survie 1×) ; nil = inerte
-    atkTimer = self.rng:random() * spec.cd, -- décalage seedé -> pas de swings synchronisés
+    atkTimer = self.rng:random() * cd, -- décalage seedé -> pas de swings synchronisés
     firstHit = true,
     -- Statuts : poison = LISTE de stacks (axe « nombre ») ; burn/bleed/rot/shock = instances uniques.
     dots = { poison = {} },
@@ -171,7 +177,7 @@ function Arena:makeUnit(spec, team)
   }
   if spec.shieldCaster then -- COPIE par combat : le spec est réutilisé sur N matchs (sim) -> ne JAMAIS le muter
     local sc = spec.shieldCaster
-    unit.shieldCaster = { value = sc.value, cd = sc.cd, reflect = sc.reflect or 0,
+    unit.shieldCaster = { value = sc.value, cd = scaledCooldown(sc.cd, self.cooldownMult), reflect = sc.reflect or 0,
       overcharge = sc.overcharge or false, targetSlots = sc.targetSlots, cdLeft = 0 }
   end
   return unit
@@ -336,16 +342,17 @@ function Arena:makeToken(dead, tokenId)
   local tk = Spawn.token(tokenId)
   if not tk then return nil end
   local hp = math.floor((tk.hp or 1) * self.hpMult + 0.5) -- BOUTON GLOBAL de PV (cohérent avec makeUnit)
+  local cd = scaledCooldown(tk.cd, self.cooldownMult)
   return {
     spec = false, team = dead.team, slot = dead.slot, x = dead.x, y = dead.y, facing = dead.facing,
     id = tokenId, isToken = true, -- isToken : marqueur (le render/log peuvent distinguer une engeance ; SIM le lit pour la garde anti-boucle)
-    maxHp = hp, hp = hp, maxHp0 = hp, dmg = tk.dmg or 1, cd = tk.cd or 40,
+    maxHp = hp, hp = hp, maxHp0 = hp, dmg = tk.dmg or 1, cd = cd,
     effects = nil, -- AUCUN effet : le token est inerte (terminal). nil = pas de hook (Effects.run ignore gracieusement).
     -- même profil de ciblage que le cadavre (1-pour-1) : il prend littéralement sa place dans la ligne.
     depth = dead.depth or 0, row = dead.row or 0,
     aggro = AGGRO_STD, taunt = false,
     shield = 0, maxShield = 0,
-    atkTimer = self.rng:random() * (tk.cd or 40), -- décalage seedé (cohérent makeUnit) : pas de swing synchronisé
+    atkTimer = self.rng:random() * cd, -- décalage seedé (cohérent makeUnit) : pas de swing synchronisé
     firstHit = true,
     dots = { poison = {} },
     weaken = 0, atkSlow = 0,
@@ -1016,6 +1023,7 @@ end
 -- Constantes exposées (lecture seule) : les tests/le lab s'y réfèrent (seuil de Fatigue ; multiplicateur de PV).
 Arena.FATIGUE_START = FATIGUE_START
 Arena.HP_MULT = HP_MULT
+Arena.scaleCooldown = scaledCooldown
 -- Caps des keystones (tests d'équilibrage : pire combo, idempotence du cap).
 Arena.MULTICAST_MAX = MULTICAST_MAX
 Arena.ATK_INC_CAP = ATK_INC_CAP

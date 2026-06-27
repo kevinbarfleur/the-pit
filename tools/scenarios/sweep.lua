@@ -173,8 +173,8 @@ for run = 1, N do
           economy = econ,
           commanderMode = COMMANDER_MODE,
           hpMult = pace.hpMult,
+          cooldownMult = pace.cdMult,
           fatigue = Common.fatigueOptions(pace.fatigueStart, pace.fatigueBase, pace.fatigueRamp),
-          compMutator = Common.cooldownMutator(pace.cdMult),
         })
         addRun(grid[econ][pace.id], traj)
         local pa = policyGrid[econ][pace.id][p.name]

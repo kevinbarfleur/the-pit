@@ -14,6 +14,7 @@ local Shapes = require("src.board.shapes")
 local Compositions = require("src.data.compositions")
 local Compbuild = require("src.lab.compbuild")
 local Compcost = require("src.lab.compcost")
+local Arena = require("src.combat.arena")
 local Match = require("src.combat.match")
 
 local ARCH = {}; for _, a in ipairs(Compositions.archetypes) do ARCH[a] = true end
@@ -81,6 +82,13 @@ local ok, err = pcall(function()
   local r2 = Match.run(L, R, 4242, { assertPure = true })
   assert(r1.win == r2.win and r1.ticks == r2.ticks and r1.decided == r2.decided,
     "runner deterministe (memes compos+seed)")
+  local paceL = { { id = "bandit", hp = 100, dmg = 1, cd = 36, x = 0, y = 0, facing = 1 } }
+  local paceR = { { id = "skeleton", hp = 100, dmg = 1, cd = 44, x = 20, y = 0, facing = -1 } }
+  local paced = Match.run(paceL, paceR, 77, { expose = true, judge = false, tickCap = 1, hpMult = 1, cooldownMult = 1.5 })
+  assert(Arena.scaleCooldown(36, 1.5) == 54, "cooldown scale: arrondi deterministe")
+  assert(paceL[1].cd == 36 and paceR[1].cd == 44, "cooldownMult: specs d'entree non mutees")
+  assert(paced.arena.units[1].cd == 54 and paced.arena.units[2].cd == 66,
+    "cooldownMult: copies combat scalees")
   print(string.format("  lab : runner pur/deterministe OK (ticks=%d win=%s decided=%s)",
     r1.ticks, tostring(r1.win), tostring(r1.decided)))
 
