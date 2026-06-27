@@ -1025,7 +1025,7 @@ Ajout batch autonomie (`runs/long-2026-06-27b`) :
   peu couteuse en or brut. `rankPressure` ajoute un plancher d'accessibilite
   pour les rangs 4/5 et le rapport coherence expose maintenant
   `weighted_score`, `rank_pressure` et `foe_breakdown`. Sur
-  `runs/long-2026-06-27n/rank-pressure-coherence-v1`, `cheap_strong` passe de
+  `runs/long-2026-06-27n/rank-pressure-coherence-v2`, `cheap_strong` passe de
   `37` a `7`. Les faux positifs tank/shock a rang 4 sortent de la liste ; les
   vraies alertes restantes sont surtout `rot_bleed_mid__leveled`,
   `rot_bleed_mid`, quelques boards bleed/bruiser low-rank, et des noyaux poison

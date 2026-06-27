@@ -1981,7 +1981,7 @@ Next implementation targets:
      `weighted_score`, `rank_pressure`, and `foe_breakdown`. This fixed a major
      read error: rank-4/5 boards were previously flagged as cheap because the
      score mostly read raw gold. In
-     `runs/long-2026-06-27n/rank-pressure-coherence-v1`, `cheap_strong` drops
+     `runs/long-2026-06-27n/rank-pressure-coherence-v2`, `cheap_strong` drops
      from `37` to `7`. The remaining cheap-strong rows are now mostly genuine
      low/mid-rank candidates (`rot_bleed_mid__leveled`, `rot_bleed_mid`, some
      generated bleed/bruiser/poison boards), while tank/shock rank-4 access
