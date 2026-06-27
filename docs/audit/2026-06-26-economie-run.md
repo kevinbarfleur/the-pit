@@ -755,6 +755,10 @@ Ajout outil autonome :
   `PIT_POLICIES`, `PIT_ECON_PROFILES`, `PIT_BENCH_CAPS`, `PIT_PACE_IDS`,
   `PIT_PACE_PROFILES`, `PIT_TANK_VARIANTS`, `PIT_HP_MULT`,
   `PIT_COMMANDER_MODE`.
+- Pour les batchs `sweep`, les alias dedies sont aussi acceptes :
+  `PIT_SWEEP_ECONOMIES`, `PIT_SWEEP_PACES`, `PIT_SWEEP_PACE_PROFILES`. Ils
+  evitent de confondre un filtre local de sweep avec les variables generiques
+  des autres scenarios.
 - `PIT_COMMANDER_MODE` vaut `ignore` par defaut pour garder les baselines
   historiques. `auto` accepte le piédestal et place le meilleur porteur
   existant de `commandBonus`; `decline` refuse pour l'or.

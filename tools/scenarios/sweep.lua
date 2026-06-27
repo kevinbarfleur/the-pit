@@ -16,7 +16,7 @@ local BASE_SEED = 1460000
 local COMMANDER_MODE = Common.env("PIT_COMMANDER_MODE") or "ignore"
 
 local DEFAULT_ECONOMIES = { "baseline", "sap_cost", "early_curve" }
-local ECONOMY_ORDER = Common.envCsv("PIT_ECON_PROFILES") or DEFAULT_ECONOMIES
+local ECONOMY_ORDER = Common.envCsvAny({ "PIT_SWEEP_ECONOMIES", "PIT_ECON_PROFILES" }) or DEFAULT_ECONOMIES
 for _, profileId in ipairs(ECONOMY_ORDER) do
   assert(Economy.profiles[profileId], "profil economie inconnu: " .. tostring(profileId))
 end
@@ -26,7 +26,12 @@ local DEFAULT_PACE_PROFILES = {
   { id = "hp2_cd15_f24", label = "hp x2, cd x1.5, fatigue 24s", hpMult = 2, cdMult = 1.5, fatigueStart = 1440 },
   { id = "hp2_cd2_f24", label = "hp x2, cd x2, fatigue 24s", hpMult = 2, cdMult = 2, fatigueStart = 1440 },
 }
-local PACE_PROFILES = Common.paceProfiles(DEFAULT_PACE_PROFILES)
+local PACE_PROFILES = Common.paceProfiles(DEFAULT_PACE_PROFILES, {
+  specEnv = "PIT_SWEEP_PACE_PROFILES",
+  fallbackSpecEnv = "PIT_PACE_PROFILES",
+  filterEnv = "PIT_SWEEP_PACES",
+  fallbackFilterEnv = "PIT_PACE_IDS",
+})
 
 local function makePolicies(runIndex)
   local pols = Policies.analysisSet(love.math.newRandomGenerator(23000 + runIndex))
@@ -231,9 +236,9 @@ local payload = {
   config = {
     policies = Common.env("PIT_POLICIES"),
     commander_mode = COMMANDER_MODE,
-    economy_profiles = Common.env("PIT_ECON_PROFILES"),
-    pace_ids = Common.env("PIT_PACE_IDS"),
-    pace_profiles = Common.env("PIT_PACE_PROFILES"),
+    economy_profiles = Common.envAny({ "PIT_SWEEP_ECONOMIES", "PIT_ECON_PROFILES" }),
+    pace_ids = Common.envAny({ "PIT_SWEEP_PACES", "PIT_PACE_IDS" }),
+    pace_profiles = Common.envAny({ "PIT_SWEEP_PACE_PROFILES", "PIT_PACE_PROFILES" }),
   },
   cells = cells,
   by_policy = byPolicy,

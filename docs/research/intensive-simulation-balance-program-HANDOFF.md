@@ -1610,9 +1610,12 @@ Next implementation targets:
    - Environment controls:
      - `PIT_POLICIES=greedy_plan,committed_tank_plan`
      - `PIT_ECON_PROFILES=baseline,sap_cost,early_curve`
+       (or sweep-specific alias `PIT_SWEEP_ECONOMIES=...`)
      - `PIT_BENCH_CAPS=0,2,4,6`
      - `PIT_PACE_IDS=live_hp2_cd1_f17,hp2_cd15_f24`
+       (or sweep-specific alias `PIT_SWEEP_PACES=...`)
      - `PIT_PACE_PROFILES=id:hpMult:cdMult:fatigueStart[:fatigueBase[:fatigueRamp]],...`
+       (or sweep-specific alias `PIT_SWEEP_PACE_PROFILES=...`)
      - `PIT_TANK_VARIANTS=current_plan,payload_shell`
      - `PIT_COMMANDER_MODE=ignore|decline|auto`
    - `PIT_COMMANDER_MODE` defaults to `ignore` to preserve historical

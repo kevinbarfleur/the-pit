@@ -89,6 +89,19 @@ local ok, err = pcall(function()
   end
   print("  scenarios : SMOKE OK (10 modes tournent via le driver + ecrivent un rapport JSON ; garde-fous god-roll tenus)")
 
+  -- Alias ergonomiques du sweep : les noms dedies doivent filtrer le grid comme les noms generiques.
+  local sweepAliasCode = os.execute(ENV ..
+    "PIT_SWEEP_ECONOMIES=baseline PIT_SWEEP_PACES=hp2_cd15_f24 luajit tools/sim.lua sweep 1 >/dev/null 2>&1")
+  assert(sweepAliasCode == 0 or sweepAliasCode == true, "sweep aliases : driver tourne sans crash")
+  local sf = io.open(OUT .. "/report-sweep.json", "r")
+  assert(sf, "sweep aliases : report-sweep.json produit")
+  local sweepBody = sf:read("*a"); sf:close()
+  assert(sweepBody:find('"baseline"', 1, true), "sweep aliases : economie baseline incluse")
+  assert(sweepBody:find('"hp2_cd15_f24"', 1, true), "sweep aliases : pace hp2_cd15_f24 incluse")
+  assert(not sweepBody:find('"sap_cost"', 1, true), "sweep aliases : economies non demandees filtrees")
+  assert(not sweepBody:find('"live_hp2_cd1_f17"', 1, true), "sweep aliases : paces non demandees filtrees")
+  print("  scenarios : SWEEP ALIASES OK (PIT_SWEEP_ECONOMIES/PACES filtrent le grid)")
+
   -- 3) DÉTERMINISME : un mode relance a meme N -> rapport IDENTIQUE (regle d'or). On teste le plus rapide.
   os.execute(ENV .. "luajit tools/sim.lua godroll 1 >/dev/null 2>&1")
   local r1 = io.open(OUT .. "/report-godroll.json"):read("*a")

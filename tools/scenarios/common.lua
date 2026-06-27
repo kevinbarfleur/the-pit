@@ -52,6 +52,14 @@ function Common.env(name)
   return v
 end
 
+function Common.envAny(names)
+  for _, name in ipairs(names or {}) do
+    local v = Common.env(name)
+    if v then return v, name end
+  end
+  return nil, nil
+end
+
 function Common.envNumber(name, default)
   local v = Common.env(name)
   if not v then return default end
@@ -71,6 +79,11 @@ end
 
 function Common.envCsv(name)
   local v = Common.env(name)
+  return v and Common.csv(v) or nil
+end
+
+function Common.envCsvAny(names)
+  local v = Common.envAny(names)
   return v and Common.csv(v) or nil
 end
 
@@ -113,7 +126,7 @@ end
 
 function Common.paceProfiles(defaults, opts)
   opts = opts or {}
-  local custom = Common.env(opts.specEnv or "PIT_PACE_PROFILES")
+  local custom = Common.envAny({ opts.specEnv or "PIT_PACE_PROFILES", opts.fallbackSpecEnv })
   local rows = {}
   if custom then
     -- Format: id:hpMult:cdMult:fatigueStart[:fatigueBase[:fatigueRamp]],...
@@ -134,7 +147,7 @@ function Common.paceProfiles(defaults, opts)
   else
     rows = Common.clone(defaults)
   end
-  local filter = Common.envCsv(opts.filterEnv or "PIT_PACE_IDS")
+  local filter = Common.envCsvAny({ opts.filterEnv or "PIT_PACE_IDS", opts.fallbackFilterEnv })
   return Common.filteredRows(rows, filter)
 end
 
