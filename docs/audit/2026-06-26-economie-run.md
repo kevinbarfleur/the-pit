@@ -884,6 +884,13 @@ Ajout batch autonomie (`runs/long-2026-06-27b`) :
   ameliore la duree lisible et la completion baseline (`13.2%`, `6.20` wins,
   p50 `15.22s`) mais monte a `13.0%` de fatigue ; c'est un plafond
   exploratoire, pas une recommandation par defaut.
+- Mise a jour coherence/fillers : `tools/sim.lua coherence` genere maintenant
+  des variantes `__filled` pour les noyaux fixes sous-remplis et expose
+  `filled_resolutions`. Dans `runs/long-2026-06-27m/fill-variants`,
+  `cross_bleed_rot` passe de `0%` brut / `28.6%` levelle mais sous-rempli a
+  `85.7%` une fois rempli et levelle, mais son cout monte a `96` or-equivalent.
+  Lecture economie : ce n'est pas forcement un mauvais plan, c'est peut-etre un
+  endpoint late tres cher dont il faut mesurer l'accessibilite.
 
 Metrics recommandees :
 
@@ -911,6 +918,9 @@ Metrics recommandees :
   board-level declare.
 - `outlier_unit_frequency` : frequence par unite dans les outliers
   `cheap_strong`, `low_coherence_strong`, `high_coherence_weak`, etc.
+- `filled_resolutions` : pour un noyau coherent mais sous-rempli, comparaison
+  entre le noyau brut et sa meilleure variante remplie/nivellee ; a croiser
+  avec le cout et les runs economie pour savoir si le plan est atteignable.
 
 Policies minimales :
 

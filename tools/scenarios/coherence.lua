@@ -19,6 +19,7 @@ local N = require("tools.scenarios.argn")(24) -- generated candidates per stage
 local MATCHES = Common.envNumber("PIT_COHERENCE_MATCHES", 4)
 local RELIC_VARIANTS = Common.envNumber("PIT_COHERENCE_RELIC_VARIANTS", 1) ~= 0
 local LEVEL_VARIANTS = Common.envNumber("PIT_COHERENCE_LEVEL_VARIANTS", 1) ~= 0
+local FILL_VARIANTS = Common.envNumber("PIT_COHERENCE_FILL_VARIANTS", 1) ~= 0
 local BASE_SEED = 1560000
 local HPM = Common.envNumber("PIT_HP_MULT", nil)
 
@@ -122,6 +123,8 @@ local function addCandidate(out, seen, comp, source)
     boardLevel = comp.boardLevel,
     commander = comp.commander,
     relics = Common.clone(comp.relics or {}),
+    filled_from = comp.filled_from,
+    fill_units = Common.clone(comp.fill_units or {}),
     units = cloneUnits(comp.units),
   }
   seen[c.id] = true
@@ -218,6 +221,71 @@ local function addLevelVariants(out, seen)
   end
 end
 
+local function emptySlots(comp)
+  local used, slots = {}, {}
+  for _, u in ipairs(comp.units or {}) do used[u.slot] = true end
+  local expected = comp.boardLevel or (STAGE_LEVEL[stageOf(comp)] and STAGE_LEVEL[stageOf(comp)].board) or #(comp.units or {})
+  for slot = 1, expected do
+    if not used[slot] then slots[#slots + 1] = slot end
+  end
+  return slots
+end
+
+local function fillChoice(comp, units, slot, usedIds, allowDuplicate)
+  local stage = stageOf(comp)
+  local pool = unitPool(stage, comp.archetype)
+  local best, bestScore
+  for _, id in ipairs(pool) do
+    if allowDuplicate or not usedIds[id] then
+      local trial = cloneUnits(units)
+      trial[#trial + 1] = { id = id, slot = slot, level = 1 }
+      local score = Coherence.scoreTeam(trial, { commander = comp.commander, relics = comp.relics }).coherence
+        + levelPriorityScore({ id = id, slot = slot, level = 1 }) / 10000
+      if not bestScore or score > bestScore or (score == bestScore and id < best) then
+        best, bestScore = id, score
+      end
+    end
+  end
+  return best
+end
+
+local function filledVariant(c)
+  local slots = emptySlots(c)
+  if #slots == 0 then return nil end
+  local v = Common.clone(c)
+  v.id = c.id .. "__filled"
+  v.source = (c.source or "fixed") .. "_filled"
+  v.variant = tostring(c.variant or "fixed") .. "_filled"
+  v.filled_from = c.id
+  v.fill_units = {}
+  v.units = cloneUnits(c.units)
+
+  local usedIds = {}
+  for _, u in ipairs(v.units) do usedIds[u.id] = true end
+  for _, slot in ipairs(slots) do
+    local id = fillChoice(v, v.units, slot, usedIds, false) or fillChoice(v, v.units, slot, usedIds, true)
+    if id then
+      local unit = { id = id, slot = slot, level = 1 }
+      v.units[#v.units + 1] = unit
+      v.fill_units[#v.fill_units + 1] = Common.clone(unit)
+      usedIds[id] = true
+    end
+  end
+  if #v.fill_units == 0 then return nil end
+  table.sort(v.units, function(a, b)
+    if (a.slot or 0) ~= (b.slot or 0) then return (a.slot or 0) < (b.slot or 0) end
+    return tostring(a.id) < tostring(b.id)
+  end)
+  return v
+end
+
+local function addFillVariants(out, seen)
+  local base = Common.clone(out)
+  for _, c in ipairs(base) do
+    addCandidate(out, seen, filledVariant(c), (c.source or "fixed") .. "_filled")
+  end
+end
+
 local function generatedCandidates(out, seen)
   local rng = love.math.newRandomGenerator(91573)
   for _, stage in ipairs(STAGES) do
@@ -230,6 +298,7 @@ local function generatedCandidates(out, seen)
 end
 
 local candidates, seen = fixedCandidates()
+if FILL_VARIANTS then addFillVariants(candidates, seen) end
 if LEVEL_VARIANTS then addLevelVariants(candidates, seen) end
 if RELIC_VARIANTS then addRelicVariants(candidates, seen) end
 generatedCandidates(candidates, seen)
@@ -366,6 +435,16 @@ local function unitFrequency(compactRows, n)
   return take(out, n or 16)
 end
 
+local function baseForFilledLookup(id, bases)
+  local best
+  for base in pairs(bases or {}) do
+    if id == base or id:sub(1, #base + 2) == base .. "__" then
+      if not best or #base > #best then best = base end
+    end
+  end
+  return best
+end
+
 local function compactRow(r)
   return {
     id = r.id,
@@ -384,6 +463,8 @@ local function compactRow(r)
     subscores = r.subscores,
     units = r.units,
     relics = r.relics,
+    filled_from = r.filled_from,
+    fill_units = r.fill_units,
   }
 end
 
@@ -427,6 +508,8 @@ for _, comp in ipairs(candidates) do
     ticks = ticks, tickN = tickN, avg_seconds = (tickN > 0) and (ticks / tickN / Common.FPS) or 0,
     units = cloneUnits(comp.units),
     relics = Common.clone(comp.relics or {}),
+    filled_from = comp.filled_from,
+    fill_units = Common.clone(comp.fill_units or {}),
   }
   rows[#rows + 1] = row
   addBucket(byBucket[bucketFor(row.coherence)], row)
@@ -474,6 +557,42 @@ table.sort(underfilledWeak, function(a, b)
   return a.coherence > b.coherence
 end)
 
+local function filledResolutionsFor(rowsIn)
+  local byBase, out = {}, {}
+  for _, r in ipairs(rowsIn or {}) do
+    if r.filled_from and not r.underfilled and not r.underleveled then
+      local best = byBase[r.filled_from]
+      if not best or r.winrate > best.winrate or (r.winrate == best.winrate and r.cost_score < best.cost_score) then
+        byBase[r.filled_from] = r
+      end
+    end
+  end
+  for _, r in ipairs(rowsIn or {}) do
+    if r.coherence >= 0.65 and r.winrate <= 0.35 and r.underfilled then
+      local base = baseForFilledLookup(r.id, byBase)
+      local filled = base and byBase[base] or nil
+      if filled then
+        out[#out + 1] = {
+          base = base,
+          resolved = filled.winrate >= 0.55,
+          winrate_delta = filled.winrate - r.winrate,
+          cost_delta = filled.cost_score - r.cost_score,
+          original = compactRow(r),
+          filled = compactRow(filled),
+        }
+      end
+    end
+  end
+  table.sort(out, function(a, b)
+    if a.resolved ~= b.resolved then return a.resolved end
+    if a.winrate_delta ~= b.winrate_delta then return a.winrate_delta > b.winrate_delta end
+    return a.base < b.base
+  end)
+  return out
+end
+
+local filledResolutions = filledResolutionsFor(rows)
+
 local bucketOut, stageOut = {}, {}
 for key, b in pairs(byBucket) do bucketOut[key] = finishBucket(b) end
 for stage, b in pairs(byStage) do stageOut[STAGE_LABEL[stage]] = finishBucket(b) end
@@ -508,6 +627,7 @@ local payload = {
     matches = Common.env("PIT_COHERENCE_MATCHES"),
     relic_variants = RELIC_VARIANTS,
     level_variants = LEVEL_VARIANTS,
+    fill_variants = FILL_VARIANTS,
   },
   correlation = corr,
   buckets = bucketOut,
@@ -516,6 +636,7 @@ local payload = {
     high_coherence_weak = take(highCoherenceWeak, 16),
     underleveled_high_coherence_weak = take(underleveledWeak, 16),
     underfilled_high_coherence_weak = take(underfilledWeak, 16),
+    filled_resolutions = take(filledResolutions, 16),
     low_coherence_strong = take(lowCoherenceStrong, 16),
     cheap_strong = take(cheapStrong, 16),
     expensive_weak = take(expensiveWeak, 16),
@@ -530,6 +651,7 @@ local payload = {
     high_coherence_weak = #highCoherenceWeak,
     underleveled_high_coherence_weak = #underleveledWeak,
     underfilled_high_coherence_weak = #underfilledWeak,
+    filled_resolutions = #filledResolutions,
     low_coherence_strong = #lowCoherenceStrong,
     cheap_strong = #cheapStrong,
     expensive_weak = #expensiveWeak,
@@ -548,6 +670,7 @@ local summary = {
     high_coherence_weak = #highCoherenceWeak,
     underleveled_high_coherence_weak = #underleveledWeak,
     underfilled_high_coherence_weak = #underfilledWeak,
+    filled_resolutions = #filledResolutions,
     low_coherence_strong = #lowCoherenceStrong,
     cheap_strong = #cheapStrong,
     expensive_weak = #expensiveWeak,

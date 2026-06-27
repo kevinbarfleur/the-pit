@@ -83,8 +83,14 @@ local ok, err = pcall(function()
     if m == "coherence" then
       assert(body:find("__leveled", 1, true),
         "mode coherence : variantes levelees produites pour les compos fixes")
+      assert(body:find("__filled", 1, true),
+        "mode coherence : variantes remplies produites pour les noyaux sous-remplis")
       assert(body:find('"id":"marrow_drinker","level":3', 1, true),
         "mode coherence : variante levelee peut prioriser le pivot bleed->rot")
+      assert(body:find('"filled_from":"cross_bleed_rot"', 1, true),
+        "mode coherence : cross_bleed_rot peut etre teste avec fillers naturels")
+      assert(body:find('"filled_resolutions"', 1, true),
+        "mode coherence : les noyaux sous-remplis ont un diagnostic de resolution par fillers")
     end
   end
   print("  scenarios : SMOKE OK (10 modes tournent via le driver + ecrivent un rapport JSON ; garde-fous god-roll tenus)")

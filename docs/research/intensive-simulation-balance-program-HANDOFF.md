@@ -1821,6 +1821,21 @@ Next implementation targets:
      `hp2_cd2_f24` creates more readable-length fights and better baseline
      completion (`13.2%`, `6.20` wins, p50 `15.22s`) but fatigue jumps to
      `13.0%`. Treat it as an exploratory upper bound, not a default.
+   Fill-variant follow-up:
+   - `tools/sim.lua coherence` now creates optional `__filled` variants
+     (`PIT_COHERENCE_FILL_VARIANTS=0` disables them) for underfilled fixed
+     nuclei. The report includes `filled_resolutions`, which compares a weak
+     underfilled nucleus against its best filled + adequately leveled version.
+   - `runs/long-2026-06-27m/fill-variants`, `coherence 12`, shows why this
+     matters: `cross_bleed_rot` raw stays dead (`0%` winrate, `board_fit 0.625`)
+     and the leveled-but-underfilled row only reaches `28.6%`; the filled +
+     leveled version reaches `85.7%`. This reframes it as a viable late
+     invested rot/bleed nucleus, not simply a bad idea.
+   - Cost caveat: the successful filled version costs `96` gold-equivalent in
+     the current comp-cost model (`cost_score 0.809`) and uses
+     `pit_maw`, `wither_bloom`, and `blight_spreader` as fillers. It is a
+     late-game endpoint; economy simulations still need to prove whether a
+     player can reach it naturally.
    Remaining additions:
    - upgrade pair lifecycle further from event matching to per-copy identity:
      pair formed -> held/sold/lost/merged, with exact sold-pair loss;
