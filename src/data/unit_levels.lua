@@ -349,4 +349,253 @@ return {
       commandBonus = { params = { value = 0.09 } },
     },
   },
+
+  -- Rank-2 bridge pass: these pieces are the visible connective tissue between
+  -- cheap reroll boards and the full archetype packages in the catalogue.
+  emberling = {
+    [2] = {
+      effects = {
+        [1] = { params = { dps = 7, dur = 165 } },
+      },
+      commandBonus = { params = { value = 0.23 } },
+    },
+    [3] = {
+      clutch = true,
+      effects = {
+        [1] = { params = { dps = 8, dur = 180 } },
+      },
+      commandBonus = { params = { value = 0.26 } },
+    },
+  },
+
+  pyre_tender = {
+    [2] = {
+      effects = {
+        [1] = { params = { dps = 11, dur = 195 } },
+      },
+      commandBonus = { params = { value = 0.14 } },
+    },
+    [3] = {
+      effects = {
+        [1] = { params = { dps = 12, dur = 210 } },
+      },
+      commandBonus = { params = { value = 0.16 } },
+    },
+  },
+
+  razorkin = {
+    [2] = {
+      effects = {
+        [1] = { params = { dps = 3, slowPct = 0.22 } },
+      },
+      commandBonus = { params = { value = 0.20 } },
+    },
+    [3] = {
+      effects = {
+        [1] = { params = { dps = 3, dur = 270, slowPct = 0.25 } },
+      },
+      commandBonus = { params = { value = 0.22 } },
+    },
+  },
+
+  gash_fiend = {
+    [2] = {
+      effects = {
+        [1] = { params = { dps = 4, slowPct = 0.22 } },
+      },
+      commandBonus = { params = { value = 0.22 } },
+    },
+    [3] = {
+      clutch = true,
+      effects = {
+        [1] = { params = { dps = 5, dur = 270, slowPct = 0.24, aggravateMult = 1.25 } },
+      },
+      commandBonus = { params = { value = 0.24 } },
+    },
+  },
+
+  hookjaw = {
+    [2] = {
+      effects = {
+        [1] = { params = { dps = 2, slowPct = 0.32 } },
+      },
+    },
+    [3] = {
+      clutch = true,
+      effects = {
+        [1] = { params = { dps = 2, dur = 330, slowPct = 0.35 } },
+      },
+    },
+  },
+
+  coil_viper = {
+    [2] = {
+      effects = {
+        [1] = { params = { dps = 1, dur = 150 } },
+        [2] = { params = { dps = 4, dur = 170 } },
+      },
+      commandBonus = { params = { markEnemiesVuln = 0.12 } },
+    },
+    [3] = {
+      clutch = true,
+      effects = {
+        [1] = { params = { dps = 2, dur = 150 } },
+        [2] = { params = { dps = 4, dur = 190 } },
+      },
+      commandBonus = { params = { markEnemiesVuln = 0.14 } },
+    },
+  },
+
+  stormcaller = {
+    [2] = {
+      effects = {
+        [1] = { params = { cap = 7, dur = 165 } },
+        [2] = { params = { value = 0.14, dur = 100 } },
+      },
+      commandBonus = { params = { markEnemiesVuln = 0.12 } },
+    },
+    [3] = {
+      clutch = true,
+      effects = {
+        [1] = { params = { add = 2, cap = 7, dur = 180 } },
+        [2] = { params = { value = 0.15, dur = 120 } },
+      },
+      commandBonus = { params = { markEnemiesVuln = 0.14 } },
+    },
+  },
+
+  thunderhead = {
+    [2] = {
+      effects = {
+        [1] = { params = { volt = 7, dur = 195 } },
+      },
+      commandBonus = { params = { value = 0.16 } },
+    },
+    [3] = {
+      effects = {
+        [1] = { params = { volt = 8, cap = 5, dur = 210 } },
+      },
+      commandBonus = { params = { value = 0.18 } },
+    },
+  },
+
+  static_swarm = {
+    [2] = {
+      effects = {
+        [1] = { params = { cap = 9, dur = 270 } },
+      },
+      commandBonus = { params = { value = 3 } },
+    },
+    [3] = {
+      effects = {
+        [1] = { params = { add = 2, cap = 9, dur = 300 } },
+      },
+      commandBonus = { params = { value = 3 } },
+    },
+  },
+
+  flesh_warband = {
+    [2] = {
+      effects = {
+        [1] = { params = { value = 0.12 } },
+      },
+      commandBonus = { params = { value = 0.14 } },
+    },
+    [3] = {
+      effects = {
+        [1] = { params = { value = 0.14 } },
+      },
+      commandBonus = { params = { value = 0.16 } },
+    },
+  },
+
+  bone_choir = {
+    [2] = {
+      effects = {
+        [1] = { params = { value = 0.09 } },
+      },
+      commandBonus = { params = { value = 0.07 } },
+    },
+    [3] = {
+      effects = {
+        [1] = { params = { value = 0.10 } },
+      },
+      commandBonus = { params = { value = 0.08 } },
+    },
+  },
+
+  arcane_seer = {
+    [2] = {
+      effects = {
+        [1] = { params = { value = 0.09 } },
+      },
+      commandBonus = { params = { value = 0.07 } },
+    },
+    [3] = {
+      effects = {
+        [1] = { params = { value = 0.10 } },
+      },
+      commandBonus = { params = { value = 0.08 } },
+    },
+  },
+
+  abyss_maw = {
+    [2] = {
+      effects = {
+        [1] = { params = { value = 0.17 } },
+      },
+      commandBonus = { params = { value = 0.20 } },
+    },
+    [3] = {
+      effects = {
+        [1] = { params = { value = 0.19 } },
+      },
+      commandBonus = { params = { value = 0.22 } },
+    },
+  },
+
+  order_marshal = {
+    [2] = {
+      effects = {
+        [1] = { params = { value = 2 } },
+      },
+      commandBonus = { params = { value = 2 } },
+    },
+    [3] = {
+      effects = {
+        [1] = { params = { value = 3 } },
+      },
+      commandBonus = { params = { value = 3 } },
+    },
+  },
+
+  vanguard_drummer = {
+    [2] = {
+      effects = {
+        [1] = { params = { value = 0.17 } },
+      },
+      commandBonus = { params = { value = 0.12 } },
+    },
+    [3] = {
+      effects = {
+        [1] = { params = { value = 0.19 } },
+      },
+      commandBonus = { params = { value = 0.14 } },
+    },
+  },
+
+  rear_goad = {
+    [2] = {
+      effects = {
+        [1] = { params = { value = 0.14 } },
+      },
+      commandBonus = { params = { value = 0.09 } },
+    },
+    [3] = {
+      effects = {
+        [1] = { params = { value = 0.16 } },
+      },
+      commandBonus = { params = { value = 0.10 } },
+    },
+  },
 }

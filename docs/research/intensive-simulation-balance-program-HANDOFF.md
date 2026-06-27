@@ -2256,6 +2256,29 @@ Next implementation targets:
      accelerators (`94-95%` merge resolution) without becoming an obvious
      completion buff. Current read: continue expanding rank-2/rank-3 bridge
      progressions, then rerun larger panels before live economy decisions.
+   - Rank-2 bridge level-up expansion:
+     added L2/L3 ability deltas for the visible bridge pieces that appear in
+     reference plans: `emberling`, `pyre_tender`, `razorkin`, `gash_fiend`,
+     `hookjaw`, `coil_viper`, `stormcaller`, `thunderhead`, `static_swarm`,
+     `flesh_warband`, `bone_choir`, `arcane_seer`, `abyss_maw`,
+     `order_marshal`, `vanguard_drummer`, and `rear_goad`. This lifts authored
+     coverage to `37/110`, low/mid coverage to `36/75`, rank-2 coverage to
+     `22/32`, and L3 clutch coverage to `17`. The pass intentionally uses only
+     existing resolver/card params: DoT dps/duration, slow, shock cap/volt,
+     vulnerability marks, type/position auras, regen, haste, and command aura
+     values. Targeted audits passed (`tests/unit_resolver.lua`,
+     `tests/effect_audit.lua`, `tests/coherence.lua`,
+     `tools/levelup_report.lua`).
+   - Rank-2 economy smoke:
+     `runs/long-2026-06-27r/rank2-levelup-pass-n16` crossed four economy
+     profiles with targeted broad/committed policies after the rank-2 pass. It
+     is not N-to-N comparable with earlier wider panels, but it did not show an
+     immediate completion spike: baseline `13.2%` completion / `6.94` avg wins
+     / `71.3%` merge resolution; pair-completion-light `13.2%` / `7.22` /
+     `92.0%`; pair-completion-delayed `12.5%` / `7.13` / `89.8%`; `sap_cost`
+     `9.7%` / `6.59` / `68.0%`. Current read: level-up value is now more
+     legible for rank-2 bridge pieces, but economy/access still controls
+     whether those levels appear in real runs.
    - PvE bossrush/scoring prototype:
      the user added `docs/generation/generateur-abominations.html`, a seeded
      visual generator for ten abomination families. The lab now has a pure data
@@ -2345,6 +2368,18 @@ Next implementation targets:
      reads as an access wall for bossrush rather than a scoring verdict.
      Interpretation: do not tune PvE score from catalogue comps alone; keep
      completion/entry rate and economy pressure in the same report.
+   - Rank-2 post-win scoring smoke:
+     after the rank-2 level-up pass, a small connected panel
+     `runs/long-2026-06-27s/rank2-levelup-bossrush-run-n6` crossed
+     `baseline`, `pair_completion_light`, and `early_curve` across four
+     abominations and six policies. The top score-per-run lines were still
+     broad `early_curve` plans (`greedy_plan` `50%` entry, `4607.7`
+     score/run; `econ_plan` `50%` entry, `4479.2` score/run), mainly because
+     they entered bossrush more often. The report raised only the
+     `low_postgame_entry_rate` watch (`13.9%` overall entry). Current read:
+     PvE score remains access-gated; do not over-tune boss HP or affliction
+     counters until economy/policy reachability is measured on larger paired
+     panels.
    - Active memory guard:
      bossrush/scoring is a new payoff layer, not the whole balance project. The
      next passes must still keep the older open axes in view: economy pressure,

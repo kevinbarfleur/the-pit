@@ -249,3 +249,8 @@ Current warning examples:
   bossrush more often and therefore dominated `score_damage_per_run`; `sap_cost`
   produced no postgame entries in that sample. Treat this as an access warning,
   not a final economy verdict.
+- A later rank-2 level-up smoke
+  `runs/long-2026-06-27s/rank2-levelup-bossrush-run-n6` kept the same lesson:
+  `early_curve` broad plans topped score/run because they entered more often,
+  while overall postgame entry stayed low (`13.9%`). Boss tuning should stay
+  paired with economy/policy reachability until entry rates are stable.
