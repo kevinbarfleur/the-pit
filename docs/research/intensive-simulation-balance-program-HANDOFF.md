@@ -2410,6 +2410,32 @@ Next implementation targets:
      focused relics/commanders by actual run access. This closes the previous
      gap where relic support existed in coherence scoring but was too buried in
      the economy report to guide tuning quickly.
+   - Support-summary read:
+     `runs/long-2026-06-27u/support-summary-cmd-n16` crossed `baseline`,
+     `pair_completion_light`, `pair_completion_delayed`, and `early_curve`
+     with commandants enabled, five broad/committed policies, and the
+     `rot_bleed_rat_core`, `cross_bleed_rot`, and `rot_bleed_mid` targets.
+     Pair-completion light was the best tested line (`21.2%` completion,
+     `8.85` avg wins, `94.4%` merge resolution), followed by delayed
+     pair-completion (`20.0%`, `8.66`, `92.7%`) and baseline (`18.8%`,
+     `8.45`, `74.7%`). Early curve stayed lower (`15.0%`, `8.14`, `71.0%`).
+     Focused support is now measurable: across the tracked plans, support was
+     seen in about `62.5-66.3%` of runs and used in `46.3-51.3%`; relic
+     offer-to-pick gaps remain `13.8-17.5%`. Commandant support appeared and
+     was placed in `18.8%` of baseline/pair-completion runs, with no placement
+     gap; the top focused commanders were `gash_fiend`, `clot_mender`, and
+     `razorkin`, while the top focused relics were `grave_cap`,
+     `weeping_nail`, and `plague_communion`.
+   - Support-summary interpretation:
+     exact target completion is still `0%` for these three plan targets even
+     when overall run completion improves. `rot_bleed_rat_core` reaches only
+     about `0.29-0.30` final level coverage in baseline/pair-completion, and
+     `cross_bleed_rot` about `0.19-0.20`. The next issue is therefore not just
+     "was support offered"; it is "did the policy convert offered support and
+     pair completion into the intended final board". Current minimal next
+     levers: target-aware relic picks, commander choice scoring against the
+     committed target, and a stricter late-board replacement policy that keeps
+     the reroll core while selling temporary support at the right time.
    Remaining additions:
    - use `rot_bleed_rat_core` as the baseline reroll target for the next
      balance pass, but investigate cheap mid-board outliers before nerfing it;
