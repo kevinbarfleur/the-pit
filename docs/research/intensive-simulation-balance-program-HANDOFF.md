@@ -1477,6 +1477,9 @@ Next implementation targets:
      completes a level-up merge.
    - `Policies.analysisSet` now has 19 policies: legacy 9, `_prune` broad
      policies, `_plan` broad policies, and `_plan` committed archetype policies.
+     Later autonomy pass extends the current set to 20 by adding
+     `committed_cross_bleed_rot_plan`, a target+support policy for a specific
+     rot/bleed endpoint.
    - `_plan` policies score offers by immediate merge, pair creation, rank/cost
      and plan membership. They sell bench singletons only for high-value offers
      and can sell one weak board unit when the board stays above a survival
@@ -1836,6 +1839,24 @@ Next implementation targets:
      `pit_maw`, `wither_bloom`, and `blight_spreader` as fillers. It is a
      late-game endpoint; economy simulations still need to prove whether a
      player can reach it naturally.
+   Plan-access follow-up:
+   - `tools/sim.lua economy` now reports `plan_access` for default critical
+     targets and optional `PIT_PLAN_TARGET_SPECS` entries. It measures final
+     board unit coverage, level coverage, complete rate, and final-gold ratio
+     against a target plan.
+   - A custom target spec for the filled rot/bleed endpoint
+     (`cross_bleed_rot_filled=pit_maw:2+razorkin+gash_fiend+clot_mender+marrow_drinker:3+wither_bloom:2+blight_spreader:2+hookjaw`)
+     confirms the access problem. In
+     `runs/long-2026-06-27n/plan-access-targeted-v2`, `committed_rot_plan`
+     reaches `0%` of the target units because the broad rot policy ignores the
+     bleed enablers. The new `committed_cross_bleed_rot_plan` reaches about
+     `21.9%` unit coverage and `13.5%` level coverage in baseline, with
+     `7.8` average wins, but still never completes the endpoint.
+   - Learning: the endpoint is combat-viable when force-built, but not naturally
+     accessible under current shop/economy/policy pressure. The next useful
+     work is not a direct buff to `cross_bleed_rot`; it is better target-aware
+     reroll/XP timing and/or cheaper stepping-stone units that let the player
+     progress toward the endpoint without dying.
    Remaining additions:
    - upgrade pair lifecycle further from event matching to per-copy identity:
      pair formed -> held/sold/lost/merged, with exact sold-pair loss;

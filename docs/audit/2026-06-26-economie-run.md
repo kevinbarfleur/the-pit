@@ -891,6 +891,14 @@ Ajout batch autonomie (`runs/long-2026-06-27b`) :
   `85.7%` une fois rempli et levelle, mais son cout monte a `96` or-equivalent.
   Lecture economie : ce n'est pas forcement un mauvais plan, c'est peut-etre un
   endpoint late tres cher dont il faut mesurer l'accessibilite.
+- Mise a jour accessibilite de plan : `tools/sim.lua economy` expose maintenant
+  `plan_access` et accepte `PIT_PLAN_TARGET_SPECS`. Sur
+  `runs/long-2026-06-27n/plan-access-targeted-v2`, la politique cible
+  `committed_cross_bleed_rot_plan` survit correctement (`7.8` wins baseline)
+  mais n'atteint que `21.9%` de couverture unite et `13.5%` de couverture
+  niveau pour l'endpoint `cross_bleed_rot_filled`; `complete_rate` reste `0%`.
+  Lecture : le probleme est l'accessibilite/progression, pas la puissance du
+  board force-build.
 
 Metrics recommandees :
 
@@ -921,6 +929,9 @@ Metrics recommandees :
 - `filled_resolutions` : pour un noyau coherent mais sous-rempli, comparaison
   entre le noyau brut et sa meilleure variante remplie/nivellee ; a croiser
   avec le cout et les runs economie pour savoir si le plan est atteignable.
+- `plan_access` : couverture finale d'un target plan en run reelle
+  (unites, niveaux, complete rate, ratio d'or final). Indispensable pour
+  separer "endpoint fort" de "endpoint accessible".
 
 Policies minimales :
 

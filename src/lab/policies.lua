@@ -694,6 +694,23 @@ function Policies.committed_archetype_plan(archetype, sigil)
   return Policies.committed_archetype_plan_with(archetype, sigil)
 end
 
+function Policies.committed_unit_set_plan(name, archetype, sigil, unitIds, opts)
+  opts = opts or {}
+  local wanted = {}
+  for _, id in ipairs(unitIds or {}) do wanted[id] = true end
+  local supports = opts.supportArchetypes or {}
+  local want = function(id)
+    return wanted[id] == true or supports[Policies.archetypeOf(id)] == true
+  end
+  local commitWant = function(id) return wanted[id] == true end
+  return Policies.committed_archetype_plan_with(archetype, sigil, {
+    name = name,
+    want = want,
+    commitWant = commitWant,
+    minRank = opts.minRank or 1,
+  })
+end
+
 -- ── 6) RANDOM BASELINE (factory, RNG INJECTÉ -> déterministe) : accepte/refuse, reroll, achats au hasard.
 -- Le plancher de référence (toute politique sensée doit le battre). ──
 function Policies.random_baseline(rng)
@@ -740,6 +757,10 @@ function Policies.analysisSet(rng)
   out[#out + 1] = Policies.committed_archetype_plan("burn", "ligne")
   out[#out + 1] = Policies.committed_archetype_plan("rot", "carre")
   out[#out + 1] = Policies.committed_archetype_plan("tank", "carre")
+  out[#out + 1] = Policies.committed_unit_set_plan("committed_cross_bleed_rot_plan", "rot", "carre", {
+    "pit_maw", "razorkin", "gash_fiend", "clot_mender",
+    "marrow_drinker", "wither_bloom", "blight_spreader", "hookjaw",
+  }, { supportArchetypes = { rot = true, bleed = true } })
   return out
 end
 

@@ -7,6 +7,7 @@ local Common = require("tools.scenarios.common")
 local Economy = require("src.run.economy")
 local Rundriver = require("src.lab.rundriver")
 local Policies = require("src.lab.policies")
+local Compcost = require("src.lab.compcost")
 
 local N = require("tools.scenarios.argn")(60)
 local BASE_SEED = 1060000
@@ -19,6 +20,49 @@ local ECONOMY_ORDER = Common.envCsv("PIT_ECON_PROFILES") or Economy.order
 for _, profileId in ipairs(ECONOMY_ORDER) do
   assert(Economy.profiles[profileId], "profil economie inconnu: " .. tostring(profileId))
 end
+
+local DEFAULT_PLAN_TARGETS = { "cross_bleed_rot", "rot_carre_perfect", "poison_diamant_perfect", "tank_carre" }
+
+local function targetFromComp(id)
+  local comp = Common.compByIdOrNil(id)
+  if not comp then return nil end
+  local target = Common.clone(comp)
+  target.source = "comp"
+  target.cost = Compcost.of(target)
+  return target
+end
+
+local function targetFromSpec(spec)
+  local id, body = tostring(spec or ""):match("^([^=]+)=(.+)$")
+  if not id then return nil end
+  local units = {}
+  for token in body:gmatch("[^+]+") do
+    local unitId, level = token:match("^([^:]+):?(%d*)$")
+    if unitId and unitId ~= "" then
+      units[#units + 1] = { id = unitId, level = tonumber(level) or 1, slot = #units + 1 }
+    end
+  end
+  assert(#units > 0, "PIT_PLAN_TARGET_SPECS cible vide: " .. tostring(spec))
+  local target = { id = id, source = "spec", sigil = "carre", boardLevel = #units, units = units }
+  target.cost = Compcost.of(target)
+  return target
+end
+
+local function loadPlanTargets()
+  local out, seen = {}, {}
+  for _, id in ipairs(Common.envCsv("PIT_PLAN_TARGETS") or DEFAULT_PLAN_TARGETS) do
+    local target = targetFromComp(id)
+    assert(target, "PIT_PLAN_TARGETS compo inconnue: " .. tostring(id))
+    if not seen[target.id] then seen[target.id] = true; out[#out + 1] = target end
+  end
+  for _, spec in ipairs(Common.csv(Common.env("PIT_PLAN_TARGET_SPECS") or "")) do
+    local target = targetFromSpec(spec)
+    if target and not seen[target.id] then seen[target.id] = true; out[#out + 1] = target end
+  end
+  return out
+end
+
+local PLAN_TARGETS = loadPlanTargets()
 
 local function hasSuffix(s, suffix)
   return s:sub(-#suffix) == suffix
@@ -66,7 +110,7 @@ local function newAgg()
     commanderAccepts = 0, commanderDeclines = 0, commanderPlacements = 0, relicPicks = 0,
     slotDeclines = 0, slotAccepts = 0,
     archetypeRuns = 0, archetypeCommitted = 0, archetypeCommitRoundSum = 0,
-    virtualBench = {}, tiers = {}, archetypes = {}, unitMerge = {},
+    virtualBench = {}, tiers = {}, archetypes = {}, unitMerge = {}, planTargets = {},
     mergeLifecycle = Common.mergeLifecycleAgg(),
   }
 end
@@ -218,6 +262,69 @@ local function addCommitment(a, traj)
   end
 end
 
+local function unitSummary(units)
+  local out = {}
+  for _, u in ipairs(units or {}) do
+    local rec = out[u.id]
+    if not rec then rec = { count = 0, levels = 0 }; out[u.id] = rec end
+    rec.count = rec.count + 1
+    rec.levels = rec.levels + (u.level or 1)
+  end
+  return out
+end
+
+local function planCoverage(board, target)
+  local have = unitSummary(board and board.units or {})
+  local want = unitSummary(target and target.units or {})
+  local targetUnits, hitUnits, targetLevels, hitLevels = 0, 0, 0, 0
+  for id, need in pairs(want) do
+    local got = have[id] or { count = 0, levels = 0 }
+    targetUnits = targetUnits + need.count
+    targetLevels = targetLevels + need.levels
+    hitUnits = hitUnits + math.min(got.count, need.count)
+    hitLevels = hitLevels + math.min(got.levels, need.levels)
+  end
+  local unitCoverage = (targetUnits > 0) and (hitUnits / targetUnits) or 0
+  local levelCoverage = (targetLevels > 0) and (hitLevels / targetLevels) or 0
+  return {
+    unit_coverage = unitCoverage,
+    level_coverage = levelCoverage,
+    complete = unitCoverage >= 1 and levelCoverage >= 1,
+  }
+end
+
+local function addPlanAccess(a, traj)
+  if #PLAN_TARGETS == 0 then return end
+  local finalGold = (traj.finalCost and traj.finalCost.gold) or 0
+  for _, target in ipairs(PLAN_TARGETS) do
+    local rec = a.planTargets[target.id]
+    if not rec then
+      rec = {
+        id = target.id,
+        source = target.source,
+        target_gold = (target.cost and target.cost.gold) or 0,
+        runs = 0, complete = 0,
+        unitCoverage = 0, levelCoverage = 0, finalGoldRatio = 0,
+        wins = 0, completeWins = 0,
+        completions = 0, completeCompletions = 0,
+      }
+      a.planTargets[target.id] = rec
+    end
+    local cov = planCoverage(traj.finalBoard, target)
+    rec.runs = rec.runs + 1
+    rec.unitCoverage = rec.unitCoverage + cov.unit_coverage
+    rec.levelCoverage = rec.levelCoverage + cov.level_coverage
+    rec.finalGoldRatio = rec.finalGoldRatio + ((rec.target_gold > 0) and (finalGold / rec.target_gold) or 0)
+    rec.wins = rec.wins + (traj.wins or 0)
+    if traj.result == "win" then rec.completions = rec.completions + 1 end
+    if cov.complete then
+      rec.complete = rec.complete + 1
+      rec.completeWins = rec.completeWins + (traj.wins or 0)
+      if traj.result == "win" then rec.completeCompletions = rec.completeCompletions + 1 end
+    end
+  end
+end
+
 local function addRun(a, traj)
   a.runs = a.runs + 1
   a.wins = a.wins + (traj.wins or 0)
@@ -227,6 +334,7 @@ local function addRun(a, traj)
   Common.addMergeLifecycle(a.mergeLifecycle, traj)
   if traj.result == "win" then a.completions = a.completions + 1 end
   addCommitment(a, traj)
+  addPlanAccess(a, traj)
   for _, rd in ipairs(traj.rounds or {}) do
     local e = rd.economy or {}
     a.rounds = a.rounds + 1
@@ -288,6 +396,22 @@ local function finish(a)
   local spend = a.buyGold + a.rerollGold + a.xpGold
   local byUnitMerge, unitMergeWatch = finishUnitMerge(a.unitMerge)
   local mergeLifecycle = Common.finishMergeLifecycle(a.mergeLifecycle)
+  local planAccess = {}
+  for id, rec in pairs(a.planTargets or {}) do
+    planAccess[id] = {
+      source = rec.source,
+      target_gold = rec.target_gold,
+      runs = rec.runs,
+      complete_rate = (rec.runs > 0) and (rec.complete / rec.runs) or 0,
+      avg_unit_coverage = (rec.runs > 0) and (rec.unitCoverage / rec.runs) or 0,
+      avg_level_coverage = (rec.runs > 0) and (rec.levelCoverage / rec.runs) or 0,
+      avg_final_gold_ratio = (rec.runs > 0) and (rec.finalGoldRatio / rec.runs) or 0,
+      avg_wins = (rec.runs > 0) and (rec.wins / rec.runs) or 0,
+      avg_wins_when_complete = (rec.complete > 0) and (rec.completeWins / rec.complete) or 0,
+      completion = (rec.runs > 0) and (rec.completions / rec.runs) or 0,
+      completion_when_complete = (rec.complete > 0) and (rec.completeCompletions / rec.complete) or 0,
+    }
+  end
   local tiers = {}
   for tier, t in pairs(a.tiers) do
     tiers[tostring(tier)] = {
@@ -376,6 +500,7 @@ local function finish(a)
     by_unit_merge = byUnitMerge,
     unit_merge_watch = unitMergeWatch,
     merge_lifecycle = mergeLifecycle,
+    plan_access = planAccess,
   }
 end
 
@@ -443,6 +568,8 @@ local payload = {
     policies = Common.env("PIT_POLICIES"),
     economy_profiles = Common.env("PIT_ECON_PROFILES"),
     bench_caps = Common.env("PIT_BENCH_CAPS"),
+    plan_targets = Common.env("PIT_PLAN_TARGETS"),
+    plan_target_specs = Common.env("PIT_PLAN_TARGET_SPECS"),
   },
   profiles = profiles,
   by_cohort = byCohort,
@@ -483,6 +610,7 @@ for _, profileId in ipairs(ECONOMY_ORDER) do
     unit_merge_watch = p.unit_merge_watch,
     commander_placements_per_run = p.commander_placements_per_run,
     relic_picks_per_run = p.relic_picks_per_run,
+    plan_access = p.plan_access,
     cohorts = {
       broad_naive = byCohort[profileId].broad_naive and {
         avg_wins = byCohort[profileId].broad_naive.avg_wins,
