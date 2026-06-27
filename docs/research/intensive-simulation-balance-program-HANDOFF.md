@@ -2072,6 +2072,39 @@ Next implementation targets:
      starts pushing p90 above `21s` and should remain a stress candidate. Do
      not jump to the old suggested `cd x4`: prior tank/pacing runs already
      showed it overuses fatigue.
+   - Pacing scoring and live application update:
+     `Common.durationFit(duration)` now scores fight duration against the
+     current target envelope: early average `13-16s`, all-fight p50 `11-14s`,
+     p90 `<=22s`, fatigue-touch `<=5%`, and early under-5s `<=6%`. `pacing`
+     and `sweep` reports expose both `duration_fit` diagnostics and direct
+     `duration_fit_score` fields. `sweep` also writes `recommendations` with
+     `selection_score = duration_fit_score + bounded wins/completion deltas vs
+     live`, so long batches can be read without hand-sorting cells.
+   - Broad pacing confirmation:
+     `runs/long-2026-06-27n/pacing-fit-broad-v1` crossed all analysis policies
+     at N=30 over `baseline/sap_cost/early_curve` and focused pace candidates.
+     Live pacing is confirmed too short (`baseline`: fit `0.626`, early avg
+     `10.04s`, p50 `9.53s`, fatigue `6.5%`; `early_curve`: fit `0.546`, early
+     avg `9.24s`). `cd1.5_f24` is the best baseline/early-curve compromise
+     (`baseline` fit `0.987`, wins `6.25`, completion `11.3%`, early `13.88s`,
+     p50 `12.8s`, fatigue `4.9%`; `early_curve` fit `0.982`, wins `6.06`,
+     completion `10.8%`). `cd1.5_f26` is slightly better under `sap_cost`
+     (`fit 0.961`, wins `6.04`, completion `8.8%`, fatigue `3.2%`) and reduces
+     fatigue in baseline (`2.6%`) while keeping early/p50 in target. `cd1.65`
+     improves some win counts but is more fragile: baseline p90 reaches `23.4s`
+     and fatigue `6.1%`, so keep it as a stress candidate, not the live default.
+   - Live pacing implementation:
+     `src/run/pacing.lua` is now the source of truth for live combat pacing and
+     player-facing cooldown display. The active `live` profile is
+     `live_hp2_cd15_f26` (`hp x2`, cooldown x1.5, fatigue at `1560` ticks /
+     `26s`). `Combat.new`/`restart` use this profile, while unit data remains
+     authored at base cooldown. Monster cards, the gallery, and shield-caster
+     mechanic text use `Pacing.formatCooldown(...)`, so displayed CD matches the
+     real live combat cadence. `PIT_LIVE_PACE=legacy` can temporarily switch
+     the app back to `hp x2 / cooldown x1 / fatigue17` for comparison. The
+     simulation tools remain explicitly parameterized: `Rundriver` and
+     `Match.run` accept `cooldownMult`, and `pacing`/`sweep`/`tank` pass it as
+     an arena option instead of mutating specs.
    Remaining additions:
    - use `rot_bleed_rat_core` as the baseline reroll target for the next
      balance pass, but investigate cheap mid-board outliers before nerfing it;
