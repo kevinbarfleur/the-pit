@@ -11,12 +11,15 @@ local Compcost = require("src.lab.compcost")
 local Compbuild = require("src.lab.compbuild")
 local Coherence = require("src.lab.coherence")
 local Match = require("src.combat.match")
+local Pacing = require("src.run.pacing")
 local Relics = require("src.data.relics")
 local Units = require("src.data.units")
 
 local N = require("tools.scenarios.argn")(60)
 local BASE_SEED = 1060000
 local HPM = Common.envNumber("PIT_HP_MULT", nil)
+local ORACLE_PACING = Pacing.arenaOptions()
+if HPM ~= nil then ORACLE_PACING.hpMult = HPM end
 local COMMANDER_MODE = Common.env("PIT_COMMANDER_MODE") or "ignore"
 -- Extra holding capacity beyond the real board+bench capacity used by Rundriver.
 -- Cap 0 is the current gameplay model; cap 4 answers "what if the player had 4 more reserve slots?"
@@ -105,7 +108,12 @@ local function targetOracle(target)
     local rr = { enemy = enemyKey, fights = 0, wins = 0, ticks = 0, tickN = 0 }
     for m = 1, ORACLE_MATCHES do
       local seed = BASE_SEED + 800000 + round * 101 + m
-      local res = Match.run(left, right, seed, { tickCap = 8000, hpMult = HPM })
+      local res = Match.run(left, right, seed, {
+        tickCap = 8000,
+        hpMult = ORACLE_PACING.hpMult,
+        cooldownMult = ORACLE_PACING.cooldownMult,
+        fatigue = ORACLE_PACING.fatigue,
+      })
       total = total + 1
       rr.fights = rr.fights + 1
       if res.win then wins = wins + 1; rr.wins = rr.wins + 1 end

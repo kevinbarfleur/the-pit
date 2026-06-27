@@ -20,6 +20,7 @@ local Match = require("src.combat.match")
 local Policies = require("src.lab.policies")
 local Compositions = require("src.data.compositions")
 local Bands = require("src.lab.bands")
+local Pacing = require("src.run.pacing")
 local Json = require("tools.gamed.json")
 
 local Common = {}
@@ -206,9 +207,20 @@ function Common.archetypeOf(comp)
 end
 
 -- ── Un combat entre deux compos d'ARÈNE déjà résolues (auras bakées), seedé. Renvoie { win, decided, ticks }.
--- left/right = arrays de specs (sortie de Compbuild.toComp). hpMult forwardé (sweep PIT_HP_MULT). ──
-function Common.fight(left, right, seed, hpMult)
-  return Match.run(left, right, seed, { tickCap = 8000, hpMult = hpMult })
+-- left/right = arrays de specs (sortie de Compbuild.toComp). Pacing live par défaut ; hpMult reste overridable
+-- par les anciens sweeps PIT_HP_MULT sans perdre le cooldown/fatigue live. ──
+function Common.fight(left, right, seed, hpMult, opts)
+  opts = opts or {}
+  local pacing = Pacing.arenaOptions(opts.pacingProfile)
+  if hpMult ~= nil then pacing.hpMult = hpMult end
+  if opts.cooldownMult ~= nil then pacing.cooldownMult = opts.cooldownMult end
+  if opts.fatigue ~= nil then pacing.fatigue = opts.fatigue end
+  return Match.run(left, right, seed, {
+    tickCap = opts.tickCap or 8000,
+    hpMult = pacing.hpMult,
+    cooldownMult = pacing.cooldownMult,
+    fatigue = pacing.fatigue,
+  })
 end
 
 -- ── PERCENTILE (q ∈ [0,1]) d'un échantillon DÉJÀ TRIÉ croissant (nearest-rank, cohérent avec tools/sim.lua). ──
