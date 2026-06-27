@@ -222,6 +222,109 @@ for _, econ in ipairs(ECONOMY_ORDER) do
   end
 end
 
+local function clamp(v, lo, hi)
+  if v < lo then return lo end
+  if v > hi then return hi end
+  return v
+end
+
+local function recommendationRow(econ, paceId, row, live)
+  local winsDelta = live and (row.avg_wins - live.avg_wins) or 0
+  local completionDelta = live and (row.completion - live.completion) or 0
+  local selectionScore = row.duration_fit_score
+    + clamp(winsDelta * 0.04, -0.05, 0.05)
+    + clamp(completionDelta * 0.25, -0.025, 0.025)
+  return {
+    economy = econ,
+    pace = paceId,
+    selection_score = selectionScore,
+    duration_fit_score = row.duration_fit_score,
+    avg_wins = row.avg_wins,
+    completion = row.completion,
+    wins_delta_vs_live = winsDelta,
+    completion_delta_vs_live = completionDelta,
+    early_avg_seconds = row.duration.early.avg_seconds,
+    p50_seconds = row.duration.all.p50_seconds,
+    p90_seconds = row.duration.all.p90_seconds,
+    fatigue_touch_rate = row.duration.all.fatigue_touch_rate,
+    desired_buy_all_rate = row.desired_buy_all_rate,
+    merge_per_pair_buy = row.merge_per_pair_buy,
+  }
+end
+
+local function sortRecommendationRows(rows)
+  table.sort(rows, function(a, b)
+    if a.selection_score ~= b.selection_score then return a.selection_score > b.selection_score end
+    if a.duration_fit_score ~= b.duration_fit_score then return a.duration_fit_score > b.duration_fit_score end
+    if a.avg_wins ~= b.avg_wins then return a.avg_wins > b.avg_wins end
+    if a.economy ~= b.economy then return a.economy < b.economy end
+    return a.pace < b.pace
+  end)
+end
+
+local function buildRecommendations(cells)
+  local byEconomy, globalAgg = {}, {}
+  for _, econ in ipairs(ECONOMY_ORDER) do
+    local live = cells[econ].live or cells[econ].live_hp2_cd1_f17
+    local rows = {}
+    for _, pace in ipairs(PACE_PROFILES) do
+      local row = recommendationRow(econ, pace.id, cells[econ][pace.id], live)
+      rows[#rows + 1] = row
+      local g = globalAgg[pace.id]
+      if not g then
+        g = {
+          pace = pace.id, economies = 0, selection_score = 0, duration_fit_score = 0,
+          avg_wins = 0, completion = 0, wins_delta_vs_live = 0, completion_delta_vs_live = 0,
+          early_avg_seconds = 0, p50_seconds = 0, p90_seconds = 0, fatigue_touch_rate = 0,
+        }
+        globalAgg[pace.id] = g
+      end
+      g.economies = g.economies + 1
+      g.selection_score = g.selection_score + row.selection_score
+      g.duration_fit_score = g.duration_fit_score + row.duration_fit_score
+      g.avg_wins = g.avg_wins + row.avg_wins
+      g.completion = g.completion + row.completion
+      g.wins_delta_vs_live = g.wins_delta_vs_live + row.wins_delta_vs_live
+      g.completion_delta_vs_live = g.completion_delta_vs_live + row.completion_delta_vs_live
+      g.early_avg_seconds = g.early_avg_seconds + row.early_avg_seconds
+      g.p50_seconds = g.p50_seconds + row.p50_seconds
+      g.p90_seconds = g.p90_seconds + row.p90_seconds
+      g.fatigue_touch_rate = g.fatigue_touch_rate + row.fatigue_touch_rate
+    end
+    sortRecommendationRows(rows)
+    byEconomy[econ] = rows
+  end
+
+  local global = {}
+  for _, g in pairs(globalAgg) do
+    local n = g.economies
+    global[#global + 1] = {
+      pace = g.pace,
+      economies = n,
+      selection_score = g.selection_score / n,
+      duration_fit_score = g.duration_fit_score / n,
+      avg_wins = g.avg_wins / n,
+      completion = g.completion / n,
+      wins_delta_vs_live = g.wins_delta_vs_live / n,
+      completion_delta_vs_live = g.completion_delta_vs_live / n,
+      early_avg_seconds = g.early_avg_seconds / n,
+      p50_seconds = g.p50_seconds / n,
+      p90_seconds = g.p90_seconds / n,
+      fatigue_touch_rate = g.fatigue_touch_rate / n,
+    }
+  end
+  sortRecommendationRows(global)
+
+  return {
+    scoring = "selection_score = duration_fit_score + clamp(wins_delta_vs_live*0.04,-0.05,0.05) + clamp(completion_delta_vs_live*0.25,-0.025,0.025)",
+    baseline = "live profile in the same economy when present",
+    by_economy = byEconomy,
+    global = global,
+  }
+end
+
+local recommendations = buildRecommendations(cells)
+
 print(string.format("%-24s %-16s %7s %7s %8s %7s %8s %8s %8s %8s %8s",
   "economy", "pace", "comp%", "wins", "combat%", "fit", "early_s", "p50_s", "fatigue", "desired", "merge"))
 for _, econ in ipairs(ECONOMY_ORDER) do
@@ -248,11 +351,16 @@ local payload = {
   },
   cells = cells,
   by_policy = byPolicy,
+  recommendations = recommendations,
 }
 
 local summary = {
   runs_per_policy_economy_pace = N,
   cells = summaryCells,
+  recommendations = {
+    scoring = recommendations.scoring,
+    global = recommendations.global,
+  },
 }
 
 local path = Common.writeReport("sweep", payload, { refSummary = summary })

@@ -128,6 +128,10 @@ local ok, err = pcall(function()
         "mode sweep : score de fit duration reporte")
       assert(body:find('"duration_fit_score"', 1, true),
         "mode sweep : score de fit duration expose dans le resume")
+      assert(body:find('"recommendations"', 1, true),
+        "mode sweep : recommandations de pacing/economie reportees")
+      assert(body:find('"selection_score"', 1, true),
+        "mode sweep : score de selection des recommandations reporte")
     end
   end
   print("  scenarios : SMOKE OK (10 modes tournent via le driver + ecrivent un rapport JSON ; garde-fous god-roll tenus)")
