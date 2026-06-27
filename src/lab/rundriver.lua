@@ -33,7 +33,7 @@ function Rundriver.new(seed, opts)
   local host = { goto = STUB_GOTO, run = run } -- le Build lit host.run (slots, pickEncounter)
   local build = Build.new(opts.palette or Palette, 320, 180, host, { benchSize = opts.benchSize })
   if opts.sigil then build.board:setShape(opts.sigil); build:computeLayout() end
-  return setmetatable({
+  local self = setmetatable({
     run = run, build = build, host = host, opts = opts,
     tickCap = opts.tickCap or 8000,
     hpMult = (opts.hpMult ~= nil) and opts.hpMult or pacing.hpMult, -- live by default; scenario opts may override
@@ -49,6 +49,7 @@ function Rundriver.new(seed, opts)
     opponentFn = opts.opponent,              -- (driver) -> compo droite ; défaut PvE escaladante
     over = nil, pendingRelics = nil, lastResult = nil, events = {},
     pairEvents = {}, mergeEvents = {},
+    exactMergeEvents = {}, nextCopyId = 1,
     metrics = {
       buys = 0, buyGold = 0,
       sells = 0, sellGold = 0,
@@ -63,6 +64,8 @@ function Rundriver.new(seed, opts)
       relicPicks = 0,
     },
   }, Rundriver)
+  build.mergeObserver = function(ev) self:_recordExactMerge(ev) end
+  return self
 end
 
 local METRIC_KEYS = {
@@ -85,6 +88,79 @@ function Rundriver:_event(ev)
   ev.round = ev.round or self.run.round
   ev.shopTier = ev.shopTier or self.run.shopTier
   self.events[#self.events + 1] = ev
+end
+
+function Rundriver:_newCopyId()
+  local id = self.nextCopyId or 1
+  self.nextCopyId = id + 1
+  return id
+end
+
+function Rundriver:_ensureCopyId(sr)
+  if not sr then return nil end
+  if not sr.copyId then sr.copyId = self:_newCopyId() end
+  return sr.copyId
+end
+
+function Rundriver:_ensureCopyIds()
+  for i = 1, 9 do self:_ensureCopyId(self.build.slotRigs[i]) end
+  for i = 1, #(self.build.benchSlots or {}) do self:_ensureCopyId(self.build.bench[i]) end
+end
+
+function Rundriver:copyRefs(id, level)
+  self:_ensureCopyIds()
+  local out = {}
+  level = level or 1
+  for i = 1, 9 do
+    local sr = self.build.slotRigs[i]
+    if sr and sr.id == id and (sr.level or 1) == level then
+      out[#out + 1] = { where = "board", slot = i, copyId = self:_ensureCopyId(sr), id = id, level = level }
+    end
+  end
+  for i = 1, #(self.build.benchSlots or {}) do
+    local sr = self.build.bench[i]
+    if sr and sr.id == id and (sr.level or 1) == level then
+      out[#out + 1] = { where = "bench", slot = i, copyId = self:_ensureCopyId(sr), id = id, level = level }
+    end
+  end
+  return out
+end
+
+local function copyIdsFromRefs(refs, limit, extra)
+  local out = {}
+  for i = 1, math.min(limit or #refs, #refs) do out[#out + 1] = refs[i].copyId end
+  if extra then out[#out + 1] = extra end
+  return out
+end
+
+local function mergeConsumedCopyIds(ev)
+  local out = {}
+  if ev and ev.keep and ev.keep.copyId then out[#out + 1] = ev.keep.copyId end
+  for _, c in ipairs((ev and ev.consumed) or {}) do
+    if c.copyId then out[#out + 1] = c.copyId end
+  end
+  return out
+end
+
+function Rundriver:_recordExactMerge(ev)
+  ev = ev or {}
+  local row = {
+    id = ev.id,
+    level = ev.fromLevel or 1,
+    toLevel = ev.toLevel,
+    round = self.run.round,
+    shopTier = self.run.shopTier,
+    source = ev.source,
+    copyIds = mergeConsumedCopyIds(ev),
+    keepCopyId = ev.keep and ev.keep.copyId or nil,
+    resultCopyId = ev.result and ev.result.copyId or nil,
+  }
+  self.exactMergeEvents[#self.exactMergeEvents + 1] = row
+  self:_event({
+    type = "merge_resolve", id = row.id, level = row.level, toLevel = row.toLevel,
+    source = row.source, copyIds = row.copyIds, keepCopyId = row.keepCopyId,
+    resultCopyId = row.resultCopyId,
+  })
 end
 
 local function copyList(list)
@@ -193,17 +269,20 @@ function Rundriver:copyCount(id, level)
   return n
 end
 
-function Rundriver:_recordBuyProgress(id, sameLevelCopies, level)
+function Rundriver:_recordBuyProgress(id, sameLevelCopies, level, existingRefs, newCopyId)
+  existingRefs = existingRefs or {}
   if sameLevelCopies >= 2 then
     self:_metric("mergeBuys", 1)
     self.mergeEvents[#self.mergeEvents + 1] = {
       id = id, level = level or 1, round = self.run.round, shopTier = self.run.shopTier,
+      copyIds = copyIdsFromRefs(existingRefs, 2, newCopyId),
     }
     return "merge"
   elseif sameLevelCopies == 1 then
     self:_metric("pairBuys", 1)
     self.pairEvents[#self.pairEvents + 1] = {
       id = id, level = level or 1, round = self.run.round, shopTier = self.run.shopTier,
+      copyIds = copyIdsFromRefs(existingRefs, 1, newCopyId),
     }
     return "pair"
   end
@@ -219,14 +298,17 @@ function Rundriver:buy(shopIndex, slot)
   local offer = self.run.shop[shopIndex]
   local cost = offer and offer.cost or 0
   if not offer or offer.sold then return false end
+  self:_ensureCopyIds()
+  local existingRefs = self:copyRefs(offer.id, 1)
+  local newCopyId = self:_newCopyId()
   local sameLevelCopies = self:copyCount(offer.id, 1)
   if slot == nil then
     local id = offer.id
-    if not self.build:autoBuy(shopIndex) then return false end
+    if not self.build:autoBuy(shopIndex, { copyId = newCopyId }) then return false end
     self:_metric("buys", 1)
     self:_metric("buyGold", cost)
-    local progress = self:_recordBuyProgress(id, sameLevelCopies, 1)
-    self:_event({ type = "buy", id = id, cost = cost, progress = progress })
+    local progress = self:_recordBuyProgress(id, sameLevelCopies, 1, existingRefs, newCopyId)
+    self:_event({ type = "buy", id = id, cost = cost, progress = progress, copyId = newCopyId })
     return id
   end
   slot = slot or self:firstEmptySlot()
@@ -237,9 +319,9 @@ function Rundriver:buy(shopIndex, slot)
   if not id then return false end
   self:_metric("buys", 1)
   self:_metric("buyGold", cost)
-  local progress = self:_recordBuyProgress(id, sameLevelCopies, 1)
-  self:_event({ type = "buy", id = id, cost = cost, progress = progress, slot = slot })
-  self.build:placeId(slot, id, 1)
+  local progress = self:_recordBuyProgress(id, sameLevelCopies, 1, existingRefs, newCopyId)
+  self:_event({ type = "buy", id = id, cost = cost, progress = progress, slot = slot, copyId = newCopyId })
+  self.build:placeId(slot, id, 1, { copyId = newCopyId })
   self.build:checkMerges() -- 3 copies (même id+niveau) -> niveau+1 (cascade)
   return id
 end
@@ -257,6 +339,7 @@ function Rundriver:sell(slot)
   self:_event({
     type = "sell", id = sr.id, level = sr.level or 1,
     where = "board", slot = slot, gold = self.run.gold - before,
+    copyId = sr.copyId,
   })
   self.build.slotRigs[slot] = nil
   self.build.board.slots[slot].unit = nil
@@ -275,6 +358,7 @@ function Rundriver:sellBench(slot)
   self:_event({
     type = "sell", id = sr.id, level = sr.level or 1,
     where = "bench", slot = slot, gold = self.run.gold - before,
+    copyId = sr.copyId,
   })
   self.build.bench[slot] = nil
   return true
@@ -645,6 +729,7 @@ function Rundriver.run(seed, policy, opts)
   traj.metrics = drv:metricSnapshot()
   traj.pairEvents = drv.pairEvents
   traj.mergeEvents = drv.mergeEvents
+  traj.exactMergeEvents = drv.exactMergeEvents
   traj.economy = drv.run.economy and drv.run.economy.id or "baseline"
   if policy.commitment then traj.finalCommitment = policy:commitment(drv) end
   return traj

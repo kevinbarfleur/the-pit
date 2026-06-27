@@ -1526,6 +1526,9 @@ for _, variant in ipairs(VARIANTS) do
     merge_per_pair_buy = p.merge_per_pair_buy,
     merge_lifecycle = {
       resolve_rate = p.merge_lifecycle.resolve_rate,
+      exact_pairs = p.merge_lifecycle.exact_pairs,
+      exact_resolved = p.merge_lifecycle.exact_resolved,
+      exact_resolve_rate = p.merge_lifecycle.exact_resolve_rate,
       avg_rounds_to_merge = p.merge_lifecycle.avg_rounds_to_merge,
       unresolved = p.merge_lifecycle.unresolved,
       watch = p.merge_lifecycle.watch,

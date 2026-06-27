@@ -362,7 +362,8 @@ end
 function Common.mergeLifecycleAgg()
   return {
     pairs = 0, resolved = 0, unresolved = 0, unpairedMerges = 0,
-    soldBeforeMerge = 0, roundsToMerge = 0, tiersToMerge = 0,
+    soldBeforeMerge = 0, exactPairs = 0, exactResolved = 0,
+    roundsToMerge = 0, tiersToMerge = 0,
     byUnit = {},
   }
 end
@@ -372,16 +373,34 @@ local function lifecycleBucket(map, id)
   if not b then
     b = {
       pairs = 0, resolved = 0, unresolved = 0, unpairedMerges = 0,
-      soldBeforeMerge = 0, roundsToMerge = 0, tiersToMerge = 0,
+      soldBeforeMerge = 0, exactPairs = 0, exactResolved = 0,
+      roundsToMerge = 0, tiersToMerge = 0,
     }
     map[id] = b
   end
   return b
 end
 
+local function hasCopyIds(ev)
+  return ev and ev.copyIds and #ev.copyIds > 0
+end
+
+local function mergeContainsPairCopies(pair, merge)
+  if not (hasCopyIds(pair) and hasCopyIds(merge)) then return false end
+  local seen = {}
+  for _, copyId in ipairs(merge.copyIds or {}) do seen[copyId] = true end
+  for _, copyId in ipairs(pair.copyIds or {}) do
+    if not seen[copyId] then return false end
+  end
+  return true
+end
+
 local function sameMergeTrack(pair, merge)
-  return pair and merge and pair.id == merge.id and (pair.level or 1) == (merge.level or 1)
-    and (merge.round or 0) >= (pair.round or 0)
+  if not (pair and merge) then return false end
+  if pair.id ~= merge.id or (pair.level or 1) ~= (merge.level or 1) then return false end
+  if (merge.round or 0) < (pair.round or 0) then return false end
+  if hasCopyIds(pair) and hasCopyIds(merge) then return mergeContainsPairCopies(pair, merge) end
+  return true
 end
 
 local function saleEvents(traj)
@@ -394,6 +413,7 @@ local function saleEvents(traj)
           level = ev.level or 1,
           round = ev.round or rd.round or 0,
           shopTier = ev.shopTier or rd.shopTier or 0,
+          copyId = ev.copyId,
         }
       end
     end
@@ -409,7 +429,13 @@ local function hasSaleBeforeMerge(sales, pair, merge)
       local round = sale.round or 0
       -- Same-round order is not identity-tracked; count only later rounds to avoid false positives
       -- from policies that sell first, then buy the second copy in the same build phase.
-      if round > startRound and round < endRound then return true end
+      if round > startRound and round < endRound then
+        if hasCopyIds(pair) and sale.copyId then
+          for _, copyId in ipairs(pair.copyIds) do if copyId == sale.copyId then return true end end
+        elseif not hasCopyIds(pair) then
+          return true
+        end
+      end
     end
   end
   return false
@@ -417,7 +443,7 @@ end
 
 function Common.addMergeLifecycle(agg, traj)
   local used = {}
-  local merges = traj.mergeEvents or {}
+  local merges = (traj.exactMergeEvents and #traj.exactMergeEvents > 0) and traj.exactMergeEvents or (traj.mergeEvents or {})
   local sales = saleEvents(traj)
   for _, pair in ipairs(traj.pairEvents or {}) do
     local best, bestGap
@@ -433,6 +459,10 @@ function Common.addMergeLifecycle(agg, traj)
     local b = lifecycleBucket(agg.byUnit, pair.id or "?")
     agg.pairs = agg.pairs + 1
     b.pairs = b.pairs + 1
+    if hasCopyIds(pair) then
+      agg.exactPairs = agg.exactPairs + 1
+      b.exactPairs = b.exactPairs + 1
+    end
     local merge = best and merges[best] or nil
     local soldBeforeMerge = hasSaleBeforeMerge(sales, pair, merge)
     if soldBeforeMerge then
@@ -449,6 +479,10 @@ function Common.addMergeLifecycle(agg, traj)
       b.resolved = b.resolved + 1
       b.roundsToMerge = b.roundsToMerge + roundGap
       b.tiersToMerge = b.tiersToMerge + tierGap
+      if hasCopyIds(pair) and hasCopyIds(merge) then
+        agg.exactResolved = agg.exactResolved + 1
+        b.exactResolved = b.exactResolved + 1
+      end
     else
       agg.unresolved = agg.unresolved + 1
       b.unresolved = b.unresolved + 1
@@ -476,6 +510,9 @@ function Common.finishMergeLifecycle(agg, opts)
       unpaired_merges = b.unpairedMerges or 0,
       sold_before_merge = b.soldBeforeMerge or 0,
       sold_before_merge_rate = ((b.pairs or 0) > 0) and ((b.soldBeforeMerge or 0) / b.pairs) or 0,
+      exact_pairs = b.exactPairs or 0,
+      exact_resolved = b.exactResolved or 0,
+      exact_resolve_rate = ((b.exactPairs or 0) > 0) and ((b.exactResolved or 0) / b.exactPairs) or 0,
       resolve_rate = ((b.pairs or 0) > 0) and ((b.resolved or 0) / b.pairs) or 0,
       avg_rounds_to_merge = ((b.resolved or 0) > 0) and ((b.roundsToMerge or 0) / b.resolved) or 0,
       avg_tiers_to_merge = ((b.resolved or 0) > 0) and ((b.tiersToMerge or 0) / b.resolved) or 0,
@@ -489,6 +526,8 @@ function Common.finishMergeLifecycle(agg, opts)
         unresolved = row.unresolved,
         sold_before_merge = row.sold_before_merge,
         sold_before_merge_rate = row.sold_before_merge_rate,
+        exact_pairs = row.exact_pairs,
+        exact_resolve_rate = row.exact_resolve_rate,
         resolve_rate = row.resolve_rate,
         avg_rounds_to_merge = row.avg_rounds_to_merge,
       }
@@ -510,6 +549,9 @@ function Common.finishMergeLifecycle(agg, opts)
     unpaired_merges = agg.unpairedMerges or 0,
     sold_before_merge = agg.soldBeforeMerge or 0,
     sold_before_merge_rate = ((agg.pairs or 0) > 0) and ((agg.soldBeforeMerge or 0) / agg.pairs) or 0,
+    exact_pairs = agg.exactPairs or 0,
+    exact_resolved = agg.exactResolved or 0,
+    exact_resolve_rate = ((agg.exactPairs or 0) > 0) and ((agg.exactResolved or 0) / agg.exactPairs) or 0,
     resolve_rate = ((agg.pairs or 0) > 0) and ((agg.resolved or 0) / agg.pairs) or 0,
     avg_rounds_to_merge = ((agg.resolved or 0) > 0) and ((agg.roundsToMerge or 0) / agg.resolved) or 0,
     avg_tiers_to_merge = ((agg.resolved or 0) > 0) and ((agg.tiersToMerge or 0) / agg.resolved) or 0,

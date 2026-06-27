@@ -1013,11 +1013,16 @@ function Build:placedCount()
 end
 
 -- Pose un id sur un slot (aussi appelé par les tests/sim, sans souris ni économie).
-function Build:placeId(slot, id, level)
+function Build:placeId(slot, id, level, opts)
   if not (self.board.slots[slot] and self.board.slots[slot].unlocked) then return false end
-  self.slotRigs[slot] = { id = id, level = level or 1, char = self:newRig(id) }
+  opts = opts or {}
+  self.slotRigs[slot] = { id = id, level = level or 1, char = self:newRig(id), copyId = opts.copyId }
   self.board.slots[slot].unit = id
   return true
+end
+
+function Build:emitMergeEvent(ev)
+  if self.mergeObserver then self.mergeObserver(ev) end
 end
 
 -- DUPLICATAS (étape gameplay #2) : 3 unités de MÊME id ET MÊME niveau fusionnent en une de niveau+1
@@ -1047,21 +1052,35 @@ function Build:checkMerges()
       if #g >= 3 then
         local keep = g[1]
         local kr = (keep.kind == "board") and self.slotRigs[keep.i] or self.bench[keep.i]
-        local id, lvl = kr.id, (kr.level or 1) + 1
+        local id, fromLevel, lvl = kr.id, kr.level or 1, (kr.level or 1) + 1
+        local keepInfo = { kind = keep.kind, i = keep.i, id = id, level = fromLevel, copyId = kr.copyId }
         -- positions (design) AVANT mutation : survivant + 2 copies consommées (anim C3 : âmes qui filent vers lui).
         local sx, sy = self:fxCenterOf(keep.kind, keep.i)
         local froms = {}
         for k = 2, 3 do local p = g[k]; local fxx, fyy = self:fxCenterOf(p.kind, p.i); froms[#froms + 1] = { fxx, fyy } end
+        local consumed = {}
         for k = 2, 3 do -- consomme 2 copies (plateau ou banc)
           local p = g[k]
+          local sr = (p.kind == "board") and self.slotRigs[p.i] or self.bench[p.i]
+          consumed[#consumed + 1] = {
+            kind = p.kind, i = p.i, id = sr and sr.id or id,
+            level = sr and (sr.level or fromLevel) or fromLevel,
+            copyId = sr and sr.copyId or nil,
+          }
           if p.kind == "board" then self.slotRigs[p.i] = nil; self.board.slots[p.i].unit = nil
           else self.bench[p.i] = nil end
         end
         -- promeut la 1re copie + lui pose un `bounce` = état de chorégraphie (anticipation -> climax -> settle),
         -- timé sur la DERNIÈRE arrivée d'âme (#froms copies, 2 ici) ; lu par mergeLift/mergeScale/mergeGlow au DRAW.
-        local promoted = { id = id, level = lvl, char = self:newRig(id), bounce = newMergeAnim(#froms, lvl >= MAX_LEVEL) }
+        local promoted = { id = id, level = lvl, char = self:newRig(id), bounce = newMergeAnim(#froms, lvl >= MAX_LEVEL), copyId = kr.copyId }
         if keep.kind == "board" then self.slotRigs[keep.i] = promoted; self.board.slots[keep.i].unit = id
         else self.bench[keep.i] = promoted end
+        self:emitMergeEvent({
+          type = "merge", source = "checkMerges", id = id,
+          fromLevel = fromLevel, toLevel = lvl,
+          keep = keepInfo, consumed = consumed,
+          result = { kind = keep.kind, i = keep.i, id = id, level = lvl, copyId = promoted.copyId },
+        })
         self:spawnMergeFx(sx, sy, froms, lvl) -- âmes -> burst -> sautillement (« clean & polish », retour user)
         merged = true
         anyMerge = true
@@ -1187,7 +1206,8 @@ end
 -- PLACE automatiquement -> 1re case board déverrouillée VIDE, sinon 1er slot de BANC vide ; checkMerges gère un
 -- éventuel trio. Si TOUT est plein mais l'achat complète un trio -> fusion directe (buyMergeWhenFull). Sinon
 -- refus (aucun or dépensé). Renvoie true si l'achat a eu lieu.
-function Build:autoBuy(offerIndex)
+function Build:autoBuy(offerIndex, opts)
+  opts = opts or {}
   local run = self.host.run
   if not run then return false end
   local o = run.shop[offerIndex]
@@ -1201,24 +1221,25 @@ function Build:autoBuy(offerIndex)
     if not id then return false end
     SFX.play("coin") -- ACHAT : pièce qui tombe (cloche grave Oniric)
     if bslot then
-      self.slotRigs[bslot] = { id = id, level = 1, char = self:newRig(id) }; self.board.slots[bslot].unit = id
+      self.slotRigs[bslot] = { id = id, level = 1, char = self:newRig(id), copyId = opts.copyId }; self.board.slots[bslot].unit = id
       self:popPlaced(self.slotRigs[bslot]) -- APPARITION : le monstre frémit sur sa case + son « place »
     else
-      self.bench[benchSlot] = { id = id, level = 1, char = self:newRig(id) }
+      self.bench[benchSlot] = { id = id, level = 1, char = self:newRig(id), copyId = opts.copyId }
       self:popPlaced(self.bench[benchSlot]) -- APPARITION (banc) : frémissement + « place »
     end
     self:checkMerges()
     self:flushLevelRelic()
     return true
   end
-  return self:buyMergeWhenFull(offerIndex)
+  return self:buyMergeWhenFull(offerIndex, opts)
 end
 
 -- Board ET banc PLEINS, mais l'achat complète un trio (>=2 copies du même id au NIVEAU 1) : la copie achetée
 -- est le CATALYSEUR (jamais posée) -> on retire 1 copie existante et on promeut l'autre sur place (niveau 2),
 -- puis checkMerges gère une cascade éventuelle. Arme aussi la récompense de level-up (1×/round). Renvoie true
 -- si géré (sinon le caller ne dépense pas d'or : pas de trio -> refus).
-function Build:buyMergeWhenFull(offerIndex)
+function Build:buyMergeWhenFull(offerIndex, opts)
+  opts = opts or {}
   local run = self.host.run
   local o = run.shop[offerIndex]
   local copies = {}
@@ -1229,12 +1250,24 @@ function Build:buyMergeWhenFull(offerIndex)
   if not id then return false end
   SFX.play("coin") -- ACHAT (catalyseur de fusion) : la pièce de l'achat (le « ta-ta-ta-TAAA » suit via spawnMergeFx)
   local keep, drop = copies[1], copies[2]
+  local keepSr = (keep.kind == "board") and self.slotRigs[keep.i] or self.bench[keep.i]
+  local dropSr = (drop.kind == "board") and self.slotRigs[drop.i] or self.bench[drop.i]
   local sx, sy = self:fxCenterOf(keep.kind, keep.i)        -- survivant
   local dxp, dyp = self:fxCenterOf(drop.kind, drop.i)      -- copie retirée (âme qui file)
   if drop.kind == "board" then self.slotRigs[drop.i] = nil; self.board.slots[drop.i].unit = nil else self.bench[drop.i] = nil end
-  local promoted = { id = id, level = 2, char = self:newRig(id), bounce = newMergeAnim(2) }
+  local promoted = { id = id, level = 2, char = self:newRig(id), bounce = newMergeAnim(2), copyId = keepSr and keepSr.copyId or nil }
   if keep.kind == "board" then self.slotRigs[keep.i] = promoted; self.board.slots[keep.i].unit = id
   else self.bench[keep.i] = promoted end
+  self:emitMergeEvent({
+    type = "merge", source = "buyMergeWhenFull", id = id,
+    fromLevel = 1, toLevel = 2,
+    keep = { kind = keep.kind, i = keep.i, id = id, level = 1, copyId = keepSr and keepSr.copyId or nil },
+    consumed = {
+      { kind = drop.kind, i = drop.i, id = id, level = 1, copyId = dropSr and dropSr.copyId or nil },
+      { kind = "shop", id = id, level = 1, copyId = opts.copyId },
+    },
+    result = { kind = keep.kind, i = keep.i, id = id, level = 2, copyId = promoted.copyId },
+  })
   -- 1 âme de la copie retirée + 1 « achetée » qui tombe d'en haut sur le survivant (le catalyseur, jamais posé).
   self:spawnMergeFx(sx, sy, { { dxp, dyp }, { sx, sy - 34 } }, 2)
   self:checkMerges()

@@ -17,6 +17,7 @@ local Compcost = require("src.lab.compcost")
 local Arena = require("src.combat.arena")
 local Match = require("src.combat.match")
 local Pacing = require("src.run.pacing")
+local Common = require("tools.scenarios.common")
 
 local ARCH = {}; for _, a in ipairs(Compositions.archetypes) do ARCH[a] = true end
 local VARIANTS = { perfect = true, missing_minor = true, missing_clutch = true, wall = true, baseline = true, amp = true }
@@ -384,6 +385,27 @@ local ok, err = pcall(function()
   local mergeMetrics = mergeDrv:metricSnapshot()
   assert(mergeMetrics.mergeBuys == 1 and mergeDrv:copyCount("spore_tick", 2) == 1,
     "buy: metrique fusion tracee")
+  local exactDrv = Rundriver.new(202606291, {})
+  exactDrv.run.gold = 99
+  local es = unlockedSlots(exactDrv)
+  exactDrv.build:placeId(es[1], "spore_tick", 1)
+  exactDrv.run.shop[1] = { id = "spore_tick", cost = 1, sold = false }
+  assert(exactDrv:buy(1) == "spore_tick", "copy lifecycle: achat de paire")
+  exactDrv.run.shop[1] = { id = "spore_tick", cost = 1, sold = false }
+  assert(exactDrv:buy(1) == "spore_tick", "copy lifecycle: achat de fusion")
+  assert(#exactDrv.pairEvents == 1 and #(exactDrv.pairEvents[1].copyIds or {}) == 2,
+    "copy lifecycle: la paire porte les 2 copyIds")
+  assert(#exactDrv.exactMergeEvents == 1 and #(exactDrv.exactMergeEvents[1].copyIds or {}) == 3,
+    "copy lifecycle: la fusion exacte porte les 3 copyIds")
+  local ml = Common.mergeLifecycleAgg()
+  Common.addMergeLifecycle(ml, {
+    pairEvents = exactDrv.pairEvents,
+    exactMergeEvents = exactDrv.exactMergeEvents,
+    rounds = {},
+  })
+  local mf = Common.finishMergeLifecycle(ml)
+  assert(mf.exact_pairs == 1 and mf.exact_resolved == 1 and mf.exact_resolve_rate == 1,
+    "copy lifecycle: merge_lifecycle resout la paire par identite exacte")
   local boardSellDrv = Rundriver.new(20260630, {})
   local bss = unlockedSlots(boardSellDrv)
   boardSellDrv.build:placeId(bss[1], "skeleton", 1)

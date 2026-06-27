@@ -2148,19 +2148,30 @@ Next implementation targets:
      improves desired access (`69.3% -> 72.0%`) and merge conversion
      (`69.1% -> 73.1%`) but slightly lowers wins/completion (`8.63/21.6% ->
      8.41/18.1%`). The strongest deep-reroll policy stays basically stable
-     (`50%` completion baseline vs `48.75%` slow XP) while resolving more pairs
-     (`78.1% -> 84.3%`). Learning: slower shop tiers are useful as a diagnostic
-     and may help low-rank reroll access, but they are not a live economy
-     recommendation alone because they delay high-rank support and reduce run
-     conversion. Prefer targeted reroll policy/support changes before changing
-     the default shop XP curve.
+   (`50%` completion baseline vs `48.75%` slow XP) while resolving more pairs
+   (`78.1% -> 84.3%`). Learning: slower shop tiers are useful as a diagnostic
+   and may help low-rank reroll access, but they are not a live economy
+   recommendation alone because they delay high-rank support and reduce run
+   conversion. Prefer targeted reroll policy/support changes before changing
+   the default shop XP curve.
+   - Exact merge-copy lifecycle:
+     `Rundriver` now assigns a lab-only `copyId` to every bought/placed unit and
+     `Build` emits optional merge-observer events when `checkMerges` or
+     full-board catalyst merges resolve. Economy reports can now expose
+     `exact_pairs`, `exact_resolved`, and `exact_resolve_rate`, matching a pair
+     to the real copies that merged instead of only matching by unit id, level,
+     and later round. A micro rat-core run produced `34` exact pairs with
+     `85.3%` exact resolution; this unlocks the next pass: distinguish pairs
+     that failed because the third copy never appeared, because one exact copy
+     was sold, or because board/bench tempo crowded them out.
    Remaining additions:
    - use `rot_bleed_rat_core` as the baseline reroll target for the next
      balance pass, but investigate cheap mid-board outliers before nerfing it;
    - revisit protected payload placement and the remaining cheap mid-board
      outliers now that XP/reroll timing has a measurable coverage gate;
-   - upgrade pair lifecycle further from event matching to per-copy identity:
-     pair formed -> held/sold/lost/merged, with exact sold-pair loss;
+   - extend exact lifecycle reporting from pair/merge resolution to explicit
+     terminal causes: held to run end, sold exact copy, no third copy, or
+     crowded out by bench/board pressure;
 3. Integrate actual relic access into economy scoring, now that relic semantic
    tags exist in coherence scoring.
 4. Expand authored level-ups beyond the initial 6 units before drawing broad
