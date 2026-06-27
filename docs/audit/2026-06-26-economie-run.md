@@ -1007,6 +1007,17 @@ Ajout batch autonomie (`runs/long-2026-06-27b`) :
   `rot_core_r4_spread`) restent a `50%` oracle et atteignent beaucoup moins
   souvent held `50%`. Lecture : la meilleure suite rot/bleed n'est pas un
   rush rang 5, mais un axe reroll bas rang avec des L3 clutch lisibles.
+- Check coherence du pivot rat-core :
+  `runs/long-2026-06-27n/rat-core-coherence-v1` confirme que
+  `rot_bleed_rat_core` existe bien dans le panel catalogue (`coherence 0.754`,
+  `winrate 100%`, `cout 57`, `cost_score 0.657`) et monte a `coherence 0.812`
+  avec `grave_cap`. Il ne tombe pas dans `cheap_strong`, donc le premier signal
+  n'est pas "rat-core est trop peu cher", mais "rat-core est un endpoint
+  coherent et performant". Les vraies alertes `cheap_strong` restent des boards
+  mid moins chers (`17-31` or), notamment tank/shock et
+  `rot_bleed_mid__leveled` (`30` or, `winrate 100%`). Decision actuelle :
+  garder `rot_bleed_rat_core` comme cible reroll testable, eviter un nerf
+  reflexe, et investiguer d'abord les mid boards trop efficaces sous leur cout.
 
 Metrics recommandees :
 
