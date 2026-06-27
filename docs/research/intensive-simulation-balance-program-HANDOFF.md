@@ -1757,6 +1757,22 @@ Next implementation targets:
      piles with high investment or efficient midgame good-stuff. This is now
      the bigger systemic signal: raw stats/high-rank piles can beat readable
      plans too often.
+   Marrow/board-fit follow-up:
+   - `marrow_drinker` now has the documented level-aware conversion scaling:
+     L2 `base 4 / growth 3 / cap 14`, L3 `base 5 / growth 4 / cap 16`.
+   - Leveled fixed candidates now prioritize high-rank/level-authored pivots
+     before central slot convenience. Example: `cross_bleed_rot__leveled` puts
+     `marrow_drinker` at L3 instead of always putting the central aura at L3.
+   - The report now includes `board_fit` and `underfilled` per row, plus
+     bucket/stage `avg_board_fit`. Rows that are coherent and weak but do not
+     fill enough of their declared board move to
+     `underfilled_high_coherence_weak`.
+   - New filtered read (`runs/long-2026-06-27g/fit-filtered`, `coherence N=36`,
+     matches `8`): correlation `0.200`, `high_coherence_weak` is now only `1`
+     row, `underfilled_high_coherence_weak` has `2` rows, and
+     `underleveled_high_coherence_weak` has `20` rows. The only true readable
+     weak row left is `tank_carre_mid__leveled__tide_caller`; `cross_bleed_rot`
+     should not be judged until a filled-board variant exists.
    Remaining additions:
    - upgrade pair lifecycle further from event matching to per-copy identity:
      pair formed -> held/sold/lost/merged, with exact sold-pair loss;

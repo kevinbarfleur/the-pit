@@ -98,6 +98,21 @@ return {
     },
   },
 
+  -- Cross-family payoff: when a player levels the bleed->rot pivot, the
+  -- conversion must become a real late-game reward instead of only a stat stick.
+  marrow_drinker = {
+    [2] = {
+      effects = {
+        [1] = { params = { base = 4, growth = 3, capDps = 14 } },
+      },
+    },
+    [3] = {
+      effects = {
+        [1] = { params = { base = 5, growth = 4, capDps = 16 } },
+      },
+    },
+  },
+
   -- grant_team command bonuses did not have a numeric level story. Start with
   -- the vulnerability commandant because it is simple, visible, and bounded.
   corruptor = {

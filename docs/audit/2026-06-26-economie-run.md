@@ -856,6 +856,10 @@ Ajout batch autonomie (`runs/long-2026-06-27b`) :
   `underleveled_high_coherence_weak`. C'est important pour l'economie : un plan
   coherent ne doit pas etre juge faible sans verifier si le joueur avait investi
   assez de copies/XP pour son stade.
+- Mise a jour `board_fit` : les compos coherentes mais sous-remplies sont
+  separees dans `underfilled_high_coherence_weak`. Pour les runs, cela veut
+  dire qu'il faut differencier "noyau de synergie trouve" et "board complet
+  pret a gagner".
 
 Metrics recommandees :
 
@@ -879,6 +883,8 @@ Metrics recommandees :
   mal.
 - `level_fit` : adequation entre les niveaux reels du board et le niveau attendu
   pour le stade teste.
+- `board_fit` : nombre d'unites posees / slots attendus pour le stade ou le
+  board-level declare.
 
 Policies minimales :
 

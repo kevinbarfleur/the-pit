@@ -12,6 +12,7 @@ local Compositions = require("src.data.compositions")
 local Bands = require("src.lab.bands")
 local Compbuild = require("src.lab.compbuild")
 local Policies = require("src.lab.policies")
+local Resolver = require("src.core.unit_resolver")
 local Units = require("src.data.units")
 
 local N = require("tools.scenarios.argn")(24) -- generated candidates per stage
@@ -39,6 +40,8 @@ local STAGE_LEVEL = {
   end_ = { board = 9, maxRank = 5, size = 9, l2 = 35, l3 = 8 },
 }
 local LEVEL_PRIORITY = { 5, 2, 4, 6, 8, 1, 3, 7, 9 }
+local SLOT_PRIORITY = {}
+for i, slot in ipairs(LEVEL_PRIORITY) do SLOT_PRIORITY[slot] = (#LEVEL_PRIORITY - i) / 100 end
 
 local function cloneUnits(units)
   local out = {}
@@ -134,6 +137,21 @@ local function stageLevelTargets(stage, n)
   return 0, 0
 end
 
+local function authoredLevelScore(id)
+  if not Resolver.hasAuthoredLevel(id) then return 0 end
+  local score = 3
+  for _, d in ipairs(Resolver.levelDeltaSummary(id)) do
+    if d.clutch or d.transformative then score = score + 4 end
+  end
+  return score
+end
+
+local function levelPriorityScore(u)
+  local def = Units[u.id] or {}
+  local rank = def.rank or def.cost or 1
+  return rank * 10 + authoredLevelScore(u.id) + (SLOT_PRIORITY[u.slot] or 0)
+end
+
 local function leveledVariant(c)
   local stage = stageOf(c)
   local l2Target, l3Target = stageLevelTargets(stage, #(c.units or {}))
@@ -145,17 +163,14 @@ local function leveledVariant(c)
   v.variant = tostring(c.variant or "fixed") .. "_leveled"
   v.units = cloneUnits(c.units)
 
-  local bySlot = {}
-  for _, u in ipairs(v.units) do bySlot[u.slot] = u end
   local ordered = {}
-  for _, slot in ipairs(LEVEL_PRIORITY) do
-    if bySlot[slot] then ordered[#ordered + 1] = bySlot[slot] end
-  end
-  for _, u in ipairs(v.units) do
-    local already = false
-    for _, o in ipairs(ordered) do if o == u then already = true; break end end
-    if not already then ordered[#ordered + 1] = u end
-  end
+  for _, u in ipairs(v.units) do ordered[#ordered + 1] = u end
+  table.sort(ordered, function(a, b)
+    local sa, sb = levelPriorityScore(a), levelPriorityScore(b)
+    if sa ~= sb then return sa > sb end
+    if (a.slot or 0) ~= (b.slot or 0) then return (a.slot or 0) < (b.slot or 0) end
+    return tostring(a.id) < tostring(b.id)
+  end)
 
   local applied = 0
   for i = 1, math.min(l3Target, #ordered) do
@@ -239,7 +254,10 @@ local function bucketFor(coherence)
 end
 
 local function newBucket()
-  return { candidates = 0, wins = 0, fights = 0, coherence = 0, cost = 0, levelFit = 0, ticks = 0, tickN = 0 }
+  return {
+    candidates = 0, wins = 0, fights = 0, coherence = 0, cost = 0,
+    levelFit = 0, boardFit = 0, ticks = 0, tickN = 0,
+  }
 end
 
 local function addBucket(b, row)
@@ -249,6 +267,7 @@ local function addBucket(b, row)
   b.coherence = b.coherence + row.coherence
   b.cost = b.cost + row.cost_score
   b.levelFit = b.levelFit + row.level_fit
+  b.boardFit = b.boardFit + row.board_fit
   b.ticks = b.ticks + row.ticks
   b.tickN = b.tickN + row.tickN
 end
@@ -260,9 +279,18 @@ local function finishBucket(b)
     avg_coherence = (b.candidates > 0) and (b.coherence / b.candidates) or 0,
     avg_cost_score = (b.candidates > 0) and (b.cost / b.candidates) or 0,
     avg_level_fit = (b.candidates > 0) and (b.levelFit / b.candidates) or 0,
+    avg_board_fit = (b.candidates > 0) and (b.boardFit / b.candidates) or 0,
     winrate = (b.fights > 0) and (b.wins / b.fights) or 0,
     avg_seconds = (b.tickN > 0) and (b.ticks / b.tickN / Common.FPS) or 0,
   }
+end
+
+local function boardFit(comp)
+  local units = comp.units or {}
+  local expected = comp.boardLevel or (STAGE_LEVEL[comp.band] and STAGE_LEVEL[comp.band].board) or #units
+  expected = math.max(1, expected)
+  local fit = math.min(1, #units / expected)
+  return fit, fit < 0.75
 end
 
 local function levelFit(comp)
@@ -310,6 +338,8 @@ local function compactRow(r)
     gold = r.gold,
     level_fit = r.level_fit,
     underleveled = r.underleveled,
+    board_fit = r.board_fit,
+    underfilled = r.underfilled,
     avg_seconds = r.avg_seconds,
     subscores = r.subscores,
     units = r.units,
@@ -331,6 +361,7 @@ for _, comp in ipairs(candidates) do
   local score = Coherence.scoreTeam(comp.units, { commander = comp.commander, relics = comp.relics })
   local inv = Common.invest(comp)
   local fit, underleveled = levelFit(comp)
+  local fill, underfilled = boardFit(comp)
   local L = leftOf(comp)
   local wins, fights, ticks, tickN = 0, 0, 0, 0
   for _, foeId in ipairs(foes) do
@@ -351,6 +382,7 @@ for _, comp in ipairs(candidates) do
     coherence = score.coherence, subscores = score.subscores,
     cost_score = inv.score or 0, gold = inv.gold or 0,
     level_fit = fit, underleveled = underleveled,
+    board_fit = fill, underfilled = underfilled,
     wins = wins, fights = fights, winrate = (fights > 0) and (wins / fights) or 0,
     ticks = ticks, tickN = tickN, avg_seconds = (tickN > 0) and (ticks / tickN / Common.FPS) or 0,
     units = cloneUnits(comp.units),
@@ -361,13 +393,17 @@ for _, comp in ipairs(candidates) do
   addBucket(byStage[stage], row)
 end
 
-local highCoherenceWeak, lowCoherenceStrong, cheapStrong, expensiveWeak, underleveledWeak = {}, {}, {}, {}, {}
+local highCoherenceWeak, lowCoherenceStrong, cheapStrong, expensiveWeak = {}, {}, {}, {}
+local underleveledWeak, underfilledWeak = {}, {}
 for _, r in ipairs(rows) do
-  if r.coherence >= 0.65 and r.winrate <= 0.35 and not r.underleveled then
+  if r.coherence >= 0.65 and r.winrate <= 0.35 and not r.underleveled and not r.underfilled then
     highCoherenceWeak[#highCoherenceWeak + 1] = compactRow(r)
   end
   if r.coherence >= 0.65 and r.winrate <= 0.35 and r.underleveled then
     underleveledWeak[#underleveledWeak + 1] = compactRow(r)
+  end
+  if r.coherence >= 0.65 and r.winrate <= 0.35 and not r.underleveled and r.underfilled then
+    underfilledWeak[#underfilledWeak + 1] = compactRow(r)
   end
   if r.coherence <= 0.35 and r.winrate >= 0.55 then lowCoherenceStrong[#lowCoherenceStrong + 1] = compactRow(r) end
   if r.cost_score <= 0.45 and r.winrate >= 0.60 then cheapStrong[#cheapStrong + 1] = compactRow(r) end
@@ -390,6 +426,10 @@ table.sort(expensiveWeak, function(a, b)
   return a.cost_score > b.cost_score
 end)
 table.sort(underleveledWeak, function(a, b)
+  if a.winrate ~= b.winrate then return a.winrate < b.winrate end
+  return a.coherence > b.coherence
+end)
+table.sort(underfilledWeak, function(a, b)
   if a.winrate ~= b.winrate then return a.winrate < b.winrate end
   return a.coherence > b.coherence
 end)
@@ -435,6 +475,7 @@ local payload = {
   outliers = {
     high_coherence_weak = take(highCoherenceWeak, 16),
     underleveled_high_coherence_weak = take(underleveledWeak, 16),
+    underfilled_high_coherence_weak = take(underfilledWeak, 16),
     low_coherence_strong = take(lowCoherenceStrong, 16),
     cheap_strong = take(cheapStrong, 16),
     expensive_weak = take(expensiveWeak, 16),
@@ -442,6 +483,7 @@ local payload = {
   outlier_counts = {
     high_coherence_weak = #highCoherenceWeak,
     underleveled_high_coherence_weak = #underleveledWeak,
+    underfilled_high_coherence_weak = #underfilledWeak,
     low_coherence_strong = #lowCoherenceStrong,
     cheap_strong = #cheapStrong,
     expensive_weak = #expensiveWeak,
@@ -459,6 +501,7 @@ local summary = {
   outlier_counts = {
     high_coherence_weak = #highCoherenceWeak,
     underleveled_high_coherence_weak = #underleveledWeak,
+    underfilled_high_coherence_weak = #underfilledWeak,
     low_coherence_strong = #lowCoherenceStrong,
     cheap_strong = #cheapStrong,
     expensive_weak = #expensiveWeak,

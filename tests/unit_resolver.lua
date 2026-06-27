@@ -106,6 +106,12 @@ local ok, err = pcall(function()
       "clot_mender L3 grants level-aware bleed")
   end
 
+  do
+    local md3 = Resolver.effectsFor("marrow_drinker", 3)[1]
+    assert(md3 and md3.params.base == 5 and md3.params.growth == 4 and md3.params.capDps == 16,
+      "marrow_drinker L3 strengthens bleed->rot conversion")
+  end
+
   -- grant_team command bonuses can now scale by commander level.
   do
     local b = fresh()

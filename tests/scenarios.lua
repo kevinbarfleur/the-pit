@@ -83,6 +83,8 @@ local ok, err = pcall(function()
     if m == "coherence" then
       assert(body:find("__leveled", 1, true),
         "mode coherence : variantes levelees produites pour les compos fixes")
+      assert(body:find('"id":"marrow_drinker","level":3', 1, true),
+        "mode coherence : variante levelee peut prioriser le pivot bleed->rot")
     end
   end
   print("  scenarios : SMOKE OK (10 modes tournent via le driver + ecrivent un rapport JSON ; garde-fous god-roll tenus)")
