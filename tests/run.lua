@@ -65,6 +65,21 @@ local ok, err = pcall(function()
     local custom = RunState.new(104, { economy = { id = "custom_test", base = "sap_cost", goldByRound = { [1] = 7 } } })
     assert(custom.economy.id == "custom_test" and custom.gold == 7, "profil custom: override goldByRound")
     assert(custom.shop[1].cost == 2, "profil custom: herite costByRank de sap_cost")
+
+    local xp = RunState.new(105, { economy = {
+      id = "xp_test",
+      passiveShopXpPerRound = 0,
+      buyXpCost = 5,
+      buyXpAmount = 2,
+      xpToLevel = { [1] = 3, [2] = 6, [3] = 9, [4] = 12 },
+    } })
+    assert(xp:xpToNext() == 3, "profil custom XP: seuil T1 surcharge")
+    xp:startRound()
+    assert(xp.round == 2 and xp.shopTier == 1 and xp.shopXp == 0, "profil custom XP: passive 0 respectee")
+    xp.gold = 10
+    assert(xp:currentBuyXpCost() == 5 and xp:currentBuyXpAmount() == 2, "profil custom XP: cout/montant BUY XP surcharges")
+    assert(xp:buyXp() and xp.gold == 5 and xp.shopTier == 1 and xp.shopXp == 2, "profil custom XP: premier achat reste sous seuil")
+    assert(xp:buyXp() and xp.gold == 0 and xp.shopTier == 2 and xp.shopXp == 1, "profil custom XP: deuxieme achat franchit T1 avec trop-plein")
   end
 
   -- ── DÉTERMINISME : même seed + mêmes actions -> état strictement identique ──

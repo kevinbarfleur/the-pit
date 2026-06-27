@@ -2132,6 +2132,28 @@ Next implementation targets:
      held-level coverage. Learning: this comp wants aggressive reroll tempo
      more than extra bench size. The best current hypothesis is live bench4
      plus explicit reroll archetype support, not a blind reserve-size increase.
+   - Shop-XP parameterization and slow-tier probe:
+     `Economy` now exposes simulation-tunable `passiveShopXpPerRound`,
+     `passiveShopXpByRound`, `buyXpAmount`, and `xpToLevel`; `RunState` still
+     exports the live defaults but reads these values through the resolved
+     economy profile. A new analysis profile, `slow_shop_xp`, uses thresholds
+     `{3,6,9,12}` so passive tier 3 arrives around round 10 instead of round 8.
+     The UI BUY XP button also reads `run:currentBuyXpCost()` so lab/custom
+     profiles cannot display the wrong price. In
+     `runs/long-2026-06-27n/shop-xp-global-v1` (all policies, N=30),
+     `slow_shop_xp` improves merge conversion (`71.7% -> 74.7%`) and slightly
+     improves gold affordability, but lowers completion (`13.3% -> 7.3%`),
+     wins (`6.71 -> 6.09`), and relic picks (`2.01 -> 1.77`). In the focused
+     rat-core run `runs/long-2026-06-27n/shop-xp-rat-core-v1` (N=80), it again
+     improves desired access (`69.3% -> 72.0%`) and merge conversion
+     (`69.1% -> 73.1%`) but slightly lowers wins/completion (`8.63/21.6% ->
+     8.41/18.1%`). The strongest deep-reroll policy stays basically stable
+     (`50%` completion baseline vs `48.75%` slow XP) while resolving more pairs
+     (`78.1% -> 84.3%`). Learning: slower shop tiers are useful as a diagnostic
+     and may help low-rank reroll access, but they are not a live economy
+     recommendation alone because they delay high-rank support and reduce run
+     conversion. Prefer targeted reroll policy/support changes before changing
+     the default shop XP curve.
    Remaining additions:
    - use `rot_bleed_rat_core` as the baseline reroll target for the next
      balance pass, but investigate cheap mid-board outliers before nerfing it;

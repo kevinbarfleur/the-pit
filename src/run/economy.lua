@@ -9,6 +9,9 @@ local DEFAULTS = {
   goldPerRound = 10,
   rerollCost = 1,
   buyXpCost = 4,
+  buyXpAmount = 4,
+  passiveShopXpPerRound = 1,
+  xpToLevel = { [1] = 2, [2] = 5, [3] = 8, [4] = 12 },
   slotDeclineGold = 3,
   relicDeclineGold = 3,
   commanderDeclineGold = 4,
@@ -29,6 +32,11 @@ Economy.profiles = {
     label = "early income curve: 6/6/8/8/8/10...",
     goldByRound = { [1] = 6, [2] = 6, [3] = 8, [4] = 8, [5] = 8 },
   },
+  slow_shop_xp = {
+    id = "slow_shop_xp",
+    label = "slower shop XP: passive tier 3 around round 10",
+    xpToLevel = { [1] = 3, [2] = 6, [3] = 9, [4] = 12 },
+  },
   tiered_reroll = {
     id = "tiered_reroll",
     label = "tiered reroll: 1/1/2/2/3 by shop tier",
@@ -46,6 +54,7 @@ Economy.order = {
   "baseline",
   "sap_cost",
   "early_curve",
+  "slow_shop_xp",
   "tiered_reroll",
   "sap_cost_tiered_reroll",
 }
@@ -94,7 +103,26 @@ function Economy.rerollCost(economy, shopTier)
 end
 
 function Economy.buyXpCost(economy)
-  return (economy and economy.buyXpCost) or DEFAULTS.buyXpCost
+  if economy and economy.buyXpCost ~= nil then return economy.buyXpCost end
+  return DEFAULTS.buyXpCost
+end
+
+function Economy.buyXpAmount(economy)
+  if economy and economy.buyXpAmount ~= nil then return economy.buyXpAmount end
+  return DEFAULTS.buyXpAmount
+end
+
+function Economy.passiveShopXpForRound(economy, round)
+  local byRound = economy and economy.passiveShopXpByRound
+  if byRound and byRound[round] ~= nil then return byRound[round] end
+  if economy and economy.passiveShopXpPerRound ~= nil then return economy.passiveShopXpPerRound end
+  return DEFAULTS.passiveShopXpPerRound
+end
+
+function Economy.shopXpToLevel(economy, tier)
+  local xpToLevel = economy and economy.xpToLevel
+  if xpToLevel and xpToLevel[tier] ~= nil then return xpToLevel[tier] end
+  return DEFAULTS.xpToLevel[tier]
 end
 
 function Economy.unitCost(economy, unit, defaultCost)

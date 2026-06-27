@@ -473,14 +473,14 @@ local ok, err = pcall(function()
     local goldR = run.gold
     assert(run.shopTier < run.MAX_TIER and run:canBuyXp(), "e2e buyxp: boutique sous le tier max + achat possible")
     -- Simule la cascade pour l'attendu (tier/XP) sans toucher l'état réel.
-    local expT, expXp = run.shopTier, run.shopXp + RunState.BUY_XP_AMOUNT
-    while expT < run.MAX_TIER and expXp >= RunState.XP_TO_LEVEL[expT] do
-      expXp = expXp - RunState.XP_TO_LEVEL[expT]; expT = expT + 1
+    local expT, expXp = run.shopTier, run.shopXp + run:currentBuyXpAmount()
+    while expT < run.MAX_TIER and expXp >= run:shopXpToLevel(expT) do
+      expXp = expXp - run:shopXpToLevel(expT); expT = expT + 1
     end
     if expT >= run.MAX_TIER then expXp = 0 end
     local rb = eb.raiseBtn
     eb:mousepressed(rb.x + rb.w / 2, rb.y + rb.h / 2, 1)
-    assert(run.gold == goldR - RunState.BUY_XP_COST, "e2e buyxp: or debite du cout fixe (BUY_XP_COST)")
+    assert(run.gold == goldR - run:currentBuyXpCost(), "e2e buyxp: or debite du cout courant")
     assert(run.shopTier == expT and run.shopXp == expXp, "e2e buyxp: XP/tier avancent de BUY_XP_AMOUNT (cascade incluse)")
     -- GRANT D'EMPLACEMENT (event timé) : round 2 -> une offre attend. ACCEPTER = clic sur une case verrouillée.
     run:startRound()

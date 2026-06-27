@@ -143,6 +143,7 @@ function Rundriver:state()
     shopTier = self.run.shopTier, shopXp = self.run.shopXp, xpToNext = self.run:xpToNext(),
     economy = self.run.economy and self.run.economy.id or "baseline",
     rerollCost = self.run:currentRerollCost(), buyXpCost = self.run:currentBuyXpCost(),
+    buyXpAmount = self.run:currentBuyXpAmount(),
     pendingSlotGrant = self.run.pendingSlotGrant, slotGrantsResolved = self.run.slotGrantsResolved,
     pendingCommanderGrant = self.run.pendingCommanderGrant, commanderUnlocked = self.run.commanderUnlocked,
     commander = self.build.commanderSlot and self.build.commanderSlot.id or nil,

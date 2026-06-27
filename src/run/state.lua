@@ -73,10 +73,10 @@ local COMMANDER_DECLINE_GOLD = 4 -- or reçu en refusant le piédestal (placehol
 --   et tier 4 (cumul 15) ~round 16 -> passif ≈ tier 3 en fin de partie typique.
 local MAX_TIER      = 5
 local START_TIER    = 1
-local PASSIVE_XP_PER_ROUND = 1  -- XP gagnée à chaque round (à partir du round 2) — placeholder
-local BUY_XP_AMOUNT        = 4  -- XP obtenue par achat — placeholder
-local BUY_XP_COST          = 4  -- or pour BUY_XP_AMOUNT d'XP (ratio 1:1) — placeholder
-local XP_TO_LEVEL = { [1] = 2, [2] = 5, [3] = 8, [4] = 12 } -- XP pour passer DE tier i à i+1 (placeholder ; cumul T2=2/T3=7/T4=15/T5=27)
+local PASSIVE_XP_PER_ROUND = 1  -- défaut live ; les simulations peuvent le surcharger via Economy.
+local BUY_XP_AMOUNT        = 4  -- défaut live ; les simulations peuvent le surcharger via Economy.
+local BUY_XP_COST          = 4  -- défaut live ; les simulations peuvent le surcharger via Economy.
+local XP_TO_LEVEL = { [1] = 2, [2] = 5, [3] = 8, [4] = 12 } -- défaut live ; les simulations peuvent le surcharger via Economy.
 -- Cotes par tier : % de chance par slot de tirer une unité de chaque RANG (chaque ligne somme à 100).
 local ODDS = {
   [1] = { 100,  0,  0,  0,  0 },
@@ -234,7 +234,7 @@ function RunState:startRound()
   -- XP PASSIVE de boutique (TFT-style) : +PASSIVE_XP_PER_ROUND, mais SEULEMENT à partir du round 2 — le
   -- round 1 est le DÉPART (aucun temps écoulé) -> un run frais est proprement tier 1 / xp 0. La cascade de
   -- tier est gérée par addShopXp. N'utilise PAS self.rng -> la suite RNG (offres/seeds) est inchangée.
-  if self.round > 1 then self:addShopXp(PASSIVE_XP_PER_ROUND) end
+  if self.round > 1 then self:addShopXp(Economy.passiveShopXpForRound(self.economy, self.round)) end
 end
 
 -- ── EMPLACEMENTS DE PLATEAU (grants timés). Le RUN ne tient que la CAPACITÉ (combien de cases ouvrables)
@@ -288,9 +288,10 @@ end
 -- plus (barre pleine/masquée) -> shopXp figé à 0. Ne touche JAMAIS self.rng (déterminisme des offres préservé).
 function RunState:addShopXp(n)
   if self.shopTier >= MAX_TIER then return end
+  n = n or 0
   self.shopXp = self.shopXp + n
-  while self.shopTier < MAX_TIER and self.shopXp >= XP_TO_LEVEL[self.shopTier] do
-    self.shopXp = self.shopXp - XP_TO_LEVEL[self.shopTier]
+  while self.shopTier < MAX_TIER and self.shopXp >= Economy.shopXpToLevel(self.economy, self.shopTier) do
+    self.shopXp = self.shopXp - Economy.shopXpToLevel(self.economy, self.shopTier)
     self.shopTier = self.shopTier + 1
   end
   if self.shopTier >= MAX_TIER then self.shopXp = 0 end
@@ -298,7 +299,11 @@ end
 
 -- XP requise pour passer DU tier courant au suivant (nil au max -> barre « MAX » côté UI).
 function RunState:xpToNext()
-  return (self.shopTier >= MAX_TIER) and nil or XP_TO_LEVEL[self.shopTier]
+  return (self.shopTier >= MAX_TIER) and nil or Economy.shopXpToLevel(self.economy, self.shopTier)
+end
+
+function RunState:shopXpToLevel(tier)
+  return (tier >= MAX_TIER) and nil or Economy.shopXpToLevel(self.economy, tier)
 end
 
 -- Lot 6 : monte le tier de boutique DIRECTEMENT de n (défaut 1), borné à MAX_TIER (relique « rush » shop_tier_up).
@@ -310,6 +315,7 @@ end
 
 -- Peut-on acheter de l'XP ? Pas au tier max, et on a de quoi payer.
 function RunState:currentBuyXpCost() return Economy.buyXpCost(self.economy) end
+function RunState:currentBuyXpAmount() return Economy.buyXpAmount(self.economy) end
 
 function RunState:canBuyXp()
   return self.shopTier < MAX_TIER and self.gold >= self:currentBuyXpCost()
@@ -320,7 +326,7 @@ end
 function RunState:buyXp()
   if not self:canBuyXp() then return false end
   self.gold = self.gold - self:currentBuyXpCost()
-  self:addShopXp(BUY_XP_AMOUNT)
+  self:addShopXp(self:currentBuyXpAmount())
   return true
 end
 

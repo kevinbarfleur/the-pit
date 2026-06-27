@@ -2829,7 +2829,7 @@ function Build:drawOverlay(view)
     self:drawEcoButton("build.raise",
       self.raiseBtn,
       atMax and T("ui.tier_max") or T("ui.buyxp_label"),
-      atMax and nil or run.BUY_XP_COST,
+      atMax and nil or run:currentBuyXpCost(),
       (not atMax) and run:canBuyXp())
   end
 
