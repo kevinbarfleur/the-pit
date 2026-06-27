@@ -178,6 +178,11 @@ local ok, err = pcall(function()
     for _, ev in ipairs(events or {}) do if ev.type == kind then return ev end end
     return nil
   end
+  local function unlockedSlots(d)
+    local slots = {}
+    for i = 1, 9 do if d.build.board.slots[i].unlocked then slots[#slots + 1] = i end end
+    return slots
+  end
   local relicEventDrv = Rundriver.new(20260632, {
     recordEvents = true,
     leftMutator = function(comp)
@@ -214,6 +219,38 @@ local ok, err = pcall(function()
   commanderIgnore.build:placeId(5, "skeleton", 1)
   assert(commanderIgnore:resolveCommanderMode() == nil and not findEvent(commanderIgnore.events, "commander_place"),
     "events: commanderMode ignore ne pose pas de commandant")
+  local focusedPlan = Policies.committed_unit_set_plan("test_focused_rot", "rot", "carre", {
+    "rot_hound", "carrion_pecker",
+  }, { supportArchetypes = { rot = true } })
+  assert(focusedPlan:pickRelic(nil, { "bloodstone", "grave_cap", "aegis" }) == 2,
+    "policy plan: choisit une relique focus plutot qu'une relique generique")
+  local cmdPick = focusedPlan:chooseCommanderCandidate(nil, {
+    { where = "bench", slot = 1, id = "gash_fiend", level = 1 },
+    { where = "bench", slot = 2, id = "rot_hound", level = 1 },
+  })
+  assert(cmdPick and cmdPick.id == "rot_hound",
+    "policy plan: choisit le commandant qui amplifie le coeur du plan")
+  local spacePlan = Policies.committed_unit_set_plan("test_core_space", "rot", "carre", {
+    "marrow_drinker",
+  }, { supportArchetypes = { rot = true, bleed = true } })
+  local spaceDrv = Rundriver.new(20260635, {})
+  spaceDrv.run.gold = 99
+  spaceDrv.run.slots = 5
+  spaceDrv.build.board:ensureOpen(5)
+  local sts = unlockedSlots(spaceDrv)
+  spaceDrv.build:placeId(sts[1], "gash_fiend", 1)
+  spaceDrv.build:placeId(sts[2], "rot_hound", 1)
+  spaceDrv.build:placeId(sts[3], "razorkin", 1)
+  spaceDrv.build:placeId(sts[4], "marauder", 1)
+  spaceDrv.build:placeId(sts[5], "bandit", 1)
+  for i = 1, #spaceDrv.build.benchSlots do
+    spaceDrv.build.bench[i] = { id = "templar", level = 2, char = spaceDrv.build:newRig("templar") }
+  end
+  spaceDrv.run.shop[1] = { id = "marrow_drinker", cost = 5, sold = false }
+  for i = 2, #spaceDrv.run.shop do spaceDrv.run.shop[i].sold = true end
+  local spaceDecision = spacePlan:act(spaceDrv)
+  assert(spaceDecision.boardSold == 1 and spaceDrv:copyCount("marrow_drinker", 1) == 1,
+    "policy plan: vend un filler support pour acheter une piece coeur")
   print(string.format("  lab : rundriver deterministe OK (greedy %s en %d rounds)", tostring(t1.result), #t1.rounds))
 
   -- 8) LÉGALITÉ : chaque politique mène une run a une issue valide (win/lose), invariants tenus.
@@ -252,11 +289,6 @@ local ok, err = pcall(function()
   local sellMetrics = benchDrv:metricSnapshot()
   assert(sellMetrics.sells == 1 and sellMetrics.sellGold > 0 and sellMetrics.benchSells == 1,
     "sellBench: metrique vente tracee")
-  local function unlockedSlots(d)
-    local slots = {}
-    for i = 1, 9 do if d.build.board.slots[i].unlocked then slots[#slots + 1] = i end end
-    return slots
-  end
   local pairDrv = Rundriver.new(20260628, {})
   pairDrv.run.gold = 99
   pairDrv.run.shop[1] = { id = "spore_tick", cost = 1, sold = false }

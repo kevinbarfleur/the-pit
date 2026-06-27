@@ -967,6 +967,21 @@ Ajout batch autonomie (`runs/long-2026-06-27b`) :
   non-playable quand il apparait. Lecture : les clutch L3 sont sains mais ne
   suffisent pas ; il faut soit une politique de place target-aware, soit un
   pont late qui ne depend pas d'un rang 5 unique.
+- Mise a jour target-aware policy : `committed_unit_set_plan` distingue
+  maintenant les unites coeur du plan des fillers de support, choisit les
+  reliques et commandants par score de coherence target, et peut vendre un
+  filler support pour acheter une piece coeur. Sur
+  `runs/long-2026-06-27n/target-aware-policy-v1`, le target
+  `rot_bleed_bridge_late` progresse nettement sans changer les regles du jeu :
+  en baseline, le buy-rate des offres target passe de `81.2%` a `92.9%`, la
+  couverture held `50%` passe de `2.5%` a `27.5%`, et les supports focused
+  vus/utilises passent de `85%/47.5%` a `85%/85%`. Les missed picks/placements
+  focused tombent a `0`. Sous `sap_cost_tiered_reroll`, la couverture held
+  `50%` passe de `20%` a `37.5%`, mais les victoires restent plus basses.
+  Lecture : le simulateur-joueur etait bien trop bete sur les supports ; ce
+  verrou est corrige. Le verrou restant est structurel : `marrow_drinker` reste
+  vu dans seulement `15%` des runs baseline (`12.5%` sous SAP) et ne peut donc
+  pas porter a lui seul la transition late rot/bleed.
 
 Metrics recommandees :
 

@@ -13,11 +13,52 @@
 -- parlants (greedy / econ / tall_dense / committed / random).
 
 local Units = require("src.data.units")
+local Coherence = require("src.lab.coherence")
 
 local Policies = {}
 
 local function wants(want, id, offer)
   return not want or want(id, offer)
+end
+
+local FOCUSED_SUPPORT_KINDS = {
+  producer_amplifier = true,
+  propagation_payoff = true,
+  transform_payoff = true,
+  command_amplifier = true,
+  command_propagation = true,
+  command_transform = true,
+}
+
+local function supportEdgeScore(edges, subscore)
+  local focused, generic, weight = 0, 0, 0
+  for _, edge in ipairs(edges or {}) do
+    if edge.kind then
+      if FOCUSED_SUPPORT_KINDS[edge.kind] then focused = focused + 1
+      else generic = generic + 1 end
+      weight = weight + (edge.weight or 0)
+    end
+  end
+  return focused * 100 + generic * 10 + weight * 12 + (subscore or 0) * 25
+end
+
+local function targetUnitsFromIds(unitIds, opts)
+  local levels = opts and opts.targetLevels or {}
+  local out = {}
+  for _, id in ipairs(unitIds or {}) do out[#out + 1] = { id = id, level = levels[id] or 1 } end
+  return out
+end
+
+local function relicSupportScore(targetUnits, relicId)
+  if not (targetUnits and relicId) then return 0 end
+  local score = Coherence.scoreTeam(targetUnits, { relics = { relicId } })
+  return supportEdgeScore(score.relicEdges, score.subscores and score.subscores.relic)
+end
+
+local function commanderSupportScore(targetUnits, candidate)
+  if not (targetUnits and candidate and candidate.id) then return 0 end
+  local score = Coherence.scoreTeam(targetUnits, { commander = { id = candidate.id, level = candidate.level or 1 } })
+  return supportEdgeScore(score.commandEdges, score.subscores and score.subscores.command)
 end
 
 -- ── Classifieur unité -> archétype (depuis effets/aggro). Réutilisé par committed + l'analyse (runsim). ──
@@ -119,9 +160,11 @@ local function keepBenchUnit(drv, sr, opts, counts)
   opts = opts or {}
   if not sr then return true end
   local id, level = sr.id, sr.level or 1
+  local keepWant = opts.keepWant
+  if keepWant == nil then keepWant = opts.want end
   if level > 1 then return true end
   if opts.protectId and id == opts.protectId then return true end
-  if opts.want and opts.protectWanted ~= false and opts.want(id) then return true end
+  if keepWant and opts.protectWanted ~= false and wants(keepWant, id) then return true end
   if (counts[id .. "\0" .. level] or 0) >= 2 then return true end
   local rank = Units[id] and (Units[id].rank or 1) or 1
   if opts.keepPremium and rank >= (drv.run.shopTier or 1) then return true end
@@ -143,6 +186,7 @@ local function unitPlanValue(drv, sr, opts, counts)
   if u.commandBonus then value = value + 3 end
   if sameLevelCount(counts, id, level) >= 2 then value = value + 42 end
   if opts.want and wants(opts.want, id) then value = value + 28 end
+  if opts.coreWant and wants(opts.coreWant, id) then value = value + 18 end
   if opts.keepPremium and rank >= (drv.run.shopTier or 1) then value = value + 14 end
   return value
 end
@@ -157,6 +201,7 @@ local function offerPlanValue(drv, offer, opts, counts)
   if copies >= 2 then value = value + 85
   elseif copies == 1 then value = value + 35 end
   if opts.want and wants(opts.want, id, offer) then value = value + 32 end
+  if opts.coreWant and wants(opts.coreWant, id, offer) then value = value + 26 end
   if opts.keepPremium and rank >= (drv.run.shopTier or 1) then value = value + 16 end
   if hasEffects(id) then value = value + 3 end
   return value
@@ -190,6 +235,8 @@ local function boardPruneCandidates(drv, opts, offer)
   local counts = copyCounts(drv)
   local offerScore = offer and offerPlanValue(drv, offer, opts, counts) or nil
   local offerCopies = offer and sameLevelCount(counts, offer.id, 1) or 0
+  local keepWant = opts.keepWant
+  if keepWant == nil then keepWant = opts.want end
   local margin = opts.boardPruneMargin or 12
   if offerCopies >= 2 then margin = -8
   elseif offerCopies == 1 then margin = 4 end
@@ -202,7 +249,7 @@ local function boardPruneCandidates(drv, opts, offer)
       if level > 1 then keep = true end
       if offer and offerCopies > 0 and id == offer.id then keep = true end
       if sameLevelCount(counts, id, level) >= 2 then keep = true end
-      if opts.want and opts.protectWanted ~= false and wants(opts.want, id) then keep = true end
+      if keepWant and opts.protectWanted ~= false and wants(keepWant, id) then keep = true end
       if opts.keepPremium and unitRank(id) >= (drv.run.shopTier or 1) then keep = true end
       if not keep then
         local value = unitPlanValue(drv, sr, opts, counts)
@@ -640,12 +687,29 @@ end
 
 function Policies.committed_archetype_plan_with(archetype, sigil, opts)
   opts = opts or {}
+  local targetUnits = opts.targetUnits or {}
+  local function planOpts()
+    return {
+      protectWanted = true,
+      keepWant = opts.keepWant,
+      coreWant = opts.coreWant,
+      allowBoardPrune = true,
+      minBoard = 3,
+      boardPruneMargin = opts.boardPruneMargin or 4,
+      churnMinScore = 0,
+    }
+  end
   return {
     name = opts.name or ("committed_" .. archetype .. "_plan"),
     archetype = archetype, sigil = sigil,
     desiredOffers = function(self, drv)
       local want = opts.want or function(id) return Policies.archetypeOf(id) == self.archetype end
-      return smartDesiredShop(drv, want, { want = want, protectWanted = true }, drv.run.pendingSlotGrant and 1 or 0)
+      return smartDesiredShop(drv, want, {
+        want = want,
+        keepWant = opts.keepWant,
+        coreWant = opts.coreWant,
+        protectWanted = true,
+      }, drv.run.pendingSlotGrant and 1 or 0)
     end,
     commitment = function(self, drv)
       local want = opts.commitWant or opts.want or function(id) return Policies.archetypeOf(id) == self.archetype end
@@ -666,32 +730,42 @@ function Policies.committed_archetype_plan_with(archetype, sigil, opts)
         if not drv:buyXp() then break end
         xpBuys = xpBuys + 1
       end
-      local plannedBought, sold, boardSold = buyMatchingPlanned(drv, want, {
-        protectWanted = true,
-        allowBoardPrune = true,
-        minBoard = 3,
-        boardPruneMargin = 4,
-        churnMinScore = 0,
-      })
+      local plannedBought, sold, boardSold = buyMatchingPlanned(drv, want, planOpts())
       bought = bought + plannedBought
       local rerolls = 0
-      while (drv:hasBuySpace() or #benchPruneCandidates(drv, { want = want, protectWanted = true }) > 0) and drv.run:canReroll() and rerolls < 2 do
-        sold = sold + pruneBenchToReserve(drv, { want = want, protectWanted = true }, 1)
+      local reserveOpts = planOpts()
+      reserveOpts.want = want
+      while (drv:hasBuySpace() or #benchPruneCandidates(drv, reserveOpts) > 0) and drv.run:canReroll() and rerolls < 2 do
+        sold = sold + pruneBenchToReserve(drv, reserveOpts, 1)
         if not drv:reroll() then break end
         rerolls = rerolls + 1
-        local b, s, bs = buyMatchingPlanned(drv, want, {
-          protectWanted = true,
-          allowBoardPrune = true,
-          minBoard = 3,
-          boardPruneMargin = 4,
-          churnMinScore = 0,
-        })
+        local b, s, bs = buyMatchingPlanned(drv, want, planOpts())
         bought = bought + b
         sold = sold + s
         boardSold = boardSold + bs
       end
       ensureNonEmpty(drv)
       return { archetype = self.archetype, bought = bought, sold = sold, boardSold = boardSold, rerolls = rerolls, xpBuys = xpBuys }
+    end,
+    pickRelic = function(_, _, choices)
+      local bestIndex, bestScore = 1, -math.huge
+      for i, relicId in ipairs(choices or {}) do
+        local score = relicSupportScore(targetUnits, relicId)
+        if score > bestScore then
+          bestIndex, bestScore = i, score
+        end
+      end
+      return bestIndex
+    end,
+    chooseCommanderCandidate = function(_, _, candidates)
+      local best, bestScore
+      for _, c in ipairs(candidates or {}) do
+        local score = commanderSupportScore(targetUnits, c)
+        if not best or score > bestScore then
+          best, bestScore = c, score
+        end
+      end
+      return best
     end,
   }
 end
@@ -716,8 +790,12 @@ function Policies.committed_unit_set_plan(name, archetype, sigil, unitIds, opts)
   return Policies.committed_archetype_plan_with(archetype, sigil, {
     name = name,
     want = want,
+    keepWant = opts.keepWant or commitWant,
+    coreWant = commitWant,
     commitWant = commitWant,
     minRank = opts.minRank or math.min(maxRank, 3),
+    targetUnits = opts.targetUnits or targetUnitsFromIds(unitIds, opts),
+    boardPruneMargin = opts.boardPruneMargin,
   })
 end
 

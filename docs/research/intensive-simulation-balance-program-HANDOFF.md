@@ -1919,22 +1919,33 @@ Next implementation targets:
      `runs/long-2026-06-27n/rot-bleed-l3-v1`, no new
      `carrion_pecker`/`rot_hound`/`clot_mender` L3 appeared in `cheap_strong`.
      The env target
-     `rot_bleed_bridge_late=clot_mender:2+razorkin:2+gash_fiend:2+hookjaw+rot_hound:3+carrion_pecker:3+marrow_drinker:2+necro_leech:2`
-     costs `74` gold-equivalent, has `0.663` coherence, wins force-build at
-     rounds 8/10, but still loses rounds 12/14 (`50%` oracle). Run access is
-     still the larger blocker: baseline held `50%` coverage is only `2.5%`
-     (`20%` under `sap_cost_tiered_reroll`), and `marrow_drinker` was seen in
-     only `7.5%` of baseline runs and bought `0/run` because it was not
-     playable when offered. Interpretation: the L3 bridge is safe, but late
-     rot/bleed still needs target-aware space management or a lower-rank late
-     pivot.
+   `rot_bleed_bridge_late=clot_mender:2+razorkin:2+gash_fiend:2+hookjaw+rot_hound:3+carrion_pecker:3+marrow_drinker:2+necro_leech:2`
+   costs `74` gold-equivalent, has `0.663` coherence, wins force-build at
+   rounds 8/10, but still loses rounds 12/14 (`50%` oracle). Run access is
+   still the larger blocker: baseline held `50%` coverage is only `2.5%`
+   (`20%` under `sap_cost_tiered_reroll`), and `marrow_drinker` was seen in
+   only `7.5%` of baseline runs and bought `0/run` because it was not
+   playable when offered. Interpretation: the L3 bridge is safe, but late
+   rot/bleed still needs target-aware space management or a lower-rank late
+   pivot.
+   - Target-aware policy update: `committed_unit_set_plan` now separates exact
+     core targets from support fillers, picks relics and commanders against
+     the target's coherence graph, and can sell support fillers to buy core
+     pieces. Batch
+     `runs/long-2026-06-27n/target-aware-policy-v1` shows this fixes the
+     decision-quality problem: baseline target-offer buy-rate improves from
+     `81.2%` to `92.9%`, held `50%` coverage from `2.5%` to `27.5%`, and
+     focused support used/run from `47.5%` to `85%` with no missed focused
+     relic/commander opportunities. SAP also improves held `50%` from `20%`
+     to `37.5%`, but keeps lower wins. Remaining blocker: `marrow_drinker`
+     remains too rare (`15%` seen in baseline, `12.5%` under SAP), so late
+     rot/bleed still needs better XP/reroll timing, a lower-rank pivot, or an
+     alternate endpoint that is not pinned to one rank-5 unit.
    Remaining additions:
-   - add a target-aware relic/commander choice policy, now that support access
-     is observable;
+   - make committed policies smarter about XP/reroll timing and late-rank
+     pivot access, then revisit protected payload placement;
    - upgrade pair lifecycle further from event matching to per-copy identity:
      pair formed -> held/sold/lost/merged, with exact sold-pair loss;
-   - make committed policies smarter about XP/reroll timing and protected
-     payload placement after the tank/payload tests.
 3. Integrate actual relic access into economy scoring, now that relic semantic
    tags exist in coherence scoring.
 4. Expand authored level-ups beyond the initial 6 units before drawing broad

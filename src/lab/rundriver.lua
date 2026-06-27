@@ -390,7 +390,16 @@ function Rundriver:placeCommander(candidate)
   return true
 end
 
-function Rundriver:resolveCommanderMode()
+local function chooseCommanderCandidate(policy, drv, candidates)
+  if policy and policy.chooseCommanderCandidate then
+    local choice = policy:chooseCommanderCandidate(drv, candidates)
+    if type(choice) == "number" then return candidates[choice] end
+    if type(choice) == "table" then return choice end
+  end
+  return candidates and candidates[1] or nil
+end
+
+function Rundriver:resolveCommanderMode(policy)
   local mode = self.commanderMode or "ignore"
   if mode == "ignore" then return nil end
   if self.run.pendingCommanderGrant then
@@ -410,7 +419,7 @@ function Rundriver:resolveCommanderMode()
       return { mode = mode, action = "decline_failed" }
     end
     if self:acceptCommanderGrant() then
-      local c = candidates[1]
+      local c = chooseCommanderCandidate(policy, self, candidates)
       local placed = self:placeCommander(c)
       return { mode = mode, action = placed and "accept_place" or "accept_place_failed", id = c.id, from = c.where }
     end
@@ -424,7 +433,7 @@ function Rundriver:resolveCommanderMode()
       candidates = candidates,
     })
     if #candidates > 0 then
-      local c = candidates[1]
+      local c = chooseCommanderCandidate(policy, self, candidates)
       local placed = self:placeCommander(c)
       return { mode = mode, action = placed and "place" or "place_failed", id = c.id, from = c.where }
     end
@@ -553,7 +562,7 @@ function Rundriver.run(seed, policy, opts)
     local desiredGoldBudget = desired and (desired.goldBudget or before.gold) or nil
     local metricBefore = drv:metricSnapshot()
     local eventBefore = #drv.events
-    local commanderDecision = drv:resolveCommanderMode()
+    local commanderDecision = drv:resolveCommanderMode(policy)
     local decisions = policy:act(drv) -- la politique achète/place/reroll/level/reshape via l'API d'actions
     if commanderDecision then
       decisions = decisions or {}
