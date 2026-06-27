@@ -2184,26 +2184,30 @@ Next implementation targets:
      filters are `PIT_BOSSRUSH_COMPS` and `PIT_ABOMINATIONS`, so future sweeps
      can isolate a single boss family, archetype, or policy.
    - Bossrush first read:
-     in `runs/long-2026-06-27n/bossrush-prototype-v3` with twenty seeds per
+     in `runs/long-2026-06-27n/bossrush-prototype-v4` with twenty seeds per
      comp/boss, `poison_diamant_perfect` dominates current PvE scoring
-     (`99%` clear, `90%` survival/full-window, `622.7` average score damage,
-     `31.58` score DPS). `cross_venom_pyre` is second (`89.5%` clear, `75%`
-     full-window, `447.2` score damage). Shock, burn, bleed, and rot can clear
+     (`100%` clear/survival/full-window, `701.3` average score damage,
+     `35.06` score DPS). `cross_venom_pyre` is second (`98.5%` clear, `76.5%`
+     full-window, `480.1` score damage). Shock, burn, bleed, and rot can clear
      some bosses but score far lower; tank/shield boards sometimes survive but
      do not produce a full scoring window; brute bruiser fails the mode. Boss
      side tuning is now in a readable range after reducing Leviathan, Kraken,
-     and Brasier, but `ruche` remains a hard wall (`10%` clear, `0%`
-     full-window, `0%` survival) and should be watched as an add/cleave check
-     rather than nerfed blindly.
+     Brasier, and Ruche.
    - Bossrush boss-family read:
      `kraken` and `brasier` are the cleanest current scoring bosses (`66.7%`
-     and `40%` full-window respectively), while `idole` and `ossuaire` often let
-     teams clear but punish the transition into scoring (`66.7%`/`65%` clear
-     but only `26.7%`/`15.6%` full-window). `devoreur`, `floraison`,
-     `leviathan`, `regard`, and `vermine` sit in the hard-but-readable band.
-     `ruche` is currently outside the band and likely needs either clearer
-     cleave counterplay, lower add pressure, or an explicit "swarm boss" label
-     so players understand why it behaves differently.
+     and `40%` full-window respectively), while `idole` and `ossuaire` often
+     let teams clear but punish the transition into scoring (`66.7%`/`65%`
+     clear but only `26.7%`/`15.6%` full-window). `ruche` moved from a hard wall
+     to a real swarm/cleave check (`43.3%` clear, `13%` full-window): poison
+     converts it fully, cross gets a narrow score window, shock/ward can clear
+     without surviving the score phase. `devoreur`, `floraison`, `leviathan`,
+     `regard`, and `vermine` sit in the hard-but-readable band.
+   - Bossrush balance warning:
+     the current endpoint heavily favors poison/cross sustained DPS. That is
+     acceptable as a first endgame-scoring prototype, but not as a final boss
+     meta: future boss/relic work should add boss families that test poison
+     ramp, cleanse/anti-stack, burst windows, shield stripping, and cleave
+     separately so "best PvE score" does not collapse into one affliction.
    - PvE design learning:
      bossrush creates a new axis that PvP win rate cannot measure. A build can
      win normal rounds, survive long fights, or generate a boss score, and those

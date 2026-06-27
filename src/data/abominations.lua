@@ -121,14 +121,14 @@ Abominations.list = {
     theme = "hive",
     accent = "#9aff3a",
     intent = "adds et poison, bon test pour les builds cleave/spread",
-    boss = boss("broodmother", 1850, 8, 78, {
-      E("on_hit", "poison", { dps = 2, dur = 180, spread = { dps = 1, dur = 120 } }),
-      E("combat_start", "grant_team", { poisonDurBonus = 60 }),
+    boss = boss("broodmother", 1750, 6, 90, {
+      E("on_hit", "poison", { dps = 1, dur = 150, spread = { dps = 1, dur = 90 } }),
+      E("combat_start", "grant_team", { poisonDurBonus = 30 }),
     }),
     generals = {
-      general("hive_soldier", 175, 6, 48, { E("on_death", "summon", { token = "spiderling" }) }, { taunt = true }),
-      general("hive_winged", 115, 5, 38, { E("on_hit", "poison", { dps = 1, dur = 150 }) }, { haste = 0.12 }),
-      general("hive_burrower", 160, 5, 62, { E("on_death", "summon", { token = "grubling" }) }, { dmgReduce = 0.10 }),
+      general("hive_soldier", 145, 4, 54, { E("on_death", "summon", { token = "spiderling" }) }, { taunt = true }),
+      general("hive_winged", 105, 4, 46, { E("on_hit", "poison", { dps = 1, dur = 120 }) }, { haste = 0.08 }),
+      general("hive_burrower", 135, 4, 68, { E("on_death", "summon", { token = "grubling" }) }, { dmgReduce = 0.08 }),
     },
   },
   {
