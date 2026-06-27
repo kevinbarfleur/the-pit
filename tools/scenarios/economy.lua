@@ -8,6 +8,9 @@ local Economy = require("src.run.economy")
 local Rundriver = require("src.lab.rundriver")
 local Policies = require("src.lab.policies")
 local Compcost = require("src.lab.compcost")
+local Compbuild = require("src.lab.compbuild")
+local Coherence = require("src.lab.coherence")
+local Match = require("src.combat.match")
 
 local N = require("tools.scenarios.argn")(60)
 local BASE_SEED = 1060000
@@ -16,6 +19,8 @@ local COMMANDER_MODE = Common.env("PIT_COMMANDER_MODE") or "ignore"
 -- Extra holding capacity beyond the real board+bench capacity used by Rundriver.
 -- Cap 0 is the current gameplay model; cap 4 answers "what if the player had 4 more reserve slots?"
 local BENCH_CAPS = Common.envNumberList("PIT_BENCH_CAPS", { 0, 2, 4, 6 })
+local ORACLE_MATCHES = Common.envNumber("PIT_PLAN_ORACLE_MATCHES", 3)
+local ORACLE_ROUNDS = Common.envNumberList("PIT_PLAN_ORACLE_ROUNDS", nil)
 local ECONOMY_ORDER = Common.envCsv("PIT_ECON_PROFILES") or Economy.order
 for _, profileId in ipairs(ECONOMY_ORDER) do
   assert(Economy.profiles[profileId], "profil economie inconnu: " .. tostring(profileId))
@@ -63,6 +68,70 @@ local function loadPlanTargets()
 end
 
 local PLAN_TARGETS = loadPlanTargets()
+
+local function oracleRoundsFor(target)
+  if ORACLE_ROUNDS then return ORACLE_ROUNDS end
+  local size = target.boardLevel or #(target.units or {})
+  if size <= 4 then return { 1, 2, 3, 4 } end
+  if size <= 6 then return { 4, 6, 8, 10 } end
+  return { 8, 10, 12, 14 }
+end
+
+local function oracleTierFor(round)
+  return math.max(1, math.min(5, 1 + math.floor((round or 1) / 3)))
+end
+
+local function targetOracle(target)
+  local rounds = oracleRoundsFor(target)
+  local inv = target.cost or Compcost.of(target)
+  local coherence = Coherence.scoreTeam(target.units or {}, {
+    commander = target.commander,
+    relics = target.relics,
+  })
+  local left = Compbuild.toComp(target, -1)
+  local total, wins, ticks, tickN = 0, 0, 0, 0
+  local byRound = {}
+  for _, round in ipairs(rounds) do
+    local drv = Rundriver.new(BASE_SEED + 700000 + round * 17, {})
+    drv.run.round = round
+    drv.run.shopTier = oracleTierFor(round)
+    drv.run.slots = math.max(drv.run.slots or 3, math.min(9, target.boardLevel or #(target.units or {})))
+    local right, enemyKey = drv:opponent()
+    local rr = { enemy = enemyKey, fights = 0, wins = 0, ticks = 0, tickN = 0 }
+    for m = 1, ORACLE_MATCHES do
+      local seed = BASE_SEED + 800000 + round * 101 + m
+      local res = Match.run(left, right, seed, { tickCap = 8000, hpMult = HPM })
+      total = total + 1
+      rr.fights = rr.fights + 1
+      if res.win then wins = wins + 1; rr.wins = rr.wins + 1 end
+      if res.ticks then
+        ticks = ticks + res.ticks; tickN = tickN + 1
+        rr.ticks = rr.ticks + res.ticks; rr.tickN = rr.tickN + 1
+      end
+    end
+    byRound[tostring(round)] = {
+      enemy = rr.enemy,
+      fights = rr.fights,
+      forced_winrate = (rr.fights > 0) and (rr.wins / rr.fights) or 0,
+      avg_seconds = (rr.tickN > 0) and (rr.ticks / rr.tickN / Common.FPS) or 0,
+    }
+  end
+  return {
+    rounds = rounds,
+    matches_per_round = ORACLE_MATCHES,
+    fights = total,
+    forced_winrate = (total > 0) and (wins / total) or 0,
+    avg_seconds = (tickN > 0) and (ticks / tickN / Common.FPS) or 0,
+    gold = inv.gold or 0,
+    cost_score = inv.score or 0,
+    coherence = coherence.coherence,
+    subscores = coherence.subscores,
+    by_round = byRound,
+  }
+end
+
+local PLAN_ORACLES = {}
+for _, target in ipairs(PLAN_TARGETS) do PLAN_ORACLES[target.id] = targetOracle(target) end
 
 local function hasSuffix(s, suffix)
   return s:sub(-#suffix) == suffix
@@ -624,6 +693,7 @@ local function finish(a)
     planAccess[id] = {
       source = rec.source,
       target_gold = rec.target_gold,
+      oracle = PLAN_ORACLES[id],
       runs = rec.runs,
       complete_rate = (rec.runs > 0) and (rec.complete / rec.runs) or 0,
       avg_unit_coverage = (rec.runs > 0) and (rec.unitCoverage / rec.runs) or 0,
@@ -815,6 +885,8 @@ local payload = {
     policies = Common.env("PIT_POLICIES"),
     economy_profiles = Common.env("PIT_ECON_PROFILES"),
     bench_caps = Common.env("PIT_BENCH_CAPS"),
+    plan_oracle_matches = ORACLE_MATCHES,
+    plan_oracle_rounds = Common.env("PIT_PLAN_ORACLE_ROUNDS"),
     plan_targets = Common.env("PIT_PLAN_TARGETS"),
     plan_target_specs = Common.env("PIT_PLAN_TARGET_SPECS"),
   },

@@ -911,6 +911,16 @@ Ajout batch autonomie (`runs/long-2026-06-27b`) :
   rounds desired slot-limited malgre l'or disponible, et tier 5 `100%`.
   Prochaine question : funnel d'apparition/achat par unite cible, puis oracle
   combat force-build attache au meme target id.
+- Mise a jour oracle de plan : chaque target `plan_access` porte maintenant un
+  `oracle` force-build (cout, coherence/subscores, rounds testes, winrate et
+  duree). Sur `runs/long-2026-06-27n/plan-oracle-v1`,
+  `cross_bleed_rot_filled` coute toujours `96` or-equivalent, a une coherence
+  moyenne (`0.552`, tags `1.0`, position `0.3`, level_plan `0.069`), gagne
+  force-build aux rounds 8 et 10 (`100%` vs `gorge_pack`/`drowned_legion`), mais
+  perd aux rounds 12 et 14 (`0%` vs `pit_sovereign`). Lecture : il ne faut pas
+  seulement ameliorer son accessibilite ; en endpoint late sans relique/command,
+  il manque aussi une source de scaling ou une meilleure transition vers le
+  mur de fin.
 
 Metrics recommandees :
 
@@ -950,6 +960,9 @@ Metrics recommandees :
   board est a `<25`, `25-49`, `50-74`, `75-99`, ou `100%` de la cible.
 - `plan_access.losses_by_board_level_threshold` : pertes avant/apres chaque
   seuil, pour detecter les morts pendant la transition.
+- `plan_access.oracle` : combat force-build du target complet contre des rounds
+  PvE representatifs. Sert a separer "plan inaccessible" de "plan faible meme
+  quand complet".
 
 Policies minimales :
 

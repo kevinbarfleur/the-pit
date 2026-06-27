@@ -1868,10 +1868,16 @@ Next implementation targets:
      `50%` remains `0%`. The tier breakdown points to space pressure rather
      than gold: baseline tier 4 desired offers are `91.5%` slot-limited while
      still gold-affordable, and tier 5 is `100%` slot-limited.
+   - Oracle update: each `plan_access` target now carries a forced-combat
+     `oracle` with cost, coherence/subscores, tested PvE rounds, winrate, and
+     duration. In `runs/long-2026-06-27n/plan-oracle-v1`,
+     `cross_bleed_rot_filled` has `0.552` coherence and costs `96`
+     gold-equivalent. It wins forced fights at rounds 8 and 10 (`100%` vs
+     `gorge_pack`/`drowned_legion`) but loses at rounds 12 and 14 (`0%` vs
+     `pit_sovereign`), for `50%` total forced winrate over the oracle window.
+     This means the target is both poorly accessible and not a complete
+     late-endpoint without additional commander/relic/scaling support.
    Remaining additions:
-   - attach a forced-combat target oracle to each `plan_access` target id
-     (`forced_winrate`, duration, cost, coherence subscores) so low access can
-     be separated from low endpoint power even when complete_rate is `0%`;
    - add a target acquisition funnel by unit/relic: first seen, offered,
      affordable, playable, bought, sold, paired, merged, missed for gold, missed
      for space, or missed by policy;
