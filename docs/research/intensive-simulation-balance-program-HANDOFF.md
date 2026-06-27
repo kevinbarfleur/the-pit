@@ -2105,6 +2105,33 @@ Next implementation targets:
      simulation tools remain explicitly parameterized: `Rundriver` and
      `Match.run` accept `cooldownMult`, and `pacing`/`sweep`/`tank` pass it as
      an arena option instead of mutating specs.
+   - Real bench-capacity sweep:
+     `Build`/`Rundriver` now accept lab-only `benchSize` while live remains at
+     `4` slots. `tools/sim.lua economy` accepts `PIT_BENCH_SIZES=4,6,8` and
+     writes separate profile keys such as `baseline_bench6`, so reports can
+     compare true reserve capacity instead of only the old virtual
+     `PIT_BENCH_CAPS` affordability diagnostic. In
+     `runs/long-2026-06-27n/bench-real-v1` (all analysis policies, N=20),
+     larger benches do what expected on access (`baseline` desired-buy-all
+     `35.7% -> 42.7% -> 50.8%` and slot-limit `63.5% -> 56.6% -> 48.2%` for
+     bench `4/6/8`), but they do not automatically improve wins or completion
+     (`6.47/8.2%`, `6.27/10.4%`, `6.32/6.4%`). Learning: reserve capacity is
+     a real acquisition lever, but it must be paired with better policy/staging;
+     otherwise it can dilute deployed tempo.
+   - Rat-core reroll-policy breakthrough:
+     Two additional analysis policies were added for the current reroll target:
+     `committed_rot_bleed_rat_core_no_xp_plan` and
+     `committed_rot_bleed_rat_core_deep_reroll_plan`. They buy no XP manually
+     and rely on passive shop-tier progression; the deep-reroll variant raises
+     the per-round reroll cap to `5`. In
+     `runs/long-2026-06-27n/bench-rat-policy-v1` (baseline, N=80), deep-reroll
+     is the first strong rat-core policy: bench4 reaches `50%` completion,
+     `9.50` avg wins, `11.66` pair buys/run, `9.11` merges/run, and
+     `78.1%` merge-per-pair. Bench6 remains strong but lower (`46.25%`,
+     `9.43` wins), while bench8 drops (`28.75%`, `9.25` wins) despite higher
+     held-level coverage. Learning: this comp wants aggressive reroll tempo
+     more than extra bench size. The best current hypothesis is live bench4
+     plus explicit reroll archetype support, not a blind reserve-size increase.
    Remaining additions:
    - use `rot_bleed_rat_core` as the baseline reroll target for the next
      balance pass, but investigate cheap mid-board outliers before nerfing it;

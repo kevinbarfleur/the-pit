@@ -1020,6 +1020,36 @@ function Policies.analysisSet(rng)
       rot_hound = 3, carrion_pecker = 3, gnaw_rat = 3,
     },
   })
+  out[#out + 1] = Policies.committed_unit_set_plan("committed_rot_bleed_rat_core_no_xp_plan", "rot", "carre", {
+    "clot_mender", "razorkin", "gash_fiend",
+    "rot_hound", "carrion_pecker", "gnaw_rat",
+  }, {
+    supportArchetypes = { rot = true, bleed = true },
+    supportUntilLevelCoverage = 0.60,
+    supportMinBoard = 4,
+    minRank = 3,
+    maxXpBuysPerRound = 0,
+    maxRerollsPerRound = 2,
+    targetLevels = {
+      clot_mender = 2, razorkin = 2, gash_fiend = 2,
+      rot_hound = 3, carrion_pecker = 3, gnaw_rat = 3,
+    },
+  })
+  out[#out + 1] = Policies.committed_unit_set_plan("committed_rot_bleed_rat_core_deep_reroll_plan", "rot", "carre", {
+    "clot_mender", "razorkin", "gash_fiend",
+    "rot_hound", "carrion_pecker", "gnaw_rat",
+  }, {
+    supportArchetypes = { rot = true, bleed = true },
+    supportUntilLevelCoverage = 0.60,
+    supportMinBoard = 4,
+    minRank = 3,
+    maxXpBuysPerRound = 0,
+    maxRerollsPerRound = 5,
+    targetLevels = {
+      clot_mender = 2, razorkin = 2, gash_fiend = 2,
+      rot_hound = 3, carrion_pecker = 3, gnaw_rat = 3,
+    },
+  })
   return out
 end
 
