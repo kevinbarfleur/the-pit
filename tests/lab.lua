@@ -419,6 +419,8 @@ local ok, err = pcall(function()
   local heldMf = Common.finishMergeLifecycle(heldMl)
   assert(heldMf.unresolved == 1 and heldMf.terminal_causes.counts.held_to_run_end == 1,
     "copy lifecycle: paire exacte non fusionnee encore tenue -> held_to_run_end")
+  assert(heldMf.third_copy_access.counts.never_offered == 1,
+    "copy lifecycle: paire exacte tenue sans offre ulterieure -> never_offered")
   local function assertBossOps(list, owner)
     for _, e in ipairs(list or {}) do
       assert(Effects.ops[e.op], "bossrush: op inconnue " .. tostring(e.op) .. " dans " .. owner)

@@ -2182,6 +2182,23 @@ Next implementation targets:
      third-copy arrival/timing and shop odds, not players selling exact pair
      pieces. Watch units include `wailing_shade`, `gash_fiend`, `hookjaw`,
      `rot_hound`, and `bore_worm` depending on economy profile.
+   - Third-copy access diagnostic:
+     `merge_lifecycle` now also exposes `third_copy_access` for unresolved
+     exact pairs: `never_offered`, `offered_policy_skipped`,
+     `offered_space_blocked`, `offered_gold_blocked`, and `unknown`, globally,
+     by unit, and in the watch list. This is an offer-window diagnostic: reroll
+     events currently record the new shop but not the exact gold after every
+     intermediate action, so affordability for mid-round rerolls is a
+     conservative approximation. In
+     `runs/long-2026-06-27o/third-copy-access` (N=8 over baseline/
+     early_curve/sap_cost and reroll/rat-core/broad policies), most unresolved
+     pairs simply never saw a later third copy: baseline `119/130` unresolved
+     (`91.5%`), early_curve `93/100` (`93.0%`), sap_cost `99/117`
+     (`84.6%`). Policy-skipped offers are secondary (`8.5%`, `7.0%`,
+     `15.4%` respectively); space and gold blocks were `0%` in this panel.
+     Current read: the next live knobs should be shop odds, targeted reroll
+     support, or freeze/hold mechanics for pair-completion windows, not raw
+     gold affordability or anti-sell policy fixes.
    - PvE bossrush/scoring prototype:
      the user added `docs/generation/generateur-abominations.html`, a seeded
      visual generator for ten abomination families. The lab now has a pure data

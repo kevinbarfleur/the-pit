@@ -365,6 +365,7 @@ function Common.mergeLifecycleAgg()
     soldBeforeMerge = 0, exactPairs = 0, exactResolved = 0,
     roundsToMerge = 0, tiersToMerge = 0,
     terminal = {},
+    thirdCopy = {},
     byUnit = {},
   }
 end
@@ -377,6 +378,7 @@ local function lifecycleBucket(map, id)
       soldBeforeMerge = 0, exactPairs = 0, exactResolved = 0,
       roundsToMerge = 0, tiersToMerge = 0,
       terminal = {},
+      thirdCopy = {},
     }
     map[id] = b
   end
@@ -397,9 +399,33 @@ local function addTerminalCause(agg, bucket, cause)
   bucket.terminal[cause] = (bucket.terminal[cause] or 0) + 1
 end
 
+local THIRD_COPY_OUTCOMES = {
+  "never_offered",
+  "offered_policy_skipped",
+  "offered_space_blocked",
+  "offered_gold_blocked",
+  "unknown",
+}
+
+local function addThirdCopyOutcome(agg, bucket, outcome)
+  outcome = outcome or "unknown"
+  agg.thirdCopy[outcome] = (agg.thirdCopy[outcome] or 0) + 1
+  bucket.thirdCopy[outcome] = (bucket.thirdCopy[outcome] or 0) + 1
+end
+
 local function finishTerminalCauses(src, total)
   local counts, rates = {}, {}
   for _, key in ipairs(TERMINAL_CAUSES) do
+    local n = (src and src[key]) or 0
+    counts[key] = n
+    rates[key] = (total and total > 0) and (n / total) or 0
+  end
+  return { counts = counts, rates = rates }
+end
+
+local function finishThirdCopyAccess(src, total)
+  local counts, rates = {}, {}
+  for _, key in ipairs(THIRD_COPY_OUTCOMES) do
     local n = (src and src[key]) or 0
     counts[key] = n
     rates[key] = (total and total > 0) and (n / total) or 0
@@ -504,6 +530,39 @@ local function terminalCause(traj, pair, soldBeforeMerge)
   return "unknown"
 end
 
+local function noteThirdCopyOffer(state, offer, rd)
+  if not (state and offer and not offer.sold) then return end
+  if offer.id ~= state.id then return end
+  state.offered = true
+  if offer.playable == false then state.spaceBlocked = true; return end
+  if (rd.startGold or 0) < (offer.cost or 0) then state.goldBlocked = true; return end
+  state.skipped = true
+end
+
+local function thirdCopyOutcome(traj, pair)
+  if not hasCopyIds(pair) then return "unknown" end
+  local state = { id = pair.id }
+  local startRound = pair.round or 0
+  for _, rd in ipairs((traj and traj.rounds) or {}) do
+    local round = rd.round or 0
+    -- Same-round event ordering is not precise enough here; only later shops
+    -- prove a real missed third-copy window after the pair existed.
+    if round > startRound then
+      for _, offer in ipairs(rd.shop or {}) do noteThirdCopyOffer(state, offer, rd) end
+      for _, ev in ipairs(rd.events or {}) do
+        if ev.type == "shop_roll" then
+          for _, offer in ipairs(ev.shop or {}) do noteThirdCopyOffer(state, offer, rd) end
+        end
+      end
+    end
+  end
+  if not state.offered then return "never_offered" end
+  if state.skipped then return "offered_policy_skipped" end
+  if state.spaceBlocked then return "offered_space_blocked" end
+  if state.goldBlocked then return "offered_gold_blocked" end
+  return "unknown"
+end
+
 function Common.addMergeLifecycle(agg, traj)
   local used = {}
   local merges = (traj.exactMergeEvents and #traj.exactMergeEvents > 0) and traj.exactMergeEvents or (traj.mergeEvents or {})
@@ -550,6 +609,7 @@ function Common.addMergeLifecycle(agg, traj)
       agg.unresolved = agg.unresolved + 1
       b.unresolved = b.unresolved + 1
       addTerminalCause(agg, b, terminalCause(traj, pair, soldBeforeMerge))
+      addThirdCopyOutcome(agg, b, thirdCopyOutcome(traj, pair))
     end
   end
 
@@ -575,6 +635,7 @@ function Common.finishMergeLifecycle(agg, opts)
       sold_before_merge = b.soldBeforeMerge or 0,
       sold_before_merge_rate = ((b.pairs or 0) > 0) and ((b.soldBeforeMerge or 0) / b.pairs) or 0,
       terminal_causes = finishTerminalCauses(b.terminal, b.unresolved or 0),
+      third_copy_access = finishThirdCopyAccess(b.thirdCopy, b.unresolved or 0),
       exact_pairs = b.exactPairs or 0,
       exact_resolved = b.exactResolved or 0,
       exact_resolve_rate = ((b.exactPairs or 0) > 0) and ((b.exactResolved or 0) / b.exactPairs) or 0,
@@ -592,6 +653,7 @@ function Common.finishMergeLifecycle(agg, opts)
         sold_before_merge = row.sold_before_merge,
         sold_before_merge_rate = row.sold_before_merge_rate,
         terminal_causes = row.terminal_causes,
+        third_copy_access = row.third_copy_access,
         exact_pairs = row.exact_pairs,
         exact_resolve_rate = row.exact_resolve_rate,
         resolve_rate = row.resolve_rate,
@@ -616,6 +678,7 @@ function Common.finishMergeLifecycle(agg, opts)
     sold_before_merge = agg.soldBeforeMerge or 0,
     sold_before_merge_rate = ((agg.pairs or 0) > 0) and ((agg.soldBeforeMerge or 0) / agg.pairs) or 0,
     terminal_causes = finishTerminalCauses(agg.terminal, agg.unresolved or 0),
+    third_copy_access = finishThirdCopyAccess(agg.thirdCopy, agg.unresolved or 0),
     exact_pairs = agg.exactPairs or 0,
     exact_resolved = agg.exactResolved or 0,
     exact_resolve_rate = ((agg.exactPairs or 0) > 0) and ((agg.exactResolved or 0) / agg.exactPairs) or 0,

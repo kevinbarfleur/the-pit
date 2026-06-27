@@ -126,6 +126,8 @@ local ok, err = pcall(function()
         "mode economy : pertes de paires par vente reportees")
       assert(body:find('"terminal_causes"', 1, true),
         "mode economy : causes terminales des paires non resolues reportees")
+      assert(body:find('"third_copy_access"', 1, true),
+        "mode economy : accessibilite de la troisieme copie reportee")
     elseif m == "pacing" then
       assert(body:find('"duration_fit"', 1, true),
         "mode pacing : score de fit duration reporte")
