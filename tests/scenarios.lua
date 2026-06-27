@@ -93,6 +93,8 @@ local ok, err = pcall(function()
         "mode coherence : les noyaux sous-remplis ont un diagnostic de resolution par fillers")
       assert(body:find('"foe_breakdown"', 1, true),
         "mode coherence : chaque ligne expose le diagnostic par adversaire")
+      assert(body:find('"rank_pressure"', 1, true),
+        "mode coherence : chaque ligne expose la pression d'acces par rang")
     elseif m == "economy" then
       assert(body:find('"plan_access"', 1, true),
         "mode economy : accessibilite des plans cibles reportee")

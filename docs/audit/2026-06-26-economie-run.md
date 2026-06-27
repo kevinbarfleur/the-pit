@@ -1018,6 +1018,18 @@ Ajout batch autonomie (`runs/long-2026-06-27b`) :
   `rot_bleed_mid__leveled` (`30` or, `winrate 100%`). Decision actuelle :
   garder `rot_bleed_rat_core` comme cible reroll testable, eviter un nerf
   reflexe, et investiguer d'abord les mid boards trop efficaces sous leur cout.
+- Mise a jour du modele de cout : ajout de `rankPressure` dans `Compcost`.
+  Le rapport `runs/long-2026-06-27n/cheap-mid-foe-breakdown-v1` montrait que
+  plusieurs alertes gagnaient contre tout le champ mid, mais une partie etait
+  mal classee "cheap" parce qu'une piece rang 4 niveau 1/2 restait lue comme
+  peu couteuse en or brut. `rankPressure` ajoute un plancher d'accessibilite
+  pour les rangs 4/5 et le rapport coherence expose maintenant
+  `weighted_score`, `rank_pressure` et `foe_breakdown`. Sur
+  `runs/long-2026-06-27n/rank-pressure-coherence-v1`, `cheap_strong` passe de
+  `37` a `7`. Les faux positifs tank/shock a rang 4 sortent de la liste ; les
+  vraies alertes restantes sont surtout `rot_bleed_mid__leveled`,
+  `rot_bleed_mid`, quelques boards bleed/bruiser low-rank, et des noyaux poison
+  mid qui gagnent sous leur cout.
 
 Metrics recommandees :
 

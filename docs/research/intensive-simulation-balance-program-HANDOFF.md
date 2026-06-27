@@ -1976,6 +1976,16 @@ Next implementation targets:
      `rot_bleed_mid__leveled` (`30` gold, `100%` in this panel). Next balance
      work should distinguish "expensive coherent payoff" from "cheap mid board
      overperforming under its cost".
+   - Cost-model correction: `Compcost` now returns `rankPressure` and uses it
+     as an access floor for `score`; coherence rows also expose
+     `weighted_score`, `rank_pressure`, and `foe_breakdown`. This fixed a major
+     read error: rank-4/5 boards were previously flagged as cheap because the
+     score mostly read raw gold. In
+     `runs/long-2026-06-27n/rank-pressure-coherence-v1`, `cheap_strong` drops
+     from `37` to `7`. The remaining cheap-strong rows are now mostly genuine
+     low/mid-rank candidates (`rot_bleed_mid__leveled`, `rot_bleed_mid`, some
+     generated bleed/bruiser/poison boards), while tank/shock rank-4 access
+     false positives leave the list.
    Remaining additions:
    - use `rot_bleed_rat_core` as the baseline reroll target for the next
      balance pass, but investigate cheap mid-board outliers before nerfing it;

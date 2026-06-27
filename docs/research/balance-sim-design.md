@@ -34,18 +34,22 @@ regen/taunt/aggro→tank, sinon bruiser). Sert aux politiques *committed* ET à 
 
 ## 3. Modèle d'investissement (`compcost.lua`)
 
-`Compcost.of(comp) → { gold, maxLevel, slots, relicDep, sigilDep, placementSens, score }`.
+`Compcost.of(comp) → { gold, maxLevel, slots, relicDep, sigilDep, placementSens, rankPressure, score }`.
 
-- **gold** = `Σ coût_unité · facteur_niveau` (facteur `{1,3,9}` : 3 copies→niv2, 9→niv3) **+** or de
-  leveling implicite `Σ_{L=3..boardLevel-1}(4+L)` (miroir EXACT de `RunState.levelCostAt`).
+- **gold** = `Σ coût_unité · facteur_niveau` (facteur `{1,3,9}` : 3 copies→niv2, 9→niv3).
+  Les slots de board sont désormais débloqués par le rythme de run, pas achetés en or, donc ils ne sont plus
+  additionnés au coût brut.
 - **placementSens** = part d'unités ayant ≥1 voisin de la compo via `shape.edges` (0 = un tas ; 1 = tout
   agencé → la compo *exige* un placement). Pure adjacence.
 - **sigilDep** = 1 si sigil ≠ carré (topologie spécifique exigée). **relicDep** = 1 si reliques déclarées.
+- **rankPressure** = plancher d'accessibilité dérivé du rang de boutique. Il empêche une composition avec une
+  pièce rang 4/5 d'être lue comme "cheap" seulement parce que son prix brut en gemmes est faible.
 - **score** ∈ (0,1] = mélange pondéré (poids nommés dans `compcost.lua`) :
   `0.40·norm(gold) + 0.25·(maxLevel-1)/2 + 0.10·(slots/9) + 0.05·relicDep + 0.05·sigilDep + 0.15·placementSens`.
+  Le score final est le maximum entre ce mélange et `rankPressure`.
 
-Les **deux seuls boutons** à tuner : `LEVEL_GOLD = {1,3,9}` et les 6 poids du `score`. Tout le reste est
-data-driven (coûts réels des unités + coûts de leveling réels).
+Les boutons à tuner : `LEVEL_GOLD = {1,3,9}`, `RANK_ACCESS_PRESSURE`, `RANK_GATE_MULT` et les 6 poids du
+score pondéré. Tout le reste est data-driven (coûts/rangs réels des unités + largeur/placement/reliques).
 
 ## 4. Counters INTENTIONNELS (ne jamais flaguer)
 

@@ -19,6 +19,10 @@ local Compcost = {}
 -- Facteur d'or par NIVEAU d'unité (duplicatas : 3 copies -> niv2, 9 -> niv3 ; coût ~ nb de copies achetées).
 local LEVEL_GOLD = { 1, 3, 9 }
 local DEFAULT_COST = 3
+-- Pression d'accès par rang de boutique. L'or brut ne suffit pas : une unité
+-- rang 4/5 peut rester "peu chère" en gemmes mais demander tier/odds/rerolls.
+local RANK_ACCESS_PRESSURE = { [1] = 0.00, [2] = 0.10, [3] = 0.30, [4] = 0.65, [5] = 0.90 }
+local RANK_GATE_MULT = 0.75
 -- NB : depuis 2026-06, débloquer un slot ne coûte plus d'or (grants timés, cf. RunState) -> l'investissement
 -- ne compte plus d'« or de leveling ». Il ne reste que l'or des UNITÉS (× copies) + niveau + relique + sigil +
 -- agencement. La LARGEUR de board (boardLevel) reste un proxy de complexité/breadth via W_SLOTS, pas un coût d'or.
@@ -54,11 +58,17 @@ end
 
 -- Descripteur complet d'une compo.
 function Compcost.of(comp)
-  local gold, maxLevel = 0, 1
+  local gold, maxLevel, maxRankPressure, weightedRankPressure, totalCopies = 0, 1, 0, 0, 0
   for _, u in ipairs(comp.units) do
     local lvl = u.level or 1
-    gold = gold + unitCost(u.id) * (LEVEL_GOLD[lvl] or 1)
+    local copies = LEVEL_GOLD[lvl] or 1
+    gold = gold + unitCost(u.id) * copies
     if lvl > maxLevel then maxLevel = lvl end
+    local def = Units[u.id]
+    local rankPressure = RANK_ACCESS_PRESSURE[def and def.rank] or 0
+    if rankPressure > maxRankPressure then maxRankPressure = rankPressure end
+    weightedRankPressure = weightedRankPressure + rankPressure * copies
+    totalCopies = totalCopies + copies
   end
 
   -- Largeur de plateau : proxy de breadth/complexité (les slots sont gratuits désormais, pas de coût d'or ici).
@@ -67,18 +77,22 @@ function Compcost.of(comp)
   local relicDep = (comp.relics and #comp.relics > 0) and 1 or 0
   local sigilDep = (Board.shapeName(comp.sigil) ~= "carre") and 1 or 0 -- sigils en PAUSE -> toujours carré (0)
   local placementSens = Compcost.placementSens(comp)
+  local avgRankPressure = (totalCopies > 0) and (weightedRankPressure / totalCopies) or 0
+  local rankPressure = math.max(maxRankPressure * RANK_GATE_MULT, avgRankPressure)
 
-  local score =
+  local weightedScore =
       W_GOLD * math.min(1, gold / NORM_GOLD)
     + W_LEVEL * ((maxLevel - 1) / 2)
     + W_SLOTS * (boardLevel / 9)
     + W_RELIC * relicDep
     + W_SIGIL * sigilDep
     + W_PLACE * placementSens
+  local score = math.min(1, math.max(weightedScore, rankPressure))
 
   return {
     gold = gold, maxLevel = maxLevel, slots = boardLevel, boardLevel = boardLevel,
-    relicDep = relicDep, sigilDep = sigilDep, placementSens = placementSens, score = score,
+    relicDep = relicDep, sigilDep = sigilDep, placementSens = placementSens,
+    rankPressure = rankPressure, weightedScore = weightedScore, score = score,
   }
 end
 

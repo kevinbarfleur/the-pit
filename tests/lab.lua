@@ -104,8 +104,12 @@ local ok, err = pcall(function()
     local cc = Compcost.of(c)
     assert(cc.score > 0 and cc.score <= 1.0001, "score dans (0,1]: " .. c.id .. " = " .. cc.score)
     assert(cc.placementSens >= 0 and cc.placementSens <= 1, "placementSens dans [0,1]: " .. c.id)
+    assert(cc.rankPressure >= 0 and cc.rankPressure <= 1, "rankPressure dans [0,1]: " .. c.id)
   end
-  print("  lab : cout monotone OK (perfect>=minor>clutch en or ; score (0,1] ; placementSens [0,1])")
+  local premiumAccess = Compcost.of({ sigil = "carre", boardLevel = 3, units = { { id = "gravewarden", slot = 1 } } })
+  assert(premiumAccess.rankPressure > 0.45, "cout: rang 4 impose une pression d'acces")
+  assert(premiumAccess.score >= premiumAccess.rankPressure, "cout: pression d'acces plancher du score")
+  print("  lab : cout monotone OK (perfect>=minor>clutch en or ; score/rankPressure bornes ; placementSens [0,1])")
 
   -- 6) SMOKE SCÈNE : le Proving Ground se construit, sélectionne, lance un batch SIM (étalé) et se
   -- dessine sans crash sous mock LÖVE (attrape tout appel love.graphics non stubé / clé i18n manquante).
