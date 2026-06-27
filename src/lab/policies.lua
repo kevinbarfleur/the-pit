@@ -152,6 +152,56 @@ local function copyCounts(drv)
   return counts
 end
 
+local function targetCoverage(drv, targetUnits)
+  local have, want = {}, {}
+  local function addHave(sr)
+    if not sr then return end
+    local rec = have[sr.id]
+    if not rec then rec = { count = 0, levels = 0 }; have[sr.id] = rec end
+    rec.count = rec.count + 1
+    rec.levels = rec.levels + (sr.level or 1)
+  end
+  for i = 1, 9 do addHave(drv.build.slotRigs[i]) end
+  for i = 1, #(drv.build.benchSlots or {}) do addHave(drv.build.bench[i]) end
+  for _, u in ipairs(targetUnits or {}) do
+    if u.id then
+      local rec = want[u.id]
+      if not rec then rec = { count = 0, levels = 0 }; want[u.id] = rec end
+      rec.count = rec.count + 1
+      rec.levels = rec.levels + (u.level or 1)
+    end
+  end
+  local targetUnitCount, hitUnits, targetLevels, hitLevels = 0, 0, 0, 0
+  for id, need in pairs(want) do
+    local got = have[id] or { count = 0, levels = 0 }
+    targetUnitCount = targetUnitCount + need.count
+    targetLevels = targetLevels + need.levels
+    hitUnits = hitUnits + math.min(got.count, need.count)
+    hitLevels = hitLevels + math.min(got.levels, need.levels)
+  end
+  local unitCoverage = (targetUnitCount > 0) and (hitUnits / targetUnitCount) or 1
+  local levelCoverage = (targetLevels > 0) and (hitLevels / targetLevels) or 1
+  return {
+    targetUnits = targetUnitCount,
+    hitUnits = hitUnits,
+    unitCoverage = unitCoverage,
+    levelCoverage = levelCoverage,
+    complete = unitCoverage >= 1 and levelCoverage >= 1,
+  }
+end
+
+local function xpGateAllows(drv, targetUnits, gate)
+  if not gate then return true, nil end
+  local cov = targetCoverage(drv, targetUnits)
+  if drv.run.shopTier < (gate.holdRank or 1) then return true, cov end
+  if cov.targetUnits <= 0 then return true, cov end
+  local minUnit = gate.minUnitCoverage
+  if minUnit == nil then minUnit = 0.5 end
+  local minLevel = gate.minLevelCoverage
+  if minLevel == nil then minLevel = 0.5 end
+  return cov.unitCoverage >= minUnit and cov.levelCoverage >= minLevel, cov
+end
+
 local function sameLevelCount(counts, id, level)
   return counts[id .. "\0" .. (level or 1)] or 0
 end
@@ -732,12 +782,18 @@ function Policies.committed_archetype_plan_with(archetype, sigil, opts)
         ensureNonEmpty(drv)
       end
       local xpBuys = 0
+      local xpGateBlocked = false
+      local xpGateCoverage
       local minRank = scheduledMinRank(drv, opts.minRank or Policies.minRankForArchetype(self.archetype) or 1)
       local maxXpBuys = opts.maxXpBuysPerRound or 2
       while drv.run.shopTier < minRank and drv.run:canBuyXp() and xpBuys < maxXpBuys do
+        local allowXp, cov = xpGateAllows(drv, targetUnits, opts.xpCoverageGate)
+        xpGateCoverage = cov or xpGateCoverage
+        if not allowXp then xpGateBlocked = true; break end
         if not drv:buyXp() then break end
         xpBuys = xpBuys + 1
       end
+      if opts.xpCoverageGate and not xpGateCoverage then xpGateCoverage = targetCoverage(drv, targetUnits) end
       local plannedBought, sold, boardSold = buyMatchingPlanned(drv, want, planOpts())
       bought = bought + plannedBought
       local rerolls = 0
@@ -753,7 +809,13 @@ function Policies.committed_archetype_plan_with(archetype, sigil, opts)
         boardSold = boardSold + bs
       end
       ensureNonEmpty(drv)
-      return { archetype = self.archetype, bought = bought, sold = sold, boardSold = boardSold, rerolls = rerolls, xpBuys = xpBuys }
+      return {
+        archetype = self.archetype, bought = bought, sold = sold, boardSold = boardSold,
+        rerolls = rerolls, xpBuys = xpBuys,
+        xpGateBlocked = xpGateBlocked or nil,
+        xpGateUnitCoverage = xpGateCoverage and xpGateCoverage.unitCoverage or nil,
+        xpGateLevelCoverage = xpGateCoverage and xpGateCoverage.levelCoverage or nil,
+      }
     end,
     pickRelic = function(_, _, choices)
       local bestIndex, bestScore = 1, -math.huge
@@ -806,6 +868,7 @@ function Policies.committed_unit_set_plan(name, archetype, sigil, unitIds, opts)
     boardPruneMargin = opts.boardPruneMargin,
     maxXpBuysPerRound = opts.maxXpBuysPerRound,
     rankSchedule = opts.rankSchedule,
+    xpCoverageGate = opts.xpCoverageGate,
   })
 end
 
@@ -885,6 +948,36 @@ function Policies.analysisSet(rng)
     targetLevels = {
       razorkin = 2, gash_fiend = 2, clot_mender = 2,
       marrow_drinker = 2, rot_hound = 3, carrion_pecker = 3, necro_leech = 2,
+    },
+  })
+  out[#out + 1] = Policies.committed_unit_set_plan("committed_cross_bleed_rot_coverage_plan", "rot", "carre", {
+    "pit_maw", "razorkin", "gash_fiend", "clot_mender",
+    "marrow_drinker", "wither_bloom", "blight_spreader", "hookjaw",
+  }, {
+    supportArchetypes = { rot = true, bleed = true },
+    minRank = 3,
+    maxXpBuysPerRound = 2,
+    rankSchedule = {
+      { round = 7, rank = 4 },
+      { round = 10, rank = 5 },
+    },
+    xpCoverageGate = { holdRank = 3, minUnitCoverage = 0.5, minLevelCoverage = 0.5 },
+    targetLevels = {
+      razorkin = 2, gash_fiend = 2, clot_mender = 2,
+      marrow_drinker = 2, rot_hound = 3, carrion_pecker = 3, necro_leech = 2,
+    },
+  })
+  out[#out + 1] = Policies.committed_unit_set_plan("committed_rot_bleed_rat_core_plan", "rot", "carre", {
+    "clot_mender", "razorkin", "gash_fiend",
+    "rot_hound", "carrion_pecker", "gnaw_rat",
+  }, {
+    supportArchetypes = { rot = true, bleed = true },
+    minRank = 3,
+    maxXpBuysPerRound = 2,
+    xpCoverageGate = { holdRank = 3, minUnitCoverage = 0.5, minLevelCoverage = 0.5 },
+    targetLevels = {
+      clot_mender = 2, razorkin = 2, gash_fiend = 2,
+      rot_hound = 3, carrion_pecker = 3, gnaw_rat = 3,
     },
   })
   return out

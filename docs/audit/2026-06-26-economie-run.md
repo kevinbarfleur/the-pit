@@ -1030,6 +1030,26 @@ Ajout batch autonomie (`runs/long-2026-06-27b`) :
   vraies alertes restantes sont surtout `rot_bleed_mid__leveled`,
   `rot_bleed_mid`, quelques boards bleed/bruiser low-rank, et des noyaux poison
   mid qui gagnent sous leur cout.
+- Mise a jour timing XP/reroll : `committed_unit_set_plan` accepte maintenant
+  `xpCoverageGate`, une barriere optionnelle qui autorise le rush jusqu'a un
+  rang plancher puis bloque les achats d'XP tant que la couverture reelle du
+  plan n'a pas atteint un seuil unites/niveaux. Le rapport economie expose
+  `xp_gate_blocks_per_run`, `xp_gate_block_round_rate`,
+  `avg_xp_gate_unit_coverage` et `avg_xp_gate_level_coverage`. Le batch
+  `runs/long-2026-06-27n/coverage-gated-xp-v2` montre que
+  `committed_cross_bleed_rot_coverage_plan` coupe le rush staged (`2.5` achats
+  XP/run en baseline contre `5.0`) sans gain net de couverture par rapport au
+  plan cible actuel. Conclusion : l'ancien plan rang 5 n'est pas seulement mal
+  time ; il est structurellement fragile parce que `marrow_drinker` reste trop
+  rare ou trop tardif.
+- Le meme batch ajoute `committed_rot_bleed_rat_core_plan`, cible dediee au
+  pivot low-rank `rot_bleed_rat_core`. En baseline, il monte les wins moyens a
+  `8.225`, atteint `50%` de couverture tenue du rat-core dans `80%` des runs,
+  et finit a `0.633` de couverture niveau tenue, contre `0.532` et `62.5%` pour
+  le plan cross generique. Sous `sap_cost`, il atteint meme `92.5%` de runs a
+  `50%` de couverture tenue. Lecture : le pivot rat-core est le meilleur chemin
+  testable actuel pour rot/bleed ; le rang 5 doit rester une evolution premium,
+  pas le coeur obligatoire du plan.
 
 Metrics recommandees :
 
@@ -1041,6 +1061,8 @@ Metrics recommandees :
 - `spend_split` : part unites / rerolls / XP / declines.
 - `reroll_rate_by_tier` : nombre de rerolls par tier shop.
 - `xp_buy_rate_by_tier` : quand l'XP est achetee.
+- `xp_gate_blocks_per_run` / `xp_gate_block_round_rate` : combien de fois une
+  politique retient l'XP parce que sa couverture de plan est trop basse.
 - `bench_overflow_rate` : cas ou l'or existe mais l'espace manque.
 - `slot_decline_ev` : valeur reelle de refuser un slot selon round.
 - `archetype_commit_round` : round ou le build devient identifiable.

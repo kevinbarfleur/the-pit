@@ -183,6 +183,7 @@ local function newAgg()
     rerolls = 0, xpBuys = 0,
     commanderAccepts = 0, commanderDeclines = 0, commanderPlacements = 0, relicPicks = 0,
     slotDeclines = 0, slotAccepts = 0,
+    xpGateBlocks = 0, xpGateObserved = 0, xpGateUnitCoverage = 0, xpGateLevelCoverage = 0,
     archetypeRuns = 0, archetypeCommitted = 0, archetypeCommitRoundSum = 0,
     virtualBench = {}, tiers = {}, archetypes = {}, unitMerge = {}, planTargets = {},
     mergeLifecycle = Common.mergeLifecycleAgg(),
@@ -1176,7 +1177,14 @@ local function addRun(a, traj)
   addPlanAccess(a, traj)
   for _, rd in ipairs(traj.rounds or {}) do
     local e = rd.economy or {}
+    local d = rd.decisions or {}
     a.rounds = a.rounds + 1
+    if d.xpGateBlocked then a.xpGateBlocks = a.xpGateBlocks + 1 end
+    if d.xpGateUnitCoverage ~= nil or d.xpGateLevelCoverage ~= nil then
+      a.xpGateObserved = a.xpGateObserved + 1
+      a.xpGateUnitCoverage = a.xpGateUnitCoverage + (d.xpGateUnitCoverage or 0)
+      a.xpGateLevelCoverage = a.xpGateLevelCoverage + (d.xpGateLevelCoverage or 0)
+    end
     if rd.decided ~= nil then
       a.combatTotal = a.combatTotal + 1
       if rd.win then a.combatWins = a.combatWins + 1 end
@@ -1342,6 +1350,10 @@ local function finish(a)
     merge_per_pair_buy = (a.pairBuys > 0) and (a.mergeBuys / a.pairBuys) or 0,
     rerolls_per_run = (a.runs > 0) and (a.rerolls / a.runs) or 0,
     xp_buys_per_run = (a.runs > 0) and (a.xpBuys / a.runs) or 0,
+    xp_gate_blocks_per_run = (a.runs > 0) and (a.xpGateBlocks / a.runs) or 0,
+    xp_gate_block_round_rate = (a.rounds > 0) and (a.xpGateBlocks / a.rounds) or 0,
+    avg_xp_gate_unit_coverage = (a.xpGateObserved > 0) and (a.xpGateUnitCoverage / a.xpGateObserved) or 0,
+    avg_xp_gate_level_coverage = (a.xpGateObserved > 0) and (a.xpGateLevelCoverage / a.xpGateObserved) or 0,
     commander_accepts_per_run = (a.runs > 0) and (a.commanderAccepts / a.runs) or 0,
     commander_declines_per_run = (a.runs > 0) and (a.commanderDeclines / a.runs) or 0,
     commander_placements_per_run = (a.runs > 0) and (a.commanderPlacements / a.runs) or 0,

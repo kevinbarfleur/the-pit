@@ -1986,11 +1986,31 @@ Next implementation targets:
      low/mid-rank candidates (`rot_bleed_mid__leveled`, `rot_bleed_mid`, some
      generated bleed/bruiser/poison boards), while tank/shock rank-4 access
      false positives leave the list.
+   - XP coverage-gate update: `committed_unit_set_plan` now supports
+     `xpCoverageGate`, which can let a policy reach a base shop rank and then
+     block further XP buys until real target coverage reaches unit/level
+     thresholds. Economy reports expose `xp_gate_blocks_per_run`,
+     `xp_gate_block_round_rate`, `avg_xp_gate_unit_coverage`, and
+     `avg_xp_gate_level_coverage`. In
+     `runs/long-2026-06-27n/coverage-gated-xp-v2`,
+     `committed_cross_bleed_rot_coverage_plan` cuts baseline XP from the staged
+     plan's `5.0/run` to `2.5/run`, with about `4.675` XP-gate blocks/run, but
+     does not materially improve the old rank-5 target. Interpretation: late
+     cross rot/bleed is not just an XP timing issue; `marrow_drinker` remains
+     too rare/late for the core endpoint.
+   - Rat-core target policy update:
+     `committed_rot_bleed_rat_core_plan` directly targets
+     `clot_mender:2+razorkin:2+gash_fiend:2+rot_hound:3+carrion_pecker:3+gnaw_rat:3`.
+     In `coverage-gated-xp-v2`, baseline improves to `8.225` wins, `80%` held
+     `50%` rat-core coverage, and `0.633` final held level coverage. SAP-cost
+     reaches `92.5%` held `50%`. Interpretation: use rat-core as the active
+     rot/bleed reroll baseline; keep rank-5 conversion as premium evolution
+     unless a later economy/pass makes it reliably reachable.
    Remaining additions:
    - use `rot_bleed_rat_core` as the baseline reroll target for the next
      balance pass, but investigate cheap mid-board outliers before nerfing it;
-   - make committed policies smarter about XP/reroll timing gated by target
-     coverage, then revisit protected payload placement;
+   - revisit protected payload placement and the remaining cheap mid-board
+     outliers now that XP/reroll timing has a measurable coverage gate;
    - upgrade pair lifecycle further from event matching to per-copy identity:
      pair formed -> held/sold/lost/merged, with exact sold-pair loss;
 3. Integrate actual relic access into economy scoring, now that relic semantic

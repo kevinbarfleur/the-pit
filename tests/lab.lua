@@ -255,6 +255,34 @@ local ok, err = pcall(function()
   local spaceDecision = spacePlan:act(spaceDrv)
   assert(spaceDecision.boardSold == 1 and spaceDrv:copyCount("marrow_drinker", 1) == 1,
     "policy plan: vend un filler support pour acheter une piece coeur")
+  local xpGatePlan = Policies.committed_unit_set_plan("test_xp_gate", "rot", "carre", {
+    "rot_hound", "carrion_pecker",
+  }, {
+    minRank = 5,
+    maxXpBuysPerRound = 3,
+    xpCoverageGate = { holdRank = 3, minUnitCoverage = 0.5, minLevelCoverage = 0.5 },
+    targetLevels = { rot_hound = 3, carrion_pecker = 3 },
+  })
+  local gateDrv = Rundriver.new(20260636, {})
+  gateDrv.run.gold = 99
+  gateDrv.run.shopTier = 3
+  gateDrv.run.shopXp = 0
+  gateDrv.build:placeId(unlockedSlots(gateDrv)[1], "marauder", 1)
+  for i = 1, #gateDrv.run.shop do gateDrv.run.shop[i].sold = true end
+  local gateDecision = xpGatePlan:act(gateDrv)
+  assert(gateDecision.xpBuys == 0 and gateDecision.xpGateBlocked and gateDrv.run.shopTier == 3,
+    "policy plan: la barriere de couverture bloque le rush XP sans pieces coeur")
+  assert(gateDecision.xpGateUnitCoverage == 0 and gateDecision.xpGateLevelCoverage == 0,
+    "policy plan: la barriere expose la couverture manquante")
+  local allowDrv = Rundriver.new(20260637, {})
+  allowDrv.run.gold = 99
+  allowDrv.run.shopTier = 3
+  allowDrv.run.shopXp = 0
+  allowDrv.build:placeId(unlockedSlots(allowDrv)[1], "rot_hound", 3)
+  for i = 1, #allowDrv.run.shop do allowDrv.run.shop[i].sold = true end
+  local allowDecision = xpGatePlan:act(allowDrv)
+  assert(allowDecision.xpBuys > 0 and not allowDecision.xpGateBlocked,
+    "policy plan: la barriere autorise l'XP quand le coeur est assez couvert")
   print(string.format("  lab : rundriver deterministe OK (greedy %s en %d rounds)", tostring(t1.result), #t1.rounds))
 
   -- 8) LÉGALITÉ : chaque politique mène une run a une issue valide (win/lose), invariants tenus.

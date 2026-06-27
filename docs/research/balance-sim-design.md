@@ -87,11 +87,21 @@ Même taxonomie, deux incarnations. Code déterministe (`src/lab/policies.lua`) 
 | `econ_streak` | remplit au moins cher puis scale (board plein → niveau) | la valeur de l'éco/streak |
 | `force_level_fast` | rushe le niveau (tous les slots vite) | le scaling de board bat-il la qualité ? |
 | `committed_archetype(a,sigil)` | reshape + n'achète que l'archétype `a` (reroll pour trouver) | une COMPO précise sous contrainte de shop |
+| `committed_*_plan` | cible un noyau exact + supports compatibles, vend les fillers faibles pour acheter le coeur, choisit reliques/commandants par coherence | accessibilite reelle d'un endpoint sous contrainte de shop |
+| `committed_*_coverage_plan` | comme `*_plan`, mais bloque l'XP au-dessus d'un rang plancher tant que la couverture cible est trop basse | timing XP/reroll : stabiliser copies avant de monter de tier |
+| `committed_rot_bleed_rat_core_plan` | reroll low-rank vers `rot_bleed_rat_core` au lieu de forcer `marrow_drinker` | baseline actuelle du pivot rot/bleed sans rang 5 obligatoire |
 | `random_baseline(rng)` | hasard (RNG injecté) | le plancher |
 
 Au Pilier C (MCP), ces mêmes profils deviennent des **personas LLM** (prompts) : un agent joue une vraie
 partie via les outils et rend un retour QUALITATIF (fun, frustrations, builds émergents) que le batch
 quantitatif ne capte pas.
+
+Les rapports economie exposent aussi les decisions de timing du plan :
+
+- `xp_gate_blocks_per_run` et `xp_gate_block_round_rate` : combien de fois une
+  politique a retenu l'XP parce que son coeur n'etait pas assez couvert.
+- `avg_xp_gate_unit_coverage` et `avg_xp_gate_level_coverage` : niveau moyen de
+  couverture au moment ou la barriere XP a ete evaluee.
 
 ## 7. Limites connues / à itérer
 

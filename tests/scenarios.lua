@@ -112,6 +112,8 @@ local ok, err = pcall(function()
         "mode economy : offres de reliques focus reportees")
       assert(body:find('"focused_candidate_run_rate"', 1, true),
         "mode economy : candidats commandants focus reportes")
+      assert(body:find('"xp_gate_blocks_per_run"', 1, true),
+        "mode economy : blocages de barriere XP reportes")
     end
   end
   print("  scenarios : SMOKE OK (10 modes tournent via le driver + ecrivent un rapport JSON ; garde-fous god-roll tenus)")
