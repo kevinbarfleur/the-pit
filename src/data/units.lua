@@ -698,8 +698,9 @@ local U = {
   --    sans effet (comble les pôles bone/order/abyss) + 1 micro-saignement (op `bleed` existant). Stats
   --    réglées pour la LOI DES DOUBLONS §4.3 (×3 niveau-3 ≈ une carry mid-tier en brut). PLACEHOLDERS (sim). ──
   -- COMMANDANTS du plancher rang-1 (cf. spec §3.8) : défauts les plus faibles du roster (stat-sticks).
-  husk = { id = "husk", type = "bone", family = "mortvivant", arch = "skeletonquad", rank = 1, cost = 1, hp = 58, dmg = 4, cd = 72, aggro = 20, effects = {},
-    -- stat-stick -> défaut défensif rang 1 (le plus faible ; dmgReduce 0.04, sans cap).
+  husk = { id = "husk", type = "bone", family = "mortvivant", arch = "skeletonquad", rank = 1, cost = 1, hp = 58, dmg = 4, cd = 72, aggro = 40,
+    effects = { { trigger = "combat_start", op = "aura_stat", target = "role:front", params = { stat = "dmgReduce", value = 0.06 } } },
+    -- rang-1 tank seed : attire le focus et durcit le front ; L3 devient un petit mur d'équipe (unit_levels).
     commandBonus = { trigger = "combat_start", op = "aura_stat", target = "team", params = { stat = "dmgReduce", value = 0.04 } } },
   gnaw_rat = { id = "gnaw_rat", type = "flesh", family = "rongeur", arch = "ratgiant", rank = 1, cost = 1, hp = 30, dmg = 5, cd = 34,
     effects = { { trigger = "on_hit", op = "bleed", params = { dps = 1, dur = 150, slowPct = 0.08 } } },

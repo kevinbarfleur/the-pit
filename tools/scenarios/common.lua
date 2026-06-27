@@ -1,6 +1,6 @@
 -- tools/scenarios/common.lua
 -- SOCLE PARTAGÉ du MOTEUR DE SCÉNARIOS d'équilibrage (Phase C.0). Tous les modes (invest/policy/godroll/
--- commander/counter) en dépendent. PUR-par-dépendance : aucun love.graphics ; le seul hasard est un RNG
+-- commander/counter/economy/tank/pacing/sweep) en dépendent. PUR-par-dépendance : aucun love.graphics ; le seul hasard est un RNG
 -- SEEDÉ injecté par chaque mode (love.math.newRandomGenerator) — JAMAIS math.random global pour la sim.
 --
 -- Réutilise l'EXISTANT (ne réinvente rien) :
@@ -25,6 +25,8 @@ local Json = require("tools.gamed.json")
 local Common = {}
 
 Common.json = Json
+Common.FPS = 60
+Common.DEFAULT_FATIGUE_START = 1020
 
 -- ── RÉPERTOIRE DE SORTIE des rapports. Défaut "runs" (le golden de méta de référence). Override par
 -- PIT_SCEN_OUT (ex. le SMOKE de tests/scenarios.lua redirige vers un dossier JETABLE pour NE PAS écraser le
@@ -32,6 +34,109 @@ Common.json = Json
 local OUT_DIR = os.getenv("PIT_SCEN_OUT")
 if not OUT_DIR or OUT_DIR == "" then OUT_DIR = "runs" end
 function Common.outDir() return OUT_DIR end
+
+local function trim(s)
+  return tostring(s or ""):gsub("^%s+", ""):gsub("%s+$", "")
+end
+
+function Common.clone(v)
+  if type(v) ~= "table" then return v end
+  local out = {}
+  for k, vv in pairs(v) do out[k] = Common.clone(vv) end
+  return out
+end
+
+function Common.env(name)
+  local v = os.getenv(name)
+  if not v or v == "" then return nil end
+  return v
+end
+
+function Common.envNumber(name, default)
+  local v = Common.env(name)
+  if not v then return default end
+  local n = tonumber(v)
+  assert(n ~= nil, name .. " doit etre numerique, recu: " .. tostring(v))
+  return n
+end
+
+function Common.csv(value)
+  local out = {}
+  for part in tostring(value or ""):gmatch("[^,]+") do
+    local p = trim(part)
+    if p ~= "" then out[#out + 1] = p end
+  end
+  return out
+end
+
+function Common.envCsv(name)
+  local v = Common.env(name)
+  return v and Common.csv(v) or nil
+end
+
+function Common.envNumberList(name, default)
+  local parts = Common.envCsv(name)
+  if not parts then return default end
+  local out = {}
+  for _, p in ipairs(parts) do
+    local n = tonumber(p)
+    assert(n ~= nil, name .. " doit contenir des nombres separes par virgules, recu: " .. tostring(p))
+    out[#out + 1] = n
+  end
+  return out
+end
+
+function Common.idSet(ids)
+  if not ids then return nil end
+  local set, order = {}, {}
+  for _, id in ipairs(ids) do
+    if not set[id] then
+      set[id] = true
+      order[#order + 1] = id
+    end
+  end
+  return set, order
+end
+
+function Common.filteredRows(rows, ids, key)
+  local set, order = Common.idSet(ids)
+  if not set then return Common.clone(rows) end
+  key = key or "id"
+  local byId, out = {}, {}
+  for _, row in ipairs(rows or {}) do byId[row[key]] = row end
+  for _, id in ipairs(order) do
+    assert(byId[id], "profil inconnu dans filtre: " .. tostring(id))
+    out[#out + 1] = Common.clone(byId[id])
+  end
+  return out
+end
+
+function Common.paceProfiles(defaults, opts)
+  opts = opts or {}
+  local custom = Common.env(opts.specEnv or "PIT_PACE_PROFILES")
+  local rows = {}
+  if custom then
+    -- Format: id:hpMult:cdMult:fatigueStart[:fatigueBase[:fatigueRamp]],...
+    for _, spec in ipairs(Common.csv(custom)) do
+      local parts = {}
+      for p in spec:gmatch("[^:]+") do parts[#parts + 1] = trim(p) end
+      assert(#parts >= 4, "profil pacing invalide: " .. spec)
+      rows[#rows + 1] = {
+        id = parts[1],
+        label = parts[1],
+        hpMult = assert(tonumber(parts[2]), "hpMult invalide dans " .. spec),
+        cdMult = assert(tonumber(parts[3]), "cdMult invalide dans " .. spec),
+        fatigueStart = assert(tonumber(parts[4]), "fatigueStart invalide dans " .. spec),
+        fatigueBase = tonumber(parts[5]),
+        fatigueRamp = tonumber(parts[6]),
+      }
+    end
+  else
+    rows = Common.clone(defaults)
+  end
+  local filter = Common.envCsv(opts.filterEnv or "PIT_PACE_IDS")
+  return Common.filteredRows(rows, filter)
+end
 
 -- ── RÉSOLUTION d'une compo par id dans LES DEUX sources : le catalogue (src/data/compositions) ET les bandes
 -- (src/lab/bands : compos paramétriques par stade early/mid/end). Format IDENTIQUE ({sigil,boardLevel,units}).
@@ -107,6 +212,83 @@ function Common.mean(xs)
   return s / #xs
 end
 
+function Common.fatigueOptions(start, base, ramp)
+  if not start and not base and not ramp then return nil end
+  return { start = start, base = base, ramp = ramp }
+end
+
+function Common.cooldownMutator(cdMult)
+  cdMult = cdMult or 1
+  if cdMult == 1 then return nil end
+  return function(comp)
+    for _, s in ipairs(comp or {}) do
+      s.cd = math.max(1, math.floor((s.cd or 1) * cdMult + 0.5))
+      if s.shieldCaster and s.shieldCaster.cd then
+        s.shieldCaster.cd = math.max(1, math.floor(s.shieldCaster.cd * cdMult + 0.5))
+      end
+    end
+  end
+end
+
+function Common.durationBucket(fatigueStart)
+  return {
+    n = 0, sum = 0, samples = {}, under5 = 0, fatigue = 0,
+    fatigueStart = fatigueStart or Common.DEFAULT_FATIGUE_START,
+  }
+end
+
+function Common.addDuration(bucket, ticks)
+  if not ticks then return end
+  bucket.n = bucket.n + 1
+  bucket.sum = bucket.sum + ticks
+  bucket.samples[#bucket.samples + 1] = ticks
+  if ticks < 5 * Common.FPS then bucket.under5 = bucket.under5 + 1 end
+  if ticks >= (bucket.fatigueStart or Common.DEFAULT_FATIGUE_START) then bucket.fatigue = bucket.fatigue + 1 end
+end
+
+function Common.finishDurationBucket(bucket)
+  table.sort(bucket.samples)
+  local p10 = Common.percentileSorted(bucket.samples, 0.10)
+  local p50 = Common.percentileSorted(bucket.samples, 0.50)
+  local p90 = Common.percentileSorted(bucket.samples, 0.90)
+  return {
+    samples = bucket.n,
+    avg_ticks = (bucket.n > 0) and (bucket.sum / bucket.n) or 0,
+    avg_seconds = (bucket.n > 0) and (bucket.sum / bucket.n / Common.FPS) or 0,
+    p10_seconds = p10 / Common.FPS,
+    p50_seconds = p50 / Common.FPS,
+    p90_seconds = p90 / Common.FPS,
+    under_5s_rate = (bucket.n > 0) and (bucket.under5 / bucket.n) or 0,
+    fatigue_touch_rate = (bucket.n > 0) and (bucket.fatigue / bucket.n) or 0,
+    fatigue_start_seconds = (bucket.fatigueStart or Common.DEFAULT_FATIGUE_START) / Common.FPS,
+  }
+end
+
+function Common.durationSet(fatigueStart)
+  return {
+    all = Common.durationBucket(fatigueStart),
+    early = Common.durationBucket(fatigueStart),
+    mid = Common.durationBucket(fatigueStart),
+    late = Common.durationBucket(fatigueStart),
+  }
+end
+
+function Common.addRoundDuration(set, rd)
+  Common.addDuration(set.all, rd.ticks)
+  if (rd.round or 0) <= 3 then Common.addDuration(set.early, rd.ticks)
+  elseif (rd.round or 0) <= 8 then Common.addDuration(set.mid, rd.ticks)
+  else Common.addDuration(set.late, rd.ticks) end
+end
+
+function Common.finishDurationSet(set)
+  return {
+    all = Common.finishDurationBucket(set.all),
+    early = Common.finishDurationBucket(set.early),
+    mid = Common.finishDurationBucket(set.mid),
+    late = Common.finishDurationBucket(set.late),
+  }
+end
+
 -- ── ÉCRITURE d'un rapport de scénario. `name` = clé de mode ("invest"/"policy"/...). On écrit
 -- runs/report-<name>.json (le rapport DÉTAILLÉ du mode) ET on MET À JOUR le bloc <name> dans le golden de
 -- méta runs/report-ref.json (agrégat diff-able multi-modes). Le ref est lu/édité bloc par bloc (chaque mode
@@ -128,7 +310,7 @@ end
 -- et on remplace le bloc du mode par regénération complète depuis un cache disque. Pour rester SANS décodeur,
 -- on stocke chaque résumé de mode dans son PROPRE fichier runs/ref-<mode>.json, et report-ref.json est leur
 -- CONCATÉNATION ordonnée régénérée à chaque écriture. Simple, déterministe, diff-able.
-local REF_MODES = { "meta", "invest", "policy", "godroll", "commander", "counter", "economy", "tank" }
+local REF_MODES = { "meta", "invest", "policy", "godroll", "commander", "counter", "economy", "tank", "pacing", "sweep" }
 function Common.updateRef(name, summary)
   local dir = OUT_DIR
   os.execute("mkdir -p " .. dir)

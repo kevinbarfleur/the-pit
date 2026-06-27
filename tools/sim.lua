@@ -20,7 +20,10 @@
 package.path = "./?.lua;" .. package.path
 love = require("tests.mock_love")
 
-local MODES = { invest = true, policy = true, godroll = true, commander = true, counter = true, economy = true, tank = true }
+local MODES = {
+  invest = true, policy = true, godroll = true, commander = true,
+  counter = true, economy = true, tank = true, pacing = true, sweep = true,
+}
 local mode = arg and arg[1]
 if mode and MODES[mode] then
   require("tools.scenarios." .. mode) -- chaque scénario s'exécute à l'import (lit arg[2] = N via tools.scenarios.argn)

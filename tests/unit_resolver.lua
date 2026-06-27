@@ -50,6 +50,10 @@ local ok, err = pcall(function()
   assert(rat3.params.dps == 2 and rat3.params.aggravateMult == 1.5,
     "gnaw_rat level 3 gains bleed aggravate clutch rider")
 
+  local husk3 = Resolver.effectsFor("husk", 3)[1]
+  assert(husk3.op == "aura_stat" and husk3.target == "team" and husk3.params.value == 0.08,
+    "husk level 3 turns front guard into team wall clutch")
+
   -- Build comp must materialize authored level effects; otherwise Arena would
   -- fall back to raw Units[id].effects and silently play level 1.
   do
@@ -63,6 +67,17 @@ local ok, err = pcall(function()
 
   -- Authored build-time auras should not be multiplied a second time by the
   -- legacy source-level multiplier.
+  do
+    local b = fresh()
+    b:placeId(5, "husk", 3)
+    b:placeId(2, "marauder", 1)
+    local husk = compById(b:buildComp(-1), "husk")
+    local mar = compById(b:buildComp(-1), "marauder")
+    assert(husk and mar and math.abs((husk.dmgReduce or 0) - 0.08) < 1e-9
+      and math.abs((mar.dmgReduce or 0) - 0.08) < 1e-9,
+      "husk L3 team wall bakes dmgReduce on the team")
+  end
+
   do
     local b = fresh()
     b:placeId(5, "shieldbearer", 2)

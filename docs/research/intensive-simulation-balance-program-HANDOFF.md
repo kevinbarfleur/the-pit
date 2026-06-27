@@ -1554,12 +1554,128 @@ Next implementation targets:
    - Recommended next step: add duration reporting to a global policy/meta
      scenario, then test `cd x1.5` and `cd x2` with a later fatigue threshold
      before any live roster-wide cooldown change.
+   Latest N=10 global pacing learning after adding `tools/sim.lua pacing [N]`:
+   - `tools/scenarios/common.lua` now owns shared duration helpers
+     (`durationSet`, `addRoundDuration`, `finishDurationSet`) and the lab
+     cooldown mutator. `Rundriver` forwards an optional lab-only
+     `fatigue = { start, base, ramp }` profile into `Match.run`.
+   - The new `pacing` scenario crosses the full `Policies.analysisSet` with:
+     live `hp2/cd1/fatigue17`, `cd1.5/fatigue17`, `cd2/fatigue17`,
+     `cd1.5/fatigue24`, and `cd2/fatigue24`.
+   - Preliminary N=10 results:
+     - live: completion `7.9%`, avg wins `5.29`, early avg `9.91s`,
+       early under-5s `11.6%`, p50 `9.13s`, p90 `14.63s`, fatigue `5.3%`;
+     - `cd1.5/fatigue17`: early avg `12.52s`, under-5s `7.4%`, p50
+       `12.25s`, p90 `20.08s`, but fatigue jumps to `21.6%`;
+     - `cd2/fatigue17`: early avg `16.34s`, under-5s `4.2%`, p50 `16.23s`,
+       p90 `24.48s`, but fatigue is too high at `45.6%`;
+     - `cd1.5/fatigue24`: strongest preliminary candidate: completion
+       `18.9%`, avg wins `5.77`, early avg `13.59s`, under-5s `6.8%`,
+       p50 `12.33s`, p90 `20.45s`, fatigue only `4.8%`;
+     - `cd2/fatigue24`: early avg `16.65s`, p50 `16.03s`, p90 `25.90s`,
+       fatigue `14.4%`; it may be too slow or too fatigue-sensitive.
+   - Interpretation: do not test `cd x4` further as a first live candidate.
+     The next serious sweep should center around `cd x1.35` to `x1.65` with
+     fatigue around `22-26s`, and should be rerun at higher N after the tank
+     rank-1 identity pass.
+   Latest implementation update after the first tank rank-1 identity pass:
+   - `husk` is now a live rank-1 tank seed, not only a simulated probe:
+     `aggro = 40`, combat-start `dmgReduce` on `role:front`, L2 strengthens
+     the value, and L3 turns it into a small team wall.
+   - This fixes tank access in the run driver: `current_plan` live pacing now
+     forms the policy plan and strict tank final board in about `75%` of N=20
+     runs. It still has `0%` completion and only `0.90` average wins, so the
+     remaining defect is not access alone.
+   - `tools/scenarios/tank.lua` now reports three separate final-board readings:
+     `shell%` = tested plan final commit, `tank%` = strict majority-tank board,
+     and `anchor%` = at least one tank on the front column. This matters
+     because a healthy tank comp should usually mean "frontline anchor plus
+     damage payload", not "every slot is a tank".
+   - New `payload_shell` result at N=20, live pacing: `55%` completion,
+     `9.50` average wins, `100%` shell final commit, `0%` strict tank commit,
+     and `60%` front-tank anchor. Interpretation: tank + payload is powerful,
+     but the current policy is mostly buying a strong mixed shell, not a
+     readable tank archetype yet.
+   - `demon_seed` remains a strong bruiser-ish tank-adjacent line
+     (`7.40` avg wins live, `85%` strict tank final commit), but it is not the
+     clean low-rank wall fantasy by itself.
+   - Design implication: do not solve tank by demanding majority-tank boards.
+     Define tank archetype health as `anchor present + payload protected +
+     defensive mechanics matter`. The next pass should add/report explicit
+     protected-payload metrics and then tune husk/tank supports around that.
+   Latest tooling update:
+   - `tools/sim.lua sweep [N]` now crosses economy profiles, pacing profiles,
+     and policy filters in one deterministic grid. It writes
+     `runs/report-sweep.json` plus the `sweep` block in `runs/report-ref.json`.
+   - Environment controls:
+     - `PIT_POLICIES=greedy_plan,committed_tank_plan`
+     - `PIT_ECON_PROFILES=baseline,sap_cost,early_curve`
+     - `PIT_BENCH_CAPS=0,2,4,6`
+     - `PIT_PACE_IDS=live_hp2_cd1_f17,hp2_cd15_f24`
+     - `PIT_PACE_PROFILES=id:hpMult:cdMult:fatigueStart[:fatigueBase[:fatigueRamp]],...`
+     - `PIT_TANK_VARIANTS=current_plan,payload_shell`
+     - `PIT_COMMANDER_MODE=ignore|decline|auto`
+   - `PIT_COMMANDER_MODE` defaults to `ignore` to preserve historical
+     baselines. Use `auto` for runs that should model the commander pedestal:
+     it accepts the pedestal and moves the best existing `commandBonus` carrier
+     from bench first, then board; if none exists, it declines for gold.
+   - Economy reports now include an approximate merge funnel:
+     `pair_buys_per_run`, `merge_buys_per_run`, and `merge_per_pair_buy`,
+     globally and by shop tier. This is not yet a per-unit pair lifecycle, but
+     it is enough to detect profiles that buy pairs without converting them.
+   - `sweep` and `economy` also report commander placements and relic picks per
+     run, so commandants/relic access can be included in balance passes without
+     separate instrumentation.
+   Long batch, commandants enabled (`PIT_SCEN_OUT=runs/long-2026-06-27`,
+   `PIT_COMMANDER_MODE=auto`):
+   - `tools/sim.lua pacing 50`: best pacing compromise is currently
+     `hp2_cd15_f24`: completion `15.8%`, avg wins `6.20`, early avg `12.77s`,
+     early under-5s `7.9%`, p50 `11.73s`, p90 `19.40s`, fatigue `2.8%`.
+     `hp2_cd2_f24` is slower (early `15.88s`, p50 `14.48s`) but fatigue is
+     much higher (`10.8%`) without better avg wins in the global pacing report.
+     Live has too many short early fights (`17.4%` under `5s`).
+   - `tools/sim.lua sweep 30`: `hp2_cd2_f24` often gives the highest completion
+     in the integrated grid (`baseline` `16.8%`, `early_curve` `17.9%`), but it
+     carries around `11%` fatigue. Treat it as a stress candidate, not the first
+     live pacing candidate. `hp2_cd15_f24` is the safer candidate.
+   - Economy interaction in the sweep is not solved by `sap_cost` alone:
+     `sap_cost + hp2_cd15_f24` averages `5.52` wins and `8.6%` completion,
+     below `baseline + hp2_cd15_f24` at `5.93` wins and `12.3%` completion in
+     this batch. The stricter economy should not be locked before weak shells
+     and policy timing improve.
+   - `tools/sim.lua tank 50`: strict tank lines remain weak even after live
+     `husk` (`current_plan` live: `0%` completion, `1.64` avg wins; `husk_seed`
+     live: `0%`, `1.54`). `payload_shell` live is strong (`64%` completion,
+     `9.62` avg wins, `100%` shell final commit), but only `52%` front-tank
+     anchor and `0%` strict majority-tank. This confirms that the next tank
+     work must define and improve "protected payload" rather than add more pure
+     tank mass.
+   - Follow-up tank placement probe: `tools/scenarios/tank.lua` now includes
+     `protected_payload_rate` (`prot%`) and `payload_arranged`, a lab-only
+     variant that swaps a tank into the front column when possible. In N=50
+     targeted runs with `PIT_COMMANDER_MODE=auto`, `payload_arranged` raises
+     protected payload from `52%` to `96%` live and `94%` at `cd1.5/f24`, while
+     win outcomes stay close to `payload_shell` (`~9.64-9.70` wins). Learning:
+     placement fixes readability/protection but the payload shell is already
+     powerful; the next design problem is making the tank identity meaningful
+     and not just a broad good-stuff shell.
+   - `tools/sim.lua economy 30` with commandants enabled now records
+     per-unit pair/merge events. `sap_cost_tiered_reroll` is the most promising
+     economy pressure candidate in this batch: completion `12.3%`, avg wins
+     `5.61`, full-shop afford `67.9%`, gold pressure `0.52`, leftover `6.85`.
+     It produces more pressure without dropping wins like plain `sap_cost`.
+   - Unit merge watchlists are now available under
+     `profiles.<id>.unit_merge_watch` and `by_unit_merge`. Baseline N=30 flags
+     units such as `emberling`, `byakhee`, `vanguard_drummer`, `arcane_seer`,
+     and `rat_warren` as pair-heavy but merge-poor in this sample. These are
+     not automatic nerf/buff decisions; they are targets for reroll-policy and
+     roster-access investigation.
    Remaining additions:
-   - add a "pair completion over time" metric: pair formed -> merge completed
-     rate, not only raw pair/merge purchase counts;
+   - upgrade the merge funnel from event ratios to true per-copy lifecycle:
+     pair formed -> merge completed, with time-to-merge and sold-pair loss;
    - model relic access and relic tags in coherence/economy reports;
-   - make committed policies smarter about XP/reroll timing after the tank
-     candidate tests.
+   - make committed policies smarter about XP/reroll timing and protected
+     payload placement after the tank/payload tests.
 3. Integrate relic tags and relic access into coherence scoring.
 4. Expand authored level-ups beyond the initial 6 units before drawing broad
    balance conclusions.

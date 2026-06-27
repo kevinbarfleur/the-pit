@@ -16,6 +16,7 @@ local Shapes = require("src.board.shapes")
 local Match = require("src.combat.match")
 local Compcost = require("src.lab.compcost")
 local Palette = require("src.core.palette")
+local Units = require("src.data.units")
 
 local Rundriver = {}
 Rundriver.__index = Rundriver
@@ -32,12 +33,15 @@ function Rundriver.new(seed, opts)
     run = run, build = build, host = host, opts = opts,
     tickCap = opts.tickCap or 8000,
     hpMult = opts.hpMult, -- bouton global de PV (forwardé à Match.run dans fight) ; nil -> constante Arena.HP_MULT
+    fatigue = opts.fatigue, -- lab-only pacing sweep { start?, base?, ramp? } forwardé à Match.run
+    commanderMode = opts.commanderMode or "ignore", -- lab-only policy: ignore | decline | auto
     compMutator = opts.compMutator, -- lab-only overlay appliqué aux deux camps avant Match.run (pacing, probes)
     leftMutator = opts.leftMutator, -- lab-only overlay appliqué au joueur seulement (candidate balance)
     rightMutator = opts.rightMutator, -- lab-only overlay appliqué à l'adversaire seulement
     relicsKnown = opts.relicsKnown or false, -- reliques pré-connues au Grimoire ? (le driver n'a pas d'IO)
     opponentFn = opts.opponent,              -- (driver) -> compo droite ; défaut PvE escaladante
     over = nil, pendingRelics = nil, lastResult = nil,
+    pairEvents = {}, mergeEvents = {},
     metrics = {
       buys = 0, buyGold = 0,
       sells = 0, sellGold = 0,
@@ -48,6 +52,7 @@ function Rundriver.new(seed, opts)
       xpBuys = 0, xpGold = 0,
       slotAccepts = 0, slotDeclines = 0, slotDeclineGold = 0,
       commanderAccepts = 0, commanderDeclines = 0, commanderDeclineGold = 0,
+      commanderPlacements = 0,
       relicPicks = 0,
     },
   }, Rundriver)
@@ -59,7 +64,7 @@ local METRIC_KEYS = {
   "pairBuys", "mergeBuys",
   "rerolls", "rerollGold", "xpBuys", "xpGold",
   "slotAccepts", "slotDeclines", "slotDeclineGold",
-  "commanderAccepts", "commanderDeclines", "commanderDeclineGold",
+  "commanderAccepts", "commanderDeclines", "commanderDeclineGold", "commanderPlacements",
   "relicPicks",
 }
 
@@ -111,6 +116,9 @@ function Rundriver:state()
     economy = self.run.economy and self.run.economy.id or "baseline",
     rerollCost = self.run:currentRerollCost(), buyXpCost = self.run:currentBuyXpCost(),
     pendingSlotGrant = self.run.pendingSlotGrant, slotGrantsResolved = self.run.slotGrantsResolved,
+    pendingCommanderGrant = self.run.pendingCommanderGrant, commanderUnlocked = self.run.commanderUnlocked,
+    commander = self.build.commanderSlot and self.build.commanderSlot.id or nil,
+    commanderLevel = self.build.commanderSlot and (self.build.commanderSlot.level or 1) or nil,
     sigil = self.build.board.shape.name, winStreak = self.run.winStreak, lossStreak = self.run.lossStreak,
     shop = shop, board = board, relics = #self.run.relics, placed = self.build:placedCount(),
     bench = bench, benchUsed = benchUsed, benchFree = #(self.build.benchSlots or {}) - benchUsed,
@@ -155,6 +163,20 @@ function Rundriver:copyCount(id, level)
   return n
 end
 
+function Rundriver:_recordBuyProgress(id, sameLevelCopies, level)
+  if sameLevelCopies >= 2 then
+    self:_metric("mergeBuys", 1)
+    self.mergeEvents[#self.mergeEvents + 1] = {
+      id = id, level = level or 1, round = self.run.round, shopTier = self.run.shopTier,
+    }
+  elseif sameLevelCopies == 1 then
+    self:_metric("pairBuys", 1)
+    self.pairEvents[#self.pairEvents + 1] = {
+      id = id, level = level or 1, round = self.run.round, shopTier = self.run.shopTier,
+    }
+  end
+end
+
 -- ── Actions joueur (toutes renvoient un résultat exploitable ; refus = false/nil, jamais d'exception) ──
 
 -- Achète l'offre i. Sans `slot`, utilise le chemin joueur Build:autoBuy : 1re case board vide, sinon banc,
@@ -170,8 +192,7 @@ function Rundriver:buy(shopIndex, slot)
     if not self.build:autoBuy(shopIndex) then return false end
     self:_metric("buys", 1)
     self:_metric("buyGold", cost)
-    if sameLevelCopies >= 2 then self:_metric("mergeBuys", 1)
-    elseif sameLevelCopies == 1 then self:_metric("pairBuys", 1) end
+    self:_recordBuyProgress(id, sameLevelCopies, 1)
     return id
   end
   slot = slot or self:firstEmptySlot()
@@ -182,8 +203,7 @@ function Rundriver:buy(shopIndex, slot)
   if not id then return false end
   self:_metric("buys", 1)
   self:_metric("buyGold", cost)
-  if sameLevelCopies >= 2 then self:_metric("mergeBuys", 1)
-  elseif sameLevelCopies == 1 then self:_metric("pairBuys", 1) end
+  self:_recordBuyProgress(id, sameLevelCopies, 1)
   self.build:placeId(slot, id, 1)
   self.build:checkMerges() -- 3 copies (même id+niveau) -> niveau+1 (cascade)
   return id
@@ -276,6 +296,92 @@ function Rundriver:declineCommanderGrant()
   return ok
 end
 
+local function canCommand(id)
+  local u = id and Units[id]
+  return u and u.commandBonus ~= nil
+end
+
+local function commanderCandidateScore(c)
+  local u = Units[c.id] or {}
+  local score = (c.level or 1) * 100 + (u.rank or 1) * 10 + (u.cost or 1)
+  if c.where == "bench" then score = score + 40 end
+  return score
+end
+
+function Rundriver:commanderCandidates()
+  local out = {}
+  for i = 1, #(self.build.benchSlots or {}) do
+    local sr = self.build.bench[i]
+    if sr and canCommand(sr.id) then
+      out[#out + 1] = { where = "bench", slot = i, id = sr.id, level = sr.level or 1 }
+    end
+  end
+  for i = 1, 9 do
+    local sr = self.build.slotRigs[i]
+    if sr and canCommand(sr.id) then
+      out[#out + 1] = { where = "board", slot = i, id = sr.id, level = sr.level or 1 }
+    end
+  end
+  table.sort(out, function(a, b)
+    local sa, sb = commanderCandidateScore(a), commanderCandidateScore(b)
+    if sa ~= sb then return sa > sb end
+    if a.where ~= b.where then return a.where < b.where end
+    if a.id ~= b.id then return a.id < b.id end
+    return a.slot < b.slot
+  end)
+  return out
+end
+
+function Rundriver:placeCommander(candidate)
+  if not candidate or self.build.commanderSlot or not self.run.commanderUnlocked then return false end
+  local sr
+  if candidate.where == "bench" then
+    sr = self.build.bench[candidate.slot]
+    if not (sr and sr.id == candidate.id and canCommand(sr.id)) then return false end
+    self.build.bench[candidate.slot] = nil
+  elseif candidate.where == "board" then
+    sr = self.build.slotRigs[candidate.slot]
+    if not (sr and sr.id == candidate.id and canCommand(sr.id)) then return false end
+    self.build.slotRigs[candidate.slot] = nil
+    self.build.board.slots[candidate.slot].unit = nil
+  else
+    return false
+  end
+  self.build.commanderSlot = { id = sr.id, level = sr.level or 1 }
+  self:_metric("commanderPlacements", 1)
+  return true
+end
+
+function Rundriver:resolveCommanderMode()
+  local mode = self.commanderMode or "ignore"
+  if mode == "ignore" then return nil end
+  if self.run.pendingCommanderGrant then
+    if mode == "decline" then
+      if self:declineCommanderGrant() then return { mode = mode, action = "decline" } end
+      return { mode = mode, action = "decline_failed" }
+    end
+    local candidates = self:commanderCandidates()
+    if #candidates == 0 then
+      if self:declineCommanderGrant() then return { mode = mode, action = "decline_no_candidate" } end
+      return { mode = mode, action = "decline_failed" }
+    end
+    if self:acceptCommanderGrant() then
+      local c = candidates[1]
+      local placed = self:placeCommander(c)
+      return { mode = mode, action = placed and "accept_place" or "accept_place_failed", id = c.id, from = c.where }
+    end
+    return { mode = mode, action = "accept_failed" }
+  elseif self.run.commanderUnlocked and not self.build.commanderSlot then
+    local candidates = self:commanderCandidates()
+    if #candidates > 0 then
+      local c = candidates[1]
+      local placed = self:placeCommander(c)
+      return { mode = mode, action = placed and "place" or "place_failed", id = c.id, from = c.where }
+    end
+  end
+  return nil
+end
+
 -- Déplace/échange une unité de `from` vers `to` (mirroir du drag case->case de build.lua).
 function Rundriver:move(from, to)
   local d = self.build.slotRigs[from]
@@ -325,7 +431,7 @@ function Rundriver:fight()
   local right, enemyKey = self:opponent()
   self:_mutateComp(right, "right")
   local seed = self.run:nextCombatSeed()
-  local res = Match.run(left, right, seed, { tickCap = self.tickCap, hpMult = self.hpMult })
+  local res = Match.run(left, right, seed, { tickCap = self.tickCap, hpMult = self.hpMult, fatigue = self.fatigue })
   res.enemyKey = enemyKey
   self.lastResult = res
 
@@ -378,7 +484,12 @@ function Rundriver.run(seed, policy, opts)
     local desired = policy.desiredOffers and policy:desiredOffers(drv) or nil
     local desiredGoldBudget = desired and (desired.goldBudget or before.gold) or nil
     local metricBefore = drv:metricSnapshot()
+    local commanderDecision = drv:resolveCommanderMode()
     local decisions = policy:act(drv) -- la politique achète/place/reroll/level/reshape via l'API d'actions
+    if commanderDecision then
+      decisions = decisions or {}
+      decisions.commander = commanderDecision
+    end
     local afterBuild = drv:state()
     local commitment = policy.commitment and policy:commitment(drv) or nil
     if commitment and commitment.committed and not traj.archetypeCommitRound then
@@ -419,6 +530,8 @@ function Rundriver.run(seed, policy, opts)
   traj.finalBoard = drv:boardComp()
   traj.finalCost = drv:boardCost()
   traj.metrics = drv:metricSnapshot()
+  traj.pairEvents = drv.pairEvents
+  traj.mergeEvents = drv.mergeEvents
   traj.economy = drv.run.economy and drv.run.economy.id or "baseline"
   if policy.commitment then traj.finalCommitment = policy:commitment(drv) end
   return traj

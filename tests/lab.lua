@@ -150,6 +150,10 @@ local ok, err = pcall(function()
     "rundriver mutateur compo: deterministe")
   assert(pc1.left == pc1.right and pc1.left == #pt1.rounds and pc2.left == pc2.right,
     "rundriver mutateur compo: applique aux deux camps a chaque combat")
+  local ft1 = Rundriver.run(161803, Policies.greedy_stats, { fatigue = { start = 1440 }, hpMult = 2 })
+  local ft2 = Rundriver.run(161803, Policies.greedy_stats, { fatigue = { start = 1440 }, hpMult = 2 })
+  assert(ft1.wins == ft2.wins and #ft1.rounds == #ft2.rounds,
+    "rundriver fatigue override: deterministe")
   local leftCalls = 0
   local lt = Rundriver.run(271828, Policies.greedy_stats, {
     leftMutator = function(comp)
@@ -268,7 +272,7 @@ local ok, err = pcall(function()
   assert(Policies.archetypeOf("spore_tick") == "poison", "classifier: spore_tick = poison")
   assert(Policies.archetypeOf("gravewarden") == "tank", "classifier: gravewarden = tank")
   assert(Policies.archetypeOf("marauder") == "bruiser", "classifier: marauder = bruiser")
-  assert(Policies.minRankForArchetype("tank") == 2, "classifier: tank commence au rang 2")
+  assert(Policies.minRankForArchetype("tank") == 1, "classifier: tank commence au rang 1")
   print("  lab : API d'actions OK (refus propres + reshape + classifieur)")
 
   -- 10) ENCODEUR JSON du daemon (Pilier C) : types + tri des cles + echappement (sortie parsee par Python).

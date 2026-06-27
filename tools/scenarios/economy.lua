@@ -10,10 +10,15 @@ local Policies = require("src.lab.policies")
 
 local N = require("tools.scenarios.argn")(60)
 local BASE_SEED = 1060000
-local HPM = tonumber(os.getenv("PIT_HP_MULT"))
+local HPM = Common.envNumber("PIT_HP_MULT", nil)
+local COMMANDER_MODE = Common.env("PIT_COMMANDER_MODE") or "ignore"
 -- Extra holding capacity beyond the real board+bench capacity used by Rundriver.
 -- Cap 0 is the current gameplay model; cap 4 answers "what if the player had 4 more reserve slots?"
-local BENCH_CAPS = { 0, 2, 4, 6 }
+local BENCH_CAPS = Common.envNumberList("PIT_BENCH_CAPS", { 0, 2, 4, 6 })
+local ECONOMY_ORDER = Common.envCsv("PIT_ECON_PROFILES") or Economy.order
+for _, profileId in ipairs(ECONOMY_ORDER) do
+  assert(Economy.profiles[profileId], "profil economie inconnu: " .. tostring(profileId))
+end
 
 local function hasSuffix(s, suffix)
   return s:sub(-#suffix) == suffix
@@ -42,7 +47,8 @@ local COHORTS = {
 
 local function makePolicies(runIndex)
   local brng = love.math.newRandomGenerator(17000 + runIndex)
-  return Policies.analysisSet(brng)
+  local pols = Policies.analysisSet(brng)
+  return Common.filteredRows(pols, Common.envCsv("PIT_POLICIES"), "name")
 end
 
 local function newAgg()
@@ -57,10 +63,61 @@ local function newAgg()
     buyGold = 0, sellGold = 0, benchSellGold = 0, boardSellGold = 0, rerollGold = 0, xpGold = 0,
     buys = 0, sells = 0, benchSells = 0, boardSells = 0, pairBuys = 0, mergeBuys = 0,
     rerolls = 0, xpBuys = 0,
+    commanderAccepts = 0, commanderDeclines = 0, commanderPlacements = 0, relicPicks = 0,
     slotDeclines = 0, slotAccepts = 0,
     archetypeRuns = 0, archetypeCommitted = 0, archetypeCommitRoundSum = 0,
-    virtualBench = {}, tiers = {}, archetypes = {},
+    virtualBench = {}, tiers = {}, archetypes = {}, unitMerge = {},
   }
+end
+
+local function addUnitMergeEvent(map, ev, kind)
+  if not (ev and ev.id) then return end
+  local u = map[ev.id]
+  if not u then
+    u = { pairs = 0, merges = 0, pairRound = 0, mergeRound = 0, pairTier = 0, mergeTier = 0 }
+    map[ev.id] = u
+  end
+  if kind == "pair" then
+    u.pairs = u.pairs + 1
+    u.pairRound = u.pairRound + (ev.round or 0)
+    u.pairTier = u.pairTier + (ev.shopTier or 0)
+  elseif kind == "merge" then
+    u.merges = u.merges + 1
+    u.mergeRound = u.mergeRound + (ev.round or 0)
+    u.mergeTier = u.mergeTier + (ev.shopTier or 0)
+  end
+end
+
+local function finishUnitMerge(map)
+  local byUnit, watch = {}, {}
+  for id, u in pairs(map or {}) do
+    local row = {
+      pairs = u.pairs,
+      merges = u.merges,
+      merge_per_pair = (u.pairs > 0) and (u.merges / u.pairs) or 0,
+      avg_pair_round = (u.pairs > 0) and (u.pairRound / u.pairs) or 0,
+      avg_merge_round = (u.merges > 0) and (u.mergeRound / u.merges) or 0,
+      avg_pair_tier = (u.pairs > 0) and (u.pairTier / u.pairs) or 0,
+      avg_merge_tier = (u.merges > 0) and (u.mergeTier / u.merges) or 0,
+    }
+    byUnit[id] = row
+    if row.pairs >= 3 then
+      watch[#watch + 1] = {
+        id = id, pairs = row.pairs, merges = row.merges,
+        merge_per_pair = row.merge_per_pair,
+        avg_pair_round = row.avg_pair_round,
+        avg_merge_round = row.avg_merge_round,
+      }
+    end
+  end
+  table.sort(watch, function(a, b)
+    if a.merge_per_pair ~= b.merge_per_pair then return a.merge_per_pair < b.merge_per_pair end
+    if a.pairs ~= b.pairs then return a.pairs > b.pairs end
+    return a.id < b.id
+  end)
+  local top = {}
+  for i = 1, math.min(12, #watch) do top[i] = watch[i] end
+  return byUnit, top
 end
 
 local function addVirtualBench(map, rd)
@@ -104,6 +161,7 @@ local function addTier(a, tier, rd)
   if not t then
     t = { rounds = 0, affordFull = 0, desiredRounds = 0, desiredAffordable = 0,
       desiredGoldAffordable = 0, desiredSlotLimited = 0, rerolls = 0, buyGold = 0, sellGold = 0, leftover = 0,
+      buys = 0, pairBuys = 0, mergeBuys = 0, xpBuys = 0, xpGold = 0,
       virtualBench = {} }
     a.tiers[tier] = t
   end
@@ -121,6 +179,11 @@ local function addTier(a, tier, rd)
   t.buyGold = t.buyGold + (e.buyGold or 0)
   t.sellGold = t.sellGold + (e.sellGold or 0)
   t.leftover = t.leftover + (rd.buildGold or 0)
+  t.buys = t.buys + (e.buys or 0)
+  t.pairBuys = t.pairBuys + (e.pairBuys or 0)
+  t.mergeBuys = t.mergeBuys + (e.mergeBuys or 0)
+  t.xpBuys = t.xpBuys + (e.xpBuys or 0)
+  t.xpGold = t.xpGold + (e.xpGold or 0)
 end
 
 local function addCommitment(a, traj)
@@ -157,6 +220,9 @@ end
 local function addRun(a, traj)
   a.runs = a.runs + 1
   a.wins = a.wins + (traj.wins or 0)
+  a.relicPicks = a.relicPicks + ((traj.metrics and traj.metrics.relicPicks) or 0)
+  for _, ev in ipairs(traj.pairEvents or {}) do addUnitMergeEvent(a.unitMerge, ev, "pair") end
+  for _, ev in ipairs(traj.mergeEvents or {}) do addUnitMergeEvent(a.unitMerge, ev, "merge") end
   if traj.result == "win" then a.completions = a.completions + 1 end
   addCommitment(a, traj)
   for _, rd in ipairs(traj.rounds or {}) do
@@ -207,6 +273,9 @@ local function addRun(a, traj)
     a.mergeBuys = a.mergeBuys + (e.mergeBuys or 0)
     a.rerolls = a.rerolls + (e.rerolls or 0)
     a.xpBuys = a.xpBuys + (e.xpBuys or 0)
+    a.commanderAccepts = a.commanderAccepts + (e.commanderAccepts or 0)
+    a.commanderDeclines = a.commanderDeclines + (e.commanderDeclines or 0)
+    a.commanderPlacements = a.commanderPlacements + (e.commanderPlacements or 0)
     a.slotDeclines = a.slotDeclines + (e.slotDeclines or 0)
     a.slotAccepts = a.slotAccepts + (e.slotAccepts or 0)
     addTier(a, rd.shopTier, rd)
@@ -215,6 +284,7 @@ end
 
 local function finish(a)
   local spend = a.buyGold + a.rerollGold + a.xpGold
+  local byUnitMerge, unitMergeWatch = finishUnitMerge(a.unitMerge)
   local tiers = {}
   for tier, t in pairs(a.tiers) do
     tiers[tostring(tier)] = {
@@ -224,6 +294,12 @@ local function finish(a)
       desired_gold_afford_rate = (t.desiredRounds > 0) and (t.desiredGoldAffordable / t.desiredRounds) or 0,
       desired_slot_limited_rate = (t.desiredRounds > 0) and (t.desiredSlotLimited / t.desiredRounds) or 0,
       rerolls_per_round = (t.rounds > 0) and (t.rerolls / t.rounds) or 0,
+      buys_per_round = (t.rounds > 0) and (t.buys / t.rounds) or 0,
+      pair_buys_per_round = (t.rounds > 0) and (t.pairBuys / t.rounds) or 0,
+      merge_buys_per_round = (t.rounds > 0) and (t.mergeBuys / t.rounds) or 0,
+      merge_per_pair_buy = (t.pairBuys > 0) and (t.mergeBuys / t.pairBuys) or 0,
+      xp_buys_per_round = (t.rounds > 0) and (t.xpBuys / t.rounds) or 0,
+      xp_gold_per_round = (t.rounds > 0) and (t.xpGold / t.rounds) or 0,
       buy_gold_per_round = (t.rounds > 0) and (t.buyGold / t.rounds) or 0,
       sell_gold_per_round = (t.rounds > 0) and (t.sellGold / t.rounds) or 0,
       leftover_per_round = (t.rounds > 0) and (t.leftover / t.rounds) or 0,
@@ -275,8 +351,13 @@ local function finish(a)
     board_sell_gold_per_run = (a.runs > 0) and (a.boardSellGold / a.runs) or 0,
     pair_buys_per_run = (a.runs > 0) and (a.pairBuys / a.runs) or 0,
     merge_buys_per_run = (a.runs > 0) and (a.mergeBuys / a.runs) or 0,
+    merge_per_pair_buy = (a.pairBuys > 0) and (a.mergeBuys / a.pairBuys) or 0,
     rerolls_per_run = (a.runs > 0) and (a.rerolls / a.runs) or 0,
     xp_buys_per_run = (a.runs > 0) and (a.xpBuys / a.runs) or 0,
+    commander_accepts_per_run = (a.runs > 0) and (a.commanderAccepts / a.runs) or 0,
+    commander_declines_per_run = (a.runs > 0) and (a.commanderDeclines / a.runs) or 0,
+    commander_placements_per_run = (a.runs > 0) and (a.commanderPlacements / a.runs) or 0,
+    relic_picks_per_run = (a.runs > 0) and (a.relicPicks / a.runs) or 0,
     slot_declines_per_run = (a.runs > 0) and (a.slotDeclines / a.runs) or 0,
     slot_accepts_per_run = (a.runs > 0) and (a.slotAccepts / a.runs) or 0,
     spend_split = {
@@ -289,11 +370,13 @@ local function finish(a)
     virtual_bench = virtualBench,
     by_tier = tiers,
     by_archetype = archetypes,
+    by_unit_merge = byUnitMerge,
+    unit_merge_watch = unitMergeWatch,
   }
 end
 
 local profileAgg, policyAgg, cohortAgg = {}, {}, {}
-for _, profileId in ipairs(Economy.order) do
+for _, profileId in ipairs(ECONOMY_ORDER) do
   profileAgg[profileId] = newAgg()
   policyAgg[profileId] = {}
   cohortAgg[profileId] = {}
@@ -303,13 +386,13 @@ end
 print(string.format("== P6 ECONOMY VARIANTS : %d runs/policy/profile ==", N))
 
 for run = 1, N do
-  for pi, profileId in ipairs(Economy.order) do
+  for pi, profileId in ipairs(ECONOMY_ORDER) do
     local pols = makePolicies(run)
     for _, p in ipairs(pols) do
       -- Same world seed for every policy in a profile/run pair: comparisons are paired,
       -- while policy actions still diverge deterministically through buys/rerolls/fights.
       local seed = BASE_SEED + pi * 100000 + run * 137
-      local traj = Rundriver.run(seed, p, { hpMult = HPM, economy = profileId })
+      local traj = Rundriver.run(seed, p, { hpMult = HPM, economy = profileId, commanderMode = COMMANDER_MODE })
       addRun(profileAgg[profileId], traj)
       local pa = policyAgg[profileId][p.name]
       if not pa then pa = newAgg(); policyAgg[profileId][p.name] = pa end
@@ -322,7 +405,7 @@ for run = 1, N do
 end
 
 local profiles, byPolicy, byCohort = {}, {}, {}
-for _, profileId in ipairs(Economy.order) do
+for _, profileId in ipairs(ECONOMY_ORDER) do
   profiles[profileId] = finish(profileAgg[profileId])
   profiles[profileId].label = Economy.profiles[profileId].label
   byPolicy[profileId] = {}
@@ -334,28 +417,36 @@ for _, profileId in ipairs(Economy.order) do
   end
 end
 
-print(string.format("%-24s %8s %8s %8s %8s %8s %8s %8s %8s %8s",
-  "profile", "comp%", "wins", "ratio", "afford", "desired", "+4buy", "+4slot", "commit", "left"))
-for _, profileId in ipairs(Economy.order) do
+print(string.format("%-24s %8s %8s %8s %8s %8s %8s %8s %8s %8s %8s",
+  "profile", "comp%", "wins", "ratio", "afford", "desired", "+4buy", "+4slot", "commit", "merge", "left"))
+for _, profileId in ipairs(ECONOMY_ORDER) do
   local p = profiles[profileId]
-  print(string.format("%-24s %7.1f%% %8.2f %8.2f %7.1f%% %7.1f%% %7.1f%% %7.1f%% %7.1f%% %8.2f",
+  print(string.format("%-24s %7.1f%% %8.2f %8.2f %7.1f%% %7.1f%% %7.1f%% %7.1f%% %7.1f%% %7.1f%% %8.2f",
     profileId, p.completion * 100, p.avg_wins, p.avg_full_shop_ratio,
     p.full_shop_afford_rate * 100, p.desired_buy_all_rate * 100,
     p.desired_bench4_buy_all_rate * 100, p.desired_bench4_space_limited_rate * 100,
     p.archetype_commitment_rate * 100,
+    p.merge_per_pair_buy * 100,
     p.avg_leftover_gold))
 end
 
 local payload = {
   mode = "economy",
   runs_per_policy_profile = N,
+  config = {
+    hp_mult = HPM,
+    commander_mode = COMMANDER_MODE,
+    policies = Common.env("PIT_POLICIES"),
+    economy_profiles = Common.env("PIT_ECON_PROFILES"),
+    bench_caps = Common.env("PIT_BENCH_CAPS"),
+  },
   profiles = profiles,
   by_cohort = byCohort,
   by_policy = byPolicy,
 }
 
 local summary = { runs_per_policy_profile = N, profiles = {} }
-for _, profileId in ipairs(Economy.order) do
+for _, profileId in ipairs(ECONOMY_ORDER) do
   local p = profiles[profileId]
   summary.profiles[profileId] = {
     completion = p.completion,
@@ -378,6 +469,10 @@ for _, profileId in ipairs(Economy.order) do
     board_sells_per_run = p.board_sells_per_run,
     pair_buys_per_run = p.pair_buys_per_run,
     merge_buys_per_run = p.merge_buys_per_run,
+    merge_per_pair_buy = p.merge_per_pair_buy,
+    unit_merge_watch = p.unit_merge_watch,
+    commander_placements_per_run = p.commander_placements_per_run,
+    relic_picks_per_run = p.relic_picks_per_run,
     cohorts = {
       broad_naive = byCohort[profileId].broad_naive and {
         avg_wins = byCohort[profileId].broad_naive.avg_wins,

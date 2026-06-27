@@ -6,6 +6,22 @@
 -- Keep this file data-only: no requires, no functions, no love.*.
 
 return {
+  -- Low-rank tank reroll seed: level 1 establishes a real front-guard
+  -- mechanic, while level 3 turns it into a small team wall.
+  husk = {
+    [2] = {
+      effects = {
+        [1] = { params = { value = 0.10 } },
+      },
+    },
+    [3] = {
+      clutch = true,
+      effects = {
+        [1] = { target = "team", params = { value = 0.08 } },
+      },
+    },
+  },
+
   -- Low-rank poison reroll seed: level 3 gains a small spread rider instead
   -- of just becoming a larger stat stick.
   spore_tick = {

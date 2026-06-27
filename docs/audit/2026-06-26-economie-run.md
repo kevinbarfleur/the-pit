@@ -725,6 +725,90 @@ Ajout pacing combat :
 - Prochain test recommande : ajouter ces metriques de duree au scenario global
   non-tank, puis balayer `cd x1.5` / `cd x2` avec fatigue plus tardive.
 
+Ajout apres le scenario global `pacing` (`tools/sim.lua pacing 10`) :
+
+- Les metriques de duree sont maintenant mutualisees dans
+  `tools/scenarios/common.lua`; le `Rundriver` peut forward un override
+  lab-only de fatigue vers le moteur de match.
+- Le live global donne dans ce batch : completion `7.9%`, wins moyens `5.29`,
+  early moyen `9.91s`, early fights sous `5s` a `11.6%`, p50 `9.13s`,
+  p90 `14.63s`, fatigue `5.3%`.
+- `cd x1.5` avec fatigue a `17s` allonge bien (`12.52s` early, p50 `12.25s`)
+  mais monte deja la fatigue a `21.6%`.
+- `cd x2` avec fatigue a `17s` est trop brutal pour le seuil actuel :
+  p50 `16.23s`, p90 `24.48s`, fatigue `45.6%`.
+- `cd x1.5` avec fatigue a `24s` est le meilleur candidat preliminaire :
+  completion `18.9%`, wins `5.77`, early moyen `13.59s`, early sous `5s`
+  `6.8%`, p50 `12.33s`, p90 `20.45s`, fatigue `4.8%`.
+- `cd x2` avec fatigue a `24s` reste peut-etre trop lent ou trop sensible a
+  l'usure : p50 `16.03s`, p90 `25.90s`, fatigue `14.4%`.
+- Conclusion provisoire : ne pas partir sur `cd x4`. La prochaine fenetre de
+  tuning credible est plutot `cd x1.35` a `x1.65` avec fatigue autour de
+  `22-26s`, a retester a plus grand N apres correction de l'entree tank.
+
+Ajout outil autonome :
+
+- `tools/sim.lua sweep [N]` croise maintenant economie, pacing et politiques
+  dans une meme grille deterministe. C'est le mode a utiliser pour verifier les
+  interactions avant une decision live.
+- Les variables de controle utiles sont :
+  `PIT_POLICIES`, `PIT_ECON_PROFILES`, `PIT_BENCH_CAPS`, `PIT_PACE_IDS`,
+  `PIT_PACE_PROFILES`, `PIT_TANK_VARIANTS`, `PIT_HP_MULT`,
+  `PIT_COMMANDER_MODE`.
+- `PIT_COMMANDER_MODE` vaut `ignore` par defaut pour garder les baselines
+  historiques. `auto` accepte le piédestal et place le meilleur porteur
+  existant de `commandBonus`; `decline` refuse pour l'or.
+- Format custom pacing :
+  `PIT_PACE_PROFILES=id:hpMult:cdMult:fatigueStart[:fatigueBase[:fatigueRamp]],...`
+- Le rapport economie expose maintenant un funnel de fusion approximatif :
+  `pair_buys_per_run`, `merge_buys_per_run`, `merge_per_pair_buy`, globalement
+  et par tier. C'est une alerte rapide sur les reroll comps qui achetent des
+  paires sans arriver au niveau superieur.
+- `economy` et `sweep` comptent aussi `commander_placements_per_run` et
+  `relic_picks_per_run`, pour tester commandants/reliques dans les memes
+  rapports que l'economie.
+- Apres l'entree live de `husk` en tank rang 1, l'acces tank est meilleur, mais
+  la conclusion importante est plus fine : une comp tank saine doit probablement
+  etre mesuree comme `frontline anchor + payload protege`, pas comme un board
+  majoritairement tank.
+- Dans le probe N=20, `payload_shell` en live donne `55%` completion et `9.50`
+  wins moyens avec `100%` de shell final, mais seulement `60%` de front-tank
+  anchor. C'est fort, mais pas encore une identite tank assez lisible.
+
+Ajout batch long avec commandants (`runs/long-2026-06-27`,
+`PIT_COMMANDER_MODE=auto`) :
+
+- `pacing N=50` confirme que `cd x1.5 + fatigue 24s` est le meilleur candidat
+  prudent : completion `15.8%`, wins `6.20`, early `12.77s`, early sous `5s`
+  `7.9%`, p50 `11.73s`, p90 `19.40s`, fatigue `2.8%`.
+- Le live garde trop de combats courts en early : `17.4%` sous `5s`.
+- `cd x2 + fatigue 24s` peut monter la completion dans le sweep integre, mais
+  la fatigue monte vers `11%`. C'est utile comme stress test, pas comme premier
+  candidat live.
+- `sweep N=30` ne valide pas encore `sap_cost` comme changement live :
+  `baseline + cd1.5/f24` bat `sap_cost + cd1.5/f24` dans ce batch (`5.93`
+  wins vs `5.52`, `12.3%` completion vs `8.6%`). L'economie stricte doit etre
+  retestee apres amelioration des shells faibles et du timing de policy.
+- `tank N=50` confirme que le probleme tank restant n'est pas seulement l'acces :
+  `current_plan` live fait `0%` completion / `1.64` wins, `husk_seed` live
+  `0%` / `1.54`, tandis que `payload_shell` live fait `64%` / `9.62` mais avec
+  seulement `52%` de front-tank anchor.
+- Le probe `payload_arranged` ajoute un placement front deterministe et une
+  metrique `prot%` (`front tank + payload derriere`). Il monte `prot%` de
+  `52%` a `96%` en live et `94%` en `cd1.5/f24`, mais les wins restent proches
+  de `payload_shell`. Conclusion : le placement corrige la lisibilite/protection,
+  pas l'equilibrage. Le shell payload est deja fort ; il faut maintenant rendre
+  l'identite tank plus intentionnelle.
+- `economy N=30` avec commandants signale `sap_cost_tiered_reroll` comme profil
+  economie a retester : completion `12.3%`, wins `5.61`, full-shop afford
+  `67.9%`, pression or `0.52`, leftover `6.85`. Contrairement a `sap_cost`
+  seul, il remet de la pression sans faire chuter autant les resultats.
+- Les rapports economie exposent maintenant `by_unit_merge` et
+  `unit_merge_watch`. En baseline N=30, la watchlist signale notamment
+  `emberling`, `byakhee`, `vanguard_drummer`, `arcane_seer`, `rat_warren`,
+  `rear_goad`, `corruptor`, `pyre_herald` comme paires peu converties dans ce
+  batch. Ce sont des pistes d'investigation, pas des verdicts automatiques.
+
 Metrics recommandees :
 
 - `full_shop_cost_ratio` : cout du shop entier / gold disponible par round.
@@ -740,6 +824,8 @@ Metrics recommandees :
 - `archetype_commit_round` : round ou le build devient identifiable.
 - `committed_archetype_completion` : taux ou poison/tank/rot/etc. arrivent a
   constituer leur plan avant mort/victoire.
+- `merge_per_pair_buy` : conversions de paires en fusions ; a remplacer plus
+  tard par un suivi par unite et temps de conversion.
 
 Policies minimales :
 
