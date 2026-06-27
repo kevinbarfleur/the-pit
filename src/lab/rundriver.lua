@@ -169,6 +169,14 @@ local function copyList(list)
   return out
 end
 
+local function relicIds(run)
+  local out = {}
+  for _, r in ipairs((run and run.relics) or {}) do
+    out[#out + 1] = type(r) == "table" and r.id or r
+  end
+  return out
+end
+
 function Rundriver:metricSnapshot()
   local out = {}
   for _, k in ipairs(METRIC_KEYS) do out[k] = self.metrics[k] or 0 end
@@ -637,6 +645,17 @@ end
 
 function Rundriver:boardCost() return Compcost.of(self:boardComp()) end
 
+function Rundriver:supportedBoardComp()
+  local comp = self:boardComp()
+  local commander = self.build.commanderSlot
+  if commander then
+    comp.commander = commander.id
+    comp.commanderLevel = commander.level or 1
+  end
+  comp.relics = relicIds(self.run)
+  return comp
+end
+
 function Rundriver:heldComp()
   local units = {}
   for i = 1, 9 do
@@ -724,6 +743,7 @@ function Rundriver.run(seed, policy, opts)
   traj.wins, traj.losses, traj.slots = drv.run.wins, drv.run.losses, drv.run.slots
   traj.benchSize = #(drv.build.benchSlots or {})
   traj.finalBoard = drv:boardComp()
+  traj.finalSupportedBoard = drv:supportedBoardComp()
   if drv.recordBoards then traj.finalHoldings = drv:heldComp() end
   traj.finalCost = drv:boardCost()
   traj.metrics = drv:metricSnapshot()

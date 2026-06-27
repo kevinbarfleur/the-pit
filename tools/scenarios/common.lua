@@ -583,7 +583,7 @@ end
 -- CONCATÉNATION ordonnée régénérée à chaque écriture. Simple, déterministe, diff-able.
 local REF_MODES = {
   "meta", "invest", "policy", "godroll", "commander", "counter",
-  "economy", "tank", "pacing", "sweep", "coherence", "bossrush",
+  "economy", "tank", "pacing", "sweep", "coherence", "bossrush", "bossrush_run",
 }
 function Common.updateRef(name, summary)
   local dir = OUT_DIR

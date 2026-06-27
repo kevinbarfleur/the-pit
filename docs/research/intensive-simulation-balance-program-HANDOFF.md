@@ -2222,6 +2222,43 @@ Next implementation targets:
      damage events, count-up, pitch-rising audio, shake/juice proportional to
      score bursts, and boss-specific visual reactions. Keep the simulation pure;
      put the Balatro-like feedback in the live presentation layer.
+   - Bossrush connected to real run access:
+     the catalogue-only bossrush panel is now paired with a run-connected mode,
+     `tools/sim.lua bossrush_run`. `Rundriver` exposes `finalSupportedBoard`
+     so the postgame fight can use the actual final board plus acquired relics
+     and placed commander. This matters because a perfect catalogue composition
+     can look powerful while being unreachable under the current economy, and a
+     weaker-looking broad policy can become the better postgame line simply
+     because it enters bossrush more often.
+   - Bossrush-run report shape:
+     `tools/sim.lua bossrush_run [N]` runs policy/economy trajectories first,
+     then sends eligible final boards into abominations. It reports
+     `completion`, `entry_rate`, `score_damage_per_run`,
+     `score_damage_per_entry`, `clear_rate`, `full_score_window_rate`,
+     `by_economy`, `by_policy`, `by_boss`, an `economy_policy` matrix, ranked
+     lines, samples with relics/commander, and recommendations. Env controls:
+     `PIT_BOSSRUSH_RUN_ECONOMIES`, `PIT_POLICIES`, `PIT_ABOMINATIONS`,
+     `PIT_BOSSRUSH_RUN_ELIGIBILITY=completed|all`,
+     `PIT_BOSSRUSH_SCORE_SECONDS`, `PIT_BOSSRUSH_HP_MULT`, and
+     `PIT_BOSSRUSH_CD_MULT`.
+   - First run-connected read:
+     a small N=5 panel in `runs/long-2026-06-27o/bossrush-run-smoke` crossed
+     `baseline`, `sap_cost`, and `early_curve` against four abominations and
+     nine policies. The strongest score-per-run came from broad plans under
+     `early_curve`: `greedy_plan` (`60%` completion/entry,
+     `5700.4` score/run, `9500.7` score/entry) and `econ_plan` (`60%`
+     completion/entry, `5502.6` score/run). `baseline` broad plans entered
+     less often but still scored when they completed. `sap_cost` had zero
+     postgame entries in this tiny panel, so its stricter economy currently
+     reads as an access wall for bossrush rather than a scoring verdict.
+     Interpretation: do not tune PvE score from catalogue comps alone; keep
+     completion/entry rate and economy pressure in the same report.
+   - Active memory guard:
+     bossrush/scoring is a new payoff layer, not the whole balance project. The
+     next passes must still keep the older open axes in view: economy pressure,
+     shop XP/tier timing, bench/board pressure, exact pair lifecycle, level-up
+     power scaling, relic and commander access, pacing/TTK, wording/tag
+     coherence, and generated coherent/semi-coherent/incoherent teams.
    Remaining additions:
    - use `rot_bleed_rat_core` as the baseline reroll target for the next
      balance pass, but investigate cheap mid-board outliers before nerfing it;
@@ -2230,11 +2267,13 @@ Next implementation targets:
    - extend exact lifecycle reporting from pair/merge resolution to explicit
      terminal causes: held to run end, sold exact copy, no third copy, or
      crowded out by bench/board pressure;
-   - promote bossrush from lab prototype to a product spec: mid-run thematic
-     PvE events, post-win boss chains, scoring windows, rewards, leaderboard
-     seeds, and the live feel/sound layer;
+   - keep expanding bossrush-run from a small smoke panel to longer paired
+     economy/policy sweeps, but only as one axis among economy, combat, and
+     accessibility;
 3. Integrate actual relic access into economy scoring, now that relic semantic
-   tags exist in coherence scoring.
+   tags exist in coherence scoring. `bossrush_run` already consumes acquired
+   relic ids for final PvE fights; the economy report still needs deeper relic
+   access/funnel analysis.
 4. Expand authored level-ups beyond the initial 6 units before drawing broad
    balance conclusions.
 5. Start massive simulation only after the generator can intentionally produce

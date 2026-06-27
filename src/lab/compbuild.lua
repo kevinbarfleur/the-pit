@@ -32,7 +32,7 @@ function Compbuild.build(comp, opts)
     b:placeId(u.slot, u.id, u.level or 1)
   end
   local cmd = (opts and opts.commander) or comp.commander
-  if cmd then b.commanderSlot = { id = cmd, level = (opts and opts.commanderLevel) or 1 } end
+  if cmd then b.commanderSlot = { id = cmd, level = (opts and opts.commanderLevel) or comp.commanderLevel or 1 } end
   return b
 end
 

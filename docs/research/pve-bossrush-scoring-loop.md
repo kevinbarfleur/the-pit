@@ -27,6 +27,7 @@ Implemented lab pieces:
 - boss data: `src/data/abominations.lua`;
 - deterministic runner: `src/lab/bossrush.lua`;
 - scenario mode: `tools/sim.lua bossrush`;
+- run-connected scenario mode: `tools/sim.lua bossrush_run`;
 - report: `report-bossrush.json` with `by_comp`, `by_boss`, `matrix`,
   samples, and `recommendations`.
 
@@ -40,6 +41,17 @@ Fight shape:
 
 This uses the normal arena and normal effects. No render/audio/wall-clock state
 participates in the lab.
+
+There are now two complementary lab views:
+
+- `bossrush`: forces curated catalogue/band compositions against abominations.
+  Use it to test boss family readability and raw scoring identity.
+- `bossrush_run`: first simulates actual policy/economy runs, then sends
+  eligible final boards into abominations with the acquired relics and placed
+  commander. Use it to answer whether a scoring build is actually reachable.
+
+The second view is the safer source for product tuning because it keeps failed
+or ineligible runs as zero-score outcomes through `score_damage_per_run`.
 
 ## Product Loop
 
@@ -188,7 +200,10 @@ Required report dimensions:
 - clear rate;
 - survival rate;
 - full scoring-window rate;
+- post-win entry rate when using run-built boards;
 - score damage;
+- score damage per run when using run-built boards;
+- score damage per bossrush entry when using run-built boards;
 - score DPS;
 - boss kill rate if killable bosses are added;
 - damage by cause;
@@ -197,6 +212,9 @@ Required report dimensions:
 Current warning examples:
 
 - `dominant_scoring_archetype`: one comp is too far ahead in score.
+- `dominant_run_bossrush_line`: one policy/economy line dominates score after
+  access is included.
+- `low_postgame_entry_rate`: too few real runs reach the bossrush gate.
 - `hard_wall_boss`: boss blocks too many runs before score.
 - `post_clear_attrition_boss`: teams can clear generals but die before a full
   score window.
@@ -205,14 +223,16 @@ Current warning examples:
 
 1. Keep iterating the lab until boss families are readable and not dominated by
    one archetype.
-2. Add a product-facing bossrush spec scene only after the lab metrics are
+2. Keep pairing catalogue bossrush with `bossrush_run`, so boss tuning does not
+   ignore economy, relic access, commandants, level-ups, and policy reachability.
+3. Add a product-facing bossrush spec scene only after the lab metrics are
    stable enough to justify the flow.
-3. Add score director in presentation layer:
+4. Add score director in presentation layer:
    event aggregation, count-up, milestone pulses, audio ladder, boss reactions.
-4. Add one mid-run PvE event with modest rewards.
-5. Add post-win "Descend Further" choice.
-6. Add saved score records and seeds.
-7. Add leaderboard/daily/weekly variants only after deterministic score records
+5. Add one mid-run PvE event with modest rewards.
+6. Add post-win "Descend Further" choice.
+7. Add saved score records and seeds.
+8. Add leaderboard/daily/weekly variants only after deterministic score records
    are stable.
 
 ## Current Open Warnings
@@ -225,4 +245,7 @@ Current warning examples:
   bossrush is meant to reward output, but bad if defensive builds need a PvE
   scoring identity.
 - Brute bruiser has no bossrush identity yet.
-
+- In the first tiny run-connected panel, `early_curve` broad plans entered
+  bossrush more often and therefore dominated `score_damage_per_run`; `sap_cost`
+  produced no postgame entries in that sample. Treat this as an access warning,
+  not a final economy verdict.

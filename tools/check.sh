@@ -148,7 +148,7 @@ luajit tests/lab.lua
 echo "== bands (harnais d'equilibrage de masse : bandes + courbe de cout + injection relique/commandant) =="
 luajit tests/bands.lua
 
-echo "== scenarios (moteur d'equilibrage : common + 11 modes invest/policy/godroll/commander/counter/economy/tank/pacing/sweep/coherence/bossrush + determinisme) =="
+echo "== scenarios (moteur d'equilibrage : common + 12 modes invest/policy/godroll/commander/counter/economy/tank/pacing/sweep/coherence/bossrush/bossrush_run + determinisme) =="
 luajit tests/scenarios.lua
 
 echo "== ui (fondation visuelle : Frame bevel/gilded/etats + Chip + Keywords afflictions + Theme.state) =="
