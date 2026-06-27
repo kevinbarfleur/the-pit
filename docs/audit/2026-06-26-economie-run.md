@@ -996,6 +996,17 @@ Ajout batch autonomie (`runs/long-2026-06-27b`) :
   transition late rot/bleed. Le prochain levier doit etre un pivot de rang plus
   bas, une cible late sans dependance unique a rang 5, ou une logique de
   reroll/XP conditionnee a la couverture reelle du plan.
+- Mise a jour pivot sans rang 5 : ajout de `rot_bleed_rat_core` au catalogue
+  de compositions et aux targets economie par defaut. Le batch
+  `runs/long-2026-06-27n/socrates-pivots-v1` compare trois endpoints sans
+  `marrow_drinker`. `rot_bleed_rat_core`
+  (`carrion_pecker:3+rot_hound:3+gnaw_rat:3+clot_mender:2+razorkin:2+gash_fiend:2`)
+  est le meilleur signal : cout `57`, max rang `3`, oracle `100%`, couverture
+  held `50%` en baseline `60%` sous le plan actuel (`65%` sous staged) et
+  `75%` sous SAP plan. Les endpoints rang 4 (`rot_bleed_rank4_lock` et
+  `rot_core_r4_spread`) restent a `50%` oracle et atteignent beaucoup moins
+  souvent held `50%`. Lecture : la meilleure suite rot/bleed n'est pas un
+  rush rang 5, mais un axe reroll bas rang avec des L3 clutch lisibles.
 
 Metrics recommandees :
 

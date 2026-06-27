@@ -1107,6 +1107,7 @@ return {
   ["comp.poison_diamant_mid.note"] = "A level-5 poison core, before the late-game premiums.",
   ["comp.tank_carre_mid.note"] = "A level-5 wall: taunt, shield, regen, no second line.",
   ["comp.rot_bleed_mid.note"] = "A midgame bleed-to-rot bridge before the rank-5 payoffs.",
+  ["comp.rot_bleed_rat_core.note"] = "A low-rank reroll bridge: small bleeds hold targets while rot matures.",
   ["comp.cross_bleed_rot.note"] = "Bleed everything, then convert it to flesh-eating rot.",
   ["comp.tank_carre_no_taunt.note"] = "No taunt: the enemy carry is free to pick its target.",
   ["comp.bruiser_carre_no_sustain.note"] = "No lifesteal: raw stats with nothing to refill them.",

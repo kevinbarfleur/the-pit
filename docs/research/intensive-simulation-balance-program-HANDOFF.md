@@ -1954,9 +1954,23 @@ Next implementation targets:
      current SAP. Learning: the issue is not simply "get to rank 5 sooner".
      The late bridge needs a lower-rank pivot, an alternate endpoint, or
      XP/reroll decisions gated by actual target coverage.
+   - Lower-rank pivot update: `rot_bleed_rat_core` was added to the composition
+     catalog and to default economy plan targets. It uses
+     `carrion_pecker:3+rot_hound:3+gnaw_rat:3+clot_mender:2+razorkin:2+gash_fiend:2`
+     as a clean low-rank reroll endpoint. Batch
+     `runs/long-2026-06-27n/socrates-pivots-v1` shows it is the best tested
+     no-`marrow_drinker` target: cost `57`, max rank `3`, oracle forced
+     winrate `100%`, baseline held `50%` coverage `60%` under the current
+     target-aware policy (`65%` under staged), and SAP held `50%` `75%`.
+     Rank-4 alternatives (`rot_bleed_rank4_lock`, `rot_core_r4_spread`) stay at
+     `50%` oracle and much lower held `50%`. Learning: rot/bleed should expose
+     a real low-rank reroll endpoint, while the old rank-5 conversion can
+     remain an optional premium evolution rather than the main late bridge.
    Remaining additions:
-   - make committed policies smarter about XP/reroll timing and late-rank
-     pivot access, then revisit protected payload placement;
+   - use `rot_bleed_rat_core` as the baseline reroll target for the next
+     balance pass, then test whether it needs small nerfs or support gating;
+   - make committed policies smarter about XP/reroll timing gated by target
+     coverage, then revisit protected payload placement;
    - upgrade pair lifecycle further from event matching to per-copy identity:
      pair formed -> held/sold/lost/merged, with exact sold-pair loss;
 3. Integrate actual relic access into economy scoring, now that relic semantic

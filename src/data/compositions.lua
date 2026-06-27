@@ -226,6 +226,18 @@ Compositions.list = {
     noteKey = "comp.rot_bleed_mid.note",
   },
   {
+    id = "rot_bleed_rat_core", archetype = "rot", variant = "perfect", sigil = "carre", boardLevel = 6,
+    units = {
+      { id = "clot_mender", slot = 5, level = 2 }, -- AURA : grant bleed aux voisins (2,4,6)
+      { id = "razorkin", slot = 2, level = 2 },
+      { id = "gash_fiend", slot = 4, level = 2 },
+      { id = "rot_hound", slot = 6, level = 3 },
+      { id = "carrion_pecker", slot = 3, level = 3 },
+      { id = "gnaw_rat", slot = 1, level = 3 },
+    },
+    noteKey = "comp.rot_bleed_rat_core.note",
+  },
+  {
     id = "cross_bleed_rot", archetype = "rot", variant = "perfect", sigil = "carre", boardLevel = 8,
     units = {
       { id = "clot_mender", slot = 5 },   -- AURA : grant bleed aux voisins (2,4,6,8) = beaucoup de cibles saignantes
