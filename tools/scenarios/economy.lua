@@ -1054,6 +1054,142 @@ local function finishSupportAccess(row, runs)
   return out
 end
 
+local function supportClassRank(class)
+  if class == "focused" then return 2 end
+  if class == "generic" then return 1 end
+  return 0
+end
+
+local function topSupportRows(rows, kind, maxRows, focusedOnly)
+  local out = {}
+  for id, row in pairs(rows or {}) do
+    if not focusedOnly or row.support_class == "focused" then
+      if kind == "relic" then
+        out[#out + 1] = {
+          id = id,
+          support_class = row.support_class,
+          score = row.relic_score or 0,
+          focused_edge_count = row.focused_edge_count or 0,
+          generic_edge_count = row.generic_edge_count or 0,
+          offer_run_rate = row.offer_run_rate or 0,
+          pick_run_rate = row.pick_run_rate or 0,
+          pick_gap = math.max(0, (row.offer_run_rate or 0) - (row.pick_run_rate or 0)),
+          avg_first_offer_round = row.avg_first_offer_round or 0,
+          avg_first_pick_round = row.avg_first_pick_round or 0,
+        }
+      else
+        out[#out + 1] = {
+          id = id,
+          support_class = row.support_class,
+          best_level = row.best_level or 1,
+          score = row.command_score or 0,
+          focused_edge_count = row.focused_edge_count or 0,
+          generic_edge_count = row.generic_edge_count or 0,
+          candidate_run_rate = row.candidate_run_rate or 0,
+          placement_run_rate = row.placement_run_rate or 0,
+          placement_gap = math.max(0, (row.candidate_run_rate or 0) - (row.placement_run_rate or 0)),
+          avg_first_candidate_round = row.avg_first_candidate_round or 0,
+          avg_first_placement_round = row.avg_first_placement_round or 0,
+        }
+      end
+    end
+  end
+  table.sort(out, function(a, b)
+    local ca, cb = supportClassRank(a.support_class), supportClassRank(b.support_class)
+    if ca ~= cb then return ca > cb end
+    local pa = kind == "relic" and (a.pick_run_rate or 0) or (a.placement_run_rate or 0)
+    local pb = kind == "relic" and (b.pick_run_rate or 0) or (b.placement_run_rate or 0)
+    if pa ~= pb then return pa > pb end
+    local oa = kind == "relic" and (a.offer_run_rate or 0) or (a.candidate_run_rate or 0)
+    local ob = kind == "relic" and (b.offer_run_rate or 0) or (b.candidate_run_rate or 0)
+    if oa ~= ob then return oa > ob end
+    if (a.score or 0) ~= (b.score or 0) then return (a.score or 0) > (b.score or 0) end
+    return tostring(a.id) < tostring(b.id)
+  end)
+  maxRows = maxRows or 5
+  while #out > maxRows do out[#out] = nil end
+  return out
+end
+
+local function summarizeSupportAccess(access)
+  if not access then return nil end
+  local relics = access.relics or {}
+  local commanders = access.commanders or {}
+  local timing = access.timing or {}
+  local seen = timing.focused_support_seen_run_rate or 0
+  local used = timing.focused_support_used_run_rate or 0
+  local winDeltaObserved = used > 0 and used < 1
+  local winDelta = winDeltaObserved
+    and ((timing.avg_wins_with_focused_support or 0) - (timing.avg_wins_without_focused_support or 0))
+    or 0
+  return {
+    timing = {
+      focused_support_seen_run_rate = seen,
+      focused_support_used_run_rate = used,
+      focused_support_pick_gap = math.max(0, seen - used),
+      focused_support_used_by_held_25_rate = timing.focused_support_used_by_held_25_rate or 0,
+      focused_support_used_by_held_50_rate = timing.focused_support_used_by_held_50_rate or 0,
+      avg_wins_with_focused_support = timing.avg_wins_with_focused_support or 0,
+      avg_wins_without_focused_support = timing.avg_wins_without_focused_support or 0,
+      focused_support_win_delta = winDelta,
+      focused_support_win_delta_observed = winDeltaObserved,
+    },
+    relics = {
+      focused_offer_run_rate = relics.focused_offer_run_rate or 0,
+      focused_pick_run_rate = relics.focused_pick_run_rate or 0,
+      focused_pick_gap = math.max(0, (relics.focused_offer_run_rate or 0) - (relics.focused_pick_run_rate or 0)),
+      missed_focused_pick_per_run = relics.missed_focused_pick_per_run or 0,
+      avg_first_focused_offer_round = relics.avg_first_focused_offer_round or 0,
+      avg_first_focused_pick_round = relics.avg_first_focused_pick_round or 0,
+      top_focused_relics = topSupportRows(relics.by_relic, "relic", 5, true),
+    },
+    commanders = {
+      focused_candidate_run_rate = commanders.focused_candidate_run_rate or 0,
+      focused_placement_run_rate = commanders.focused_placement_run_rate or 0,
+      focused_placement_gap = math.max(0, (commanders.focused_candidate_run_rate or 0) - (commanders.focused_placement_run_rate or 0)),
+      missed_focused_placement_per_run = commanders.missed_focused_placement_per_run or 0,
+      avg_first_focused_candidate_round = commanders.avg_first_focused_candidate_round or 0,
+      avg_first_focused_placement_round = commanders.avg_first_focused_placement_round or 0,
+      top_focused_commanders = topSupportRows(commanders.by_commander, "commander", 5, true),
+    },
+  }
+end
+
+local function summarizePlanSupport(planAccess)
+  local rows = {}
+  for id, plan in pairs(planAccess or {}) do
+    local support = plan.support_summary or summarizeSupportAccess(plan.support_access)
+    if support then
+      rows[#rows + 1] = {
+        id = id,
+        source = plan.source,
+        complete_rate = plan.complete_rate or 0,
+        avg_level_coverage = plan.avg_level_coverage or 0,
+        avg_wins = plan.avg_wins or 0,
+        completion = plan.completion or 0,
+        focused_support_seen_run_rate = support.timing.focused_support_seen_run_rate or 0,
+        focused_support_used_run_rate = support.timing.focused_support_used_run_rate or 0,
+        focused_support_pick_gap = support.timing.focused_support_pick_gap or 0,
+        focused_support_win_delta = support.timing.focused_support_win_delta or 0,
+        focused_support_win_delta_observed = support.timing.focused_support_win_delta_observed or false,
+        focused_relic_offer_run_rate = support.relics.focused_offer_run_rate or 0,
+        focused_relic_pick_run_rate = support.relics.focused_pick_run_rate or 0,
+        missed_focused_relic_pick_per_run = support.relics.missed_focused_pick_per_run or 0,
+        focused_commander_candidate_run_rate = support.commanders.focused_candidate_run_rate or 0,
+        focused_commander_placement_run_rate = support.commanders.focused_placement_run_rate or 0,
+      }
+    end
+  end
+  table.sort(rows, function(a, b)
+    if (a.focused_support_used_run_rate or 0) ~= (b.focused_support_used_run_rate or 0) then
+      return (a.focused_support_used_run_rate or 0) < (b.focused_support_used_run_rate or 0)
+    end
+    if (a.complete_rate or 0) ~= (b.complete_rate or 0) then return (a.complete_rate or 0) < (b.complete_rate or 0) end
+    return tostring(a.id) < tostring(b.id)
+  end)
+  return rows
+end
+
 local function planTrajectory(traj, target, finalBoardCov, finalHeldCov)
   local bestBoard, bestHeld = nil, nil
   local everBoardComplete, everHeldComplete = false, false
@@ -1277,6 +1413,7 @@ local function finish(a)
   local mergeLifecycle = Common.finishMergeLifecycle(a.mergeLifecycle)
   local planAccess = {}
   for id, rec in pairs(a.planTargets or {}) do
+    local supportAccess = finishSupportAccess(rec.support, rec.runs)
     planAccess[id] = {
       source = rec.source,
       target_gold = rec.target_gold,
@@ -1305,7 +1442,8 @@ local function finish(a)
       combat_by_board_level_band = finishCombatBands(rec.combatBands),
       losses_by_board_level_threshold = finishLossThresholdAgg(rec.lossThresholds, rec.runs),
       acquisition_funnel = finishFunnel(rec.funnel, rec.runs),
-      support_access = finishSupportAccess(rec.support, rec.runs),
+      support_access = supportAccess,
+      support_summary = summarizeSupportAccess(supportAccess),
       avg_final_gold_ratio = (rec.runs > 0) and (rec.finalGoldRatio / rec.runs) or 0,
       avg_wins = (rec.runs > 0) and (rec.wins / rec.runs) or 0,
       avg_wins_when_complete = (rec.complete > 0) and (rec.completeWins / rec.complete) or 0,
@@ -1407,6 +1545,7 @@ local function finish(a)
     unit_merge_watch = unitMergeWatch,
     merge_lifecycle = mergeLifecycle,
     plan_access = planAccess,
+    plan_support_watch = summarizePlanSupport(planAccess),
   }
 end
 
@@ -1539,6 +1678,7 @@ for _, variant in ipairs(VARIANTS) do
     commander_placements_per_run = p.commander_placements_per_run,
     relic_picks_per_run = p.relic_picks_per_run,
     plan_access = p.plan_access,
+    plan_support_watch = p.plan_support_watch,
     cohorts = {
       broad_naive = byCohort[profileId].broad_naive and {
         avg_wins = byCohort[profileId].broad_naive.avg_wins,

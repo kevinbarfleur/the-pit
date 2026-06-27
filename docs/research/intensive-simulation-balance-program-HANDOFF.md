@@ -2400,6 +2400,16 @@ Next implementation targets:
      shop XP/tier timing, bench/board pressure, exact pair lifecycle, level-up
      power scaling, relic and commander access, pacing/TTK, wording/tag
      coherence, and generated coherent/semi-coherent/incoherent teams.
+   - Relic/commander access report update:
+     `tools/scenarios/economy.lua` now keeps the full
+     `plan_access.support_access` detail but also writes a compact
+     `support_summary` for each target and `plan_support_watch` for each
+     economy/profile. The summary exposes focused support seen/used rates,
+     offer-to-pick gaps, focused relic and commander access, valid win-delta
+     comparisons only when both support/no-support groups exist, and top
+     focused relics/commanders by actual run access. This closes the previous
+     gap where relic support existed in coherence scoring but was too buried in
+     the economy report to guide tuning quickly.
    Remaining additions:
    - use `rot_bleed_rat_core` as the baseline reroll target for the next
      balance pass, but investigate cheap mid-board outliers before nerfing it;
@@ -2411,11 +2421,10 @@ Next implementation targets:
    - keep expanding bossrush-run from a small smoke panel to longer paired
      economy/policy sweeps, but only as one axis among economy, combat, and
      accessibility;
-3. Integrate actual relic access into economy scoring, now that relic semantic
-   tags exist in coherence scoring. `bossrush_run` already consumes acquired
-   relic ids for final PvE fights; the economy report still needs deeper relic
-   access/funnel analysis.
-4. Expand authored level-ups beyond the initial 6 units before drawing broad
+3. Use the new `plan_support_watch` rows in the next economy/bossrush panels to
+   separate "support never offered", "support offered but not picked", and
+   "support picked but plan still inaccessible".
+4. Expand authored level-ups beyond the initial 37 units before drawing broad
    balance conclusions.
 5. Start massive simulation only after the generator can intentionally produce
    coherent, semi-coherent, and incoherent teams.
