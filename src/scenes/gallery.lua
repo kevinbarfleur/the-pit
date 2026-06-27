@@ -10,6 +10,7 @@ local Background = require("src.fx.background")
 local Rig = require("src.core.rig")
 local Creatures = require("src.data.creatures")
 local Units = require("src.data.units")
+local Pacing = require("src.run.pacing")
 local CreatureGen = require("src.gen.creaturegen")
 local Critter = require("src.render.critter") -- rendu VIVANT (cadre natif + mouvement par-pixel/famille) — vitrine
 local Rarity = require("src.gen.rarity")
@@ -281,7 +282,11 @@ function Gallery:drawOverlay(view)
         name = T("unit." .. it.id .. ".name"), type = T("type." .. tostring(it.type)),
       }), x, y)
       love.graphics.setColor(0.72, 0.68, 0.60, 0.95)
-      love.graphics.print(T("ui.unit_stats", { hp = spec.hp or 0, dmg = spec.dmg or 0, cd = spec.cd or 0 }), x, y + 16)
+      love.graphics.print(T("ui.unit_stats", {
+        hp = spec.hp or 0,
+        dmg = spec.dmg or 0,
+        cd = Pacing.formatCooldown(spec.cd or 60) .. "s",
+      }), x, y + 16)
       love.graphics.setColor(0.50, 0.60, 0.45, 0.9)
       love.graphics.print(it.gen and T("gallery.generated") or T("gallery.handmade"), x, y + 32)
     end

@@ -6,6 +6,7 @@
 local Units = require("src.data.units")
 local Relics = require("src.data.relics")
 local I18n = require("src.core.i18n")
+local Pacing = require("src.run.pacing")
 
 local T = I18n.t
 
@@ -268,7 +269,7 @@ function MechanicsText.effectLines(effect, opts)
   elseif op == "shield_aura" then
     out[#out + 1] = T("mech.shield_aura", { aura = kw("aura"), target = targetText(effect.target), shield = kw("shield"), value = number(p.value) })
   elseif op == "shield_caster" then
-    out[#out + 1] = T("mech.shield_caster", { target = targetText(effect.target), shield = kw("shield"), value = number(p.value), cd = secs(p.cd) })
+    out[#out + 1] = T("mech.shield_caster", { target = targetText(effect.target), shield = kw("shield"), value = number(p.value), cd = Pacing.formatCooldown(p.cd) })
   elseif op == "aura_shield" then
     out[#out + 1] = T("mech.aura_shield", { aura = kw("aura"), target = targetText(effect.target), shield = kw("shield"), value = pct(p.valueInc or 0, { signed = true }), cdr = pct(p.cdr or 0) })
   elseif op == "aura_burn_dps" then

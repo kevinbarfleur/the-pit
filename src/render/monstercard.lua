@@ -33,6 +33,7 @@ local MechanicsInline = require("src.ui.mechanics_inline")
 local Chip = require("src.ui.chip")
 local Button = require("src.ui.button")
 local Feel = require("src.ui.feel")
+local Pacing = require("src.run.pacing")
 local Rarity = require("src.gen.rarity")
 local Units = require("src.data.units")
 local UnitResolver = require("src.core.unit_resolver")
@@ -157,7 +158,7 @@ local function drawCardStats(id, U, region)
   local specs = {
     { lab = T("ui.stat_hp"),  val = tostring(U.hp),                            vcol = C.ink },
     { lab = T("ui.stat_dmg"), val = tostring(U.dmg),                           vcol = C.dmg },
-    { lab = T("ui.stat_cd"),  val = string.format("%.1fs", (U.cd or 60) / 60), vcol = C.gold },
+    { lab = T("ui.stat_cd"),  val = Pacing.formatCooldown(U.cd or 60) .. "s", vcol = C.gold },
   }
   if sf and love.graphics and love.graphics.print then
     love.graphics.setFont(sf)

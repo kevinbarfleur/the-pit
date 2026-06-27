@@ -35,6 +35,7 @@ local Units = require("src.data.units")  -- type d'unité (pip de portrait) + no
 local MiniRig = require("src.render.minirig") -- frimousse de créature (portraits MVP / 1re perte du résumé)
 local Keywords = require("src.ui.keywords") -- icônes/couleurs d'afflictions dans le bilan par monstre
 local Run = require("src.run.state")     -- WIN_TARGET (descente) pour le ruban de stats
+local Pacing = require("src.run.pacing") -- pacing live centralise (hp/cooldown/fatigue + affichage CD)
 local SFX = require("src.audio.sfx")     -- SON (Oniric grave) : verdict VICTOIRE/DEFAITE — RENDER pur, no-op headless
 local T = require("src.core.i18n").t
 
@@ -61,9 +62,19 @@ local function biomeFor(payload)
   return keys[1 + ((payload.seed or 11) % #keys)]
 end
 
+local function arenaOptions(payload)
+  local p = payload or {}
+  local opts = Pacing.arenaOptions(p.pacingProfile)
+  opts.left = p.left
+  opts.right = p.right
+  opts.autoReset = false
+  opts.seed = p.seed
+  return opts
+end
+
 function Combat.new(palette, vw, vh, host, payload)
   payload = payload or {}
-  local arena = Arena.new({ left = payload.left, right = payload.right, autoReset = false, seed = payload.seed })
+  local arena = Arena.new(arenaOptions(payload))
   local self = setmetatable({
     vw = vw, vh = vh, t = 0, host = host, palette = palette, payload = payload,
     daChrome = true, -- chrome DA portée par la scène (pas de HUD générique : cf. main.lua drawHud)
@@ -71,6 +82,7 @@ function Combat.new(palette, vw, vh, host, payload)
     titleKey = "scene.combat",
     hintKey = "ui.hint_combat",
     enemyKey = payload.enemyKey,
+    pacingId = Pacing.id(payload.pacingProfile),
     ambient = Ambient.new(payload.seed or 11), -- atmosphère "combat" (repli ultime)
     biome = USE_BIOME and Biome.new(biomeFor(payload), payload.seed or 11) or nil, -- décor de biome (EN PAUSE)
     nightmareBg = (not USE_BIOME) and NightmareBG.new(payload.seed or 11) or nil, -- fond cauchemardesque shader
@@ -86,8 +98,7 @@ end
 
 function Combat:restart()
   -- Même seed -> bataille rejouée À L'IDENTIQUE (c'est déjà un replay déterministe).
-  self.arena = Arena.new(
-    { left = self.payload.left, right = self.payload.right, autoReset = false, seed = self.payload.seed })
+  self.arena = Arena.new(arenaOptions(self.payload))
   self.renderer = ArenaDraw.new(self.arena, self.palette)
   self._verdictPlayed = nil -- SON : un REPLAY rejoue son verdict (le bilan se ré-affiche)
   self._sumAnim = nil       -- ENTRÉE : un REPLAY rejoue la chorégraphie d'apparition du bilan

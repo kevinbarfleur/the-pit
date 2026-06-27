@@ -16,6 +16,7 @@ local Compbuild = require("src.lab.compbuild")
 local Compcost = require("src.lab.compcost")
 local Arena = require("src.combat.arena")
 local Match = require("src.combat.match")
+local Pacing = require("src.run.pacing")
 
 local ARCH = {}; for _, a in ipairs(Compositions.archetypes) do ARCH[a] = true end
 local VARIANTS = { perfect = true, missing_minor = true, missing_clutch = true, wall = true, baseline = true, amp = true }
@@ -86,6 +87,12 @@ local ok, err = pcall(function()
   local paceR = { { id = "skeleton", hp = 100, dmg = 1, cd = 44, x = 20, y = 0, facing = -1 } }
   local paced = Match.run(paceL, paceR, 77, { expose = true, judge = false, tickCap = 1, hpMult = 1, cooldownMult = 1.5 })
   assert(Arena.scaleCooldown(36, 1.5) == 54, "cooldown scale: arrondi deterministe")
+  assert(Pacing.id("live") == "live_hp2_cd15_f26", "pacing live: profil documente")
+  assert(Pacing.scaleCooldown(60, "live") == 90 and Pacing.formatCooldown(60, "live") == "1.5",
+    "pacing live: cooldown affiche le temps reel joue")
+  local legacyPace = Pacing.arenaOptions("legacy")
+  assert(legacyPace.hpMult == 2 and legacyPace.cooldownMult == 1 and legacyPace.fatigue.start == 1020,
+    "pacing legacy: profil de comparaison disponible")
   assert(paceL[1].cd == 36 and paceR[1].cd == 44, "cooldownMult: specs d'entree non mutees")
   assert(paced.arena.units[1].cd == 54 and paced.arena.units[2].cd == 66,
     "cooldownMult: copies combat scalees")
