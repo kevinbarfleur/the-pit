@@ -80,6 +80,10 @@ local ok, err = pcall(function()
     assert(f, "mode " .. m .. " : report-" .. m .. ".json produit")
     local body = f:read("*a"); f:close()
     assert(jsonLooksObject(body), "mode " .. m .. " : report-" .. m .. ".json est un objet JSON")
+    if m == "coherence" then
+      assert(body:find("__leveled", 1, true),
+        "mode coherence : variantes levelees produites pour les compos fixes")
+    end
   end
   print("  scenarios : SMOKE OK (10 modes tournent via le driver + ecrivent un rapport JSON ; garde-fous god-roll tenus)")
 

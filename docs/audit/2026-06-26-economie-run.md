@@ -851,6 +851,11 @@ Ajout batch autonomie (`runs/long-2026-06-27b`) :
   une run. Pour l'economie, il faut encore mesurer l'acces reel aux reliques et
   ne pas confondre "la relique rend le plan coherent" avec "le joueur peut
   l'obtenir assez souvent au bon moment".
+- Mise a jour `level_fit` : le scenario `coherence` genere maintenant des
+  variantes levellees des compos fixes et separe les faibles sous-leveles dans
+  `underleveled_high_coherence_weak`. C'est important pour l'economie : un plan
+  coherent ne doit pas etre juge faible sans verifier si le joueur avait investi
+  assez de copies/XP pour son stade.
 
 Metrics recommandees :
 
@@ -872,6 +877,8 @@ Metrics recommandees :
 - `merge_lifecycle.avg_rounds_to_merge` : delai moyen entre paire et fusion.
 - `merge_lifecycle.watch` : unites qui generent des paires mais les convertissent
   mal.
+- `level_fit` : adequation entre les niveaux reels du board et le niveau attendu
+  pour le stade teste.
 
 Policies minimales :
 

@@ -1732,6 +1732,31 @@ Next implementation targets:
      keeps the scenario deterministic. This is not a balance verdict yet; it
      confirms the report can now separate "readable plan without relic" from
      "readable plan with matching relic".
+   Level-fit follow-up:
+   - `tools/sim.lua coherence [N]` now also generates deterministic
+     `__leveled` variants for fixed catalogue/band candidates. This prevents a
+     common false read where a clean endgame plan is marked weak simply because
+     the authored catalogue version has every unit at level 1.
+   - The report now includes `level_fit` and `underleveled` per row, plus
+     bucket/stage `avg_level_fit`. `high_coherence_weak` excludes clearly
+     underleveled rows; those move to
+     `underleveled_high_coherence_weak`. Disable this expansion with
+     `PIT_COHERENCE_LEVEL_VARIANTS=0` for old-style comparisons.
+   - New filtered read (`runs/long-2026-06-27e/relics-leveled-filtered`,
+     `coherence N=36`, matches `8`): candidates `228`, correlation `0.189`,
+     buckets `00_25` win `54.8%`, `25_50` win `45.5%`, `50_75` win `61.0%`,
+     `75_100` win `47.0%`. The important change is interpretability:
+     actionable `high_coherence_weak` falls to `3` rows instead of being filled
+     by raw level-1 endgame catalogue comps.
+   - Current true high-coherence weak targets after filtering:
+     `cross_bleed_rot__leveled`, `cross_bleed_rot__leveled__grave_cap`, and
+     `tank_carre_mid__leveled__tide_caller`. The first two point at a likely
+     bleed->rot conversion/payoff weakness; the third says a small mid tank
+     shell with a matching relic is readable but still not strongly rewarded.
+   - `low_coherence_strong` remains large (`25` rows), mostly generated mixed
+     piles with high investment or efficient midgame good-stuff. This is now
+     the bigger systemic signal: raw stats/high-rank piles can beat readable
+     plans too often.
    Remaining additions:
    - upgrade pair lifecycle further from event matching to per-copy identity:
      pair formed -> held/sold/lost/merged, with exact sold-pair loss;

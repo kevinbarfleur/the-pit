@@ -17,6 +17,7 @@ local Units = require("src.data.units")
 local N = require("tools.scenarios.argn")(24) -- generated candidates per stage
 local MATCHES = Common.envNumber("PIT_COHERENCE_MATCHES", 4)
 local RELIC_VARIANTS = Common.envNumber("PIT_COHERENCE_RELIC_VARIANTS", 1) ~= 0
+local LEVEL_VARIANTS = Common.envNumber("PIT_COHERENCE_LEVEL_VARIANTS", 1) ~= 0
 local BASE_SEED = 1560000
 local HPM = Common.envNumber("PIT_HP_MULT", nil)
 
@@ -37,6 +38,7 @@ local STAGE_LEVEL = {
   mid = { board = 6, maxRank = 4, size = 6, l2 = 20, l3 = 0 },
   end_ = { board = 9, maxRank = 5, size = 9, l2 = 35, l3 = 8 },
 }
+local LEVEL_PRIORITY = { 5, 2, 4, 6, 8, 1, 3, 7, 9 }
 
 local function cloneUnits(units)
   local out = {}
@@ -123,6 +125,49 @@ local function addCandidate(out, seen, comp, source)
   out[#out + 1] = c
 end
 
+local function stageLevelTargets(stage, n)
+  if stage == "mid" then return math.min(1, n), 0 end
+  if stage == "end_" then
+    return math.min(3, math.max(1, math.floor(n * 0.35 + 0.5))),
+      math.min(1, math.max(1, math.floor(n * 0.08 + 0.5)))
+  end
+  return 0, 0
+end
+
+local function leveledVariant(c)
+  local stage = stageOf(c)
+  local l2Target, l3Target = stageLevelTargets(stage, #(c.units or {}))
+  if l2Target <= 0 and l3Target <= 0 then return nil end
+
+  local v = Common.clone(c)
+  v.id = c.id .. "__leveled"
+  v.source = (c.source or "fixed") .. "_leveled"
+  v.variant = tostring(c.variant or "fixed") .. "_leveled"
+  v.units = cloneUnits(c.units)
+
+  local bySlot = {}
+  for _, u in ipairs(v.units) do bySlot[u.slot] = u end
+  local ordered = {}
+  for _, slot in ipairs(LEVEL_PRIORITY) do
+    if bySlot[slot] then ordered[#ordered + 1] = bySlot[slot] end
+  end
+  for _, u in ipairs(v.units) do
+    local already = false
+    for _, o in ipairs(ordered) do if o == u then already = true; break end end
+    if not already then ordered[#ordered + 1] = u end
+  end
+
+  local applied = 0
+  for i = 1, math.min(l3Target, #ordered) do
+    ordered[i].level = math.max(ordered[i].level or 1, 3)
+    applied = applied + 1
+  end
+  for i = applied + 1, math.min(applied + l2Target, #ordered) do
+    ordered[i].level = math.max(ordered[i].level or 1, 2)
+  end
+  return v
+end
+
 local function fixedCandidates()
   local out, seen = {}, {}
   for _, stage in ipairs(STAGES) do
@@ -151,6 +196,13 @@ local function addRelicVariants(out, seen)
   end
 end
 
+local function addLevelVariants(out, seen)
+  local base = Common.clone(out)
+  for _, c in ipairs(base) do
+    addCandidate(out, seen, leveledVariant(c), (c.source or "fixed") .. "_leveled")
+  end
+end
+
 local function generatedCandidates(out, seen)
   local rng = love.math.newRandomGenerator(91573)
   for _, stage in ipairs(STAGES) do
@@ -163,6 +215,7 @@ local function generatedCandidates(out, seen)
 end
 
 local candidates, seen = fixedCandidates()
+if LEVEL_VARIANTS then addLevelVariants(candidates, seen) end
 if RELIC_VARIANTS then addRelicVariants(candidates, seen) end
 generatedCandidates(candidates, seen)
 
@@ -186,7 +239,7 @@ local function bucketFor(coherence)
 end
 
 local function newBucket()
-  return { candidates = 0, wins = 0, fights = 0, coherence = 0, cost = 0, ticks = 0, tickN = 0 }
+  return { candidates = 0, wins = 0, fights = 0, coherence = 0, cost = 0, levelFit = 0, ticks = 0, tickN = 0 }
 end
 
 local function addBucket(b, row)
@@ -195,6 +248,7 @@ local function addBucket(b, row)
   b.fights = b.fights + row.fights
   b.coherence = b.coherence + row.coherence
   b.cost = b.cost + row.cost_score
+  b.levelFit = b.levelFit + row.level_fit
   b.ticks = b.ticks + row.ticks
   b.tickN = b.tickN + row.tickN
 end
@@ -205,9 +259,21 @@ local function finishBucket(b)
     fights = b.fights,
     avg_coherence = (b.candidates > 0) and (b.coherence / b.candidates) or 0,
     avg_cost_score = (b.candidates > 0) and (b.cost / b.candidates) or 0,
+    avg_level_fit = (b.candidates > 0) and (b.levelFit / b.candidates) or 0,
     winrate = (b.fights > 0) and (b.wins / b.fights) or 0,
     avg_seconds = (b.tickN > 0) and (b.ticks / b.tickN / Common.FPS) or 0,
   }
+end
+
+local function levelFit(comp)
+  local units = comp.units or {}
+  local l2Target, l3Target = stageLevelTargets(comp.band, #units)
+  local expected = l2Target + l3Target * 2
+  if expected <= 0 then return 1, false end
+  local points = 0
+  for _, u in ipairs(units) do points = points + math.max(0, (u.level or 1) - 1) end
+  local fit = math.min(1, points / expected)
+  return fit, fit < 0.75
 end
 
 local function pearson(rows)
@@ -242,6 +308,8 @@ local function compactRow(r)
     winrate = r.winrate,
     cost_score = r.cost_score,
     gold = r.gold,
+    level_fit = r.level_fit,
+    underleveled = r.underleveled,
     avg_seconds = r.avg_seconds,
     subscores = r.subscores,
     units = r.units,
@@ -262,6 +330,7 @@ for _, comp in ipairs(candidates) do
   local foes = Bands.field[stage] or {}
   local score = Coherence.scoreTeam(comp.units, { commander = comp.commander, relics = comp.relics })
   local inv = Common.invest(comp)
+  local fit, underleveled = levelFit(comp)
   local L = leftOf(comp)
   local wins, fights, ticks, tickN = 0, 0, 0, 0
   for _, foeId in ipairs(foes) do
@@ -281,6 +350,7 @@ for _, comp in ipairs(candidates) do
     id = comp.id, source = comp.source, stage = stage, archetype = comp.archetype,
     coherence = score.coherence, subscores = score.subscores,
     cost_score = inv.score or 0, gold = inv.gold or 0,
+    level_fit = fit, underleveled = underleveled,
     wins = wins, fights = fights, winrate = (fights > 0) and (wins / fights) or 0,
     ticks = ticks, tickN = tickN, avg_seconds = (tickN > 0) and (ticks / tickN / Common.FPS) or 0,
     units = cloneUnits(comp.units),
@@ -291,9 +361,14 @@ for _, comp in ipairs(candidates) do
   addBucket(byStage[stage], row)
 end
 
-local highCoherenceWeak, lowCoherenceStrong, cheapStrong, expensiveWeak = {}, {}, {}, {}
+local highCoherenceWeak, lowCoherenceStrong, cheapStrong, expensiveWeak, underleveledWeak = {}, {}, {}, {}, {}
 for _, r in ipairs(rows) do
-  if r.coherence >= 0.65 and r.winrate <= 0.35 then highCoherenceWeak[#highCoherenceWeak + 1] = compactRow(r) end
+  if r.coherence >= 0.65 and r.winrate <= 0.35 and not r.underleveled then
+    highCoherenceWeak[#highCoherenceWeak + 1] = compactRow(r)
+  end
+  if r.coherence >= 0.65 and r.winrate <= 0.35 and r.underleveled then
+    underleveledWeak[#underleveledWeak + 1] = compactRow(r)
+  end
   if r.coherence <= 0.35 and r.winrate >= 0.55 then lowCoherenceStrong[#lowCoherenceStrong + 1] = compactRow(r) end
   if r.cost_score <= 0.45 and r.winrate >= 0.60 then cheapStrong[#cheapStrong + 1] = compactRow(r) end
   if r.cost_score >= 0.70 and r.winrate <= 0.35 then expensiveWeak[#expensiveWeak + 1] = compactRow(r) end
@@ -313,6 +388,10 @@ end)
 table.sort(expensiveWeak, function(a, b)
   if a.winrate ~= b.winrate then return a.winrate < b.winrate end
   return a.cost_score > b.cost_score
+end)
+table.sort(underleveledWeak, function(a, b)
+  if a.winrate ~= b.winrate then return a.winrate < b.winrate end
+  return a.coherence > b.coherence
 end)
 
 local bucketOut, stageOut = {}, {}
@@ -348,15 +427,24 @@ local payload = {
     hp_mult = HPM,
     matches = Common.env("PIT_COHERENCE_MATCHES"),
     relic_variants = RELIC_VARIANTS,
+    level_variants = LEVEL_VARIANTS,
   },
   correlation = corr,
   buckets = bucketOut,
   by_stage = stageOut,
   outliers = {
     high_coherence_weak = take(highCoherenceWeak, 16),
+    underleveled_high_coherence_weak = take(underleveledWeak, 16),
     low_coherence_strong = take(lowCoherenceStrong, 16),
     cheap_strong = take(cheapStrong, 16),
     expensive_weak = take(expensiveWeak, 16),
+  },
+  outlier_counts = {
+    high_coherence_weak = #highCoherenceWeak,
+    underleveled_high_coherence_weak = #underleveledWeak,
+    low_coherence_strong = #lowCoherenceStrong,
+    cheap_strong = #cheapStrong,
+    expensive_weak = #expensiveWeak,
   },
   rows = rowOut,
 }
@@ -370,6 +458,7 @@ local summary = {
   buckets = bucketOut,
   outlier_counts = {
     high_coherence_weak = #highCoherenceWeak,
+    underleveled_high_coherence_weak = #underleveledWeak,
     low_coherence_strong = #lowCoherenceStrong,
     cheap_strong = #cheapStrong,
     expensive_weak = #expensiveWeak,
