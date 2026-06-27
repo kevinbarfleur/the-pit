@@ -2238,6 +2238,24 @@ Next implementation targets:
      `bore_worm`, `byakhee`, `chitin_drone`, and `cinder_cur`. Current read:
      before final economy conclusions, expand level-up deltas enough that
      low-rank reroll and mid-rank bridge comps have real L2/L3 hooks.
+   - First low-rank level-up expansion:
+     expanded `src/data/unit_levels.lua` with conservative authored deltas for
+     `marauder`, `skeleton`, `demon`, `ash_moth`, `live_wire`, `cinder_cur`,
+     `bore_worm`, `byakhee`, and `chitin_drone`. These changes only use
+     existing mechanics/params already understood by the resolver and cards:
+     first-hit/execute values, thorns, lifesteal, burn, shock, rot, bleed,
+     poison, and command aura values. Level-up coverage is now `21/110`;
+     low/mid coverage is `20/75`; level-3 clutch coverage is now `12`, up from
+     `6`. Rank 1 is now mostly covered (`9/12`), while rank 2+ still needs a
+     lot of work. Targeted audits passed (`tests/effect_audit.lua`,
+     `tests/unit_resolver.lua`, `tests/coherence.lua`, and
+     `tools/levelup_report.lua`). A short economy smoke after the pass,
+     `runs/long-2026-06-27q/levelup-reroll-pass-n24`, did not show a gross
+     regression: baseline `25.0%` completion / `8.63` avg wins / `79.3%`
+     merge resolution; pair-completion profiles still mainly act as merge
+     accelerators (`94-95%` merge resolution) without becoming an obvious
+     completion buff. Current read: continue expanding rank-2/rank-3 bridge
+     progressions, then rerun larger panels before live economy decisions.
    - PvE bossrush/scoring prototype:
      the user added `docs/generation/generateur-abominations.html`, a seeded
      visual generator for ten abomination families. The lab now has a pure data
