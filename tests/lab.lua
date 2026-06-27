@@ -157,6 +157,11 @@ local ok, err = pcall(function()
     and liveDriver.cooldownMult == Pacing.profiles.live.cooldownMult
     and liveDriver.fatigue.start == Pacing.profiles.live.fatigue.start,
     "rundriver pacing: defaut aligne sur le live")
+  assert(#liveDriver.build.benchSlots == Rundriver.DEFAULT_BENCH_SIZE,
+    "rundriver bench: defaut live conserve")
+  local reserveDriver = Rundriver.new(7, { benchSize = 6 })
+  assert(#reserveDriver.build.benchSlots == 6 and reserveDriver:state().benchSize == 6,
+    "rundriver bench: benchSize lab expose une vraie capacite")
   local legacyDriver = Rundriver.new(7, { pacingProfile = "legacy" })
   assert(legacyDriver.cooldownMult == Pacing.profiles.legacy.cooldownMult
     and legacyDriver.fatigue.start == Pacing.profiles.legacy.fatigue.start,
@@ -346,6 +351,15 @@ local ok, err = pcall(function()
   local benchState = benchDrv:state()
   assert(benchState.benchUsed == 1 and benchState.benchFree == #benchDrv.build.benchSlots - 1,
     "state: expose occupation du banc")
+  local wideBenchDrv = Rundriver.new(202606271, { benchSize = 6 })
+  for i = 1, 9 do
+    if wideBenchDrv.build.board.slots[i].unlocked then wideBenchDrv.build:placeId(i, "marauder", 3) end
+  end
+  for i = 1, 5 do wideBenchDrv.build.bench[i] = { id = "templar", level = 2, char = wideBenchDrv.build:newRig("templar") } end
+  wideBenchDrv.run.gold = 99
+  local wideOffer = wideBenchDrv.run.shop[1].id
+  assert(wideBenchDrv:buy(1) == wideOffer and wideBenchDrv.build.bench[6],
+    "benchSize: achat auto utilise les slots de reserve additionnels")
   local sellBefore = benchDrv.run.gold
   assert(benchDrv:sellBench(1), "sellBench: vend une unite du banc")
   assert(not benchDrv.build.bench[1] and benchDrv.run.gold > sellBefore, "sellBench: libere le banc + rembourse")

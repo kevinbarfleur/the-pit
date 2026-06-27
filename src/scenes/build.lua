@@ -101,9 +101,17 @@ local SPACING = 26
 local BOARD_OY = 72 -- centre du plateau (virtuel) : ×4 = 288 design ; laisse un vrai souffle avant le banc
 local BOARD_HALF_W = 128 -- demi-étendue MAX (virtuelle) des CENTRES de cases -> board centré, jamais hors zone
 local BOARD_HALF_H = 30  -- (idem vertical) : RESSERRÉ pour qu'un sigil étalé ne morde pas sur le banc
-local BENCH_SIZE = 4 -- BANC (réserve hors-combat) : rangée de slots sous le plateau pour STOCKER/FUSIONNER (n'entre jamais en combat). 4 max -> garde un vrai arbitrage de placement (retour user 2026-06).
+local DEFAULT_BENCH_SIZE = 4 -- BANC live : 4 slots gardent un vrai arbitrage de placement (retour user 2026-06).
+local MAX_BENCH_SIZE = 12 -- lab-only : permet de tester des réserves plus larges sans changer le live.
 local MAX_LEVEL = 3
 local LEVEL_MULT = UnitResolver.STAT_LEVEL_MULT -- stats par niveau : source unique (duplicatas / cartes / snapshots)
+
+local function normalizeBenchSize(n)
+  n = math.floor(tonumber(n) or DEFAULT_BENCH_SIZE)
+  if n < 1 then return 1 end
+  if n > MAX_BENCH_SIZE then return MAX_BENCH_SIZE end
+  return n
+end
 
 -- ── COMMANDANTS (K4) — placeholders d'équilibrage (cf. docs/research/commanders-plan.md §1.4/§6.1).
 -- STAT_INC_CAP : plafond cumulé du buff `statInc` (commandant : +% PV ET dmg). Plus serré qu'ATK_INC_CAP
@@ -138,7 +146,8 @@ local ENEMY_LEVEL_EVERY = 3  -- est déjà leveled ; le bump ne sert qu'aux runs
 -- Hit-test (espace virtuel), défini en TÊTE de module : utilisé par computeLayout/commanderAt/les hit-tests.
 local function inRect(px, py, r) return px >= r.x and px <= r.x + r.w and py >= r.y and py <= r.y + r.h end
 
-function Build.new(palette, vw, vh, host)
+function Build.new(palette, vw, vh, host, opts)
+  opts = opts or {}
   local self = setmetatable({
     vw = vw, vh = vh, t = 0, palette = palette, host = host,
     daChrome = true, -- la scène porte sa propre chrome DA (pas de HUD générique)
@@ -149,6 +158,7 @@ function Build.new(palette, vw, vh, host)
     board = Board.new("carre"),
     slotRigs = {},     -- [slot] = { id, char } : unités posées (PLATEAU = combat)
     bench = {},        -- [i] = { id, level, char } : RÉSERVE hors-combat (stock/fusion ; n'entre PAS en combat)
+    benchSize = normalizeBenchSize(opts.benchSize),
     commanderSlot = nil, -- C3 : { id, level, char } au PIÉDESTAL (1 slot logique HORS graphe de sigil, sans voisins)
     cmdCadence = 0,      -- C4 : phase 0..1 de la barre de cadence LENTE du commandant (cosmétique, dt-piloté)
     cmdShake = 0,        -- C4 : timer de SECOUSSE de refus (drop d'un non-chef) ; >0 = le socle tremble + sang
@@ -179,6 +189,13 @@ function Build.new(palette, vw, vh, host)
   self.nightmareBg = NightmareBG.new(17) -- fosse animée derrière le plateau/banc ; RENDER pur, headless-safe
   if self.host.run then self:syncSlots() end
   return self
+end
+
+Build.DEFAULT_BENCH_SIZE = DEFAULT_BENCH_SIZE
+Build.MAX_BENCH_SIZE = MAX_BENCH_SIZE
+
+function Build:benchCapacity()
+  return self.benchSize or DEFAULT_BENCH_SIZE
 end
 
 function Build:newRig(id)
@@ -439,14 +456,15 @@ function Build:computeShop()
   self:computeBench()
 end
 
--- BANC (réserve) : rangée de BENCH_SIZE slots centrée, juste au-dessus du bandeau boutique. Rects en VIRTUEL
+-- BANC (réserve) : rangée de slots centrée, juste au-dessus du bandeau boutique. Rects en VIRTUEL
 -- (÷4) comme shopSlots -> hit-tests directs, ×4 au rendu. La réserve sert à STOCKER/FUSIONNER, elle ne combat jamais.
 function Build:computeBench()
   local SLOT, GAP, Y = 60, 10, 452 -- taille/gouttière/haut de bande (design) ; remonté : la barre du bas est plus haute (handoff)
-  local total = BENCH_SIZE * SLOT + (BENCH_SIZE - 1) * GAP
+  local n = self:benchCapacity()
+  local total = n * SLOT + (n - 1) * GAP
   local x0 = math.floor(640 - total / 2 + 0.5) -- centré sur la largeur design (1280)
   self.benchSlots = {}
-  for i = 1, BENCH_SIZE do
+  for i = 1, n do
     local dx = x0 + (i - 1) * (SLOT + GAP)
     self.benchSlots[i] = { x = dx / 4, y = Y / 4, w = SLOT / 4, h = SLOT / 4 } -- VIRTUEL (÷4)
   end
@@ -584,7 +602,7 @@ function Build:updateSprings(dtSec)
       self:ensureSpring(sr, ax, ay); Drag.setTarget(sr.d, ax, ay); Drag.apply(sr.d, dtSec)
     end
   end
-  for i = 1, BENCH_SIZE do
+  for i = 1, self:benchCapacity() do
     local sr = self.bench[i]
     if sr then
       local ax, ay = self:benchAnchor(i)
@@ -1023,7 +1041,7 @@ function Build:checkMerges()
       end
     end
     for i = 1, 9 do scan("board", i, self.slotRigs[i]) end
-    for i = 1, BENCH_SIZE do scan("bench", i, self.bench[i]) end
+    for i = 1, self:benchCapacity() do scan("bench", i, self.bench[i]) end
     for _, key in ipairs(order) do -- ipairs (DÉTERMINISTE), jamais pairs
       local g = groups[key]
       if #g >= 3 then
@@ -1081,7 +1099,7 @@ function Build:previewMergeLevel(offer)
     local sr = self.slotRigs[i]
     if sr and sr.id == id then local lv = sr.level or 1; if count[lv] then count[lv] = count[lv] + 1 end end
   end
-  for i = 1, BENCH_SIZE do
+  for i = 1, self:benchCapacity() do
     local sr = self.bench[i]
     if sr and sr.id == id then local lv = sr.level or 1; if count[lv] then count[lv] = count[lv] + 1 end end
   end
@@ -1111,7 +1129,7 @@ end
 function Build:ownsAnyCopy(id)
   if not id then return false end
   for i = 1, 9 do local sr = self.slotRigs[i]; if sr and sr.id == id then return true end end
-  for i = 1, BENCH_SIZE do local sr = self.bench[i]; if sr and sr.id == id then return true end end
+  for i = 1, self:benchCapacity() do local sr = self.bench[i]; if sr and sr.id == id then return true end end
   return false
 end
 
@@ -1157,11 +1175,11 @@ function Build:offerPlayable(o)
   if not run then return true end -- sandbox (sans éco) : la boutique est inerte, on ne grise pas
   if run.gold < o.cost then return false end -- pas assez d'or
   for i = 1, 9 do if self.board.slots[i].unlocked and not self.slotRigs[i] then return true end end -- case libre
-  for i = 1, BENCH_SIZE do if not self.bench[i] then return true end end                            -- slot banc libre
+  for i = 1, self:benchCapacity() do if not self.bench[i] then return true end end                  -- slot banc libre
   -- PLEIN : jouable seulement si l'achat complète un trio (>=2 copies du même id au NIVEAU 1 -> fusion).
   local copies = 0
   for i = 1, 9 do local sr = self.slotRigs[i]; if sr and sr.id == o.id and (sr.level or 1) == 1 then copies = copies + 1 end end
-  for i = 1, BENCH_SIZE do local sr = self.bench[i]; if sr and sr.id == o.id and (sr.level or 1) == 1 then copies = copies + 1 end end
+  for i = 1, self:benchCapacity() do local sr = self.bench[i]; if sr and sr.id == o.id and (sr.level or 1) == 1 then copies = copies + 1 end end
   return copies >= 2
 end
 
@@ -1177,7 +1195,7 @@ function Build:autoBuy(offerIndex)
   local bslot
   for i = 1, 9 do if self.board.slots[i].unlocked and not self.slotRigs[i] then bslot = i; break end end
   local benchSlot
-  if not bslot then for i = 1, BENCH_SIZE do if not self.bench[i] then benchSlot = i; break end end end
+  if not bslot then for i = 1, self:benchCapacity() do if not self.bench[i] then benchSlot = i; break end end end
   if bslot or benchSlot then
     local id = run:buy(offerIndex)
     if not id then return false end
@@ -1205,7 +1223,7 @@ function Build:buyMergeWhenFull(offerIndex)
   local o = run.shop[offerIndex]
   local copies = {}
   for i = 1, 9 do local sr = self.slotRigs[i]; if sr and sr.id == o.id and (sr.level or 1) == 1 then copies[#copies + 1] = { kind = "board", i = i } end end
-  for i = 1, BENCH_SIZE do local sr = self.bench[i]; if sr and sr.id == o.id and (sr.level or 1) == 1 then copies[#copies + 1] = { kind = "bench", i = i } end end
+  for i = 1, self:benchCapacity() do local sr = self.bench[i]; if sr and sr.id == o.id and (sr.level or 1) == 1 then copies[#copies + 1] = { kind = "bench", i = i } end end
   if #copies < 2 then return false end
   local id = run:buy(offerIndex)
   if not id then return false end
@@ -1494,7 +1512,7 @@ end
 -- Range une unité (occ) dans le 1er slot de banc libre, sinon la 1re case plateau débloquée vide ; sinon elle
 -- disparaît (sandbox / tout plein). Sert quand un achat-promotion évince l'ancien commandant du piédestal.
 function Build:stowUnit(occ)
-  for i = 1, BENCH_SIZE do
+  for i = 1, self:benchCapacity() do
     if not self.bench[i] then self.bench[i] = occ; return true end
   end
   for i = 1, 9 do
@@ -2132,7 +2150,7 @@ function Build:update(frameDt)
     if sr.bounce then sr.bounce.t = sr.bounce.t + frameDt / 60; if sr.bounce.t > sr.bounce.dur then sr.bounce = nil end end
     if sr.pop then sr.pop.t = sr.pop.t + frameDt / 60; if sr.pop.t > sr.pop.dur then sr.pop = nil end end -- POSE : vibration d'apparition
   end
-  for i = 1, BENCH_SIZE do -- anime les rigs du BANC (réserve)
+  for i = 1, self:benchCapacity() do -- anime les rigs du BANC (réserve)
     local sr = self.bench[i]
     if sr then
       Rig.update(sr.char, self.t, frameDt)
@@ -2372,7 +2390,7 @@ function Build:drawBack(view)
   -- BANC (réserve, rangée sous le plateau) : même atome Slot (drop/hover/selected/empty) + pip type/niveau si
   -- occupé. MASQUÉ en inspection figée (pas de réserve à manipuler).
   if not self.locked then
-    for i = 1, BENCH_SIZE do
+    for i = 1, self:benchCapacity() do
       local r = self.benchSlots[i]
       local bx, by, bw = r.x * 4, r.y * 4, r.w * 4
       local sr = self.bench[i]
@@ -2573,7 +2591,7 @@ function Build:drawWorld()
   end
   -- RIGS du BANC (réserve) : créatures stockées, rendu vivant à échelle réduite, pieds calés au bas du slot.
   local BENCH_SCALE = 0.3
-  for i = 1, BENCH_SIZE do
+  for i = 1, self:benchCapacity() do
     local sr = self.bench[i]
     if sr then
       -- ⚠ drawWorld dessine sur le canvas VIRTUEL (320×180) : les coords sont en VIRTUEL. POSITION = le RESSORT

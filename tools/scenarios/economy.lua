@@ -24,11 +24,34 @@ local COMMANDER_MODE = Common.env("PIT_COMMANDER_MODE") or "ignore"
 -- Extra holding capacity beyond the real board+bench capacity used by Rundriver.
 -- Cap 0 is the current gameplay model; cap 4 answers "what if the player had 4 more reserve slots?"
 local BENCH_CAPS = Common.envNumberList("PIT_BENCH_CAPS", { 0, 2, 4, 6 })
+-- Real bench capacity used by Rundriver. Default stays live (4); set PIT_BENCH_SIZES=4,6,8 for reserve sweeps.
+local BENCH_SIZES = Common.envNumberList("PIT_BENCH_SIZES", { Rundriver.DEFAULT_BENCH_SIZE })
+for _, size in ipairs(BENCH_SIZES) do
+  assert(size >= 1 and size <= Rundriver.MAX_BENCH_SIZE, "PIT_BENCH_SIZES hors bornes: " .. tostring(size))
+end
 local ORACLE_MATCHES = Common.envNumber("PIT_PLAN_ORACLE_MATCHES", 3)
 local ORACLE_ROUNDS = Common.envNumberList("PIT_PLAN_ORACLE_ROUNDS", nil)
 local ECONOMY_ORDER = Common.envCsv("PIT_ECON_PROFILES") or Economy.order
 for _, profileId in ipairs(ECONOMY_ORDER) do
   assert(Economy.profiles[profileId], "profil economie inconnu: " .. tostring(profileId))
+end
+
+local function benchVariantKey(profileId, benchSize)
+  if #BENCH_SIZES == 1 and benchSize == Rundriver.DEFAULT_BENCH_SIZE then return profileId end
+  return profileId .. "_bench" .. tostring(benchSize)
+end
+
+local VARIANTS = {}
+for pi, profileId in ipairs(ECONOMY_ORDER) do
+  for bi, benchSize in ipairs(BENCH_SIZES) do
+    VARIANTS[#VARIANTS + 1] = {
+      key = benchVariantKey(profileId, benchSize),
+      profileId = profileId,
+      benchSize = benchSize,
+      profileIndex = pi,
+      benchIndex = bi,
+    }
+  end
 end
 
 local DEFAULT_PLAN_TARGETS = {
@@ -1386,59 +1409,66 @@ local function finish(a)
 end
 
 local profileAgg, policyAgg, cohortAgg = {}, {}, {}
-for _, profileId in ipairs(ECONOMY_ORDER) do
-  profileAgg[profileId] = newAgg()
-  policyAgg[profileId] = {}
-  cohortAgg[profileId] = {}
-  for _, cohort in ipairs(COHORTS) do cohortAgg[profileId][cohort.id] = newAgg() end
+for _, variant in ipairs(VARIANTS) do
+  profileAgg[variant.key] = newAgg()
+  policyAgg[variant.key] = {}
+  cohortAgg[variant.key] = {}
+  for _, cohort in ipairs(COHORTS) do cohortAgg[variant.key][cohort.id] = newAgg() end
 end
 
-print(string.format("== P6 ECONOMY VARIANTS : %d runs/policy/profile ==", N))
+print(string.format("== P6 ECONOMY VARIANTS : %d runs/policy/profile/bench ==", N))
 
 for run = 1, N do
-  for pi, profileId in ipairs(ECONOMY_ORDER) do
+  for _, variant in ipairs(VARIANTS) do
     local pols = makePolicies(run)
     for _, p in ipairs(pols) do
-      -- Same world seed for every policy in a profile/run pair: comparisons are paired,
+      -- Same world seed for every policy in a profile+bench/run pair: comparisons are paired,
       -- while policy actions still diverge deterministically through buys/rerolls/fights.
-      local seed = BASE_SEED + pi * 100000 + run * 137
+      local seed = BASE_SEED + variant.profileIndex * 100000 + (variant.benchIndex - 1) * 10000 + run * 137
       local traj = Rundriver.run(seed, p, {
         hpMult = HPM,
-        economy = profileId,
+        economy = variant.profileId,
+        benchSize = variant.benchSize,
         commanderMode = COMMANDER_MODE,
         recordBoards = #PLAN_TARGETS > 0,
         recordEvents = #PLAN_TARGETS > 0,
       })
-      addRun(profileAgg[profileId], traj)
-      local pa = policyAgg[profileId][p.name]
-      if not pa then pa = newAgg(); policyAgg[profileId][p.name] = pa end
+      addRun(profileAgg[variant.key], traj)
+      local pa = policyAgg[variant.key][p.name]
+      if not pa then pa = newAgg(); policyAgg[variant.key][p.name] = pa end
       addRun(pa, traj)
       for _, cohort in ipairs(COHORTS) do
-        if cohort.match(p.name) then addRun(cohortAgg[profileId][cohort.id], traj) end
+        if cohort.match(p.name) then addRun(cohortAgg[variant.key][cohort.id], traj) end
       end
     end
   end
 end
 
 local profiles, byPolicy, byCohort = {}, {}, {}
-for _, profileId in ipairs(ECONOMY_ORDER) do
-  profiles[profileId] = finish(profileAgg[profileId])
-  profiles[profileId].label = Economy.profiles[profileId].label
-  byPolicy[profileId] = {}
-  for name, a in pairs(policyAgg[profileId]) do byPolicy[profileId][name] = finish(a) end
-  byCohort[profileId] = {}
+for _, variant in ipairs(VARIANTS) do
+  local profileId = variant.profileId
+  profiles[variant.key] = finish(profileAgg[variant.key])
+  profiles[variant.key].economy = profileId
+  profiles[variant.key].bench_size = variant.benchSize
+  profiles[variant.key].label = Economy.profiles[profileId].label
+  if variant.key ~= profileId then
+    profiles[variant.key].label = profiles[variant.key].label .. " / bench " .. tostring(variant.benchSize)
+  end
+  byPolicy[variant.key] = {}
+  for name, a in pairs(policyAgg[variant.key]) do byPolicy[variant.key][name] = finish(a) end
+  byCohort[variant.key] = {}
   for _, cohort in ipairs(COHORTS) do
-    byCohort[profileId][cohort.id] = finish(cohortAgg[profileId][cohort.id])
-    byCohort[profileId][cohort.id].label = cohort.label
+    byCohort[variant.key][cohort.id] = finish(cohortAgg[variant.key][cohort.id])
+    byCohort[variant.key][cohort.id].label = cohort.label
   end
 end
 
-print(string.format("%-24s %8s %8s %8s %8s %8s %8s %8s %8s %8s %8s",
-  "profile", "comp%", "wins", "ratio", "afford", "desired", "+4buy", "+4slot", "commit", "merge", "left"))
-for _, profileId in ipairs(ECONOMY_ORDER) do
-  local p = profiles[profileId]
-  print(string.format("%-24s %7.1f%% %8.2f %8.2f %7.1f%% %7.1f%% %7.1f%% %7.1f%% %7.1f%% %7.1f%% %8.2f",
-    profileId, p.completion * 100, p.avg_wins, p.avg_full_shop_ratio,
+print(string.format("%-30s %8s %8s %8s %8s %8s %8s %8s %8s %8s %8s",
+  "profile/bench", "comp%", "wins", "ratio", "afford", "desired", "+4buy", "+4slot", "commit", "merge", "left"))
+for _, variant in ipairs(VARIANTS) do
+  local p = profiles[variant.key]
+  print(string.format("%-30s %7.1f%% %8.2f %8.2f %7.1f%% %7.1f%% %7.1f%% %7.1f%% %7.1f%% %7.1f%% %8.2f",
+    variant.key, p.completion * 100, p.avg_wins, p.avg_full_shop_ratio,
     p.full_shop_afford_rate * 100, p.desired_buy_all_rate * 100,
     p.desired_bench4_buy_all_rate * 100, p.desired_bench4_space_limited_rate * 100,
     p.archetype_commitment_rate * 100,
@@ -1454,6 +1484,7 @@ local payload = {
     commander_mode = COMMANDER_MODE,
     policies = Common.env("PIT_POLICIES"),
     economy_profiles = Common.env("PIT_ECON_PROFILES"),
+    bench_sizes = Common.env("PIT_BENCH_SIZES"),
     bench_caps = Common.env("PIT_BENCH_CAPS"),
     plan_oracle_matches = ORACLE_MATCHES,
     plan_oracle_rounds = Common.env("PIT_PLAN_ORACLE_ROUNDS"),
@@ -1466,9 +1497,12 @@ local payload = {
 }
 
 local summary = { runs_per_policy_profile = N, profiles = {} }
-for _, profileId in ipairs(ECONOMY_ORDER) do
+for _, variant in ipairs(VARIANTS) do
+  local profileId = variant.key
   local p = profiles[profileId]
   summary.profiles[profileId] = {
+    economy = p.economy,
+    bench_size = p.bench_size,
     completion = p.completion,
     avg_wins = p.avg_wins,
     avg_full_shop_ratio = p.avg_full_shop_ratio,

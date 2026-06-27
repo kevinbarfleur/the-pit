@@ -21,6 +21,8 @@ local Pacing = require("src.run.pacing")
 
 local Rundriver = {}
 Rundriver.__index = Rundriver
+Rundriver.DEFAULT_BENCH_SIZE = Build.DEFAULT_BENCH_SIZE
+Rundriver.MAX_BENCH_SIZE = Build.MAX_BENCH_SIZE
 
 local STUB_GOTO = function() end
 
@@ -29,7 +31,7 @@ function Rundriver.new(seed, opts)
   local pacing = Pacing.arenaOptions(opts.pacingProfile)
   local run = Run.new(seed or 0, { economy = opts.economy })
   local host = { goto = STUB_GOTO, run = run } -- le Build lit host.run (slots, pickEncounter)
-  local build = Build.new(opts.palette or Palette, 320, 180, host)
+  local build = Build.new(opts.palette or Palette, 320, 180, host, { benchSize = opts.benchSize })
   if opts.sigil then build.board:setShape(opts.sigil); build:computeLayout() end
   return setmetatable({
     run = run, build = build, host = host, opts = opts,
@@ -147,6 +149,7 @@ function Rundriver:state()
     commanderLevel = self.build.commanderSlot and (self.build.commanderSlot.level or 1) or nil,
     sigil = self.build.board.shape.name, winStreak = self.run.winStreak, lossStreak = self.run.lossStreak,
     shop = shop, board = board, relics = #self.run.relics, placed = self.build:placedCount(),
+    benchSize = #(self.build.benchSlots or {}),
     bench = bench, benchUsed = benchUsed, benchFree = #(self.build.benchSlots or {}) - benchUsed,
     pendingRelics = self.pendingRelics, over = self.over,
   }
@@ -615,7 +618,7 @@ function Rundriver.run(seed, policy, opts)
       desiredSlotLimited = desired and desired.slotLimited or nil,
       desiredGoldAffordable = desired and ((desired.visibleCount or 0) == 0 or desiredGoldBudget >= (desired.visibleCost or 0)) or nil,
       desiredOffersAffordable = desired and ((desired.visibleCount or 0) == 0 or (desiredGoldBudget >= (desired.visibleCost or 0) and not desired.slotLimited)) or nil,
-      slots = snap.slots, sigil = snap.sigil,
+      slots = snap.slots, sigil = snap.sigil, benchSize = snap.benchSize,
       placed = snap.placed, decisions = decisions,
       economy = econ, commitment = commitment,
       win = fr.result and fr.result.win, decided = fr.result and fr.result.decided,
@@ -634,6 +637,7 @@ function Rundriver.run(seed, policy, opts)
   end
   traj.result = drv.run:isOver() or "incomplete"
   traj.wins, traj.losses, traj.slots = drv.run.wins, drv.run.losses, drv.run.slots
+  traj.benchSize = #(drv.build.benchSlots or {})
   traj.finalBoard = drv:boardComp()
   if drv.recordBoards then traj.finalHoldings = drv:heldComp() end
   traj.finalCost = drv:boardCost()

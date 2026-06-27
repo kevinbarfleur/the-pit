@@ -679,10 +679,10 @@ local ok, err = pcall(function()
     assert(not eb:offerPlayable(run.shop[2]), "disable(b): pas d'or -> non jouable")
     clickOffer(2)
     assert(run.gold == 0 and eb:placedCount() == pcB, "disable(b): clic sans or n'achete/pose rien")
-    -- (c) PLEIN sans trio -> non jouable. On remplit board(9)+banc(4) de skeletons ; l'offre est un id ABSENT.
+    -- (c) PLEIN sans trio -> non jouable. On remplit board + banc de skeletons ; l'offre est un id ABSENT.
     run.gold = 99
     for i = 1, 9 do eb:placeId(i, "skeleton") end
-    for i = 1, 4 do eb.bench[i] = { id = "skeleton", level = 1, char = eb:newRig("skeleton") } end
+    for i = 1, #eb.benchSlots do eb.bench[i] = { id = "skeleton", level = 1, char = eb:newRig("skeleton") } end
     run.shop[3] = { id = "marauder", cost = 2, sold = false }
     assert(not eb:offerPlayable(run.shop[3]), "disable(c): plein + aucun trio (id absent) -> non jouable")
     local gC = run.gold
