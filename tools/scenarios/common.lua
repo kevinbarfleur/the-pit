@@ -364,6 +364,7 @@ function Common.mergeLifecycleAgg()
     pairs = 0, resolved = 0, unresolved = 0, unpairedMerges = 0,
     soldBeforeMerge = 0, exactPairs = 0, exactResolved = 0,
     roundsToMerge = 0, tiersToMerge = 0,
+    terminal = {},
     byUnit = {},
   }
 end
@@ -375,10 +376,35 @@ local function lifecycleBucket(map, id)
       pairs = 0, resolved = 0, unresolved = 0, unpairedMerges = 0,
       soldBeforeMerge = 0, exactPairs = 0, exactResolved = 0,
       roundsToMerge = 0, tiersToMerge = 0,
+      terminal = {},
     }
     map[id] = b
   end
   return b
+end
+
+local TERMINAL_CAUSES = {
+  "sold_exact_copy",
+  "held_to_run_end",
+  "crowded_out",
+  "no_third_copy",
+  "unknown",
+}
+
+local function addTerminalCause(agg, bucket, cause)
+  cause = cause or "unknown"
+  agg.terminal[cause] = (agg.terminal[cause] or 0) + 1
+  bucket.terminal[cause] = (bucket.terminal[cause] or 0) + 1
+end
+
+local function finishTerminalCauses(src, total)
+  local counts, rates = {}, {}
+  for _, key in ipairs(TERMINAL_CAUSES) do
+    local n = (src and src[key]) or 0
+    counts[key] = n
+    rates[key] = (total and total > 0) and (n / total) or 0
+  end
+  return { counts = counts, rates = rates }
 end
 
 local function hasCopyIds(ev)
@@ -441,6 +467,43 @@ local function hasSaleBeforeMerge(sales, pair, merge)
   return false
 end
 
+local function finalCopySet(traj)
+  local set = {}
+  for _, rec in ipairs((traj and traj.finalCopies) or {}) do
+    if rec.copyId then set[rec.copyId] = true end
+  end
+  return set
+end
+
+local function pairCopiesStillHeld(pair, finalSet)
+  if not hasCopyIds(pair) then return false end
+  for _, copyId in ipairs(pair.copyIds or {}) do
+    if not finalSet[copyId] then return false end
+  end
+  return true
+end
+
+local function hadSlotPressureAfterPair(traj, pair)
+  local startRound = pair and (pair.round or 0) or 0
+  for _, rd in ipairs((traj and traj.rounds) or {}) do
+    local round = rd.round or 0
+    if round >= startRound then
+      if rd.desiredSlotLimited then return true end
+      local e = rd.economy or {}
+      if (e.benchSells or 0) > 0 or (e.boardSells or 0) > 0 then return true end
+    end
+  end
+  return false
+end
+
+local function terminalCause(traj, pair, soldBeforeMerge)
+  if soldBeforeMerge then return "sold_exact_copy" end
+  if pairCopiesStillHeld(pair, finalCopySet(traj)) then return "held_to_run_end" end
+  if hadSlotPressureAfterPair(traj, pair) then return "crowded_out" end
+  if hasCopyIds(pair) then return "no_third_copy" end
+  return "unknown"
+end
+
 function Common.addMergeLifecycle(agg, traj)
   local used = {}
   local merges = (traj.exactMergeEvents and #traj.exactMergeEvents > 0) and traj.exactMergeEvents or (traj.mergeEvents or {})
@@ -486,6 +549,7 @@ function Common.addMergeLifecycle(agg, traj)
     else
       agg.unresolved = agg.unresolved + 1
       b.unresolved = b.unresolved + 1
+      addTerminalCause(agg, b, terminalCause(traj, pair, soldBeforeMerge))
     end
   end
 
@@ -510,6 +574,7 @@ function Common.finishMergeLifecycle(agg, opts)
       unpaired_merges = b.unpairedMerges or 0,
       sold_before_merge = b.soldBeforeMerge or 0,
       sold_before_merge_rate = ((b.pairs or 0) > 0) and ((b.soldBeforeMerge or 0) / b.pairs) or 0,
+      terminal_causes = finishTerminalCauses(b.terminal, b.unresolved or 0),
       exact_pairs = b.exactPairs or 0,
       exact_resolved = b.exactResolved or 0,
       exact_resolve_rate = ((b.exactPairs or 0) > 0) and ((b.exactResolved or 0) / b.exactPairs) or 0,
@@ -526,6 +591,7 @@ function Common.finishMergeLifecycle(agg, opts)
         unresolved = row.unresolved,
         sold_before_merge = row.sold_before_merge,
         sold_before_merge_rate = row.sold_before_merge_rate,
+        terminal_causes = row.terminal_causes,
         exact_pairs = row.exact_pairs,
         exact_resolve_rate = row.exact_resolve_rate,
         resolve_rate = row.resolve_rate,
@@ -549,6 +615,7 @@ function Common.finishMergeLifecycle(agg, opts)
     unpaired_merges = agg.unpairedMerges or 0,
     sold_before_merge = agg.soldBeforeMerge or 0,
     sold_before_merge_rate = ((agg.pairs or 0) > 0) and ((agg.soldBeforeMerge or 0) / agg.pairs) or 0,
+    terminal_causes = finishTerminalCauses(agg.terminal, agg.unresolved or 0),
     exact_pairs = agg.exactPairs or 0,
     exact_resolved = agg.exactResolved or 0,
     exact_resolve_rate = ((agg.exactPairs or 0) > 0) and ((agg.exactResolved or 0) / agg.exactPairs) or 0,

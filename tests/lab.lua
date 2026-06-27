@@ -409,6 +409,16 @@ local ok, err = pcall(function()
   local mf = Common.finishMergeLifecycle(ml)
   assert(mf.exact_pairs == 1 and mf.exact_resolved == 1 and mf.exact_resolve_rate == 1,
     "copy lifecycle: merge_lifecycle resout la paire par identite exacte")
+  local heldMl = Common.mergeLifecycleAgg()
+  Common.addMergeLifecycle(heldMl, {
+    pairEvents = pairDrv.pairEvents,
+    exactMergeEvents = {},
+    rounds = {},
+    finalCopies = pairDrv:copyState(),
+  })
+  local heldMf = Common.finishMergeLifecycle(heldMl)
+  assert(heldMf.unresolved == 1 and heldMf.terminal_causes.counts.held_to_run_end == 1,
+    "copy lifecycle: paire exacte non fusionnee encore tenue -> held_to_run_end")
   local function assertBossOps(list, owner)
     for _, e in ipairs(list or {}) do
       assert(Effects.ops[e.op], "bossrush: op inconnue " .. tostring(e.op) .. " dans " .. owner)

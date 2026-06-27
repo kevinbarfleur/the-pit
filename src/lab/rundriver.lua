@@ -656,6 +656,30 @@ function Rundriver:supportedBoardComp()
   return comp
 end
 
+function Rundriver:copyState()
+  self:_ensureCopyIds()
+  local out = {}
+  for i = 1, 9 do
+    local sr = self.build.slotRigs[i]
+    if sr then
+      out[#out + 1] = {
+        copyId = sr.copyId, id = sr.id, level = sr.level or 1,
+        where = "board", slot = i,
+      }
+    end
+  end
+  for i = 1, #(self.build.benchSlots or {}) do
+    local sr = self.build.bench[i]
+    if sr then
+      out[#out + 1] = {
+        copyId = sr.copyId, id = sr.id, level = sr.level or 1,
+        where = "bench", slot = i,
+      }
+    end
+  end
+  return out
+end
+
 function Rundriver:heldComp()
   local units = {}
   for i = 1, 9 do
@@ -744,6 +768,7 @@ function Rundriver.run(seed, policy, opts)
   traj.benchSize = #(drv.build.benchSlots or {})
   traj.finalBoard = drv:boardComp()
   traj.finalSupportedBoard = drv:supportedBoardComp()
+  traj.finalCopies = drv:copyState()
   if drv.recordBoards then traj.finalHoldings = drv:heldComp() end
   traj.finalCost = drv:boardCost()
   traj.metrics = drv:metricSnapshot()

@@ -2164,6 +2164,24 @@ Next implementation targets:
      `85.3%` exact resolution; this unlocks the next pass: distinguish pairs
      that failed because the third copy never appeared, because one exact copy
      was sold, or because board/bench tempo crowded them out.
+   - Exact merge terminal causes:
+     the next pass is now implemented. `Rundriver` exposes `finalCopies`
+     (`copyId`, id, level, board/bench slot), and `Common.addMergeLifecycle`
+     classifies unresolved exact pairs into `terminal_causes`:
+     `sold_exact_copy`, `held_to_run_end`, `crowded_out`, `no_third_copy`, and
+     `unknown`, with counts and rates globally, by unit, and in the watch list.
+     This is still a diagnostic layer only; it does not mutate run behavior.
+   - Terminal-cause first read:
+     `runs/long-2026-06-27o/terminal-causes`, N=8 over baseline/early_curve/
+     sap_cost and reroll/rat-core/broad policies, showed the unresolved pairs
+     are overwhelmingly retained rather than thrown away:
+     baseline `444` pairs / `130` unresolved / `70.7%` resolve, early_curve
+     `448` / `100` / `77.7%`, sap_cost `427` / `117` / `72.6%`; in all three
+     profiles unresolved terminal causes were `100% held_to_run_end`, `0%`
+     sold, `0%` crowded out. Current read: the active reroll problem is mostly
+     third-copy arrival/timing and shop odds, not players selling exact pair
+     pieces. Watch units include `wailing_shade`, `gash_fiend`, `hookjaw`,
+     `rot_hound`, and `bore_worm` depending on economy profile.
    - PvE bossrush/scoring prototype:
      the user added `docs/generation/generateur-abominations.html`, a seeded
      visual generator for ten abomination families. The lab now has a pure data
@@ -2264,9 +2282,9 @@ Next implementation targets:
      balance pass, but investigate cheap mid-board outliers before nerfing it;
    - revisit protected payload placement and the remaining cheap mid-board
      outliers now that XP/reroll timing has a measurable coverage gate;
-   - extend exact lifecycle reporting from pair/merge resolution to explicit
-     terminal causes: held to run end, sold exact copy, no third copy, or
-     crowded out by bench/board pressure;
+   - use terminal-cause reporting to decide whether reroll help should come
+     from shop odds, targeted offers, freeze/lock, or bench policy rather than
+     assuming all unresolved pairs are a bench-space issue;
    - keep expanding bossrush-run from a small smoke panel to longer paired
      economy/policy sweeps, but only as one axis among economy, combat, and
      accessibility;
