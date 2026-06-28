@@ -2779,6 +2779,28 @@ Next implementation targets:
   clearest survival check, while `brasier`/`kraken`/`ruche` became more killable
   score targets. Read: tune abomination cadence/threat patterns before simply
   increasing boss HP.
+- economy candidate confirmation and reroll-tax probe:
+  `runs/long-2026-06-28c/economy-candidates-n96` confirms the N=32 read.
+  `pair_completion_light` is the strongest access/merge lever
+  (`59.5%` completion, `94.0%` merge-per-pair), while
+  `sap_cost_pair_completion` is the best tense-economy candidate
+  (`52.3%` completion, `52.6%` full-shop afford, `93.8%` merge-per-pair,
+  `3.35` leftover gold). The rot/bleed deep-reroll line still overperforms
+  (`85.4%` completion under `sap_cost_pair_completion`) without completing the
+  exact endpoint, mostly by fielding multiple low-rank duplicate carries such
+  as `carrion_pecker` and `gnaw_rat`.
+  Two lab-only profiles were added: `pair_completion_tiered_reroll` and
+  `sap_cost_pair_completion_tiered_reroll`. The targeted ablation
+  `runs/long-2026-06-28c/reroll-tax-ablation-n64` shows the tiered reroll tax
+  only matters when combined with SAP-like unit costs: baseline costs stay too
+  permissive, but `sap_cost_pair_completion_tiered_reroll` lowers the
+  deep-reroll line from `90.6%` to `78.1%` completion while preserving high
+  merge conversion (`94.8%` aggregate merge-per-pair). This is now the best
+  non-creature-nerf candidate for controlling reroll spam.
+  A small bossrush stress panel
+  `runs/long-2026-06-28c/bossrush-reroll-tax-n8` keeps postgame scoring alive
+  under the taxed profile, but lowers entry/score-run as expected. Treat it as
+  a tradeoff signal, not a final verdict because N is small.
 3. Use the new compact economy summary first, and only drill into full
    `plan_access` / `support_access` when a row shows a concrete anomaly.
 4. Use `plan_support_watch` rows in the next economy/bossrush panels to separate

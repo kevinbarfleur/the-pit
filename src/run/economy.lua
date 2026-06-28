@@ -47,6 +47,12 @@ Economy.profiles = {
     label = "baseline plus pair-completion shop support",
     pairCompletionSupport = { maxPerRound = 1, minRound = 2 },
   },
+  pair_completion_tiered_reroll = {
+    id = "pair_completion_tiered_reroll",
+    label = "baseline plus pair-completion support and tiered reroll",
+    pairCompletionSupport = { maxPerRound = 1, minRound = 2 },
+    rerollCostByTier = { [1] = 1, [2] = 1, [3] = 2, [4] = 2, [5] = 3 },
+  },
   pair_completion_delayed = {
     id = "pair_completion_delayed",
     label = "baseline plus delayed pair-completion pity",
@@ -67,6 +73,13 @@ Economy.profiles = {
     label = "SAP-like costs plus pair-completion shop support",
     costByRank = { 2, 3, 4, 5, 6 },
     pairCompletionSupport = { maxPerRound = 1, minRound = 2 },
+  },
+  sap_cost_pair_completion_tiered_reroll = {
+    id = "sap_cost_pair_completion_tiered_reroll",
+    label = "SAP-like costs plus pair-completion support and tiered reroll",
+    costByRank = { 2, 3, 4, 5, 6 },
+    pairCompletionSupport = { maxPerRound = 1, minRound = 2 },
+    rerollCostByTier = { [1] = 1, [2] = 1, [3] = 2, [4] = 2, [5] = 3 },
   },
   sap_cost_pair_completion_delayed = {
     id = "sap_cost_pair_completion_delayed",

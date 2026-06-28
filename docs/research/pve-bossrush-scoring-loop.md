@@ -287,3 +287,12 @@ Current warning examples:
   reach about `40%` boss kill. Current read: cadence/threat pressure is a
   better next tuning knob than raw HP if the goal is to make boss families
   distinct without turning the scoring target into a health sponge.
+- `runs/long-2026-06-28c/bossrush-reroll-tax-n8` tested the current
+  economy-control candidate `sap_cost_pair_completion_tiered_reroll` under the
+  `hp x2 / cd x0.5` boss stress. The taxed profile kept score-per-entry high on
+  broad plans (`econ_plan` about `34.8k`, `greedy_plan` about `35.1k`), but
+  lowered score/run by reducing postgame entry. The deep-reroll line dropped
+  from `17,959` score/run under `sap_cost_pair_completion` to `12,587` under
+  the tiered-reroll tax in this small N=8 panel. Current read: the tax does not
+  kill bossrush scoring, but it makes postgame access a real cost; rerun a
+  larger panel before applying it to live tuning.

@@ -1264,6 +1264,51 @@ Lecture :
   completion selon economie/policy dans les bottom rows). La barriere est
   surtout une couverture de cible basse, pas un manque d'or pur.
 
+Panel de confirmation `runs/long-2026-06-28c/economy-candidates-n96` :
+
+- `baseline` : `41.9%` completion, `8.89` wins, `90.1%` full-shop afford,
+  `50.7%` desired-buy-all, `70.7%` merge-per-pair, `7.18` gold leftover.
+- `pair_completion_light` : `59.5%` completion, `9.37` wins, `91.5%`
+  full-shop afford, `60.6%` desired-buy-all, `94.0%` merge-per-pair, `5.80`
+  leftover.
+- `sap_cost` : `33.5%` completion, `8.61` wins, `51.8%` full-shop afford,
+  `54.1%` desired-buy-all, `67.1%` merge-per-pair, `5.14` leftover.
+- `sap_cost_pair_completion` : `52.3%` completion, `9.12` wins, `52.6%`
+  full-shop afford, `65.8%` desired-buy-all, `93.8%` merge-per-pair, `3.35`
+  leftover.
+
+Conclusion confirmee : `sap_cost_pair_completion` est le meilleur candidat de
+base pour une economie plus tendue, mais il laisse encore la ligne
+`committed_rot_bleed_rat_core_deep_reroll_plan` tres haute (`85.4%`
+completion, `9.83` wins). Cette ligne gagne sans completer exactement son
+endpoint : elle assemble surtout un paquet de duplicatas low-rank
+`carrion_pecker`/`gnaw_rat`/supports, avec environ `0.64-0.72` de couverture
+niveau rat-core.
+
+Nouveau probe ajoute dans `src/run/economy.lua` :
+
+- `pair_completion_tiered_reroll` : pair-completion + reroll `1/1/2/2/3`
+  selon le tier boutique ;
+- `sap_cost_pair_completion_tiered_reroll` : couts SAP-like + pair-completion
+  + reroll tiered.
+
+Panel `runs/long-2026-06-28c/reroll-tax-ablation-n64` :
+
+- sous couts baseline, tiered reroll ne reduit pas le deep-reroll
+  (`96.9% -> 98.4%` completion dans ce panel), car l'or reste trop permissif ;
+- sous couts SAP-like, tiered reroll baisse la deep-reroll
+  (`90.6% -> 78.1%`) sans tuer le no-XP cap-2 (`57.8% -> 59.4%`) ni les broad
+  plans dans ce panel ;
+- le profil agrege `sap_cost_pair_completion_tiered_reroll` reste jouable :
+  `66.9%` completion sur ce subset de policies, `94.8%` merge-per-pair,
+  `2.98` leftover.
+
+Lecture actuelle : si on veut controler le spam deep-reroll sans nerfer les
+creatures low-rank, le meilleur candidat est
+`sap_cost_pair_completion_tiered_reroll`, pas un nerf direct de
+`gnaw_rat`/`carrion_pecker`. Il faut encore le tester sur un panel plus large
+avant de l'appliquer au live.
+
 Policies minimales :
 
 - random baseline ;
