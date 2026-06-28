@@ -296,3 +296,11 @@ Current warning examples:
   the tiered-reroll tax in this small N=8 panel. Current read: the tax does not
   kill bossrush scoring, but it makes postgame access a real cost; rerun a
   larger panel before applying it to live tuning.
+- `runs/long-2026-06-28d/bossrush-run-taxed-levelmult225-hp2-cd05-n8`
+  combines the taxed economy candidate with generated-opponent pressure
+  `PIT_OPPGEN_LEVEL_MULT=2.25`, still under `hp x2 / cd x0.5` boss stress.
+  Bossrush remains viable: `greedy_plan` and `econ_plan` both enter at `87.5%`
+  and score about `25.7k-25.9k` per run, while deep-reroll enters at `62.5%`
+  and scores about `19.7k` per run. Current read: the `2.25` pressure candidate
+  does not kill post-win scoring; it shifts access and score/run away from the
+  deep-reroll line without making bossrush disappear.

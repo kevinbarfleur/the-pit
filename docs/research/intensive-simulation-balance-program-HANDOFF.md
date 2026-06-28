@@ -2820,6 +2820,14 @@ Next implementation targets:
   it hurts deep-reroll (`65.6%`). Current read: if generated-opponent pressure
   becomes a tuning knob, `levelMult=2.25` is the better next candidate and
   `2.5` is a high-stress bound, not a first live setting.
+- bossrush check for the current candidate:
+  `runs/long-2026-06-28d/bossrush-run-taxed-levelmult225-hp2-cd05-n8` combines
+  `sap_cost_pair_completion_tiered_reroll`, generated opponents
+  `levelMult=2.25`, events, and `hp x2 / cd x0.5` boss stress. Bossrush remains
+  viable: `greedy_plan` and `econ_plan` enter at `87.5%` and score about
+  `25.7k-25.9k` per run, while deep-reroll enters at `62.5%` and scores about
+  `19.7k` per run. Read: the candidate shifts postgame access/score away from
+  deep-reroll without killing the scoring loop.
 3. Use the new compact economy summary first, and only drill into full
    `plan_access` / `support_access` when a row shows a concrete anomaly.
 4. Use `plan_support_watch` rows in the next economy/bossrush panels to separate
