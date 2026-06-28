@@ -2662,6 +2662,20 @@ Next implementation targets:
      units/run, `100%` unit progress, focused relic offer/pick both `69.5%`.
      Completion still stayed at `31.2%`, so this is a reward-EV guardrail, not
      a solved balance pass.
+   - live-like opponent mode + supported plan specs:
+     `tools/sim.lua economy` can now run with `PIT_OPPONENT_MODE=generated`.
+     The default remains `static` so old panels stay comparable, but
+     `generated` mirrors the live cold-start path through `OppGen.generate`
+     instead of the old static encounter table. This matters because late
+     `plan_access` oracles were repeatedly hitting the static `pit_sovereign`
+     wall at rounds 12/14; that can overstate late failure for some targets.
+     Re-run important late endpoints in generated mode before nerfing or
+     buffing around those old oracle rows.
+   - `PIT_PLAN_TARGET_SPECS` also accepts support fields now:
+     `id=unit:level+unit:level;relics=relic_a+relic_b;commander=unit:level;sigil=carre;board=8`.
+     The oracle applies those relics/commander through the same comp conversion
+     path used by the lab, so force-build endpoints can finally represent
+     "this build plus its intended support", not just raw units.
 3. Use the new `plan_support_watch` rows in the next economy/bossrush panels to
    separate "support never offered", "support offered but not picked", and
    "support picked but plan still inaccessible".

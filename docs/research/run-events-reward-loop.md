@@ -432,6 +432,9 @@ offers: a low-rank monster with `echo_touched`, a mid-rank monster with
    considering stronger live event-unit weighting.
 6. Keep `policy_space_missing_copy` as the current quality floor for special
    unit events, but do not make it a broad replacement for relic choices.
-7. Use `--shoot=runevent` after visual changes to the event picker.
-8. Continue mutation panels behind the opt-in lab profile before enabling
+7. Re-run the most important reward-EV panels with
+   `PIT_OPPONENT_MODE=generated` before treating old late static-oracle losses
+   as balance truth.
+8. Use `--shoot=runevent` after visual changes to the event picker.
+9. Continue mutation panels behind the opt-in lab profile before enabling
    mutated event units in the live run loop.

@@ -78,6 +78,8 @@ local ok, err = pcall(function()
       extraEnv = "PIT_BOSSRUSH_COMPS=bruiser_carre PIT_ABOMINATIONS=leviathan "
     elseif m == "bossrush_run" then
       extraEnv = "PIT_POLICIES=greedy_stats PIT_BOSSRUSH_RUN_ECONOMIES=baseline PIT_ABOMINATIONS=leviathan PIT_BOSSRUSH_RUN_ELIGIBILITY=all "
+    elseif m == "economy" then
+      extraEnv = "PIT_OPPONENT_MODE=generated PIT_PLAN_TARGETS=rot_bleed_rat_core PIT_PLAN_TARGET_SPECS='spec_support=rot_hound:1;relics=grave_cap;commander=clot_mender:2;board=3' "
     end
     local code = os.execute(ENV .. extraEnv .. "luajit tools/sim.lua " .. m .. " 1 >/dev/null 2>&1")
     -- os.execute renvoie true (5.2+) ou 0 (5.1) au succes ; on accepte les deux conventions.
@@ -130,6 +132,10 @@ local ok, err = pcall(function()
         "mode economy : accessibilite de la troisieme copie reportee")
       assert(body:find('"pair_support_offers_per_run"', 1, true),
         "mode economy : offres support de paire reportees")
+      assert(body:find('"spec_support"', 1, true)
+        and body:find('"relics":["grave_cap"]', 1, true)
+        and body:find('"commander":"clot_mender"', 1, true),
+        "mode economy : PIT_PLAN_TARGET_SPECS accepte relics+commander dans oracle")
     elseif m == "pacing" then
       assert(body:find('"duration_fit"', 1, true),
         "mode pacing : score de fit duration reporte")

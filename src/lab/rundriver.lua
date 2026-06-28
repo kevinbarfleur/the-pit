@@ -20,6 +20,7 @@ local Units = require("src.data.units")
 local Pacing = require("src.run.pacing")
 local Mutations = require("src.run.mutations")
 local EventRewards = require("src.run.event_rewards")
+local OppGen = require("src.data.oppgen")
 
 local Rundriver = {}
 Rundriver.__index = Rundriver
@@ -51,6 +52,7 @@ function Rundriver.new(seed, opts)
     compMutator = opts.compMutator, -- lab-only overlay appliqué aux deux camps avant Match.run (pacing, probes)
     leftMutator = opts.leftMutator, -- lab-only overlay appliqué au joueur seulement (candidate balance)
     rightMutator = opts.rightMutator, -- lab-only overlay appliqué à l'adversaire seulement
+    opponentMode = opts.opponentMode or "static", -- static | generated ; generated mirrors Build:startCombat cold-start IA
     recordBoards = opts.recordBoards == true, -- lab-only: snapshots légers board+bench par round pour diagnostics
     recordEvents = opts.recordEvents == true, -- lab-only: achats/ventes/reliques par round pour funnels de plan
     relicsKnown = opts.relicsKnown or false, -- reliques pré-connues au Grimoire ? (le driver n'a pas d'IO)
@@ -769,8 +771,19 @@ function Rundriver:reshape(sigil)
 end
 
 -- ── Adversaire : PvE escaladante (encounters par round) par défaut ; pluggable via opts.opponent ──
-function Rundriver:opponent()
-  if self.opponentFn then return self.opponentFn(self) end
+function Rundriver:opponent(seed)
+  if self.opponentFn then return self.opponentFn(self, seed) end
+  if self.opponentMode == "generated" then
+    local enc = OppGen.generate({
+      round = self.run.round,
+      tier = self.run.shopTier,
+      slots = self.run.slots,
+      rng = love.math.newRandomGenerator(seed or (self.run.seed or 0)),
+      odds = self.run.ODDS,
+    })
+    enc.key = self.build:encounterKeyFor(#enc.units)
+    return self.build:buildRightComp(enc, 0), enc.key
+  end
   local enc, bump = self.build:pickEncounter()
   return self.build:buildRightComp(enc, bump), enc.key
 end
@@ -956,9 +969,9 @@ function Rundriver:fight()
   if #left == 0 then return { error = "empty_board" } end
   self.run:applyRelics(left) -- reliques : effet RÉEL sur la compo joueur (comme au build)
   self:_mutateComp(left, "left")
-  local right, enemyKey = self:opponent()
-  self:_mutateComp(right, "right")
   local seed = self.run:nextCombatSeed()
+  local right, enemyKey = self:opponent(seed)
+  self:_mutateComp(right, "right")
   local res = Match.run(left, right, seed, {
     tickCap = self.tickCap,
     hpMult = self.hpMult,

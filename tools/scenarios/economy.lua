@@ -27,6 +27,9 @@ local EVENT_UNIT_TARGETING = Common.env("PIT_EVENT_UNIT_TARGETING")
 local EVENT_UNIT_PICK_CAP = Common.envNumber("PIT_EVENT_UNIT_PICK_CAP", nil)
 local EVENT_MUTATION_PICK_CAP = Common.envNumber("PIT_EVENT_MUTATION_PICK_CAP", nil)
 local EVENT_UNIT_RELIC_MARGIN = Common.envNumber("PIT_EVENT_UNIT_RELIC_MARGIN", nil)
+local OPPONENT_MODE = Common.env("PIT_OPPONENT_MODE") or "static"
+assert(OPPONENT_MODE == "static" or OPPONENT_MODE == "generated",
+  "PIT_OPPONENT_MODE doit etre static ou generated")
 -- Extra holding capacity beyond the real board+bench capacity used by Rundriver.
 -- Cap 0 is the current gameplay model; cap 4 answers "what if the player had 4 more reserve slots?"
 local BENCH_CAPS = Common.envNumberList("PIT_BENCH_CAPS", { 0, 2, 4, 6 })
@@ -74,18 +77,65 @@ local function targetFromComp(id)
   return target
 end
 
+local function trim(s)
+  return tostring(s or ""):gsub("^%s+", ""):gsub("%s+$", "")
+end
+
+local function plusList(value)
+  local out = {}
+  for token in tostring(value or ""):gmatch("[^+]+") do
+    local v = trim(token)
+    if v ~= "" then out[#out + 1] = v end
+  end
+  return out
+end
+
+local function parseCommanderSpec(value, spec)
+  local id, level = tostring(value or ""):match("^([^:]+):?(%d*)$")
+  id = trim(id)
+  assert(id ~= "" and Units[id], "PIT_PLAN_TARGET_SPECS commandant inconnu dans " .. tostring(spec))
+  return id, tonumber(level) or 1
+end
+
 local function targetFromSpec(spec)
   local id, body = tostring(spec or ""):match("^([^=]+)=(.+)$")
   if not id then return nil end
+  local sections = {}
+  for section in body:gmatch("[^;]+") do
+    sections[#sections + 1] = trim(section)
+  end
+  local unitBody = sections[1] or ""
   local units = {}
-  for token in body:gmatch("[^+]+") do
+  for token in unitBody:gmatch("[^+]+") do
     local unitId, level = token:match("^([^:]+):?(%d*)$")
     if unitId and unitId ~= "" then
+      unitId = trim(unitId)
+      assert(Units[unitId], "PIT_PLAN_TARGET_SPECS unite inconnue dans " .. tostring(spec) .. ": " .. tostring(unitId))
       units[#units + 1] = { id = unitId, level = tonumber(level) or 1, slot = #units + 1 }
     end
   end
   assert(#units > 0, "PIT_PLAN_TARGET_SPECS cible vide: " .. tostring(spec))
   local target = { id = id, source = "spec", sigil = "carre", boardLevel = #units, units = units }
+  for i = 2, #sections do
+    local key, value = sections[i]:match("^([^=]+)=(.+)$")
+    key = key and trim(key):lower() or nil
+    value = value and trim(value) or nil
+    if key == "relics" then
+      target.relics = {}
+      for _, relicId in ipairs(plusList(value)) do
+        assert(Relics[relicId], "PIT_PLAN_TARGET_SPECS relique inconnue dans " .. tostring(spec) .. ": " .. tostring(relicId))
+        target.relics[#target.relics + 1] = relicId
+      end
+    elseif key == "commander" then
+      target.commander, target.commanderLevel = parseCommanderSpec(value, spec)
+    elseif key == "sigil" then
+      target.sigil = value
+    elseif key == "board" or key == "boardlevel" or key == "slots" then
+      target.boardLevel = assert(tonumber(value), "PIT_PLAN_TARGET_SPECS board invalide: " .. tostring(value))
+    elseif key and key ~= "" then
+      error("PIT_PLAN_TARGET_SPECS option inconnue dans " .. tostring(spec) .. ": " .. tostring(key))
+    end
+  end
   target.cost = Compcost.of(target)
   return target
 end
@@ -129,11 +179,12 @@ local function targetOracle(target)
   local total, wins, ticks, tickN = 0, 0, 0, 0
   local byRound = {}
   for _, round in ipairs(rounds) do
-    local drv = Rundriver.new(BASE_SEED + 700000 + round * 17, {})
+    local drv = Rundriver.new(BASE_SEED + 700000 + round * 17, { opponentMode = OPPONENT_MODE })
     drv.run.round = round
     drv.run.shopTier = oracleTierFor(round)
     drv.run.slots = math.max(drv.run.slots or 3, math.min(9, target.boardLevel or #(target.units or {})))
-    local right, enemyKey = drv:opponent()
+    local rightSeed = BASE_SEED + 750000 + round * 97
+    local right, enemyKey = drv:opponent(rightSeed)
     local rr = { enemy = enemyKey, fights = 0, wins = 0, ticks = 0, tickN = 0 }
     for m = 1, ORACLE_MATCHES do
       local seed = BASE_SEED + 800000 + round * 101 + m
@@ -161,6 +212,9 @@ local function targetOracle(target)
   return {
     rounds = rounds,
     matches_per_round = ORACLE_MATCHES,
+    relics = Common.clone(target.relics or {}),
+    commander = target.commander,
+    commander_level = target.commanderLevel,
     fights = total,
     forced_winrate = (total > 0) and (wins / total) or 0,
     avg_seconds = (tickN > 0) and (ticks / tickN / Common.FPS) or 0,
@@ -1676,6 +1730,7 @@ for run = 1, N do
         eventUnitPickCap = EVENT_UNIT_PICK_CAP,
         eventUnitRelicMargin = EVENT_UNIT_RELIC_MARGIN,
         eventMutationPickCap = EVENT_MUTATION_PICK_CAP,
+        opponentMode = OPPONENT_MODE,
         recordBoards = #PLAN_TARGETS > 0,
         recordEvents = #PLAN_TARGETS > 0,
       })

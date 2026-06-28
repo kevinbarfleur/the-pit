@@ -327,6 +327,14 @@ local ok, err = pcall(function()
     "events: reward unite echoue proprement si plateau+banc pleins")
   assert(fullRewardDrv:metricSnapshot().eventUnitFailures == 1,
     "events: reward unite impossible est comptee")
+  local generatedOppDrv = Rundriver.new(2026063209, { opponentMode = "generated" })
+  generatedOppDrv.run.round = 8
+  generatedOppDrv.run.shopTier = 3
+  generatedOppDrv.run.slots = 7
+  local oppA, keyA = generatedOppDrv:opponent(2026063209)
+  local oppB, keyB = generatedOppDrv:opponent(2026063209)
+  assert(keyA == keyB and #oppA == #oppB and oppA[1].id == oppB[1].id and oppA[1].level == oppB[1].level,
+    "rundriver: opponentMode generated est deterministe pour le meme seed")
   local function commanderEventRun()
     local d = Rundriver.new(20260633, { recordEvents = true, commanderMode = "auto" })
     d.run.pendingCommanderGrant = true

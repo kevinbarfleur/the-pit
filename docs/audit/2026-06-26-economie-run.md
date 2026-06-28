@@ -921,6 +921,18 @@ Ajout batch autonomie (`runs/long-2026-06-27b`) :
   seulement ameliorer son accessibilite ; en endpoint late sans relique/command,
   il manque aussi une source de scaling ou une meilleure transition vers le
   mur de fin.
+- Mise a jour adversaires de lab : `tools/sim.lua economy` accepte maintenant
+  `PIT_OPPONENT_MODE=generated`. Le mode par defaut reste `static` pour
+  comparer les anciens rapports, mais `generated` passe par `OppGen.generate`
+  comme le live quand aucun ghost n'est disponible. Les conclusions late-game
+  basees sur le vieux mur statique `pit_sovereign` doivent donc etre
+  revalidees en mode generated avant d'etre transformees en buffs/nerfs.
+- Mise a jour specs de cible : `PIT_PLAN_TARGET_SPECS` accepte des supports
+  explicites au format
+  `id=unit:level+unit:level;relics=relic_a+relic_b;commander=unit:level;sigil=carre;board=8`.
+  Les oracles appliquent ces reliques et ce commandant, ce qui permet de tester
+  un endpoint soutenu par ses vrais multiplicateurs plutot qu'une liste brute
+  d'unites.
 - Mise a jour funnel acquisition : `plan_access.acquisition_funnel` detaille les
   offres vues, l'or, la place, les achats, paires/fusions, ventes et le premier
   round vu par unite cible. Sur
