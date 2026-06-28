@@ -63,8 +63,15 @@ Run events are deterministic:
 - no render, audio, wall-clock, or global randomness enters the model.
 
 The opt-in lab event path returns `runEvent` from `Rundriver:fight()`, then a
-policy can call `pickRunEvent(index)`. If no policy implements event scoring,
-default is choice 1.
+policy can call `pickRunEvent(index)`. Core lab policies now score event choices
+instead of blindly taking the first option:
+
+- plan policies value focused relic support through the same coherence graph as
+  ordinary relic picks;
+- plan policies value concrete target units, especially missing level coverage;
+- generic policies use a simple deterministic tempo/power value for relics,
+  level-2 units, gold, shop XP, and shop tier bumps;
+- the random baseline still chooses a seeded random option.
 
 Metrics added:
 
@@ -82,6 +89,18 @@ These should be correlated with:
 - TTK / combat duration;
 - economy pressure;
 - bossrush entry and score.
+
+Latest small panel after policy scoring (`N=24`, `rot_bleed_rat_core`,
+`pair_completion_light`, `PIT_RUN_EVENTS=1`):
+
+- completion stayed neutral at `35.4%`;
+- event choices averaged `2.71` picks/run;
+- event rewards shifted toward explicit plan/power rewards:
+  `1.81` relics/run, `0.77` units/run, `0.50` shop XP/run;
+- focused relic access became visible and mostly acted on:
+  `62.5%` focused offer run-rate, `60.4%` focused pick run-rate;
+- target board completion still needs larger-N confirmation because this small
+  panel saw held completion fall to `0%`.
 
 ## Mutation Decision
 
@@ -137,7 +156,7 @@ events without active mutations.
 
 1. Run paired economy/bossrush panels with `PIT_RUN_EVENTS=1`, then compare
    against the last relic-merchant baseline.
-2. Add policy scoring for event choices instead of defaulting to option 1.
+2. Tune event reward EV now that policy choice is no longer option-1 biased.
 3. Build the live UI only after the reward EV is acceptable in the lab.
 4. If the lab shows unit rewards are healthy, design the first-class mutation
    instance model and run it behind an opt-in profile.

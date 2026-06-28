@@ -294,6 +294,20 @@ local ok, err = pcall(function()
   }, { supportArchetypes = { rot = true } })
   assert(focusedPlan:pickRelic(nil, { "bloodstone", "grave_cap", "aegis" }) == 2,
     "policy plan: choisit une relique focus plutot qu'une relique generique")
+  assert(focusedPlan:pickRunEvent(nil, {
+    choices = {
+      { reward = { kind = "gold", amount = 9 } },
+      { reward = { kind = "relic", id = "grave_cap" } },
+      { reward = { kind = "shop_xp", amount = 4 } },
+    },
+  }) == 2, "policy plan: choisit une relique focus dans un event")
+  assert(focusedPlan:pickRunEvent(nil, {
+    choices = {
+      { reward = { kind = "gold", amount = 9 } },
+      { reward = { kind = "unit", id = "rot_hound", level = 2 } },
+      { reward = { kind = "shop_xp", amount = 4 } },
+    },
+  }) == 2, "policy plan: choisit une unite coeur dans un event")
   local cmdPick = focusedPlan:chooseCommanderCandidate(nil, {
     { where = "bench", slot = 1, id = "gash_fiend", level = 1 },
     { where = "bench", slot = 2, id = "rot_hound", level = 1 },

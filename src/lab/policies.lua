@@ -152,6 +152,87 @@ local function copyCounts(drv)
   return counts
 end
 
+local function sameLevelCount(counts, id, level)
+  return counts[id .. "\0" .. (level or 1)] or 0
+end
+
+local function heldLevelSum(drv, id)
+  if not (drv and id) then return 0 end
+  local n = 0
+  for i = 1, 9 do
+    local sr = drv.build.slotRigs[i]
+    if sr and sr.id == id then n = n + (sr.level or 1) end
+  end
+  for i = 1, #(drv.build.benchSlots or {}) do
+    local sr = drv.build.bench[i]
+    if sr and sr.id == id then n = n + (sr.level or 1) end
+  end
+  return n
+end
+
+local function rewardTargetLevel(targetUnits, id)
+  local n = 0
+  for _, u in ipairs(targetUnits or {}) do
+    if u.id == id then n = n + (u.level or 1) end
+  end
+  return n
+end
+
+local function runEventRewardScore(drv, reward, opts)
+  reward, opts = reward or {}, opts or {}
+  local kind = reward.kind
+  if kind == "relic" then
+    return 120 + relicSupportScore(opts.targetUnits, reward.id)
+  elseif kind == "unit" then
+    if drv and freeSlots(drv, 0) <= 0 then return -500 end
+    local id = reward.id
+    local u = Units[id] or {}
+    local level = math.max(1, math.min(2, reward.level or 1))
+    local counts = drv and copyCounts(drv) or {}
+    local rank = unitRank(id)
+    local score = rank * 18 + level * 55 + (u.dmg or 0) * 0.5 + (u.hp or 0) * 0.06
+    if hasEffects(id) then score = score + 10 end
+    if sameLevelCount(counts, id, level) >= 2 then score = score + 90
+    elseif sameLevelCount(counts, id, level) == 1 then score = score + 38 end
+    local targetLevel = rewardTargetLevel(opts.targetUnits, id)
+    if targetLevel > 0 then
+      local missing = math.max(0, targetLevel - heldLevelSum(drv, id))
+      score = score + 520 + targetLevel * 40 + missing * 80
+    end
+    if opts.want and wants(opts.want, id) then score = score + 120 end
+    if opts.coreWant and wants(opts.coreWant, id) then score = score + 180 end
+    return score
+  elseif kind == "gold" then
+    local amount = reward.amount or 0
+    local lowGoldBonus = (drv and drv.run.gold < 4) and 30 or 0
+    return amount * 12 + lowGoldBonus
+  elseif kind == "shop_xp" then
+    local score = (reward.amount or 0) * 14
+    if opts.maxXpBuysPerRound == 0 then score = score - 45 end
+    return score
+  elseif kind == "shop_tier_up" then
+    local score = 95 + (reward.amount or 1) * 20
+    if opts.maxXpBuysPerRound == 0 then score = score - 140 end
+    return score
+  end
+  return 0
+end
+
+local function pickRunEventByValue(drv, event, opts)
+  local bestIndex, bestScore = 1, -math.huge
+  for i, choice in ipairs((event and event.choices) or {}) do
+    local score = runEventRewardScore(drv, choice.reward, opts)
+    if score > bestScore then
+      bestIndex, bestScore = i, score
+    end
+  end
+  return bestIndex
+end
+
+function Policies.pickRunEventByValue(drv, event, opts)
+  return pickRunEventByValue(drv, event, opts)
+end
+
 local function targetCoverage(drv, targetUnits)
   local have, want = {}, {}
   local function addHave(sr)
@@ -200,10 +281,6 @@ local function xpGateAllows(drv, targetUnits, gate)
   local minLevel = gate.minLevelCoverage
   if minLevel == nil then minLevel = 0.5 end
   return cov.unitCoverage >= minUnit and cov.levelCoverage >= minLevel, cov
-end
-
-local function sameLevelCount(counts, id, level)
-  return counts[id .. "\0" .. (level or 1)] or 0
 end
 
 local function targetLevelMap(targetUnits)
@@ -627,6 +704,9 @@ Policies.greedy_stats = {
   desiredOffers = function(_, drv)
     return desiredShop(drv, nil, freeSlots(drv, drv.run.pendingSlotGrant and 1 or 0))
   end,
+  pickRunEvent = function(_, drv, event)
+    return pickRunEventByValue(drv, event)
+  end,
   act = function(_, drv)
     resolveGrant(drv, true)
     local bought = buyMatching(drv, nil)
@@ -640,6 +720,9 @@ Policies.greedy_prune = {
   desiredOffers = function(_, drv)
     return smartDesiredShop(drv, nil, { keepPremium = true }, drv.run.pendingSlotGrant and 1 or 0)
   end,
+  pickRunEvent = function(_, drv, event)
+    return pickRunEventByValue(drv, event, { keepPremium = true })
+  end,
   act = function(_, drv)
     resolveGrant(drv, true)
     local bought, sold = buyMatchingSmart(drv, nil, { keepPremium = true })
@@ -652,6 +735,9 @@ Policies.greedy_plan = {
   name = "greedy_plan",
   desiredOffers = function(_, drv)
     return smartDesiredShop(drv, nil, { protectPairs = true }, drv.run.pendingSlotGrant and 1 or 0)
+  end,
+  pickRunEvent = function(_, drv, event)
+    return pickRunEventByValue(drv, event)
   end,
   act = function(_, drv)
     resolveGrant(drv, true)
@@ -673,6 +759,9 @@ Policies.econ_streak = {
     local cheap = function(id) return drv.run:unitCost(id) <= 3 end
     return desiredShop(drv, cheap, freeSlots(drv, drv.run.pendingSlotGrant and 1 or 0))
   end,
+  pickRunEvent = function(_, drv, event)
+    return pickRunEventByValue(drv, event)
+  end,
   act = function(_, drv)
     resolveGrant(drv, true)
     local cheap = function(id) return drv.run:unitCost(id) <= 3 end
@@ -688,6 +777,9 @@ Policies.econ_prune = {
     local cheap = function(id) return drv.run:unitCost(id) <= 3 end
     return smartDesiredShop(drv, cheap, {}, drv.run.pendingSlotGrant and 1 or 0)
   end,
+  pickRunEvent = function(_, drv, event)
+    return pickRunEventByValue(drv, event)
+  end,
   act = function(_, drv)
     resolveGrant(drv, true)
     local cheap = function(id) return drv.run:unitCost(id) <= 3 end
@@ -702,6 +794,9 @@ Policies.econ_plan = {
   desiredOffers = function(_, drv)
     local cheap = function(id) return drv.run:unitCost(id) <= 3 end
     return smartDesiredShop(drv, cheap, { protectWanted = true }, drv.run.pendingSlotGrant and 1 or 0)
+  end,
+  pickRunEvent = function(_, drv, event)
+    return pickRunEventByValue(drv, event)
   end,
   act = function(_, drv)
     resolveGrant(drv, true)
@@ -725,6 +820,9 @@ Policies.force_level_fast = {
     local slots = freeSlots(drv, drv.run.pendingSlotGrant and 1 or 0)
     if drv.build:placedCount() == 0 then slots = math.min(slots, 1) end
     return desiredShop(drv, nil, slots)
+  end,
+  pickRunEvent = function(_, drv, event)
+    return pickRunEventByValue(drv, event, { maxXpBuysPerRound = 2 })
   end,
   act = function(_, drv)
     resolveGrant(drv, true)
@@ -753,6 +851,9 @@ function Policies.tall_dense(keep)
       local extra = (drv.run.pendingSlotGrant and drv.run.slots < self.keep) and 1 or 0
       return desiredShop(drv, nil, freeSlots(drv, extra))
     end,
+    pickRunEvent = function(_, drv, event)
+      return pickRunEventByValue(drv, event)
+    end,
     act = function(self, drv)
       resolveGrant(drv, drv.run.slots < self.keep) -- accepte tant qu'on est sous `keep`, sinon refuse
       local bought = buyMatching(drv, nil)
@@ -777,6 +878,9 @@ function Policies.tall_dense_prune(keep)
     desiredOffers = function(self, drv)
       local extra = (drv.run.pendingSlotGrant and drv.run.slots < self.keep) and 1 or 0
       return smartDesiredShop(drv, nil, { keepPremium = true }, extra)
+    end,
+    pickRunEvent = function(_, drv, event)
+      return pickRunEventByValue(drv, event, { keepPremium = true })
     end,
     act = function(self, drv)
       resolveGrant(drv, drv.run.slots < self.keep)
@@ -804,6 +908,9 @@ function Policies.tall_dense_plan(keep)
     desiredOffers = function(self, drv)
       local extra = (drv.run.pendingSlotGrant and drv.run.slots < self.keep) and 1 or 0
       return smartDesiredShop(drv, nil, {}, extra)
+    end,
+    pickRunEvent = function(_, drv, event)
+      return pickRunEventByValue(drv, event)
     end,
     act = function(self, drv)
       resolveGrant(drv, drv.run.slots < self.keep)
@@ -844,6 +951,10 @@ function Policies.committed_archetype(archetype, sigil)
     end,
     commitment = function(self, drv)
       return Policies.commitmentFor(drv, self.archetype)
+    end,
+    pickRunEvent = function(self, drv, event)
+      local want = function(id) return Policies.archetypeOf(id) == self.archetype end
+      return pickRunEventByValue(drv, event, { want = want })
     end,
     act = function(self, drv)
       if sigil and drv.build.board.shape.name ~= sigil then drv:reshape(sigil) end
@@ -972,6 +1083,15 @@ function Policies.committed_archetype_plan_with(archetype, sigil, opts)
       end
       return bestIndex
     end,
+    pickRunEvent = function(self, drv, event)
+      local want = currentWant(self, drv)
+      return pickRunEventByValue(drv, event, {
+        targetUnits = targetUnits,
+        want = want,
+        coreWant = opts.coreWant,
+        maxXpBuysPerRound = opts.maxXpBuysPerRound,
+      })
+    end,
     chooseCommanderCandidate = function(_, _, candidates)
       local best, bestScore
       for _, c in ipairs(candidates or {}) do
@@ -1044,6 +1164,11 @@ end
 function Policies.random_baseline(rng)
   return {
     name = "random_baseline",
+    pickRunEvent = function(_, _, event)
+      local choices = event and event.choices or {}
+      if #choices <= 1 then return 1 end
+      return rng:random(1, #choices)
+    end,
     act = function(_, drv)
       if drv.run.pendingSlotGrant then resolveGrant(drv, rng:random(1, 2) == 1) end
       if rng:random() < 0.3 and drv.run:canReroll() then drv:reroll() end
