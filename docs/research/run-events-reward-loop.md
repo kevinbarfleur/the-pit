@@ -145,6 +145,22 @@ early-curve deep-reroll, but better for early-curve gated. Treat this as:
 events are healthy enough to keep iterating, but they should be tuned per
 economy/policy before becoming the only acquisition surface.
 
+Pacing check (`N=64`, `rot_bleed_rat_core`, gated and deep-reroll policies)
+shows the event layer does not materially disturb combat duration:
+
+- classic merchant baseline at live pacing: `27.3%` completion, `8.83` wins,
+  fit `0.988`, early average `13.40s`, p50 `10.75s`, p90 `17.05s`, fatigue
+  `0.3%`;
+- run events at live pacing: `26.6%` completion, `8.78` wins, fit `0.988`,
+  early average `13.40s`, p50 `10.77s`, p90 `17.40s`, fatigue `0.5%`;
+- the policy split matters more than the event toggle: deep-reroll wins and
+  completes much more often, but its early fights sit around `12.27s`, while
+  the gated plan is cleaner on duration and much weaker on completion.
+
+Interpretation: run events are not a pacing problem. Their current tuning
+problem is acquisition texture: relic density, target-unit usefulness, and
+whether exact reroll plans lose too much best-of-3 relic access.
+
 ## Mutation Decision
 
 Do not implement monster mutations as a quick stat table on the side.
@@ -184,6 +200,30 @@ Mutation examples worth testing later:
 This is promising, but it is phase 2. The current phase deliberately ships
 events without active mutations.
 
+## Event Product Step
+
+The intended product step is to replace the flat recurring relic merchant with
+small cryptic scenes at the same acquisition cadence. This is a presentation
+change and a reward-routing change, not a hidden-choice system:
+
+1. The event setup can be grim and oblique.
+2. Each choice must expose the concrete reward before selection.
+3. Reward lanes may include relics, level-1 units, rare level-2 units, gold,
+   shop XP, or shop tier.
+4. Mutated units are a later opt-in profile, not part of the first live pass.
+5. Eight active events remain the cap until the EV and exact-board impact are
+   measured at larger sample sizes.
+
+The mutation fantasy is still valuable because it creates memorable rare
+offers: a low-rank monster with `echo_touched`, a mid-rank monster with
+`blood_fed`, etc. The safe roadmap is:
+
+- first, ship events without mutations;
+- second, implement persistent unit instances with `mutations[]`;
+- third, add a lab-only event mutation profile;
+- fourth, run merge, bench, UI, tooltip, snapshot, bossrush, and economy panels
+  before enabling mutated event units in the live run loop.
+
 ## Product Guardrails
 
 - Keep event count small. Eight is enough for the first balancing loop.
@@ -197,9 +237,11 @@ events without active mutations.
 
 ## Next Steps
 
-1. Run paired economy/bossrush panels with `PIT_RUN_EVENTS=1`, then compare
-   against the last relic-merchant baseline.
+1. Keep `PIT_RUN_EVENTS=1` in paired economy/bossrush panels while tuning the
+   main balance loop.
 2. Tune event reward EV now that policy choice is no longer option-1 biased.
-3. Build the live UI only after the reward EV is acceptable in the lab.
-4. If the lab shows unit rewards are healthy, design the first-class mutation
-   instance model and run it behind an opt-in profile.
+3. Add policy diagnostics for "event unit was useful" vs "event unit caused
+   churn" before changing reward weights.
+4. Build the live UI only after the reward EV is acceptable in the lab.
+5. Design the first-class mutation instance model separately, then run it behind
+   an opt-in lab profile.

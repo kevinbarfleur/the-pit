@@ -2551,6 +2551,23 @@ Next implementation targets:
      level 2, never level 3. Monster mutations are intentionally not active yet
      because they need a first-class instance model before they can be safe for
      merges, snapshots, combat, and UI.
+   - event pacing check:
+     `N=64`, `rot_bleed_rat_core`, gated/deep-reroll policies, classic merchant
+     vs `PIT_RUN_EVENTS=1`. Live pacing stays stable with events: classic
+     merchant `27.3%` completion, `8.83` wins, duration fit `0.988`, early
+     average `13.40s`, p50 `10.75s`, p90 `17.05s`, fatigue `0.3%`; events
+     `26.6%` completion, `8.78` wins, fit `0.988`, early `13.40s`, p50
+     `10.77s`, p90 `17.40s`, fatigue `0.5%`. Conclusion: events are not a
+     combat-pacing risk in this slice. The next event work should focus on
+     reward EV, relic access, exact-board completion, and unit churn.
+   - product direction for the next gameplay enrichment:
+     the recurring relic merchant should become a small cryptic event surface
+     once the lab EV is acceptable. The event prose can be grim and indirect,
+     but every choice must clearly display the actual reward. Reward lanes can
+     include relics, level-1 units, rare level-2 units, gold, shop XP, and shop
+     tier. Mutated units remain a phase-2 opt-in profile after persistent unit
+     instances exist (`id + level + copyId + mutations[]`), with merge,
+     snapshot, tooltip, bossrush, and economy tests before live activation.
 3. Use the new `plan_support_watch` rows in the next economy/bossrush panels to
    separate "support never offered", "support offered but not picked", and
    "support picked but plan still inaccessible".
