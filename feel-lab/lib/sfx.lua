@@ -64,13 +64,15 @@ function PACKS.oneiric()
   local function rev(sd, tail, mix) return Synth.reverb(sd, { tail = tail, mix = mix, damp = 0.65, room = 0.72 }) end
   register("hover",  rev(Synth.tone{ wave = "sine", freq = 185, dur = 0.15, a = 0.040, lp = 0.55, detune = 0.006, vol = 0.09, r = 0.09 }, 0.30, 0.27), { jitter = 0.03, vol = 0.6 })
   register("tick",   rev(Synth.tone{ wave = "sine", freq = 270, dur = 0.07, a = 0.020, lp = 0.50, vol = 0.07, r = 0.05 }, 0.20, 0.24), { jitter = 0.02, vol = 0.6 })
-  register("press",  rev(Synth.tone{ wave = "tri",  freq = 135, dur = 0.20, a = 0.032, slide = -16, lp = 0.55, detune = 0.008, sub = 0.20, vol = 0.16, r = 0.12 }, 0.36, 0.33), { jitter = 0.03 })
+  register("press",  rev(Synth.tone{ wave = "tri",  freq = 128, dur = 0.18, a = 0.006, slide = -18, lp = 0.57, detune = 0.008, sub = 0.28, vol = 0.19, r = 0.10 }, 0.34, 0.30), { jitter = 0.03 })
   register("click",  rev(Synth.tone{ wave = "sine", freq = 200, dur = 0.20, a = 0.018, harm = 0.14, sub = 0.18, lp = 0.60, detune = 0.006, vol = 0.16, r = 0.12 }, 0.42, 0.34), { jitter = 0.03 }) -- cloche douce GRAVE
   register("pop",    rev(Synth.tone{ wave = "tri",  freq = 250, dur = 0.22, a = 0.030, slide = -150, lp = 0.55, vol = 0.15, r = 0.12 }, 0.42, 0.34), { jitter = 0.04 })
   register("back",   rev(Synth.tone{ wave = "sine", freq = 185, dur = 0.26, a = 0.045, slide = -90, lp = 0.55, vol = 0.13, r = 0.13 }, 0.46, 0.34), { jitter = 0.03 })
   register("coin",   rev(Synth.tone{ wave = "sine", freq = 320, dur = 0.28, a = 0.012, harm = 0.20, detune = 0.010, lp = 0.62, vol = 0.13, r = 0.13 }, 0.52, 0.36), { jitter = 0.02 }) -- cloche grave
   register("pickup", rev(Synth.tone{ wave = "sine", freq = 220, dur = 0.18, a = 0.030, slide = 110, lp = 0.55, vol = 0.13, r = 0.11 }, 0.42, 0.32), { jitter = 0.03 })
   register("drop",   rev(Synth.tone{ wave = "sine", freq = 165, dur = 0.22, a = 0.032, slide = -70, lp = 0.55, sub = 0.25, vol = 0.16, r = 0.11 }, 0.46, 0.34), { jitter = 0.03 }) -- doux, grave, AUCUN bruit
+  register("place",  rev(Synth.tone{ wave = "sine", freq = 88, dur = 0.16, a = 0.012, slide = -40, lp = 0.60, detune = 0.005, sub = 0.40, vol = 0.20, r = 0.10 }, 0.40, 0.30), { jitter = 0.05 })
+  register("unlock", rev(Synth.tone{ wave = "sine", freq = 120, dur = 0.26, a = 0.018, slide = 90, lp = 0.58, detune = 0.006, harm = 0.12, sub = 0.35, vol = 0.18, r = 0.13 }, 0.55, 0.36), { jitter = 0.03 })
   register("whoosh", rev(Synth.tone{ wave = "sine", freq = 360, dur = 0.32, a = 0.070, slide = -240, lp = 0.45, vol = 0.10, r = 0.18 }, 0.52, 0.40), { jitter = 0.02 }) -- souffle sine bas (pas de bruit)
   register("error",  rev(Synth.chord({ Synth.semis(150, 0), Synth.semis(150, 1) }, { dur = 0.34, vol = 0.16, detune = 0.012, r = 0.16 }), 0.58, 0.40), { jitter = 0.01 }) -- pad seconde mineure grave (malaise DOUX)
   register("success", rev(Synth.chord({ Synth.semis(160, 0), Synth.semis(160, 4), Synth.semis(160, 7), Synth.semis(160, 11) }, { dur = 0.52, vol = 0.20, arp = 0.09, detune = 0.010, r = 0.22 }), 0.85, 0.45), { jitter = 0.01 }) -- pad maj7 grave, rêveur

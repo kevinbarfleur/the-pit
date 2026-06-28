@@ -32,12 +32,15 @@ local STAGGER = 0.13   -- espacement des départs (burst/slam)
 local ORBIT   = 0.58   -- durée de la spirale (orbit)
 local CLIMAX  = 0.42
 local SETTLE  = 0.30
+local ECHO_1  = 0.09
+local ECHO_2  = 0.22
 local GOLD = Theme.c.gold
 local EMBER = Theme.c.ember
 local BRASS = Theme.c.brassS
 
 local function easeIn(e) return e * e end
 local function easeOut(e) return 1 - (1 - e) * (1 - e) end
+local function clamp01(v) return math.max(0, math.min(1, v or 0)) end
 -- Bézier quadratique
 local function bez(p0, c, p1, e)
   local u = 1 - e
@@ -93,7 +96,7 @@ function LU:_start()
   self.cur = {
     spec = s, style = style, t = 0, tx = tx, ty = ty, color = s.color or { 0.8, 0.7, 0.4 },
     souls = souls, beats = beats, climaxAt = climaxAt, climaxed = false,
-    endAt = climaxAt + CLIMAX + SETTLE, big = s.big, n = n,
+    endAt = climaxAt + CLIMAX + SETTLE + 0.10, big = s.big, n = n,
   }
   SFX.ladder(true)  -- repart à la base de l'échelle pour la nouvelle montée
 end
@@ -111,6 +114,25 @@ local function tspring(self, dt)
   self.ts = self.ts + self.tsV * dt
 end
 function LU:_pulse(amt) self.tsV = self.tsV + amt * 22 end  -- impulsion (amt<0 = creux d'anticipation)
+
+local function climaxEcho(self, c, phase)
+  if phase == 1 then
+    self:_pulse(c.big and 0.18 or 0.13)
+    self.glow = 1
+    Juice.addTrauma(c.big and 0.32 or 0.20)
+    SFX.ladder(false)
+    SFX.play("pop", { vol = c.big and 0.9 or 0.7, pitch = c.big and 0.86 or 0.92 })
+    P.explosion("levelup_echo", c.tx, c.ty)
+  else
+    self:_pulse(c.big and 0.24 or 0.17)
+    self.flash = math.max(self.flash, c.big and 0.72 or 0.52)
+    self.glow = 1
+    Juice.addTrauma(c.big and 0.42 or 0.28)
+    Juice.freeze(c.big and 0.055 or 0.035)
+    SFX.play("thud", { vol = c.big and 0.78 or 0.62, pitch = c.big and 0.76 or 0.84 })
+    P.explosion(c.big and "levelup_peak" or "levelup_echo", c.tx, c.ty)
+  end
+end
 
 function LU:update(dt)
   if not dt or dt <= 0 then dt = 0 end
@@ -135,9 +157,9 @@ function LU:update(dt)
       if c.style == "slam" then Juice.freeze(0.04) end
       self:_pulse(0.05)
       self.glow = math.min(1, self.glow + 0.28)
-      -- « ta » : petite gerbe d'étincelles + motes dorées (sprites pixel)
-      P.burst(c.tx, c.ty, { type = "mote", count = 5, speed = { 50, 140 }, life = { 0.2, 0.4 }, drag = 3 })
-      P.burst(c.tx, c.ty, { type = "spark", count = 3, speed = { 80, 170 }, life = { 0.15, 0.3 }, drag = 3 })
+      -- « ta » : micro seal, assez visible pour rythmer sans voler le climax.
+      P.burst(c.tx, c.ty, { type = "rune", count = 3, speed = { 45, 120 }, life = { 0.20, 0.36 }, drag = 3, spin = 8 })
+      P.burst(c.tx, c.ty, { type = "spark", count = 4, speed = { 80, 180 }, life = { 0.14, 0.28 }, drag = 3 })
     end
   end
 
@@ -152,20 +174,18 @@ function LU:update(dt)
     Juice.freeze(big and 0.12 or 0.08)
     SFX.play("success")
     SFX.play("thud", { vol = 0.8 })
-    -- onde(s) de choc + burst radial (synchro même frame, recherche §3)
-    P.ring(c.tx, c.ty, { color = GOLD, r0 = 8, r1 = big and 150 or 90, life = big and 0.55 or 0.42 })
-    if big then P.ring(c.tx, c.ty, { color = EMBER, r0 = 4, r1 = 120, life = 0.5 }) end
-    -- éclats dorés (matière) qui jaillissent et retombent
-    P.burst(c.tx, c.ty, { type = "shard", count = big and 30 or 20, speed = { 90, big and 300 or 220 },
-      life = { 0.45, big and 0.9 or 0.7 }, gravity = 220, drag = 1.6, spin = 12 })
-    -- braises montantes (signature grimdark) — fan vers le haut, gravité négative
-    P.burst(c.tx, c.ty, { type = "ember", count = big and 22 or 14, dir = -math.pi / 2, spread = math.pi * 0.8,
-      speed = { 40, 130 }, life = { 0.5, big and 1.0 or 0.8 }, gravity = -50, drag = 2.2 })
-    -- cendres qui dérivent puis retombent
-    P.burst(c.tx, c.ty, { type = "ash", count = big and 16 or 10, speed = { 30, 110 }, life = { 0.6, 1.1 }, gravity = 120, drag = 1.8 })
-    -- motes dorées (éclat)
-    P.burst(c.tx, c.ty, { type = "mote", count = big and 14 or 8, speed = { 60, 180 }, life = { 0.3, 0.6 }, drag = 2.5 })
+    -- Explosion canonique du lab: elle démarre déjà très gros, puis deux échos montent encore le payoff.
+    P.explosion(big and "levelup_big" or "levelup", c.tx, c.ty)
     if c.spec.onLevel then c.spec.onLevel(c.spec.toLevel) end
+  end
+
+  if c.climaxed and not c.echo1 and c.t >= c.climaxAt + ECHO_1 then
+    c.echo1 = true
+    climaxEcho(self, c, 1)
+  end
+  if c.climaxed and not c.echo2 and c.t >= c.climaxAt + ECHO_2 then
+    c.echo2 = true
+    climaxEcho(self, c, 2)
   end
 
   if c.t >= c.endAt then self:_start() end  -- fin -> enchaîne la cascade (ou s'arrête)
@@ -184,6 +204,38 @@ function LU:_soulPos(c, soul)
     local e = easeIn(lt)
     return bez(soul.sx, soul.cx, c.tx, e), bez(soul.sy, soul.cy, c.ty, e), lt
   end
+end
+
+local function drawClimaxFlash(x, y, a, t)
+  a = clamp01(a)
+  if a <= 0.01 then return end
+  local px = 4
+  local r = 18 + (1 - a) * 52
+  local core = 10 + a * 10
+  love.graphics.setBlendMode("add")
+  love.graphics.setColor(1, 0.92, 0.68, a * 0.72)
+  love.graphics.polygon("fill", x, y - core, x + core, y, x, y + core, x - core, y)
+  love.graphics.setColor(GOLD[1], GOLD[2], GOLD[3], a * 0.58)
+  for i = 0, 15 do
+    local ang = i / 16 * math.pi * 2 + t * 0.45
+    local len = r * (0.50 + 0.50 * ((i % 4 == 0) and 1 or 0.58))
+    local steps = (i % 2 == 0) and 5 or 3
+    for s = 1, steps do
+      local k = s / steps
+      local bx = math.floor((x + math.cos(ang) * len * k) / px + 0.5) * px
+      local by = math.floor((y + math.sin(ang) * len * k) / px + 0.5) * px
+      local sz = math.max(px, math.floor((px * (2.9 - k * 1.5)) + 0.5))
+      love.graphics.rectangle("fill", bx - sz / 2, by - sz / 2, sz, sz)
+    end
+  end
+  love.graphics.setColor(EMBER[1], EMBER[2], EMBER[3], a * 0.32)
+  for i = 0, 7 do
+    local ang = i / 8 * math.pi * 2 - t * 0.70
+    local bx = math.floor((x + math.cos(ang) * r * 0.36) / px + 0.5) * px
+    local by = math.floor((y + math.sin(ang) * r * 0.36) / px + 0.5) * px
+    love.graphics.rectangle("fill", bx - px, by - px, px * 2, px * 2)
+  end
+  love.graphics.setBlendMode("alpha")
 end
 
 -- sources de la fusion EN COURS (pour que la room dessine les jetons-copies + l'aspiration de la carte shop).
@@ -239,12 +291,9 @@ function LU:draw()
         love.graphics.setBlendMode("alpha")
       end
     end
-    -- flash local au climax (disque qui s'estompe)
+    -- flash local au climax : sceau/rayons pixelisés, jamais un disque lisse de placeholder.
     if self.flash > 0.01 then
-      love.graphics.setBlendMode("add")
-      love.graphics.setColor(1, 0.92, 0.7, self.flash * 0.7)
-      love.graphics.circle("fill", c.tx, c.ty, 30 + (1 - self.flash) * 40)
-      love.graphics.setBlendMode("alpha")
+      drawClimaxFlash(c.tx, c.ty, self.flash, c.t)
     end
   end
   love.graphics.setColor(1, 1, 1, 1)

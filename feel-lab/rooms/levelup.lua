@@ -4,9 +4,11 @@
 -- comparables) et 4 scénarios. Réutilise lib/levelup (moteur), lib/particles, lib/juice (shake global via main),
 -- lib/sfx (échelle montante grimdark). Géométrie inspirée du vrai jeu (board centré / banc / shop en bas).
 
-local Draw    = require("lib.draw")
-local Theme   = require("lib.theme")
-local Widgets = require("lib.widgets")
+local Draw    = require("src.ui.draw")
+local Theme   = require("src.ui.theme")
+local Button  = require("src.ui.button")
+local Slot    = require("src.ui.slot")
+local Feel    = require("lib.feel")
 local B       = require("lib.behavior")
 local Juice   = require("lib.juice")
 local P       = require("lib.particles")
@@ -17,6 +19,16 @@ Room.__index = Room
 local c = Theme.c
 local W, H = 1280, 720
 local MONCOL = c.rot   -- un « brood sac » violet (créature canon)
+
+local function rrect(x, y, w, h, r, fill, border, bw)
+  if fill then Draw.setColor(fill); love.graphics.rectangle("fill", x, y, w, h, r, r) end
+  if border then
+    Draw.setColor(border)
+    love.graphics.setLineWidth(bw or 2)
+    love.graphics.rectangle("line", x, y, w, h, r, r)
+    love.graphics.setLineWidth(1)
+  end
+end
 
 -- géométrie (espace design)
 local boardCX = { 548, 640, 732 }
@@ -44,11 +56,32 @@ function Room:update(dt)
   local ts = Juice.timeScale()      -- gèle l'anim pendant le hitstop (le « TAAA » tient)
   self.anim:update((dt or 0) * ts)
   P.update((dt or 0) * ts)
+  for _, s in ipairs(STYLES) do
+    Feel.hover("lu.style." .. s.id, B.hit(self:styleRect(s.id), self.mx, self.my))
+  end
+  for _, s in ipairs({ "board3", "bench", "shop", "cascade" }) do
+    Feel.hover("lu.scenario." .. s, B.hit(self:scenarioRect(s), self.mx, self.my))
+  end
 end
 
 function Room:input(r)
   return { over = B.hit(r, self.mx, self.my), down = false,
            clicked = self.click and B.hit(r, self.click.x, self.click.y) or false }
+end
+
+function Room:styleRect(id)
+  for i, s in ipairs(STYLES) do
+    if s.id == id then return { x = 40 + (i - 1) * 168, y = 106, w = 156, h = 40 } end
+  end
+  return { x = 0, y = 0, w = 0, h = 0 }
+end
+
+function Room:scenarioRect(id)
+  local scen = { board3 = 1, bench = 2, shop = 3, cascade = 4 }
+  local i = scen[id] or 1
+  local bw, gap = 224, 16
+  local sx = W / 2 - (bw * 4 + gap * 3) / 2
+  return { x = sx + (i - 1) * (bw + gap), y = 158, w = bw, h = 42 }
 end
 
 -- lance un scénario (arrange les copies + déclenche la fusion)
@@ -84,7 +117,7 @@ local function gem(x, y, level, scale, glow, dim)
     love.graphics.circle("fill", x, y, 34)
     love.graphics.setBlendMode("alpha")
   end
-  Draw.rrect(x - 30, y - 30, 60, 60, 8, c.stone800, (glow and glow > 0.3) and c.brassS or c.brass, 2)
+  rrect(x - 30, y - 30, 60, 60, 8, c.stone800, (glow and glow > 0.3) and c.brassS or c.brass, 2)
   local a = dim and 0.5 or 1
   love.graphics.setColor(MONCOL[1], MONCOL[2], MONCOL[3], a)
   love.graphics.circle("fill", x, y, 17)
@@ -98,7 +131,7 @@ local function gem(x, y, level, scale, glow, dim)
 end
 
 local function slotPanel(x, y, s)
-  Draw.rrect(x - s / 2, y - s / 2, s, s, 7, { c.stone850[1], c.stone850[2], c.stone850[3], 0.7 }, c.brassD, 2)
+  Slot.draw(x - s / 2, y - s / 2, s, "empty", {})
 end
 
 function Room:draw(view)
@@ -107,10 +140,11 @@ function Room:draw(view)
   -- ── contrôles ──────────────────────────────────────────────────────────────────────────────────────────
   Draw.textTrackedL("STYLE", 40, 88, c.ink4, Theme.label(11), 2)
   for i, s in ipairs(STYLES) do
-    local r = { x = 40 + (i - 1) * 168, y = 106, w = 156, h = 40 }
+    local r = self:styleRect(s.id)
     local sel = (self.style == s.id)
-    Widgets.button("lus_" .. s.id, r, { label = s.name, tone = sel and "cta" or "ghost", font = Theme.label(13),
-      onClick = function() self.style = s.id end }, self:input(r))
+    Button.draw(r.x, r.y, r.w, r.h, sel and "primary" or "secondary", s.name, {
+      hover = B.hit(r, self.mx, self.my), feel = Feel.state("lu.style." .. s.id), id = "lu.style." .. s.id,
+    })
   end
   -- note du style courant
   for _, s in ipairs(STYLES) do if s.id == self.style then Draw.textR(s.note, W - 40, 116, c.ink3, Theme.flavor(13)) end end
@@ -119,12 +153,11 @@ function Room:draw(view)
   local scen = {
     { "board3", "3 on board" }, { "bench", "Board + Bench" }, { "shop", "From Shop" }, { "cascade", "Cascade 1->3" },
   }
-  local bw, gap = 224, 16
-  local sx = W / 2 - (bw * #scen + gap * (#scen - 1)) / 2
   for i, s in ipairs(scen) do
-    local r = { x = sx + (i - 1) * (bw + gap), y = 158, w = bw, h = 42 }
-    Widgets.button("lusc_" .. s[1], r, { label = s[2], tone = "default", font = Theme.title(15),
-      onClick = function() self:scenario(s[1]) end }, self:input(r))
+    local r = self:scenarioRect(s[1])
+    Button.draw(r.x, r.y, r.w, r.h, "secondary", s[2], {
+      hover = B.hit(r, self.mx, self.my), feel = Feel.state("lu.scenario." .. s[1]), id = "lu.scenario." .. s[1],
+    })
   end
   Draw.divider(W / 2, 214, W - 100, c.brass, 0.5)
 
@@ -135,7 +168,7 @@ function Room:draw(view)
   for r = 1, 3 do for col = 1, 3 do slotPanel(boardCX[col], boardCY[r], 80) end end
   for i = 1, 4 do slotPanel(benchCX[i], benchCY, 64) end
   for i = 1, 5 do
-    Draw.rrect(shopCX[i] - 54, shopCY - 48, 108, 96, 7, { c.stone850[1], c.stone850[2], c.stone850[3], 0.7 }, c.brassD, 2)
+    rrect(shopCX[i] - 54, shopCY - 48, 108, 96, 7, { c.stone850[1], c.stone850[2], c.stone850[3], 0.7 }, c.brassD, 2)
   end
 
   -- sources courantes (copies pas encore aspirées ; carte shop qui réagit)
@@ -164,6 +197,22 @@ function Room:draw(view)
 end
 
 function Room:mousemoved(mx, my) self.mx, self.my = mx, my end
-function Room:mousepressed(mx, my) self.mx, self.my = mx, my; self.click = { x = mx, y = my } end
+function Room:mousepressed(mx, my, button)
+  self.mx, self.my = mx, my
+  self.click = { x = mx, y = my }
+  if button ~= 1 then return end
+  for _, s in ipairs(STYLES) do
+    if B.hit(self:styleRect(s.id), mx, my) then
+      Feel.press("lu.style." .. s.id, function() self.style = s.id end, { delay = 0.08 })
+      return
+    end
+  end
+  for _, s in ipairs({ "board3", "bench", "shop", "cascade" }) do
+    if B.hit(self:scenarioRect(s), mx, my) then
+      Feel.press("lu.scenario." .. s, function() self:scenario(s) end, { delay = 0.08 })
+      return
+    end
+  end
+end
 
 return Room

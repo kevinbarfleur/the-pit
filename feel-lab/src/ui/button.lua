@@ -175,7 +175,7 @@ function Button.ghost(x, y, w, h, text, opts)
   return { x = x, y = y, w = w, h = h }
 end
 
--- Glyphe d'icône (sigil/prev/next/gear) centré, en brass-l. Dessiné net (vectoriel).
+-- Glyphe d'icône (sigil/prev/next/gear/unlock) centré, en brass-l. Dessiné net (vectoriel).
 local function glyph(kind, cx, cy)
   if not (love and love.graphics) then return end
   Draw.setColor(C.brassL)
@@ -187,6 +187,14 @@ local function glyph(kind, cx, cy)
     love.graphics.setLineWidth(2)
     love.graphics.line(cx - 3 * d, cy - 5, cx + 3 * d, cy, cx - 3 * d, cy + 5)
     love.graphics.setLineWidth(1)
+  elseif kind == "unlock" then
+    love.graphics.setLineWidth(2)
+    love.graphics.line(cx - 5, cy, cx - 5, cy - 5, cx - 2, cy - 8, cx + 3, cy - 8, cx + 6, cy - 5)
+    love.graphics.setLineWidth(1)
+    love.graphics.rectangle("fill", cx - 6, cy, 12, 8)
+    Draw.setColor(C.stone900)
+    love.graphics.rectangle("fill", cx - 1, cy + 3, 2, 3)
+    Draw.setColor(C.brassL)
   else -- gear : disque + dents simplifiées
     love.graphics.circle("fill", cx, cy, 5)
     Draw.setColor(C.stone900); love.graphics.circle("fill", cx, cy, 2)
@@ -194,7 +202,7 @@ local function glyph(kind, cx, cy)
   Draw.reset()
 end
 
--- ICON 34×34 (ou size). kind ∈ "sigil"|"prev"|"next"|"gear".
+-- ICON 34×34 (ou size). kind ∈ "sigil"|"prev"|"next"|"gear"|"unlock".
 function Button.icon(x, y, size, kind, opts)
   opts = opts or {}
   size = size or 34
