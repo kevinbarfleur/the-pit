@@ -189,7 +189,7 @@ local ok, err = pcall(function()
   do
     local rb = withAura("soot_acolyte", { stat = "bleedInc", target = "role:front", value = 0.20 })
     local b = fresh()
-    for s = 1, 9 do b:placeId(s, s == 5 and "soot_acolyte" or "razorkin") end -- razorkin saigne
+    for s = 1, 9 do b:placeId(s, s == 5 and "soot_acolyte" or "gash_fiend") end -- gash_fiend saigne sans aura propre
     local comp = b:buildComp(-1)
     local hits = {}
     for _, s in ipairs(comp) do if s.bleedInc and s.bleedInc > 0 then hits[#hits + 1] = s.slot end end

@@ -2828,6 +2828,27 @@ Next implementation targets:
   `25.7k-25.9k` per run, while deep-reroll enters at `62.5%` and scores about
   `19.7k` per run. Read: the candidate shifts postgame access/score away from
   deep-reroll without killing the scoring loop.
+- Batodex-like level-1 positional bridge pass:
+  six rank-2 units that still read as pure level-1 affliction applicators now
+  have one modest placement hook each, using only existing `aura_stat` support:
+  `razorkin` gives the ally behind `Bleed +6%`, `cinder_cur` gives neighbors
+  `Haste +2%`, `pyre_tender` gives the ally ahead `Burn +8%`, `thunderhead`
+  gives the ally behind `Empower +6%`, `chitin_drone` gives neighbors
+  `Poison +5%`, and `byakhee` gives the ally above `Haste +4%`. Their level 2
+  and 3 deltas scale these hooks slightly, so the ability upgrade is not only
+  raw HP/DMG or the main affliction value. The wording in `src/i18n/en.lua` was
+  updated to use canonical terms (`Burn`, `Bleed`, `Poison`, `Shock`, `Haste`,
+  `Empower`). Audit after the pass: `27/110` simple-affliction L1 units
+  (`24.5%`, down from `33/110`), rank-2 simple-affliction count `7/32`
+  (down from `13/32`), support axes `48` (up from `42`), position axes `38`
+  (up from `32`), directional axes `9` (up from `5`), and low-variety remains
+  `0%`. Targeted validation passed `tests/auras.lua`, `tests/tags.lua`,
+  `tests/unit_resolver.lua`, and `tools/sim.lua mechanics`. A small N=32
+  economy guard under `sap_cost_pair_completion_tiered_reroll` +
+  generated opponents `levelMult=2.25` remained in the expected band:
+  aggregate completion `54.9%`, `9.17` wins, `95.5%` merge-per-pair,
+  `2.51` leftover. Top low-rank duplicate pressure is still driven mainly by
+  `carrion_pecker`/`gnaw_rat`, not by the six adjusted units.
 3. Use the new compact economy summary first, and only drill into full
    `plan_access` / `support_access` when a row shows a concrete anomaly.
 4. Use `plan_support_watch` rows in the next economy/bossrush panels to separate

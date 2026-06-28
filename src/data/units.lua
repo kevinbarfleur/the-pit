@@ -106,7 +106,10 @@ local U = {
   },
   razorkin = { -- SAIGNEMENT : slow de cadence
     id = "razorkin", bodyplan = "humanoid", rank = 2, type = "flesh", family = "bete", arch = "direcat", cost = 2, hp = 52, dmg = 5, cd = 46,
-    effects = { { trigger = "on_hit", op = "bleed", params = { dps = 2, dur = 240, slowPct = 0.20 } } },
+    effects = {
+      { trigger = "on_hit", op = "bleed", params = { dps = 2, dur = 240, slowPct = 0.20 } },
+      { trigger = "combat_start", op = "aura_stat", target = "behind", params = { stat = "bleedInc", value = 0.06 } },
+    },
     -- COMMANDANT (LES PLAIES QUI COURENT) : bleed standard -> ampli bleed école (bleedInc team 0.18, TROU #1). cf. spec §3.3.
     commandBonus = { trigger = "combat_start", op = "aura_stat", target = "team", params = { stat = "bleedInc", value = 0.18 } },
   },
@@ -148,13 +151,19 @@ local U = {
   -- BRÛLURE (burst qui décroît, lèche le bouclier) : cadence / front-load / éphémère
   cinder_cur = { -- cadence rapide, petites brûlures qui se rallument souvent
     id = "cinder_cur", bodyplan = "quadruped", rank = 2, type = "abyss", family = "culte", arch = "cultist", cost = 2, hp = 34, dmg = 4, cd = 34,
-    effects = { { trigger = "on_hit", op = "burn", params = { dps = 4, dur = 120, refresh = true } } },
+    effects = {
+      { trigger = "on_hit", op = "burn", params = { dps = 4, dur = 120, refresh = true } },
+      { trigger = "combat_start", op = "aura_stat", target = "neighbors", params = { stat = "haste", value = 0.02 } },
+    },
     -- COMMANDANT (LE FEU PROMPT) : cadence rapide -> tempo team (sert tout DoT, haste sans cap -> 0.06). cf. spec §3.2.
     commandBonus = { trigger = "combat_start", op = "aura_stat", target = "team", params = { stat = "haste", value = 0.06 } },
   },
   pyre_tender = { -- gros coup lent -> grosse brûlure de départ (front-load)
     id = "pyre_tender", bodyplan = "deformed", rank = 2, type = "flesh", family = "echassier", arch = "heron", cost = 2, hp = 50, dmg = 7, cd = 72,
-    effects = { { trigger = "on_hit", op = "burn", params = { dps = 10, dur = 180 } } },
+    effects = {
+      { trigger = "on_hit", op = "burn", params = { dps = 10, dur = 180 } },
+      { trigger = "combat_start", op = "aura_stat", target = "ahead", params = { stat = "burnInc", value = 0.08 } },
+    },
     -- COMMANDANT (LE COUP D'OUVERTURE) : front-load lourd -> empower l'avant (gros coup, atkInc role:front cappé). cf. spec §3.2.
     commandBonus = { trigger = "combat_start", op = "aura_stat", target = "role:front", params = { stat = "atkInc", value = 0.12 } },
   },
@@ -472,7 +481,10 @@ local U = {
   },
   thunderhead = { -- T1 : gros coup lent, charge DENSE (volt fort, peu de stacks) — carry burst
     id = "thunderhead", bodyplan = "eye", rank = 2, type = "arcane", family = "oeil", arch = "eyeswarm", cost = 2, hp = 40, dmg = 8, cd = 76, aggro = 5,
-    effects = { { trigger = "on_hit", op = "shock", params = { add = 1, volt = 6, cap = 4, dur = 180 } } },
+    effects = {
+      { trigger = "on_hit", op = "shock", params = { add = 1, volt = 6, cap = 4, dur = 180 } },
+      { trigger = "combat_start", op = "aura_stat", target = "behind", params = { stat = "atkInc", value = 0.06 } },
+    },
     -- COMMANDANT (LE POIDS DU TONNERRE) : carry burst arrière -> empower role:back (le DPS protégé, atkInc 0.14). cf. spec §3.6.
     commandBonus = { trigger = "combat_start", op = "aura_stat", target = "role:back", params = { stat = "atkInc", value = 0.14 } },
   },
@@ -596,7 +608,10 @@ local U = {
   --    forwardé à creaturegen.cached). Afflictions selon la tendance-pôle. Stats = PLACEHOLDERS (à tuner via sim). ──
   chitin_drone = { -- INSECTE / venin de ruche
     id = "chitin_drone", type = "order", family = "insecte", arch = "insectoid", rank = 2, cost = 2, hp = 38, dmg = 4, cd = 42,
-    effects = { { trigger = "on_hit", op = "poison", params = { dps = 2, dur = 160 } } },
+    effects = {
+      { trigger = "on_hit", op = "poison", params = { dps = 2, dur = 160 } },
+      { trigger = "combat_start", op = "aura_stat", target = "neighbors", params = { stat = "poisonInc", value = 0.05 } },
+    },
     -- COMMANDANT (LA VOLONTÉ DE LA RUCHE) : insecte ruche -> empower team (atkInc 0.07, varie). cf. spec §3.4.
     commandBonus = { trigger = "combat_start", op = "aura_stat", target = "team", params = { stat = "atkInc", value = 0.07 } },
   },
@@ -627,7 +642,10 @@ local U = {
   },
   byakhee = { -- AILÉ / serres en piqué
     id = "byakhee", type = "abyss", family = "aile", arch = "byakhee", rank = 2, cost = 2, hp = 46, dmg = 8, cd = 50,
-    effects = { { trigger = "on_hit", op = "bleed", params = { dps = 3, dur = 180, slowPct = 0.10 } } },
+    effects = {
+      { trigger = "on_hit", op = "bleed", params = { dps = 3, dur = 180, slowPct = 0.10 } },
+      { trigger = "combat_start", op = "aura_stat", target = "above", params = { stat = "haste", value = 0.04 } },
+    },
     -- COMMANDANT (LE PIQUÉ DES AILES) : ailé piqué -> tempo team (haste 0.06, sans cap). cf. spec §3.3.
     commandBonus = { trigger = "combat_start", op = "aura_stat", target = "team", params = { stat = "haste", value = 0.06 } },
   },

@@ -293,12 +293,14 @@ return {
     [2] = {
       effects = {
         [1] = { params = { dps = 5, dur = 135 } },
+        [2] = { params = { value = 0.025 } },
       },
       commandBonus = { params = { value = 0.07 } },
     },
     [3] = {
       effects = {
         [1] = { params = { dps = 6, dur = 150 } },
+        [2] = { params = { value = 0.03 } },
       },
       commandBonus = { params = { value = 0.08 } },
     },
@@ -324,12 +326,14 @@ return {
     [2] = {
       effects = {
         [1] = { params = { dps = 4, dur = 200, slowPct = 0.12 } },
+        [2] = { params = { value = 0.05 } },
       },
       commandBonus = { params = { value = 0.07 } },
     },
     [3] = {
       effects = {
         [1] = { params = { dps = 5, dur = 210, slowPct = 0.15 } },
+        [2] = { params = { value = 0.06 } },
       },
       commandBonus = { params = { value = 0.08 } },
     },
@@ -339,12 +343,14 @@ return {
     [2] = {
       effects = {
         [1] = { params = { dps = 3, dur = 180 } },
+        [2] = { params = { value = 0.06 } },
       },
       commandBonus = { params = { value = 0.08 } },
     },
     [3] = {
       effects = {
         [1] = { params = { dps = 3, dur = 210, weaken = 0.05 } },
+        [2] = { params = { value = 0.07 } },
       },
       commandBonus = { params = { value = 0.09 } },
     },
@@ -672,12 +678,14 @@ return {
     [2] = {
       effects = {
         [1] = { params = { dps = 11, dur = 195 } },
+        [2] = { params = { value = 0.09 } },
       },
       commandBonus = { params = { value = 0.14 } },
     },
     [3] = {
       effects = {
         [1] = { params = { dps = 12, dur = 210 } },
+        [2] = { params = { value = 0.10 } },
       },
       commandBonus = { params = { value = 0.16 } },
     },
@@ -687,12 +695,14 @@ return {
     [2] = {
       effects = {
         [1] = { params = { dps = 3, slowPct = 0.22 } },
+        [2] = { params = { value = 0.07 } },
       },
       commandBonus = { params = { value = 0.20 } },
     },
     [3] = {
       effects = {
         [1] = { params = { dps = 3, dur = 270, slowPct = 0.25 } },
+        [2] = { params = { value = 0.08 } },
       },
       commandBonus = { params = { value = 0.22 } },
     },
@@ -768,12 +778,14 @@ return {
     [2] = {
       effects = {
         [1] = { params = { volt = 7, dur = 195 } },
+        [2] = { params = { value = 0.07 } },
       },
       commandBonus = { params = { value = 0.16 } },
     },
     [3] = {
       effects = {
         [1] = { params = { volt = 8, cap = 5, dur = 210 } },
+        [2] = { params = { value = 0.08 } },
       },
       commandBonus = { params = { value = 0.18 } },
     },
