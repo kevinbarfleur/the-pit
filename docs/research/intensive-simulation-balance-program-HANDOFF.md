@@ -2588,6 +2588,10 @@ Next implementation targets:
      space can receive them cleanly; event gold is deferred through
      `_pendingGold` so it survives the next-round gold reset. Mutations still
      do not materialize live because no mutation target is passed by `main.lua`.
+     Simulation alignment update: `PIT_EVENT_UNIT_TARGETING=space` mirrors the
+     live board/bench capacity filter; `policy_space` and
+     `policy_space_missing_copy` combine that filter with policy priority and
+     the missing-copy experiment.
    - event-unit diagnostics:
      `Rundriver` now classifies unit rewards as single, pair-completer, or
      merge-completer, and records whether the granted copy lands on bench or

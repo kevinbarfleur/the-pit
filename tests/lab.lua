@@ -306,6 +306,17 @@ local ok, err = pcall(function()
     "events: reward unite peut completer une fusion")
   assert(mergeRewardDrv:metricSnapshot().eventUnitMergeCompleters == 1,
     "events: reward unite fusion est diagnostiquee")
+  local spaceFilterDrv = Rundriver.new(2026063208, { recordEvents = true, eventUnitTargeting = "space" })
+  local spaceOpts = spaceFilterDrv:runEventRollOptions()
+  assert(spaceOpts and spaceOpts.unitFilter and spaceOpts.unitFilter("marauder", { level = 1 }),
+    "events: filtre space accepte une unite quand le build peut la recevoir")
+  spaceFilterDrv.build.board:ensureOpen(9)
+  for i = 1, 9 do spaceFilterDrv.build:placeId(i, "skeleton", 1) end
+  for i = 1, #spaceFilterDrv.build.benchSlots do
+    spaceFilterDrv.build.bench[i] = { id = "witch", level = 1, char = spaceFilterDrv.build:newRig("witch") }
+  end
+  assert(not spaceOpts.unitFilter("marauder", { level = 1 }),
+    "events: filtre space retire les lanes unite si board+banc sont pleins")
   local fullRewardDrv = Rundriver.new(2026063203, { recordEvents = true })
   fullRewardDrv.build.board:ensureOpen(9)
   for i = 1, 9 do fullRewardDrv.build:placeId(i, "skeleton", 1) end

@@ -19,6 +19,7 @@ local Palette = require("src.core.palette")
 local Units = require("src.data.units")
 local Pacing = require("src.run.pacing")
 local Mutations = require("src.run.mutations")
+local EventRewards = require("src.run.event_rewards")
 
 local Rundriver = {}
 Rundriver.__index = Rundriver
@@ -789,13 +790,24 @@ function Rundriver:runEventRollOptions()
   if not mode and not self.runEventMutations then return nil end
   local policy = self.policy
   local opts = {}
-  if mode == "missing_copy" or mode == "policy_missing_copy" then
+  local function modeHas(part)
+    return type(mode) == "string" and mode:find(part, 1, true) ~= nil
+  end
+  if modeHas("missing_copy") then
     opts.unitFilter = function(id, rewardSpec)
       local level = math.max(1, math.min(2, (rewardSpec and rewardSpec.level) or 1))
       return self:copyCount(id, level) > 0
     end
   end
-  if (mode == "policy" or mode == "policy_missing_copy") and policy and policy.runEventUnitPriority then
+  if modeHas("space") then
+    local previousFilter = opts.unitFilter
+    opts.unitFilter = function(id, rewardSpec)
+      if previousFilter and not previousFilter(id, rewardSpec) then return false end
+      local level = math.max(1, math.min(2, (rewardSpec and rewardSpec.level) or 1))
+      return EventRewards.canGrantUnit(self.build, id, level)
+    end
+  end
+  if (mode == "policy" or modeHas("policy")) and policy and policy.runEventUnitPriority then
     opts.unitPriority = function(id, rewardSpec)
       return policy:runEventUnitPriority(self, id, rewardSpec)
     end

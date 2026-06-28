@@ -77,6 +77,16 @@ Live reward application rules:
 - mutation choices are not materialized live because no `mutationTarget` is
   passed to `RunState:rollRunEvent`.
 
+Simulation alignment:
+
+- `PIT_EVENT_UNIT_TARGETING=space` applies the same board/bench capacity filter
+  used by the live event surface.
+- `policy_space` combines policy scoring with the live capacity filter.
+- `policy_space_missing_copy` combines policy scoring, live capacity, and the
+  copy-chain filter used to test missing-copy unit rewards.
+- The default lab event path remains unchanged for historical comparisons; use
+  one of the `space` modes when a panel is meant to mirror live product rules.
+
 ## Simulation Contract
 
 Run events are deterministic:
