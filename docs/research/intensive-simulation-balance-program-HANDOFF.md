@@ -2721,12 +2721,16 @@ Next implementation targets:
      effects. A first roster pass changed `rot_grub`, `wailing_shade`,
      `pyre_herald`, `web_recluse`, `siphon_jelly`, `bile_spitter`, and
      `rust_sentinel` from "affliction only" toward one extra positional/support
-     hook each, using existing `aura_stat` ops only. New audit:
-     `33/110` simple-affliction L1 units (`30.0%`), `24/110` low-variety
-     units (`21.8%`), `44/110` authored level-up units (`40.0%`), and
-     `22/110` level-3 clutch units (`20.0%`). Short generated batch showed no
-     unit >2 sigma outlier, and coherence buckets still slope upward
-     (`41.4%` low-coh winrate to `70.6%` high-coh winrate).
+     hook each, using existing `aura_stat` ops only. A second, less intrusive
+     pass authored level scaling for mid-rank units that already had readable
+     base identities (`kiln_warden`, `bloodletter`, `tendon_render`,
+     `vein_splitter`, `plague_bearer`, `acid_maw`, `patient_worm`,
+     `hollow_gut`, `stormlord`, `dynamo_priest`, `arc_warden`,
+     `storm_anchor`). New audit: `33/110` simple-affliction L1 units (`30.0%`),
+     `12/110` low-variety units (`10.9%`), `56/110` authored level-up units
+     (`50.9%`), and `22/110` level-3 clutch units (`20.0%`). Short generated
+     batch showed no unit >2 sigma outlier, and coherence buckets still slope
+     upward (`41.4%` low-coh winrate to `72.6%` high-coh winrate).
 3. Use the new `plan_support_watch` rows in the next economy/bossrush panels to
    separate "support never offered", "support offered but not picked", and
    "support picked but plan still inaccessible".

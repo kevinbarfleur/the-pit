@@ -39,8 +39,8 @@ luajit tools/sim.lua mechanics
 Mechanic diversity audit:
 
 - `tools/sim.lua mechanics` writes `runs/report-mechanics.json`.
-- Current baseline after the Batodex/SAP bridge pass: `33/110` units are still
-  simple-affliction at level 1, `24/110` are low-variety, `44/110` have
+- Current baseline after the Batodex/SAP bridge passes: `33/110` units are still
+  simple-affliction at level 1, `12/110` are low-variety, `56/110` have
   authored level ability deltas, and `22/110` have level-3 clutch flags.
 - Use `recommendations.redesign_first` as the first candidate list for the next
   creature-effect redesign pass.

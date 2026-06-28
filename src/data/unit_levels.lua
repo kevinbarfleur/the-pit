@@ -476,6 +476,180 @@ return {
     },
   },
 
+  -- Mid-rank authored scaling pass: these cards already have a readable base
+  -- identity, so level-ups improve that identity instead of adding complexity.
+  kiln_warden = {
+    [2] = {
+      effects = {
+        [1] = { params = { dps = 6, dur = 190 } },
+      },
+      commandBonus = { params = { value = 0.24 } },
+    },
+    [3] = {
+      effects = {
+        [1] = { params = { dps = 7, dur = 210 } },
+      },
+      commandBonus = { params = { value = 0.26 } },
+    },
+  },
+
+  bloodletter = {
+    [2] = {
+      effects = {
+        [1] = { params = { dps = 3, dur = 240, slowPct = 0.20, aggravateMult = 2.0 } },
+      },
+    },
+    [3] = {
+      effects = {
+        [1] = { params = { dps = 3, dur = 270, slowPct = 0.22, aggravateMult = 2.25 } },
+      },
+    },
+  },
+
+  tendon_render = {
+    [2] = {
+      effects = {
+        [1] = { params = { dps = 3, dur = 250, slowPct = 0.16 } },
+      },
+      commandBonus = { params = { value = 0.24 } },
+    },
+    [3] = {
+      effects = {
+        [1] = { params = { dps = 3, dur = 270, slowPct = 0.18 } },
+      },
+      commandBonus = { params = { value = 0.26 } },
+    },
+  },
+
+  vein_splitter = {
+    [2] = {
+      effects = {
+        [1] = { params = { dps = 5, dur = 190, slowPct = 0.15 } },
+      },
+      commandBonus = { params = { value = 0.14 } },
+    },
+    [3] = {
+      effects = {
+        [1] = { params = { dps = 5, dur = 210, slowPct = 0.18 } },
+      },
+      commandBonus = { params = { value = 0.16 } },
+    },
+  },
+
+  plague_bearer = {
+    [2] = {
+      effects = {
+        [1] = { params = { dps = 3, dur = 190, spread = { dps = 1, dur = 140 } } },
+      },
+    },
+    [3] = {
+      effects = {
+        [1] = { params = { dps = 3, dur = 210, spread = { dps = 2, dur = 150 } } },
+      },
+    },
+  },
+
+  acid_maw = {
+    [2] = {
+      effects = {
+        [1] = { params = { dps = 3, dur = 190, shieldEat = 0.35 } },
+      },
+      commandBonus = { params = { stripEnemyShield = 0.45 } },
+    },
+    [3] = {
+      effects = {
+        [1] = { params = { dps = 3, dur = 210, shieldEat = 0.40 } },
+      },
+      commandBonus = { params = { stripEnemyShield = 0.50 } },
+    },
+  },
+
+  patient_worm = {
+    [2] = {
+      effects = {
+        [1] = { params = { base = 3, passiveRamp = 1, capDps = 12, maxHpFrac = 0.11 } },
+      },
+      commandBonus = { params = { value = 0.24 } },
+    },
+    [3] = {
+      effects = {
+        [1] = { params = { base = 3, passiveRamp = 2, capDps = 12, maxHpFrac = 0.12 } },
+      },
+      commandBonus = { params = { value = 0.26 } },
+    },
+  },
+
+  hollow_gut = {
+    [2] = {
+      effects = {
+        [1] = { params = { base = 3, growth = 2, capDps = 12, maxHpFrac = 0.22 } },
+      },
+      commandBonus = { params = { value = 0.07 } },
+    },
+    [3] = {
+      effects = {
+        [1] = { params = { base = 3, growth = 3, capDps = 12, maxHpFrac = 0.24, amputateHealsMe = 0.60 } },
+      },
+      commandBonus = { params = { value = 0.08 } },
+    },
+  },
+
+  stormlord = {
+    [2] = {
+      effects = {
+        [1] = { params = { add = 2, volt = 5, cap = 8, dur = 240 } },
+      },
+    },
+    [3] = {
+      effects = {
+        [1] = { params = { add = 3, volt = 5, cap = 9, dur = 260 } },
+      },
+    },
+  },
+
+  dynamo_priest = {
+    [2] = {
+      effects = {
+        [1] = { params = { cap = 7, dur = 190, transfer = 0.50 } },
+      },
+    },
+    [3] = {
+      effects = {
+        [1] = { params = { add = 2, cap = 7, dur = 210, transfer = 0.55 } },
+      },
+    },
+  },
+
+  arc_warden = {
+    [2] = {
+      effects = {
+        [1] = { params = { volt = 5, cap = 6, dur = 190, chain = 2 } },
+      },
+      commandBonus = { params = { value = 0.10 } },
+    },
+    [3] = {
+      effects = {
+        [1] = { params = { volt = 5, cap = 7, dur = 210, chain = 3 } },
+      },
+      commandBonus = { params = { value = 0.12 } },
+    },
+  },
+
+  storm_anchor = {
+    [2] = {
+      effects = {
+        [1] = { params = { add = 2, cap = 9, dur = 250, persist = 0.55 } },
+      },
+      commandBonus = { params = { value = 0.07 } },
+    },
+    [3] = {
+      effects = {
+        [1] = { params = { add = 3, cap = 9, dur = 270, persist = 0.60 } },
+      },
+      commandBonus = { params = { value = 0.08 } },
+    },
+  },
+
   -- Rank-2 bridge pass: these pieces are the visible connective tissue between
   -- cheap reroll boards and the full archetype packages in the catalogue.
   emberling = {
