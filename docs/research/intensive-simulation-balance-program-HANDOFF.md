@@ -2914,6 +2914,19 @@ Next implementation targets:
   from relic/event opportunity cost. Keep mutations lab-only until the reward
   policy can value them contextually or make them rarer/more explicitly
   build-defining.
+- current pacing read:
+  `runs/long-2026-06-28e/pacing-current-n32` confirms the active live profile
+  (`hp x2`, `cd x1.5`, fatigue `26s`) still solves the original too-short-fight
+  problem: early average `13.03s`, `<5s` only `0.4%`, p50 `9.73s`, p90
+  `15.15s`, fatigue `0.2%`, fit `0.937`. The old `cd x1` profile reads much
+  worse (`fit 0.549`, early `9.63s`). A fine-tuning candidate exists:
+  `hp2_cd165_f26` improves fit to `0.978` with early `14.18s`, p50 `10.57s`,
+  p90 `16.37s`, fatigue `1.2%`. The integrated
+  `runs/long-2026-06-28e/sweep-current-pacing-n20` over the current economy
+  also prefers `hp2_cd165_f26` (`21%` completion vs `15-16%`, fit `1.000`),
+  but this is still a small panel. Read: do not revisit `cd x4`; the only
+  credible future pacing tweak is a cautious live move from `cd x1.5` to
+  around `x1.65` if visual feel/playtest wants slightly longer fights.
 3. Use the new compact economy summary first, and only drill into full
    `plan_access` / `support_access` when a row shows a concrete anomaly.
 4. Use `plan_support_watch` rows in the next economy/bossrush panels to separate
