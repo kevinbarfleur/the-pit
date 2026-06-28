@@ -277,3 +277,13 @@ Current warning examples:
   `vermine` had `0%` boss kill rate while `brasier` and `ruche` reached about
   `20%`. This is a useful split if kill rate becomes a secondary metric, but
   the scoring fantasy should still be damage-count first.
+- Quick pressure sweep after that panel:
+  `bossrush-run-hp15-n6` and `bossrush-run-hp2-n6` kept `100%` clear, so HP
+  alone mostly increases available score instead of making the generals gate
+  the run. `bossrush-run-hp2-cd05-n6` is the first useful stress point:
+  overall clear `97.6%`, survival `89.1%`, full score-window `62.0%`, boss kill
+  `27.0%`. Boss split becomes more interesting: `ossuaire` drops to `64.8%`
+  survival and `53.7%` full window, while `brasier`, `kraken`, and `ruche`
+  reach about `40%` boss kill. Current read: cadence/threat pressure is a
+  better next tuning knob than raw HP if the goal is to make boss families
+  distinct without turning the scoring target into a health sponge.

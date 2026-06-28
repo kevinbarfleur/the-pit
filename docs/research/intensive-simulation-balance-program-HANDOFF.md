@@ -2772,6 +2772,13 @@ Next implementation targets:
   current abomination frontlines are not yet a meaningful gate once a run
   enters. Next PVE work should differentiate boss families and scoring identity,
   not just improve access.
+  A quick stress sweep showed HP alone is not the right first knob:
+  `bossrush-run-hp15-n6` and `bossrush-run-hp2-n6` still had `100%` clear.
+  `bossrush-run-hp2-cd05-n6` finally differentiated the PVE pressure
+  (`97.6%` clear, `89.1%` survival, `62.0%` full window). `ossuaire` became the
+  clearest survival check, while `brasier`/`kraken`/`ruche` became more killable
+  score targets. Read: tune abomination cadence/threat patterns before simply
+  increasing boss HP.
 3. Use the new compact economy summary first, and only drill into full
    `plan_access` / `support_access` when a row shows a concrete anomaly.
 4. Use `plan_support_watch` rows in the next economy/bossrush panels to separate
