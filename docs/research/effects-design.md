@@ -33,4 +33,14 @@ Validation:
 luajit tests/synergies.lua
 luajit tests/effect_audit.lua
 luajit tests/tags.lua
+luajit tools/sim.lua mechanics
 ```
+
+Mechanic diversity audit:
+
+- `tools/sim.lua mechanics` writes `runs/report-mechanics.json`.
+- Current baseline: `40/110` units are still simple-affliction at level 1,
+  `32/110` are low-variety, `37/110` have authored level ability deltas, and
+  `17/110` have level-3 clutch flags.
+- Use `recommendations.redesign_first` as the first candidate list for the next
+  creature-effect redesign pass.

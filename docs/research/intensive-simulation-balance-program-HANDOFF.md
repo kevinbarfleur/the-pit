@@ -2698,6 +2698,20 @@ Next implementation targets:
      `config`, so sweeps are comparable. Use these knobs to find a generated
      pressure band whose broad policies do not auto-complete the run, before
      touching unit numbers.
+   - first pressure sweep:
+     the broad N=32 generated panel moved from `59.4%` overall run completion
+     (`8.09` wins) at neutral pressure to `38.4%` (`7.40` wins) with only
+     `PIT_OPPGEN_LEVEL_MULT=2`. Adding `PIT_OPPGEN_SIZE_BONUS=1` was much
+     harsher (`27.7%` with `levelMult=1.5`, `16.1%` with `tier+1/levelMult=2`).
+     Read: level pressure is the first safe knob; size pressure should be used
+     later or only in high-depth/boss contexts.
+   - mechanic diversity audit:
+     `tools/sim.lua mechanics` now writes a roster-level report. Current audit:
+     `110` units, `40` simple-affliction L1 units (`36.4%`), `32` low-variety
+     units (`29.1%`), `37` authored level-up units (`33.6%`), and `17` level-3
+     clutch units (`15.5%`). This confirms the user's concern: the game has
+     support/position/payoff axes, but a large slice of the public L1 roster
+     still reads as "apply one affliction".
 3. Use the new `plan_support_watch` rows in the next economy/bossrush panels to
    separate "support never offered", "support offered but not picked", and
    "support picked but plan still inaccessible".
