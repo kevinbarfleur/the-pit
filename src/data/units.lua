@@ -197,13 +197,19 @@ local U = {
   -- POISON (N stacks, malus de valeur) : malus de base / longue durée
   bile_spitter = { -- stacks moyens + malus de valeur de base
     id = "bile_spitter", bodyplan = "serpent", rank = 3, type = "arcane", family = "plante", arch = "maweed", cost = 3, hp = 42, dmg = 5, cd = 56,
-    effects = { { trigger = "on_hit", op = "poison", params = { dps = 2, dur = 180, weaken = 0.10 } } },
+    effects = {
+      { trigger = "on_hit", op = "poison", params = { dps = 2, dur = 180, weaken = 0.10 } },
+      { trigger = "combat_start", op = "aura_stat", target = "ahead", params = { stat = "poisonInc", value = 0.08 } },
+    },
     -- COMMANDANT (LE CRACHAT ÂCRE) : poison-malus -> ampli poison modéré (conservateur, apex ; poisonInc team, TROU #1). cf. spec §3.4.
     commandBonus = { trigger = "combat_start", op = "aura_stat", target = "team", params = { stat = "poisonInc", value = 0.18 } },
   },
   rot_grub = { -- stacks LONGUE durée (entretien facile du total) — POISON malgré le nom
     id = "rot_grub", bodyplan = "serpent", rank = 2, type = "abyss", family = "hydre", arch = "hydra", cost = 2, hp = 48, dmg = 4, cd = 58,
-    effects = { { trigger = "on_hit", op = "poison", params = { dps = 2, dur = 300 } } },
+    effects = {
+      { trigger = "on_hit", op = "poison", params = { dps = 2, dur = 300 } },
+      { trigger = "combat_start", op = "aura_stat", target = "neighbors", params = { stat = "regen", value = 1 } },
+    },
     -- COMMANDANT (LE VENIN QUI DURE) : poison longue durée -> sustain team (varie l'école ; regen, sans cap -> 2). cf. spec §3.4.
     commandBonus = { trigger = "combat_start", op = "aura_stat", target = "team", params = { stat = "regen", value = 2 } },
   },
@@ -603,13 +609,19 @@ local U = {
   },
   wailing_shade = { -- SPECTRE / lacération froide
     id = "wailing_shade", type = "bone", family = "spectre", arch = "wraith", rank = 2, cost = 2, hp = 40, dmg = 6, cd = 52,
-    effects = { { trigger = "on_hit", op = "bleed", params = { dps = 2, dur = 200, slowPct = 0.15 } } },
+    effects = {
+      { trigger = "on_hit", op = "bleed", params = { dps = 2, dur = 200, slowPct = 0.15 } },
+      { trigger = "combat_start", op = "aura_stat", target = "neighbors", params = { stat = "dmgReduce", value = 0.03 } },
+    },
     -- COMMANDANT (LE HURLEMENT DU SPECTRE) : spectre -> soin team (varie : sustain, pas bleed ; regen 2, sans cap). cf. spec §3.3.
     commandBonus = { trigger = "combat_start", op = "aura_stat", target = "team", params = { stat = "regen", value = 2 } },
   },
   pyre_herald = { -- CULTE / bûcher noir
     id = "pyre_herald", type = "abyss", family = "culte", arch = "hierophant", rank = 2, cost = 2, hp = 54, dmg = 7, cd = 64,
-    effects = { { trigger = "on_hit", op = "burn", params = { dps = 6, dur = 170 } } },
+    effects = {
+      { trigger = "on_hit", op = "burn", params = { dps = 6, dur = 170 } },
+      { trigger = "combat_start", op = "aura_stat", target = "neighbors", params = { stat = "burnInc", value = 0.06 } },
+    },
     -- COMMANDANT (LES BÛCHERS NOIRS) : cultiste feu -> ampli burn école (burnInc team 0.18, TROU #1). cf. spec §3.2.
     commandBonus = { trigger = "combat_start", op = "aura_stat", target = "team", params = { stat = "burnInc", value = 0.18 } },
   },
@@ -645,13 +657,19 @@ local U = {
   },
   web_recluse = { -- ARACHNIDE / morsure recluse
     id = "web_recluse", type = "flesh", family = "arachnide", arch = "spider", rank = 2, cost = 2, hp = 40, dmg = 4, cd = 44,
-    effects = { { trigger = "on_hit", op = "poison", params = { dps = 2, dur = 200 } } },
+    effects = {
+      { trigger = "on_hit", op = "poison", params = { dps = 2, dur = 200 } },
+      { trigger = "combat_start", op = "aura_stat", target = "neighbors", params = { stat = "poisonInc", value = 0.06 } },
+    },
     -- COMMANDANT (LES OMBRES TISSÉES) : arachnide embuscade -> défensif team (dmgReduce 0.06, sans cap ; varie). cf. spec §3.4.
     commandBonus = { trigger = "combat_start", op = "aura_stat", target = "team", params = { stat = "dmgReduce", value = 0.06 } },
   },
   siphon_jelly = { -- MÉDUSE / urticant électrique
     id = "siphon_jelly", type = "abyss", family = "meduse", arch = "jelly", rank = 2, cost = 2, hp = 42, dmg = 5, cd = 50,
-    effects = { { trigger = "on_hit", op = "shock", params = { add = 1, cap = 5, dur = 150 } } },
+    effects = {
+      { trigger = "on_hit", op = "shock", params = { add = 1, cap = 5, dur = 150 } },
+      { trigger = "combat_start", op = "aura_stat", target = "neighbors", params = { stat = "lifesteal", value = 0.02 } },
+    },
     -- COMMANDANT (LA MÉDUSE QUI BOIT) : méduse urticante -> lifesteal team (lifesteal 0.05, sans cap ; varie). cf. spec §3.6.
     commandBonus = { trigger = "combat_start", op = "aura_stat", target = "team", params = { stat = "lifesteal", value = 0.05 } },
   },
@@ -668,7 +686,10 @@ local U = {
   },
   rust_sentinel = { -- AUTOMATE / noyau électrique (bruiser-tank)
     id = "rust_sentinel", type = "order", family = "automate", arch = "reliquary", rank = 4, cost = 4, hp = 78, dmg = 9, cd = 72, aggro = 20,
-    effects = { { trigger = "on_hit", op = "shock", params = { add = 1, cap = 6, dur = 150 } } },
+    effects = {
+      { trigger = "on_hit", op = "shock", params = { add = 1, cap = 6, dur = 150 } },
+      { trigger = "combat_start", op = "aura_stat", target = "neighbors", params = { stat = "dmgReduce", value = 0.06 } },
+    },
     -- COMMANDANT (LA PEAU DE FER) : automate tank -> défensif team (dmgReduce 0.08, sans cap). cf. spec §3.6.
     commandBonus = { trigger = "combat_start", op = "aura_stat", target = "team", params = { stat = "dmgReduce", value = 0.08 } },
   },

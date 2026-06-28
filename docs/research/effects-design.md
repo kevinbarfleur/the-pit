@@ -39,8 +39,17 @@ luajit tools/sim.lua mechanics
 Mechanic diversity audit:
 
 - `tools/sim.lua mechanics` writes `runs/report-mechanics.json`.
-- Current baseline: `40/110` units are still simple-affliction at level 1,
-  `32/110` are low-variety, `37/110` have authored level ability deltas, and
-  `17/110` have level-3 clutch flags.
+- Current baseline after the Batodex/SAP bridge pass: `33/110` units are still
+  simple-affliction at level 1, `24/110` are low-variety, `44/110` have
+  authored level ability deltas, and `22/110` have level-3 clutch flags.
 - Use `recommendations.redesign_first` as the first candidate list for the next
   creature-effect redesign pass.
+
+Inspiration rule:
+
+- Start from `docs/inspiration/batodex/design-taxonomy.json` for creature
+  effect inspiration; open the full JSON files only when needed.
+- Batodex and SAP are the primary references: compact triggers, clear level
+  scaling, and one positional/support idea at a time.
+- The Bazaar is allowed for occasional rare/high-tier spice, but not as the
+  baseline complexity model for the roster.

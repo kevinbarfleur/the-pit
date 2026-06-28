@@ -2712,6 +2712,21 @@ Next implementation targets:
      clutch units (`15.5%`). This confirms the user's concern: the game has
      support/position/payoff axes, but a large slice of the public L1 roster
      still reads as "apply one affliction".
+   - Batodex/SAP bridge pass:
+     Batodex data is now normalized under `docs/inspiration/batodex/`
+     (`80` monsters, `74` non-mythical references, `58` trinkets, `32`
+     items). The current design weighting is explicit: Batodex/SAP are the
+     baseline for compact readable triggers and position/support hooks; The
+     Bazaar is only a secondary spice source for occasional rare/high-tier
+     effects. A first roster pass changed `rot_grub`, `wailing_shade`,
+     `pyre_herald`, `web_recluse`, `siphon_jelly`, `bile_spitter`, and
+     `rust_sentinel` from "affliction only" toward one extra positional/support
+     hook each, using existing `aura_stat` ops only. New audit:
+     `33/110` simple-affliction L1 units (`30.0%`), `24/110` low-variety
+     units (`21.8%`), `44/110` authored level-up units (`40.0%`), and
+     `22/110` level-3 clutch units (`20.0%`). Short generated batch showed no
+     unit >2 sigma outlier, and coherence buckets still slope upward
+     (`41.4%` low-coh winrate to `70.6%` high-coh winrate).
 3. Use the new `plan_support_watch` rows in the next economy/bossrush panels to
    separate "support never offered", "support offered but not picked", and
    "support picked but plan still inaccessible".

@@ -15,6 +15,7 @@ local AFFLICTION_OP = {
   poison = true, burn = true, bleed = true, rot = true, shock = true,
   spread_burn_on_death = true, spread_rot = true, convert_to_rot = true,
   convert_dot = true, grant_affliction_if_absent = true,
+  aura_burn_dps = true, aura_poison_dps = true, aura_rot_growth = true, aura_grant_bleed = true,
 }
 local DEFENSE_OP = {
   shield_aura = true, shield_caster = true, aura_shield = true,
@@ -27,7 +28,11 @@ local OFFENSE_PAYOFF_OP = {
 }
 local SUMMON_OP = { summon = true }
 local MIMIC_OP = { repeat_ability = true, amplify_auras = true }
-local STRUCTURAL_OP = { aura_stat = true, grant_team = true, aura_per_unique_type = true }
+local STRUCTURAL_OP = {
+  aura_stat = true, grant_team = true, aura_per_unique_type = true,
+  shield_aura = true, aura_shield = true,
+  aura_burn_dps = true, aura_poison_dps = true, aura_rot_growth = true, aura_grant_bleed = true,
+}
 local RELATIVE_TARGET = {
   ahead = true, behind = true, above = true, below = true,
   neighbors = true, team = true,

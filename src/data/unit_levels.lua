@@ -350,6 +350,132 @@ return {
     },
   },
 
+  -- Batodex/SAP-inspired bridge pass: keep the base affliction readable, but
+  -- add one small positional/support hook so these pieces ask for placement.
+  bile_spitter = {
+    [2] = {
+      effects = {
+        [1] = { params = { dps = 3, weaken = 0.10 } },
+        [2] = { params = { value = 0.10 } },
+      },
+      commandBonus = { params = { value = 0.20 } },
+    },
+    [3] = {
+      effects = {
+        [1] = { params = { dps = 3, dur = 210, weaken = 0.12 } },
+        [2] = { params = { value = 0.12 } },
+      },
+      commandBonus = { params = { value = 0.22 } },
+    },
+  },
+
+  rot_grub = {
+    [2] = {
+      effects = {
+        [1] = { params = { dps = 3, dur = 300 } },
+        [2] = { params = { value = 1 } },
+      },
+      commandBonus = { params = { value = 2 } },
+    },
+    [3] = {
+      clutch = true,
+      effects = {
+        [1] = { params = { dps = 3, dur = 330 } },
+        [2] = { params = { value = 2 } },
+      },
+      commandBonus = { params = { value = 3 } },
+    },
+  },
+
+  wailing_shade = {
+    [2] = {
+      effects = {
+        [1] = { params = { dps = 3, dur = 210, slowPct = 0.15 } },
+        [2] = { params = { value = 0.04 } },
+      },
+      commandBonus = { params = { value = 2 } },
+    },
+    [3] = {
+      clutch = true,
+      effects = {
+        [1] = { params = { dps = 3, dur = 230, slowPct = 0.18 } },
+        [2] = { params = { value = 0.05 } },
+      },
+      commandBonus = { params = { value = 3 } },
+    },
+  },
+
+  pyre_herald = {
+    [2] = {
+      effects = {
+        [1] = { params = { dps = 7, dur = 180 } },
+        [2] = { params = { value = 0.08 } },
+      },
+      commandBonus = { params = { value = 0.20 } },
+    },
+    [3] = {
+      clutch = true,
+      effects = {
+        [1] = { params = { dps = 8, dur = 190 } },
+        [2] = { params = { value = 0.10 } },
+      },
+      commandBonus = { params = { value = 0.22 } },
+    },
+  },
+
+  web_recluse = {
+    [2] = {
+      effects = {
+        [1] = { params = { dps = 3, dur = 210 } },
+        [2] = { params = { value = 0.08 } },
+      },
+      commandBonus = { params = { value = 0.07 } },
+    },
+    [3] = {
+      clutch = true,
+      effects = {
+        [1] = { params = { dps = 3, dur = 240 } },
+        [2] = { params = { value = 0.10 } },
+      },
+      commandBonus = { params = { value = 0.08 } },
+    },
+  },
+
+  siphon_jelly = {
+    [2] = {
+      effects = {
+        [1] = { params = { cap = 6, dur = 165 } },
+        [2] = { params = { value = 0.03 } },
+      },
+      commandBonus = { params = { value = 0.06 } },
+    },
+    [3] = {
+      clutch = true,
+      effects = {
+        [1] = { params = { add = 2, cap = 7, dur = 180 } },
+        [2] = { params = { value = 0.04 } },
+      },
+      commandBonus = { params = { value = 0.07 } },
+    },
+  },
+
+  rust_sentinel = {
+    [2] = {
+      effects = {
+        [1] = { params = { cap = 7, dur = 165 } },
+        [2] = { params = { value = 0.08 } },
+      },
+      commandBonus = { params = { value = 0.10 } },
+    },
+    [3] = {
+      effects = {
+        [1] = { params = { add = 2, cap = 8, dur = 180 } },
+        [2] = { params = { value = 0.10 } },
+      },
+      commandBonus = { params = { value = 0.12 } },
+    },
+  },
+
   -- Rank-2 bridge pass: these pieces are the visible connective tissue between
   -- cheap reroll boards and the full archetype packages in the catalogue.
   emberling = {
