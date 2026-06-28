@@ -437,6 +437,7 @@ offers: a low-rank monster with `echo_touched`, a mid-rank monster with
    as balance truth. First rot/bleed core comparison: static `31.2%` run
    completion vs generated `89.8%`, while exact target completion remains low;
    tune live EV from generated panels, keep static panels as stress tests.
+   Use `PIT_OPPGEN_*` pressure knobs when generated opponents are too soft.
 8. Use `--shoot=runevent` after visual changes to the event picker.
 9. Continue mutation panels behind the opt-in lab profile before enabling
    mutated event units in the live run loop.

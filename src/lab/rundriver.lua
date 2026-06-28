@@ -53,6 +53,7 @@ function Rundriver.new(seed, opts)
     leftMutator = opts.leftMutator, -- lab-only overlay appliqué au joueur seulement (candidate balance)
     rightMutator = opts.rightMutator, -- lab-only overlay appliqué à l'adversaire seulement
     opponentMode = opts.opponentMode or "static", -- static | generated ; generated mirrors Build:startCombat cold-start IA
+    opponentPressure = opts.opponentPressure or {}, -- lab-only knobs for generated opponent pressure
     recordBoards = opts.recordBoards == true, -- lab-only: snapshots légers board+bench par round pour diagnostics
     recordEvents = opts.recordEvents == true, -- lab-only: achats/ventes/reliques par round pour funnels de plan
     relicsKnown = opts.relicsKnown or false, -- reliques pré-connues au Grimoire ? (le driver n'a pas d'IO)
@@ -780,6 +781,10 @@ function Rundriver:opponent(seed)
       slots = self.run.slots,
       rng = love.math.newRandomGenerator(seed or (self.run.seed or 0)),
       odds = self.run.ODDS,
+      roundBonus = self.opponentPressure.roundBonus,
+      tierBonus = self.opponentPressure.tierBonus,
+      sizeBonus = self.opponentPressure.sizeBonus,
+      levelMult = self.opponentPressure.levelMult,
     })
     enc.key = self.build:encounterKeyFor(#enc.units)
     return self.build:buildRightComp(enc, 0), enc.key

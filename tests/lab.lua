@@ -335,6 +335,20 @@ local ok, err = pcall(function()
   local oppB, keyB = generatedOppDrv:opponent(2026063209)
   assert(keyA == keyB and #oppA == #oppB and oppA[1].id == oppB[1].id and oppA[1].level == oppB[1].level,
     "rundriver: opponentMode generated est deterministe pour le meme seed")
+  local normalSizeOppDrv = Rundriver.new(2026063210, { opponentMode = "generated" })
+  normalSizeOppDrv.run.round = 3
+  normalSizeOppDrv.run.shopTier = 1
+  normalSizeOppDrv.run.slots = 7
+  local pressuredOppDrv = Rundriver.new(2026063210, {
+    opponentMode = "generated",
+    opponentPressure = { sizeBonus = 2, roundBonus = 1, tierBonus = 1, levelMult = 2 },
+  })
+  pressuredOppDrv.run.round = 3
+  pressuredOppDrv.run.shopTier = 1
+  pressuredOppDrv.run.slots = 7
+  local normalOpp = normalSizeOppDrv:opponent(2026063210)
+  local pressuredOpp = pressuredOppDrv:opponent(2026063210)
+  assert(#pressuredOpp > #normalOpp, "rundriver: opponentPressure sizeBonus augmente la taille generee")
   local function commanderEventRun()
     local d = Rundriver.new(20260633, { recordEvents = true, commanderMode = "auto" })
     d.run.pendingCommanderGrant = true

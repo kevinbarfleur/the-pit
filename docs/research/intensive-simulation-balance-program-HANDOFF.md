@@ -2690,6 +2690,14 @@ Next implementation targets:
      without reaching its exact target definition, while static encounters are
      still a much harsher regression harness. Use both views: generated for
      live-product tuning, static for stress tests.
+   - generated-opponent pressure knobs:
+     Economy panels can now tune generated opponents without changing the live
+     default path: `PIT_OPPGEN_ROUND_BONUS`, `PIT_OPPGEN_TIER_BONUS`,
+     `PIT_OPPGEN_SIZE_BONUS`, and `PIT_OPPGEN_LEVEL_MULT`. Defaults are
+     neutral (`0/0/0/1`). The report writes the active `oppgen_pressure` into
+     `config`, so sweeps are comparable. Use these knobs to find a generated
+     pressure band whose broad policies do not auto-complete the run, before
+     touching unit numbers.
 3. Use the new `plan_support_watch` rows in the next economy/bossrush panels to
    separate "support never offered", "support offered but not picked", and
    "support picked but plan still inaccessible".

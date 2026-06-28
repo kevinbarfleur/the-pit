@@ -30,6 +30,12 @@ local EVENT_UNIT_RELIC_MARGIN = Common.envNumber("PIT_EVENT_UNIT_RELIC_MARGIN", 
 local OPPONENT_MODE = Common.env("PIT_OPPONENT_MODE") or "static"
 assert(OPPONENT_MODE == "static" or OPPONENT_MODE == "generated",
   "PIT_OPPONENT_MODE doit etre static ou generated")
+local OPPONENT_PRESSURE = {
+  roundBonus = Common.envNumber("PIT_OPPGEN_ROUND_BONUS", 0),
+  tierBonus = Common.envNumber("PIT_OPPGEN_TIER_BONUS", 0),
+  sizeBonus = Common.envNumber("PIT_OPPGEN_SIZE_BONUS", 0),
+  levelMult = Common.envNumber("PIT_OPPGEN_LEVEL_MULT", 1),
+}
 -- Extra holding capacity beyond the real board+bench capacity used by Rundriver.
 -- Cap 0 is the current gameplay model; cap 4 answers "what if the player had 4 more reserve slots?"
 local BENCH_CAPS = Common.envNumberList("PIT_BENCH_CAPS", { 0, 2, 4, 6 })
@@ -179,7 +185,10 @@ local function targetOracle(target)
   local total, wins, ticks, tickN = 0, 0, 0, 0
   local byRound = {}
   for _, round in ipairs(rounds) do
-    local drv = Rundriver.new(BASE_SEED + 700000 + round * 17, { opponentMode = OPPONENT_MODE })
+    local drv = Rundriver.new(BASE_SEED + 700000 + round * 17, {
+      opponentMode = OPPONENT_MODE,
+      opponentPressure = OPPONENT_PRESSURE,
+    })
     drv.run.round = round
     drv.run.shopTier = oracleTierFor(round)
     drv.run.slots = math.max(drv.run.slots or 3, math.min(9, target.boardLevel or #(target.units or {})))
@@ -1731,6 +1740,7 @@ for run = 1, N do
         eventUnitRelicMargin = EVENT_UNIT_RELIC_MARGIN,
         eventMutationPickCap = EVENT_MUTATION_PICK_CAP,
         opponentMode = OPPONENT_MODE,
+        opponentPressure = OPPONENT_PRESSURE,
         recordBoards = #PLAN_TARGETS > 0,
         recordEvents = #PLAN_TARGETS > 0,
       })
@@ -1794,6 +1804,8 @@ local payload = {
     plan_oracle_rounds = Common.env("PIT_PLAN_ORACLE_ROUNDS"),
     plan_targets = Common.env("PIT_PLAN_TARGETS"),
     plan_target_specs = Common.env("PIT_PLAN_TARGET_SPECS"),
+    opponent_mode = OPPONENT_MODE,
+    oppgen_pressure = OPPONENT_PRESSURE,
   },
   profiles = profiles,
   by_cohort = byCohort,

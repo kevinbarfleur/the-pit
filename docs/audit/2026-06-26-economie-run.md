@@ -941,6 +941,12 @@ Ajout batch autonomie (`runs/long-2026-06-27b`) :
   basse dans les deux modes (`0%` board static, `0.8%` generated). Lecture :
   les adversaires generes representent mieux la pression live actuelle, tandis
   que le mode static reste un stress-test volontairement dur.
+- Knobs de pression OppGen : les panels economy acceptent
+  `PIT_OPPGEN_ROUND_BONUS`, `PIT_OPPGEN_TIER_BONUS`,
+  `PIT_OPPGEN_SIZE_BONUS` et `PIT_OPPGEN_LEVEL_MULT`. Les defaults sont
+  neutres et le live ne change pas. Prochain objectif : trouver une bande de
+  pression generated ou les policies generales ne gagnent pas automatiquement,
+  avant de toucher aux valeurs des creatures.
 - Mise a jour funnel acquisition : `plan_access.acquisition_funnel` detaille les
   offres vues, l'or, la place, les achats, paires/fusions, ventes et le premier
   round vu par unite cible. Sur
