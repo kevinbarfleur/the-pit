@@ -170,6 +170,21 @@ cannot be a naive "make units more tempting" switch. The next test should keep
 the relic-lane density floor while targeting only the unit reward itself, or
 cap how often a policy can prefer a unit over a relic.
 
+Capped unit-pick experiment adds `PIT_EVENT_UNIT_PICK_CAP` as a lab-only policy
+guard:
+
+- cap 1 preserved relic density (`2.05` relics/run vs `2.10` generic) and kept
+  unit quality high (`50.0%` pair-or-merge progress), but completion stayed at
+  `31.3%`;
+- cap 0, effectively "events choose no unit lanes", produced the best run slice:
+  completion `33.6%`, wins `8.97`, event relics `2.74/run`, event units `0`.
+
+Interpretation: for `rot_bleed_rat_core` under `pair_completion_light`, plain
+event units are not yet worth the relic opportunity cost. The reward fantasy is
+still good, but the unit lane probably needs a special reason to exist:
+target-filtering plus a rare level-2 spike, future mutation, or a constrained
+"missing copy" rule that does not compete with the main relic lane every time.
+
 Cross-economy check (`N=64`, same rot/bleed policies, events vs classic
 merchant) adds two cautions:
 
@@ -289,6 +304,8 @@ offers: a low-rank monster with `echo_touched`, a mid-rank monster with
    frequency.
 5. Test a capped target-filter policy that preserves relic density before
    considering live event-unit targeting.
-6. Build the live UI only after the reward EV is acceptable in the lab.
-7. Design the first-class mutation instance model separately, then run it behind
+6. Test a stricter "missing copy only" unit lane, or keep units disabled for
+   exact reroll plans until mutations exist.
+7. Build the live UI only after the reward EV is acceptable in the lab.
+8. Design the first-class mutation instance model separately, then run it behind
    an opt-in lab profile.

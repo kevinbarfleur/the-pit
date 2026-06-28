@@ -42,6 +42,7 @@ function Rundriver.new(seed, opts)
     commanderMode = opts.commanderMode or "ignore", -- lab-only policy: ignore | decline | auto
     runEvents = opts.runEvents == true, -- lab-only experiment: replace merchant relics with thematic run events
     eventUnitTargeting = opts.eventUnitTargeting, -- nil | "policy"; lab-only event unit materialization experiment
+    eventUnitPickCap = opts.eventUnitPickCap, -- lab-only: max successful event unit rewards per run before preferring relics
     compMutator = opts.compMutator, -- lab-only overlay appliqué aux deux camps avant Match.run (pacing, probes)
     leftMutator = opts.leftMutator, -- lab-only overlay appliqué au joueur seulement (candidate balance)
     rightMutator = opts.rightMutator, -- lab-only overlay appliqué à l'adversaire seulement

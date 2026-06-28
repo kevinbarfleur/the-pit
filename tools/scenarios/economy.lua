@@ -23,6 +23,7 @@ if HPM ~= nil then ORACLE_PACING.hpMult = HPM end
 local COMMANDER_MODE = Common.env("PIT_COMMANDER_MODE") or "ignore"
 local RUN_EVENTS = Common.envBool("PIT_RUN_EVENTS", false)
 local EVENT_UNIT_TARGETING = Common.env("PIT_EVENT_UNIT_TARGETING")
+local EVENT_UNIT_PICK_CAP = Common.envNumber("PIT_EVENT_UNIT_PICK_CAP", nil)
 -- Extra holding capacity beyond the real board+bench capacity used by Rundriver.
 -- Cap 0 is the current gameplay model; cap 4 answers "what if the player had 4 more reserve slots?"
 local BENCH_CAPS = Common.envNumberList("PIT_BENCH_CAPS", { 0, 2, 4, 6 })
@@ -1663,6 +1664,7 @@ for run = 1, N do
         commanderMode = COMMANDER_MODE,
         runEvents = RUN_EVENTS,
         eventUnitTargeting = EVENT_UNIT_TARGETING,
+        eventUnitPickCap = EVENT_UNIT_PICK_CAP,
         recordBoards = #PLAN_TARGETS > 0,
         recordEvents = #PLAN_TARGETS > 0,
       })
@@ -1717,6 +1719,7 @@ local payload = {
     commander_mode = COMMANDER_MODE,
     run_events = RUN_EVENTS,
     event_unit_targeting = EVENT_UNIT_TARGETING,
+    event_unit_pick_cap = EVENT_UNIT_PICK_CAP,
     policies = Common.env("PIT_POLICIES"),
     economy_profiles = Common.env("PIT_ECON_PROFILES"),
     bench_sizes = Common.env("PIT_BENCH_SIZES"),

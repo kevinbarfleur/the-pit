@@ -337,6 +337,15 @@ local ok, err = pcall(function()
       { reward = { kind = "shop_xp", amount = 4 } },
     },
   }) == 2, "policy plan: choisit une unite coeur dans un event")
+  local capEventDrv = Rundriver.new(2026063402)
+  capEventDrv.eventUnitPickCap = 0
+  assert(Policies.pickRunEventByValue(capEventDrv, {
+    choices = {
+      { reward = { kind = "unit", id = "rot_hound", level = 2 } },
+      { reward = { kind = "relic", id = "grave_cap" } },
+    },
+  }, { targetUnits = { { id = "rot_hound", level = 2 } } }) == 2,
+    "policy plan: cap event-unit force le retour vers une relique")
   local cmdPick = focusedPlan:chooseCommanderCandidate(nil, {
     { where = "bench", slot = 1, id = "gash_fiend", level = 1 },
     { where = "bench", slot = 2, id = "rot_hound", level = 1 },

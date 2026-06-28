@@ -2592,6 +2592,16 @@ Next implementation targets:
      completion moved `32.8% -> 31.3%`. Read: target-filtering is promising for
      reward quality, but live tuning should preserve relic-lane density or cap
      unit-over-relic preference.
+   - capped event-unit preference:
+     `PIT_EVENT_UNIT_PICK_CAP` is now a lab-only economy scenario option. It
+     caps successful unit rewards per run before policies value relic lanes
+     over units again. In the N=64 rot/bleed slice, cap `1` preserved relic
+     density (`2.05` relics/run) and kept high unit quality (`50.0%`
+     pair-or-merge progress), but completion stayed `31.3%`. Cap `0` performed
+     best in this slice: `33.6%` completion, `8.97` wins, `2.74` event
+     relics/run, no event units. Current read: for exact reroll plans, event
+     units need a special payoff (missing-copy-only, rare level-2, or future
+     mutation) before they beat relic opportunity cost.
 3. Use the new `plan_support_watch` rows in the next economy/bossrush panels to
    separate "support never offered", "support offered but not picked", and
    "support picked but plan still inaccessible".

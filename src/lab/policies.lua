@@ -184,6 +184,10 @@ local function runEventRewardScore(drv, reward, opts)
   if kind == "relic" then
     return 120 + relicSupportScore(opts.targetUnits, reward.id)
   elseif kind == "unit" then
+    if drv and drv.eventUnitPickCap ~= nil
+      and ((drv.metrics and drv.metrics.eventUnits) or 0) >= drv.eventUnitPickCap then
+      return -500
+    end
     if drv and freeSlots(drv, 0) <= 0 then return -500 end
     local id = reward.id
     local u = Units[id] or {}
