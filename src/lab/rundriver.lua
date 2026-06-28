@@ -66,6 +66,8 @@ function Rundriver.new(seed, opts)
       boardDeploys = 0, boardSwaps = 0,
       relicPicks = 0,
       eventPicks = 0, eventRelics = 0, eventUnits = 0, eventUnitFailures = 0,
+      eventUnitSingles = 0, eventUnitPairCompleters = 0, eventUnitMergeCompleters = 0,
+      eventUnitToBench = 0, eventUnitToBoard = 0,
       eventGold = 0, eventShopXp = 0, eventShopTierUps = 0,
     },
   }, Rundriver)
@@ -83,6 +85,8 @@ local METRIC_KEYS = {
   "boardDeploys", "boardSwaps",
   "relicPicks",
   "eventPicks", "eventRelics", "eventUnits", "eventUnitFailures",
+  "eventUnitSingles", "eventUnitPairCompleters", "eventUnitMergeCompleters",
+  "eventUnitToBench", "eventUnitToBoard",
   "eventGold", "eventShopXp", "eventShopTierUps",
 }
 
@@ -788,13 +792,30 @@ function Rundriver:grantUnitReward(reward)
     char = self.build:newRig(id),
     copyId = copyId,
   }
+  local sameLevelCopies = self:copyCount(id, occ.level)
   if not self.build:stowUnit(occ) then
     self:_metric("eventUnitFailures", 1)
     self:_event({ type = "run_event_reward_failed", reason = "no_space", kind = "unit", id = id, level = occ.level })
     return false
   end
+  local loc = self:copyLocation(copyId)
+  local progress = "single"
+  if sameLevelCopies >= 2 then
+    progress = "merge"
+    self:_metric("eventUnitMergeCompleters", 1)
+  elseif sameLevelCopies == 1 then
+    progress = "pair"
+    self:_metric("eventUnitPairCompleters", 1)
+  else
+    self:_metric("eventUnitSingles", 1)
+  end
+  if loc and loc.where == "bench" then self:_metric("eventUnitToBench", 1) end
+  if loc and loc.where == "board" then self:_metric("eventUnitToBoard", 1) end
   self:_metric("eventUnits", 1)
-  self:_event({ type = "unit_reward", id = id, level = occ.level, copyId = copyId })
+  self:_event({
+    type = "unit_reward", id = id, level = occ.level, copyId = copyId,
+    progress = progress, where = loc and loc.where or nil, slot = loc and loc.slot or nil,
+  })
   self.build:checkMerges()
   return true
 end
@@ -970,6 +991,19 @@ function Rundriver:copyState()
     end
   end
   return out
+end
+
+function Rundriver:copyLocation(copyId)
+  if not copyId then return nil end
+  for i = 1, 9 do
+    local sr = self.build.slotRigs[i]
+    if sr and sr.copyId == copyId then return { where = "board", slot = i } end
+  end
+  for i = 1, #(self.build.benchSlots or {}) do
+    local sr = self.build.bench[i]
+    if sr and sr.copyId == copyId then return { where = "bench", slot = i } end
+  end
+  return nil
 end
 
 function Rundriver:heldComp()

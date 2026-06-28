@@ -270,6 +270,25 @@ local ok, err = pcall(function()
     "events: reward unite se range via Build")
   assert(unitRewardDrv:copyCount("marauder", 2) == 1,
     "events: reward unite respecte le niveau materialise")
+  local unitRewardMetrics = unitRewardDrv:metricSnapshot()
+  assert(unitRewardMetrics.eventUnitSingles == 1 and unitRewardMetrics.eventUnitToBench == 1,
+    "events: reward unite single + bench est diagnostique")
+  local unitRewardEvent = findEvent(unitRewardDrv.events, "unit_reward")
+  assert(unitRewardEvent and unitRewardEvent.progress == "single" and unitRewardEvent.where == "bench",
+    "events: trace reward unite expose progression + destination")
+  local pairRewardDrv = Rundriver.new(2026063204, { recordEvents = true })
+  pairRewardDrv.build:placeId(5, "marauder", 1)
+  assert(pairRewardDrv:grantUnitReward({ kind = "unit", id = "marauder", level = 1 }),
+    "events: reward unite peut completer une paire")
+  assert(pairRewardDrv:metricSnapshot().eventUnitPairCompleters == 1,
+    "events: reward unite paire est diagnostiquee")
+  local mergeRewardDrv = Rundriver.new(2026063205, { recordEvents = true })
+  mergeRewardDrv.build:placeId(5, "marauder", 1)
+  mergeRewardDrv.build.bench[1] = { id = "marauder", level = 1, char = mergeRewardDrv.build:newRig("marauder") }
+  assert(mergeRewardDrv:grantUnitReward({ kind = "unit", id = "marauder", level = 1 }),
+    "events: reward unite peut completer une fusion")
+  assert(mergeRewardDrv:metricSnapshot().eventUnitMergeCompleters == 1,
+    "events: reward unite fusion est diagnostiquee")
   local fullRewardDrv = Rundriver.new(2026063203, { recordEvents = true })
   fullRewardDrv.build.board:ensureOpen(9)
   for i = 1, 9 do fullRewardDrv.build:placeId(i, "skeleton", 1) end

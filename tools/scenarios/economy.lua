@@ -216,6 +216,8 @@ local function newAgg()
     boardDeploys = 0, boardSwaps = 0,
     commanderAccepts = 0, commanderDeclines = 0, commanderPlacements = 0, relicPicks = 0,
     eventPicks = 0, eventRelics = 0, eventUnits = 0, eventUnitFailures = 0,
+    eventUnitSingles = 0, eventUnitPairCompleters = 0, eventUnitMergeCompleters = 0,
+    eventUnitToBench = 0, eventUnitToBoard = 0,
     eventGold = 0, eventShopXp = 0, eventShopTierUps = 0,
     slotDeclines = 0, slotAccepts = 0,
     xpGateBlocks = 0, xpGateObserved = 0, xpGateUnitCoverage = 0, xpGateLevelCoverage = 0,
@@ -1394,6 +1396,11 @@ local function addRun(a, traj)
   a.eventRelics = a.eventRelics + ((traj.metrics and traj.metrics.eventRelics) or 0)
   a.eventUnits = a.eventUnits + ((traj.metrics and traj.metrics.eventUnits) or 0)
   a.eventUnitFailures = a.eventUnitFailures + ((traj.metrics and traj.metrics.eventUnitFailures) or 0)
+  a.eventUnitSingles = a.eventUnitSingles + ((traj.metrics and traj.metrics.eventUnitSingles) or 0)
+  a.eventUnitPairCompleters = a.eventUnitPairCompleters + ((traj.metrics and traj.metrics.eventUnitPairCompleters) or 0)
+  a.eventUnitMergeCompleters = a.eventUnitMergeCompleters + ((traj.metrics and traj.metrics.eventUnitMergeCompleters) or 0)
+  a.eventUnitToBench = a.eventUnitToBench + ((traj.metrics and traj.metrics.eventUnitToBench) or 0)
+  a.eventUnitToBoard = a.eventUnitToBoard + ((traj.metrics and traj.metrics.eventUnitToBoard) or 0)
   a.eventGold = a.eventGold + ((traj.metrics and traj.metrics.eventGold) or 0)
   a.eventShopXp = a.eventShopXp + ((traj.metrics and traj.metrics.eventShopXp) or 0)
   a.eventShopTierUps = a.eventShopTierUps + ((traj.metrics and traj.metrics.eventShopTierUps) or 0)
@@ -1601,6 +1608,13 @@ local function finish(a)
     event_unit_failures_per_run = (a.runs > 0) and (a.eventUnitFailures / a.runs) or 0,
     event_unit_failure_rate = ((a.eventUnits + a.eventUnitFailures) > 0)
       and (a.eventUnitFailures / (a.eventUnits + a.eventUnitFailures)) or 0,
+    event_unit_single_rate = (a.eventUnits > 0) and (a.eventUnitSingles / a.eventUnits) or 0,
+    event_unit_pair_rate = (a.eventUnits > 0) and (a.eventUnitPairCompleters / a.eventUnits) or 0,
+    event_unit_merge_rate = (a.eventUnits > 0) and (a.eventUnitMergeCompleters / a.eventUnits) or 0,
+    event_unit_progress_rate = (a.eventUnits > 0)
+      and ((a.eventUnitPairCompleters + a.eventUnitMergeCompleters) / a.eventUnits) or 0,
+    event_unit_bench_rate = (a.eventUnits > 0) and (a.eventUnitToBench / a.eventUnits) or 0,
+    event_unit_board_rate = (a.eventUnits > 0) and (a.eventUnitToBoard / a.eventUnits) or 0,
     event_gold_per_run = (a.runs > 0) and (a.eventGold / a.runs) or 0,
     event_shop_xp_per_run = (a.runs > 0) and (a.eventShopXp / a.runs) or 0,
     event_shop_tier_ups_per_run = (a.runs > 0) and (a.eventShopTierUps / a.runs) or 0,
@@ -1757,6 +1771,14 @@ for _, variant in ipairs(VARIANTS) do
     event_picks_per_run = p.event_picks_per_run,
     event_relics_per_run = p.event_relics_per_run,
     event_units_per_run = p.event_units_per_run,
+    event_unit_progress_rate = p.event_unit_progress_rate,
+    event_unit_single_rate = p.event_unit_single_rate,
+    event_unit_pair_rate = p.event_unit_pair_rate,
+    event_unit_merge_rate = p.event_unit_merge_rate,
+    event_unit_bench_rate = p.event_unit_bench_rate,
+    event_unit_board_rate = p.event_unit_board_rate,
+    event_unit_failures_per_run = p.event_unit_failures_per_run,
+    event_unit_failure_rate = p.event_unit_failure_rate,
     event_gold_per_run = p.event_gold_per_run,
     event_shop_xp_per_run = p.event_shop_xp_per_run,
     event_shop_tier_ups_per_run = p.event_shop_tier_ups_per_run,

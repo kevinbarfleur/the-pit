@@ -2568,6 +2568,19 @@ Next implementation targets:
      tier. Mutated units remain a phase-2 opt-in profile after persistent unit
      instances exist (`id + level + copyId + mutations[]`), with merge,
      snapshot, tooltip, bossrush, and economy tests before live activation.
+   - event-unit diagnostics:
+     `Rundriver` now classifies unit rewards as single, pair-completer, or
+     merge-completer, and records whether the granted copy lands on bench or
+     board. `tools/sim.lua economy` exposes
+     `event_unit_progress_rate`, `event_unit_single_rate`,
+     `event_unit_pair_rate`, `event_unit_merge_rate`,
+     `event_unit_bench_rate`, and `event_unit_board_rate`. In the first N=64
+     focused panel (`pair_completion_light`, `rot_bleed_rat_core`,
+     gated/deep-reroll policies, `PIT_RUN_EVENTS=1`), event units are safe but
+     weakly targeted: `0.71` units/run, `0%` failure, only `12.1%` immediate
+     pair-or-merge progress, `87.9%` singles, `94.5%` bench placement. Read:
+     do not raise unit-lane frequency yet; test target-filtered unit rewards
+     or rare level-2/mutation lanes later.
 3. Use the new `plan_support_watch` rows in the next economy/bossrush panels to
    separate "support never offered", "support offered but not picked", and
    "support picked but plan still inaccessible".

@@ -82,6 +82,15 @@ Metrics added:
 - `eventShopXp`
 - `eventShopTierUps`
 
+Unit reward diagnostics added after the first pressure read:
+
+- `event_unit_single_rate`
+- `event_unit_pair_rate`
+- `event_unit_merge_rate`
+- `event_unit_progress_rate`
+- `event_unit_bench_rate`
+- `event_unit_board_rate`
+
 These should be correlated with:
 
 - run completion;
@@ -126,6 +135,25 @@ is `0.0%` at `N=64`. The softer pressure is churn: about `2.0` board swaps/run,
 should therefore focus less on "the reward cannot fit" and more on whether
 event units should be core/target-filtered, auto-stowed with better priority,
 or offered less often to exact reroll plans before implementing the live UI.
+
+More precise event-unit diagnostics (`N=64`, `pair_completion_light`,
+`rot_bleed_rat_core`, gated + deep-reroll policies, `PIT_RUN_EVENTS=1`) confirm
+that the pressure is not hard overflow:
+
+- completion `32.8%`, average wins `8.94`;
+- event picks `2.88/run`;
+- event unit rewards `0.71/run`;
+- event unit failure rate `0.0%`;
+- only `12.1%` of granted event units immediately complete a pair or merge
+  (`6.6%` pair, `5.5%` merge);
+- `87.9%` are singles, `94.5%` land on the bench, and `5.5%` go directly to the
+  board.
+
+Interpretation: current unit lanes are safe but often read as loose extra
+inventory rather than sharp build progression. Do not simply raise unit-lane
+frequency. The next healthier levers are target-filtered unit rewards,
+event-specific level-2 rarity, or later mutation rewards once unit instances are
+first-class.
 
 Cross-economy check (`N=64`, same rot/bleed policies, events vs classic
 merchant) adds two cautions:
@@ -242,6 +270,8 @@ offers: a low-rank monster with `echo_touched`, a mid-rank monster with
 2. Tune event reward EV now that policy choice is no longer option-1 biased.
 3. Add policy diagnostics for "event unit was useful" vs "event unit caused
    churn" before changing reward weights.
-4. Build the live UI only after the reward EV is acceptable in the lab.
-5. Design the first-class mutation instance model separately, then run it behind
+4. Add target-filtering experiments for unit lanes before increasing their
+   frequency.
+5. Build the live UI only after the reward EV is acceptable in the lab.
+6. Design the first-class mutation instance model separately, then run it behind
    an opt-in lab profile.
