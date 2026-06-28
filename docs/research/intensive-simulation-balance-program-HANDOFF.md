@@ -2540,6 +2540,17 @@ Next implementation targets:
    - keep expanding bossrush-run from a small smoke panel to longer paired
      economy/policy sweeps, but only as one axis among economy, combat, and
      accessibility;
+   - run events reward layer:
+     the first experimental model now lives in `src/data/run_events.lua` and is
+     documented in `docs/research/run-events-reward-loop.md`. It keeps the
+     win-3/win-6 relic milestones intact. By default the lab also keeps the
+     every-3-combats merchant as a relic offer for comparability; with
+     `runEvents=true`, that same merchant window becomes a deterministic
+     thematic event. Active reward kinds are relic, unit, gold, shop XP, and
+     shop tier. Units can be level 1 or rare level 2, never level 3. Monster
+     mutations are intentionally not active yet because they need a first-class
+     instance model before they can be safe for merges, snapshots, combat, and
+     UI.
 3. Use the new `plan_support_watch` rows in the next economy/bossrush panels to
    separate "support never offered", "support offered but not picked", and
    "support picked but plan still inaccessible".

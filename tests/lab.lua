@@ -244,6 +244,32 @@ local ok, err = pcall(function()
   assert(pickedRelic == relicFight.relicChoices[1], "events: pickRelic garde le meme resultat")
   assert(findEvent(relicEventDrv.events, "relic_pick").id == pickedRelic,
     "events: relic_pick trace la relique choisie")
+  local runEventDrv = Rundriver.new(2026063201, {
+    recordEvents = true,
+    runEvents = true,
+    leftMutator = function(comp)
+      for _, s in ipairs(comp or {}) do s.hp = 999; s.dmg = 120 end
+    end,
+  })
+  runEventDrv.build:placeId(5, "marauder", 2)
+  runEventDrv.run.wins = 1
+  runEventDrv.run.losses = 1
+  local runEventFight = runEventDrv:fight()
+  assert(runEventFight.runEvent and #(runEventFight.runEvent.choices or {}) > 0,
+    "events: offre run_event au 3e combat hors jalon")
+  local runEventOffer = findEvent(runEventDrv.events, "run_event_offer")
+  assert(runEventOffer and runEventOffer.id == runEventFight.runEvent.id,
+    "events: run_event_offer trace la rencontre")
+  local pickedEvent = runEventDrv:pickRunEvent(1)
+  assert(pickedEvent and pickedEvent.reward, "events: pickRunEvent renvoie le choix materialise")
+  assert(findEvent(runEventDrv.events, "run_event_pick").id == runEventFight.runEvent.id,
+    "events: run_event_pick trace le choix")
+  local unitRewardDrv = Rundriver.new(2026063202, { recordEvents = true })
+  unitRewardDrv.build:placeId(5, "skeleton", 1)
+  assert(unitRewardDrv:grantUnitReward({ kind = "unit", id = "marauder", level = 2 }),
+    "events: reward unite se range via Build")
+  assert(unitRewardDrv:copyCount("marauder", 2) == 1,
+    "events: reward unite respecte le niveau materialise")
   local function commanderEventRun()
     local d = Rundriver.new(20260633, { recordEvents = true, commanderMode = "auto" })
     d.run.pendingCommanderGrant = true

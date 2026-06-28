@@ -8,6 +8,7 @@ love = require("tests.mock_love")
 
 local RunState = require("src.run.state")
 local Units = require("src.data.units")
+local RunEvents = require("src.data.run_events")
 
 local function shopIds(r)
   local t = {}
@@ -564,6 +565,75 @@ local ok, err = pcall(function()
     end
 
     print("  cadence : canal 3 (jalon w3/w6) + minTier plancher + garde de trio + anti double-comptage OK")
+  end
+
+  -- ── RUN EVENTS : couche experimentale du marchand tous les 3 combats. Les rencontres sont thematiques, mais
+  -- les rewards sont materialises explicitement (pas de surprise cachee). Les mutations restent hors pool actif
+  -- tant que le modele d'instance n'est pas proprement cable. ──
+  do
+    assert(#RunEvents.order <= RunEvents.MAX_ACTIVE, "run events : 8 max actifs")
+    local allowed = { relic = true, unit = true, gold = true, shop_xp = true, shop_tier_up = true }
+    for _, id in ipairs(RunEvents.order) do
+      local ev = RunEvents.events[id]
+      assert(ev and ev.id == id, "run events : id declare dans events")
+      assert(ev.choices and #ev.choices >= 2, "run events : au moins 2 choix pour " .. id)
+      for _, choice in ipairs(ev.choices) do
+        local kind = choice.reward and choice.reward.kind
+        assert(allowed[kind], "run events : reward actif supporte (" .. tostring(kind) .. ")")
+        assert(kind ~= "mutation", "run events : pas de mutation active avant modele d'instance")
+        if kind == "unit" then
+          assert((choice.reward.level or 1) <= 2, "run events : aucune unite niveau 3 offerte")
+        end
+      end
+    end
+
+    local function eventSig(seed)
+      local r = RunState.new(seed)
+      r.wins, r.losses = 2, 1
+      local ev = r:rollRunEvent()
+      local parts = { ev and ev.id or "nil" }
+      for _, c in ipairs((ev and ev.choices) or {}) do
+        local rw = c.reward
+        parts[#parts + 1] = table.concat({
+          c.id, rw.kind or "", rw.id or "", tostring(rw.amount or ""), tostring(rw.level or "")
+        }, ":")
+      end
+      return table.concat(parts, "|")
+    end
+    assert(eventSig(6060) == eventSig(6060), "run events : meme seed -> meme event materialise")
+
+    local r = RunState.new(6061)
+    r.wins, r.losses = 3, 1
+    local seen = {}
+    for _ = 1, math.min(4, #RunEvents.order) do
+      local ev = r:rollRunEvent()
+      assert(ev and not seen[ev.id], "run events : pas de repetition tant que le pool eligible suffit")
+      seen[ev.id] = true
+      for _, c in ipairs(ev.choices) do
+        assert(c.reward and c.reward.kind, "run events : chaque choix porte une recompense concrete")
+        if c.reward.kind == "unit" then
+          assert(Units[c.reward.id], "run events : unite materialisee existe")
+          assert((c.reward.level or 1) <= 2, "run events : unite materialisee max niveau 2")
+        end
+      end
+    end
+
+    local rg = RunState.new(6062)
+    local g0 = rg.gold
+    assert(rg:applyRunEventReward({ kind = "gold", amount = 5 }) and rg.gold == g0 + 5,
+      "run events : reward gold applique")
+    local rt = RunState.new(6063)
+    local tier0 = rt.shopTier
+    assert(rt:applyRunEventReward({ kind = "shop_tier_up", amount = 1 }) and rt.shopTier == tier0 + 1,
+      "run events : reward shop_tier_up applique")
+    local rx = RunState.new(6064)
+    local xp0 = rx.shopXp
+    assert(rx:applyRunEventReward({ kind = "shop_xp", amount = 1 }) and rx.shopXp == xp0 + 1,
+      "run events : reward shop_xp applique")
+    assert(select(2, rx:applyRunEventReward({ kind = "unit", id = "marauder", level = 2 })) == "external_reward",
+      "run events : reward unite reste externalise vers Build")
+
+    print("  run events : 8 max / rewards explicites / determinisme / no mutation active OK")
   end
 
   -- ── Invariants sous fuzz d'actions seedées ──

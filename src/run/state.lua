@@ -18,6 +18,7 @@
 
 local Units = require("src.data.units")
 local Relics = require("src.data.relics")
+local RunEvents = require("src.data.run_events")
 local Economy = require("src.run.economy")
 
 local RunState = {}
@@ -141,6 +142,7 @@ function RunState.new(seed, opts)
     frozenOffers = {},             -- [slot] = {id,cost} conservé sur reroll/round tant qu'il n'est pas acheté
     shop = {},
     relics = {}, -- possédées : { { id } } (modèle LISIBLE : effet affiché ; collection Grimoire inscrite au grant)
+    runEventsSeen = {}, -- events post-combat deja servis cette run (anti repetition tant que possible)
     _pendingGold = 0, -- A3 : or DIFFÉRÉ au prochain round (reliques d'éco : or-sur-victoire). Hors RNG.
     relicFromLevelThisRound = false, -- Lot 5 (§5.2) : une seule récompense de relique par level-up et PAR round
     chronicles = {}, -- HISTORIQUE des journaux de combat (1 par combat) pour le sélecteur de round (UI, hors éco)
@@ -519,6 +521,148 @@ function RunState:rollRelicChoices(n, opts)
   return out
 end
 
+-- ── EVENTS DE RUN (experiment 2026-06) ─────────────────────────────────────
+-- Remplace le simple "marchand de reliques" par une rencontre thematique dont
+-- chaque choix materialise une recompense LISIBLE. Le texte peut etre glauque,
+-- mais reward.kind/id/amount/level sont connus avant le choix.
+
+local function copyReward(reward)
+  local out = {}
+  for k, v in pairs(reward or {}) do out[k] = v end
+  return out
+end
+
+local function eventEligible(self, event, opts)
+  opts = opts or {}
+  local combats = self.wins + self.losses
+  if event.minCombats and combats < event.minCombats then return false end
+  if event.maxCombats and combats > event.maxCombats then return false end
+  if event.minWins and self.wins < event.minWins then return false end
+  if event.maxWins and self.wins > event.maxWins then return false end
+  if event.minShopTier and self.shopTier < event.minShopTier then return false end
+  if opts.exclude and opts.exclude[event.id] then return false end
+  return true
+end
+
+local function rollEventRelicReward(self, spec, usedRelics)
+  usedRelics = usedRelics or {}
+  local opts = { minTier = spec.minTier }
+  -- Plusieurs petites offres plutot qu'un tirage "tout le pool" : on garde le
+  -- plafond de RunState:rollRelicChoices au lieu de le contourner par fallback.
+  for _ = 1, 5 do
+    local choices = self:rollRelicChoices(3, opts)
+    for _, id in ipairs(choices) do
+      if not usedRelics[id] then
+        usedRelics[id] = true
+        return { kind = "relic", id = id }
+      end
+    end
+  end
+  return nil
+end
+
+local function rollEventUnitReward(self, spec)
+  local minRank = spec.rank or spec.rankMin or 1
+  local maxRank = spec.rank or spec.rankMax or minRank
+  minRank = math.max(1, math.min(MAX_TIER, minRank))
+  maxRank = math.max(minRank, math.min(MAX_TIER, maxRank))
+  local candidates = {}
+  for _, id in ipairs(POOL) do
+    local u = Units[id]
+    local rank = u and (u.rank or 1) or 1
+    if rank >= minRank and rank <= maxRank then candidates[#candidates + 1] = id end
+  end
+  if #candidates == 0 then return nil end
+  return {
+    kind = "unit",
+    id = candidates[self.rng:random(1, #candidates)],
+    level = math.max(1, math.min(2, spec.level or 1)), -- jamais de niveau 3 via event.
+  }
+end
+
+local function materializeEventReward(self, spec, usedRelics)
+  spec = spec or {}
+  if spec.kind == "relic" then return rollEventRelicReward(self, spec, usedRelics) end
+  if spec.kind == "unit" then return rollEventUnitReward(self, spec) end
+  if spec.kind == "gold" then
+    return { kind = "gold", amount = math.max(0, spec.amount or 0) }
+  end
+  if spec.kind == "shop_xp" then
+    return { kind = "shop_xp", amount = math.max(0, spec.amount or 0) }
+  end
+  if spec.kind == "shop_tier_up" then
+    return { kind = "shop_tier_up", amount = math.max(1, spec.amount or 1) }
+  end
+  return nil
+end
+
+function RunState:rollRunEvent(opts)
+  opts = opts or {}
+  local function collect(includeSeen)
+    local out = {}
+    for _, id in ipairs(RunEvents.order) do
+      local event = RunEvents.events[id]
+      local seen = self.runEventsSeen and self.runEventsSeen[id]
+      if event and eventEligible(self, event, opts) and (includeSeen or not seen) then
+        out[#out + 1] = event
+      end
+    end
+    return out
+  end
+
+  local candidates = collect(false)
+  if #candidates == 0 then candidates = collect(true) end
+  if #candidates == 0 then return nil end
+
+  local start = self.rng:random(1, #candidates)
+  for n = 1, #candidates do
+    local event = candidates[((start + n - 2) % #candidates) + 1]
+    local usedRelics, choices = {}, {}
+    for _, choice in ipairs(event.choices or {}) do
+      local reward = materializeEventReward(self, choice.reward, usedRelics)
+      if reward then
+        choices[#choices + 1] = {
+          id = choice.id,
+          labelKey = "runevent." .. event.id .. ".choice." .. choice.id .. ".label",
+          reward = reward,
+        }
+      end
+    end
+    if #choices > 0 then
+      self.runEventsSeen = self.runEventsSeen or {}
+      self.runEventsSeen[event.id] = true
+      return {
+        id = event.id,
+        titleKey = "runevent." .. event.id .. ".title",
+        bodyKey = "runevent." .. event.id .. ".body",
+        choices = choices,
+      }
+    end
+  end
+  return nil
+end
+
+-- Applique uniquement les recompenses qui vivent au niveau RunState. Les unites
+-- et futures mutations sont externalisees : elles doivent passer par Build afin
+-- de respecter banc, plateau, fusions, snapshots et UI.
+function RunState:applyRunEventReward(reward)
+  reward = copyReward(reward)
+  if reward.kind == "relic" then return self:grantRelic(reward.id) end
+  if reward.kind == "gold" then
+    self.gold = self.gold + math.max(0, reward.amount or 0)
+    return true
+  end
+  if reward.kind == "shop_xp" then
+    self:addShopXp(math.max(0, reward.amount or 0))
+    return true
+  end
+  if reward.kind == "shop_tier_up" then
+    self:raiseShopTier(math.max(1, reward.amount or 1))
+    return true
+  end
+  return false, "external_reward"
+end
+
 -- REFUSE l'offre de relique : +DECLINE_RELIC_GOLD or (calque exact de declineSlotGrant : on échange le
 -- choix contre de l'or). N'inscrit RIEN au Grimoire (rien d'appris). Renvoie l'or accordé.
 function RunState:declineRelic()
@@ -594,5 +738,6 @@ RunState.BUY_XP_COST = BUY_XP_COST
 RunState.XP_TO_LEVEL = XP_TO_LEVEL
 RunState.ODDS = ODDS
 RunState.SHOP_FREEZE_DEFAULT = 1
+RunState.RUN_EVENT_MAX_ACTIVE = RunEvents.MAX_ACTIVE
 
 return RunState

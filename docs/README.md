@@ -32,6 +32,8 @@ Pour une session agent:
   simulation.
 - `research/pve-bossrush-scoring-loop.md` - boucle PvE, abominations,
   bossrush post-win et scoring.
+- `research/run-events-reward-loop.md` - events de run, recompenses
+  explicites, garde-fous sur les mutations.
 
 ## References techniques conservees
 

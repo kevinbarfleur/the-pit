@@ -3,7 +3,7 @@
 -- Combine l'ÉTAT DE RUN réel (src/run/state, économie SIM-pure) + un vrai Build (plateau/placement/fusion/
 -- buildComp aura-résolu) + le runner de match. Il REJOUE la méta-boucle du host (resolve -> observe ->
 -- offre de relique -> startRound) SANS aucune IO Grimoire. Expose une API D'ACTIONS JOUEUR sérialisable :
---   state / buy / sell / reroll / acceptSlotGrant / declineSlotGrant / move / reshape / pickRelic / fight
+--   state / buy / sell / reroll / acceptSlotGrant / declineSlotGrant / move / reshape / pickRelic / pickRunEvent / fight
 -- que consomment AUSSI BIEN les politiques scriptées (Pilier B, tools/runsim) que les outils MCP (Pilier C).
 --
 -- ⚠️ RENDER-tainted (construit un Build = scène). HORS firewall SIM ; ne jamais le require depuis
@@ -40,6 +40,7 @@ function Rundriver.new(seed, opts)
     cooldownMult = (opts.cooldownMult ~= nil) and opts.cooldownMult or pacing.cooldownMult,
     fatigue = (opts.fatigue ~= nil) and opts.fatigue or pacing.fatigue,
     commanderMode = opts.commanderMode or "ignore", -- lab-only policy: ignore | decline | auto
+    runEvents = opts.runEvents == true, -- lab-only experiment: replace merchant relics with thematic run events
     compMutator = opts.compMutator, -- lab-only overlay appliqué aux deux camps avant Match.run (pacing, probes)
     leftMutator = opts.leftMutator, -- lab-only overlay appliqué au joueur seulement (candidate balance)
     rightMutator = opts.rightMutator, -- lab-only overlay appliqué à l'adversaire seulement
@@ -47,7 +48,7 @@ function Rundriver.new(seed, opts)
     recordEvents = opts.recordEvents == true, -- lab-only: achats/ventes/reliques par round pour funnels de plan
     relicsKnown = opts.relicsKnown or false, -- reliques pré-connues au Grimoire ? (le driver n'a pas d'IO)
     opponentFn = opts.opponent,              -- (driver) -> compo droite ; défaut PvE escaladante
-    over = nil, pendingRelics = nil, lastResult = nil, events = {},
+    over = nil, pendingRelics = nil, pendingRunEvent = nil, lastResult = nil, events = {},
     pairEvents = {}, mergeEvents = {},
     exactMergeEvents = {}, nextCopyId = 1,
     metrics = {
@@ -64,6 +65,7 @@ function Rundriver.new(seed, opts)
       commanderPlacements = 0,
       boardDeploys = 0, boardSwaps = 0,
       relicPicks = 0,
+      eventPicks = 0, eventRelics = 0, eventUnits = 0, eventGold = 0, eventShopXp = 0, eventShopTierUps = 0,
     },
   }, Rundriver)
   build.mergeObserver = function(ev) self:_recordExactMerge(ev) end
@@ -79,6 +81,7 @@ local METRIC_KEYS = {
   "commanderAccepts", "commanderDeclines", "commanderDeclineGold", "commanderPlacements",
   "boardDeploys", "boardSwaps",
   "relicPicks",
+  "eventPicks", "eventRelics", "eventUnits", "eventGold", "eventShopXp", "eventShopTierUps",
 }
 
 function Rundriver:_metric(key, n)
@@ -242,7 +245,7 @@ function Rundriver:state()
     shop = shop, board = board, relics = #self.run.relics, placed = self.build:placedCount(),
     benchSize = #(self.build.benchSlots or {}),
     bench = bench, benchUsed = benchUsed, benchFree = #(self.build.benchSlots or {}) - benchUsed,
-    pendingRelics = self.pendingRelics, over = self.over,
+    pendingRelics = self.pendingRelics, pendingRunEvent = self.pendingRunEvent, over = self.over,
   }
 end
 
@@ -768,6 +771,56 @@ function Rundriver:_startRound(source)
   self:applyShopSupport(source or "start_round")
 end
 
+function Rundriver:grantUnitReward(reward)
+  reward = reward or {}
+  local id = reward.id
+  if not Units[id] then return false end
+  self:_ensureCopyIds()
+  local copyId = self:_newCopyId()
+  local occ = {
+    id = id,
+    level = math.max(1, math.min(2, reward.level or 1)),
+    char = self.build:newRig(id),
+    copyId = copyId,
+  }
+  if not self.build:stowUnit(occ) then
+    self:_event({ type = "run_event_reward_failed", reason = "no_space", kind = "unit", id = id, level = occ.level })
+    return false
+  end
+  self:_metric("eventUnits", 1)
+  self:_event({ type = "unit_reward", id = id, level = occ.level, copyId = copyId })
+  self.build:checkMerges()
+  return true
+end
+
+function Rundriver:applyRunEventReward(reward)
+  reward = reward or {}
+  if reward.kind == "unit" then return self:grantUnitReward(reward) end
+  local beforeGold, beforeXp, beforeTier, beforeRelics = self.run.gold, self.run.shopXp, self.run.shopTier, #self.run.relics
+  local ok = self.run:applyRunEventReward(reward)
+  if not ok then
+    self:_event({ type = "run_event_reward_failed", reason = "unsupported", kind = reward.kind })
+    return false
+  end
+  if reward.kind == "relic" then
+    self:_metric("eventRelics", 1)
+  elseif reward.kind == "gold" then
+    self:_metric("eventGold", self.run.gold - beforeGold)
+  elseif reward.kind == "shop_xp" then
+    self:_metric("eventShopXp", math.max(0, (reward.amount or 0)))
+  elseif reward.kind == "shop_tier_up" then
+    self:_metric("eventShopTierUps", self.run.shopTier - beforeTier)
+  end
+  self:_event({
+    type = "run_event_reward", kind = reward.kind, id = reward.id, amount = reward.amount,
+    goldDelta = self.run.gold - beforeGold,
+    shopXpDelta = self.run.shopXp - beforeXp,
+    shopTierDelta = self.run.shopTier - beforeTier,
+    relicDelta = #self.run.relics - beforeRelics,
+  })
+  return true
+end
+
 -- ── Combat + avancement de la méta-boucle (mirroir de host.finishCombat, SANS IO Grimoire) ──
 -- Renvoie { result, over?, relicChoices? }. Si relicChoices : le round N'EST PAS avancé -> il FAUT
 -- appeler pickRelic ensuite (l'agent/la politique choisit). Sinon le round suivant est ouvert (startRound).
@@ -792,13 +845,45 @@ function Rundriver:fight()
   self.over = self.run:isOver()
   if self.over then return { result = res, over = self.over } end
 
-  -- Acquisition : tous les 3 victoires, offre 1-parmi-3 (le round attend le choix).
-  if res.win and self.run.wins % 3 == 0 then
-    local choices = self.run:rollRelicChoices(3)
+  -- Canal 3 live : jalons victoire 3/6 = relique garantie a plancher mid.
+  if res.win and (self.run.wins == 3 or self.run.wins == 6) then
+    local choices = self.run:rollRelicChoices(3, { minTier = "mid" })
     if #choices > 0 then
       self.pendingRelics = choices
-      self:_event({ type = "relic_offer", choices = copyList(choices), reward_round = self.run.round, wins = self.run.wins })
+      self:_event({
+        type = "relic_offer", channel = "milestone", choices = copyList(choices),
+        reward_round = self.run.round, wins = self.run.wins,
+      })
       return { result = res, relicChoices = choices }
+    end
+  end
+
+  -- Canal marchand : tous les 3 COMBATS, comme le host live. Par defaut, le
+  -- lab garde l'offre de relique pour comparer les anciens rapports. En mode
+  -- opt-in `runEvents=true`, ce meme creneau devient une rencontre thematique
+  -- avec recompenses explicites (relique, unite, or, XP/tier boutique).
+  local combats = self.run.wins + self.run.losses
+  if combats % 3 == 0 then
+    if self.runEvents then
+      local event = self.run:rollRunEvent()
+      if event and #(event.choices or {}) > 0 then
+        self.pendingRunEvent = event
+        self:_event({
+          type = "run_event_offer", id = event.id, choices = event.choices,
+          reward_round = self.run.round, wins = self.run.wins, losses = self.run.losses,
+        })
+        return { result = res, runEvent = event }
+      end
+    else
+      local choices = self.run:rollRelicChoices(3)
+      if #choices > 0 then
+        self.pendingRelics = choices
+        self:_event({
+          type = "relic_offer", channel = "merchant", choices = copyList(choices),
+          reward_round = self.run.round, wins = self.run.wins, losses = self.run.losses,
+        })
+        return { result = res, relicChoices = choices }
+      end
     end
   end
   self:_startRound("combat")
@@ -815,6 +900,23 @@ function Rundriver:pickRelic(choiceIndex)
   if id then self:_metric("relicPicks", 1) end
   if id then self:_event({ type = "relic_pick", id = id, choice = choiceIndex or 1 }) end
   return id or false
+end
+
+function Rundriver:pickRunEvent(choiceIndex)
+  local event = self.pendingRunEvent
+  if not event then return false end
+  choiceIndex = choiceIndex or 1
+  local choice = event.choices and event.choices[choiceIndex]
+  if not choice then return false end
+  local applied = self:applyRunEventReward(choice.reward)
+  self.pendingRunEvent = nil
+  self:_metric("eventPicks", 1)
+  self:_event({
+    type = "run_event_pick", id = event.id, choice = choice.id, choiceIndex = choiceIndex,
+    reward = choice.reward, applied = applied and true or false,
+  })
+  self:_startRound("run_event")
+  return choice
 end
 
 -- ── Coût d'investissement du board courant (réutilise Compcost, comme une compo de catalogue) ──
@@ -918,6 +1020,9 @@ function Rundriver.run(seed, policy, opts)
     if fr.relicChoices then
       local pick = (policy.pickRelic and policy:pickRelic(drv, fr.relicChoices)) or 1
       drv:pickRelic(pick)
+    elseif fr.runEvent then
+      local pick = (policy.pickRunEvent and policy:pickRunEvent(drv, fr.runEvent)) or 1
+      drv:pickRunEvent(pick)
     end
     local row = {
       round = snap.round, gold = snap.gold, startGold = before.gold, buildGold = afterBuild.gold,
