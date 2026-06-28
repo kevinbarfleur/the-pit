@@ -434,7 +434,9 @@ offers: a low-rank monster with `echo_touched`, a mid-rank monster with
    unit events, but do not make it a broad replacement for relic choices.
 7. Re-run the most important reward-EV panels with
    `PIT_OPPONENT_MODE=generated` before treating old late static-oracle losses
-   as balance truth.
+   as balance truth. First rot/bleed core comparison: static `31.2%` run
+   completion vs generated `89.8%`, while exact target completion remains low;
+   tune live EV from generated panels, keep static panels as stress tests.
 8. Use `--shoot=runevent` after visual changes to the event picker.
 9. Continue mutation panels behind the opt-in lab profile before enabling
    mutated event units in the live run loop.

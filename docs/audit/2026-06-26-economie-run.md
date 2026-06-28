@@ -933,6 +933,14 @@ Ajout batch autonomie (`runs/long-2026-06-27b`) :
   Les oracles appliquent ces reliques et ce commandant, ce qui permet de tester
   un endpoint soutenu par ses vrais multiplicateurs plutot qu'une liste brute
   d'unites.
+- Premier comparatif static/generated : le meme slice N=64 rot/bleed core avec
+  events, `policy_space_missing_copy`, `PIT_EVENT_UNIT_RELIC_MARGIN=1000` et
+  `pair_completion_light` donne `31.2%` de completion de run en mode static
+  (`8.95` wins, `68.4%` combat winrate) contre `89.8%` en mode generated
+  (`9.88` wins, `91.0%` combat winrate). La completion exacte du plan reste
+  basse dans les deux modes (`0%` board static, `0.8%` generated). Lecture :
+  les adversaires generes representent mieux la pression live actuelle, tandis
+  que le mode static reste un stress-test volontairement dur.
 - Mise a jour funnel acquisition : `plan_access.acquisition_funnel` detaille les
   offres vues, l'or, la place, les achats, paires/fusions, ventes et le premier
   round vu par unite cible. Sur

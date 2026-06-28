@@ -2676,6 +2676,20 @@ Next implementation targets:
      The oracle applies those relics/commander through the same comp conversion
      path used by the lab, so force-build endpoints can finally represent
      "this build plus its intended support", not just raw units.
+   - first static-vs-generated comparison:
+     `/tmp/thepit-static-core-n64` and `/tmp/thepit-generated-core-n64` reran
+     the same N=64 rot/bleed core slice with
+     `PIT_EVENT_UNIT_TARGETING=policy_space_missing_copy` and
+     `PIT_EVENT_UNIT_RELIC_MARGIN=1000` (`128` total runs after two committed
+     plan policies collapse into `committed_plan`). Static opponents produced
+     `31.2%` run completion, `8.95` average wins, and `68.4%` combat winrate.
+     Generated opponents produced `89.8%` run completion, `9.88` average wins,
+     and `91.0%` combat winrate. Exact target completion remained low in both
+     modes (`0%` board complete static, `0.8%` generated; held complete `0%`
+     vs `2.3%`). Read: the plan can win the live-like generated pressure
+     without reaching its exact target definition, while static encounters are
+     still a much harsher regression harness. Use both views: generated for
+     live-product tuning, static for stress tests.
 3. Use the new `plan_support_watch` rows in the next economy/bossrush panels to
    separate "support never offered", "support offered but not picked", and
    "support picked but plan still inaccessible".
