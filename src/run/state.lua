@@ -574,6 +574,16 @@ local function prioritizedEventUnit(candidates, spec, opts)
   return bestId
 end
 
+local function filteredEventUnits(candidates, spec, opts)
+  local fn = opts and opts.unitFilter
+  if not fn then return candidates end
+  local out = {}
+  for _, id in ipairs(candidates or {}) do
+    if fn(id, spec) then out[#out + 1] = id end
+  end
+  return out
+end
+
 local function rollEventUnitReward(self, spec, opts)
   local minRank = spec.rank or spec.rankMin or 1
   local maxRank = spec.rank or spec.rankMax or minRank
@@ -585,6 +595,7 @@ local function rollEventUnitReward(self, spec, opts)
     local rank = u and (u.rank or 1) or 1
     if rank >= minRank and rank <= maxRank then candidates[#candidates + 1] = id end
   end
+  candidates = filteredEventUnits(candidates, spec, opts)
   if #candidates == 0 then return nil end
   local id = prioritizedEventUnit(candidates, spec, opts)
   return {

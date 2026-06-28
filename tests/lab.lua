@@ -346,6 +346,13 @@ local ok, err = pcall(function()
     },
   }, { targetUnits = { { id = "rot_hound", level = 2 } } }) == 2,
     "policy plan: cap event-unit force le retour vers une relique")
+  local missingCopyDrv = Rundriver.new(2026063403, { eventUnitTargeting = "missing_copy" })
+  missingCopyDrv.build:placeId(5, "marauder", 2)
+  local missingOpts = missingCopyDrv:runEventRollOptions()
+  assert(missingOpts and missingOpts.unitFilter and missingOpts.unitFilter("marauder", { level = 2 }),
+    "events: missing_copy garde une unite deja detenue au meme niveau")
+  assert(not missingOpts.unitFilter("skeleton", { level = 2 }),
+    "events: missing_copy retire les singles sans copie")
   local cmdPick = focusedPlan:chooseCommanderCandidate(nil, {
     { where = "bench", slot = 1, id = "gash_fiend", level = 1 },
     { where = "bench", slot = 2, id = "rot_hound", level = 1 },

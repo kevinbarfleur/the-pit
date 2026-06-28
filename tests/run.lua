@@ -623,6 +623,16 @@ local ok, err = pcall(function()
     assert(targetedReward and targetedReward.id == "marauder" and targetedReward.targeted,
       "run events : ciblage optionnel d'unite respecte le pool eligible")
 
+    local filtered = RunState.new(60606)
+    filtered.wins, filtered.losses = 2, 1
+    local fev = filtered:rollRunEvent({
+      exclude = exclude,
+      unitFilter = function() return false end,
+    })
+    for _, c in ipairs((fev and fev.choices) or {}) do
+      assert(c.reward.kind ~= "unit", "run events : filtre optionnel peut retirer une lane unite")
+    end
+
     local r = RunState.new(6061)
     r.wins, r.losses = 3, 1
     local seen = {}

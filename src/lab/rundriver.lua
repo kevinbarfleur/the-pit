@@ -780,14 +780,23 @@ function Rundriver:_startRound(source)
 end
 
 function Rundriver:runEventRollOptions()
-  if self.eventUnitTargeting ~= "policy" then return nil end
+  local mode = self.eventUnitTargeting
+  if not mode then return nil end
   local policy = self.policy
-  if not (policy and policy.runEventUnitPriority) then return nil end
-  return {
-    unitPriority = function(id, rewardSpec)
+  local opts = {}
+  if mode == "missing_copy" or mode == "policy_missing_copy" then
+    opts.unitFilter = function(id, rewardSpec)
+      local level = math.max(1, math.min(2, (rewardSpec and rewardSpec.level) or 1))
+      return self:copyCount(id, level) > 0
+    end
+  end
+  if (mode == "policy" or mode == "policy_missing_copy") and policy and policy.runEventUnitPriority then
+    opts.unitPriority = function(id, rewardSpec)
       return policy:runEventUnitPriority(self, id, rewardSpec)
-    end,
-  }
+    end
+  end
+  if not opts.unitFilter and not opts.unitPriority then return nil end
+  return opts
 end
 
 function Rundriver:grantUnitReward(reward)

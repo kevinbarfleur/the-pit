@@ -2602,6 +2602,17 @@ Next implementation targets:
      relics/run, no event units. Current read: for exact reroll plans, event
      units need a special payoff (missing-copy-only, rare level-2, or future
      mutation) before they beat relic opportunity cost.
+  - missing-copy event-unit materialization:
+    `PIT_EVENT_UNIT_TARGETING=policy_missing_copy` combines policy priority
+    with a copy-chain filter: an event unit is only materialized if the run
+    already owns a same-id, same-level copy. In the same N=64 rot/bleed slice,
+    reward quality became clean (`100%` pair-or-merge progress, `0%` singles,
+    `0%` failure; `65.6%` pair completions and `34.4%` merge completions), but
+    completion stayed weak at `31.2%` and relic density fell to `1.76/run`.
+    Current read: this is a useful quality floor for future unit events, not a
+    live default. Unit lanes should remain special: rare level-2, mutation
+    carrier, or explicitly framed as a high-value event spike, while ordinary
+    build-defining access still needs enough relic lanes.
 3. Use the new `plan_support_watch` rows in the next economy/bossrush panels to
    separate "support never offered", "support offered but not picked", and
    "support picked but plan still inaccessible".

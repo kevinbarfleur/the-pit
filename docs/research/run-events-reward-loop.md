@@ -185,6 +185,23 @@ still good, but the unit lane probably needs a special reason to exist:
 target-filtering plus a rare level-2 spike, future mutation, or a constrained
 "missing copy" rule that does not compete with the main relic lane every time.
 
+Missing-copy unit materialization (`PIT_EVENT_UNIT_TARGETING=policy_missing_copy`,
+same `N=64` panel) proves that unit lanes can be made much cleaner, but still
+does not solve the opportunity-cost problem:
+
+- completion `31.2%`, wins `8.96`;
+- event relics `1.76/run`, event units `1.02/run`;
+- event unit progress `100%`: no singles, `65.6%` pair completions and `34.4%`
+  merge completions;
+- failure stayed `0.0%`, but `96.2%` of event units still landed on the bench.
+
+Interpretation: "only offer units that complete a copy chain" is the right
+quality floor, but it is not enough while those unit lanes replace too many
+relic choices. Keep it as a lab switch, not a live default. A live unit event
+probably needs to be one of: explicitly level-2, explicitly mutation-bearing,
+or rare enough that it reads as a special event spike instead of a relic
+substitute.
+
 Cross-economy check (`N=64`, same rot/bleed policies, events vs classic
 merchant) adds two cautions:
 
