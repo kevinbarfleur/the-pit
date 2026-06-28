@@ -173,6 +173,8 @@ local ok, err = pcall(function()
         "mode mechanics : taux de faible variete reporte")
       assert(body:find('"redesign_first"', 1, true),
         "mode mechanics : liste de redesign prioritaire reportee")
+      assert(body:find('"simple_affliction_priority"', 1, true),
+        "mode mechanics : dette simple-affliction priorisee reportee")
     elseif m == "bossrush_run" then
       assert(body:find('"finalSupportedBoard"', 1, true) == nil,
         "mode bossrush_run : pas de dump interne verbeux dans le rapport")

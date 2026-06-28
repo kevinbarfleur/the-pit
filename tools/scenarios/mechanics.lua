@@ -140,6 +140,8 @@ local summary = {
 }
 
 local simpleIds, lowVarietyIds, noLevelIds, noEffectIds = {}, {}, {}, {}
+local simpleLowRankIds, simpleMidRankIds, simpleHighRankIds = {}, {}, {}
+local simplePriorityIds = {}
 
 for _, id in ipairs(Units.order) do
   local u = Units[id]
@@ -173,12 +175,28 @@ for _, id in ipairs(Units.order) do
     simple_affliction_l1 = isSimpleAfflictionOnly(l1),
   }
   row.low_variety = isLowVariety(row)
+  if row.simple_affliction_l1 then
+    if row.rank <= 2 then row.design_debt = "low_rank_simple"
+    elseif row.rank == 3 then row.design_debt = "mid_rank_simple"
+    else row.design_debt = "high_rank_simple" end
+  elseif row.low_variety then
+    row.design_debt = "redesign_first"
+  else
+    row.design_debt = "none"
+  end
   rows[#rows + 1] = row
 
   summary.units = summary.units + 1
   if row.level_authored then summary.authored_level_units = summary.authored_level_units + 1 else noLevelIds[#noLevelIds + 1] = id end
   if row.level3_clutch then summary.level3_clutch_units = summary.level3_clutch_units + 1 end
-  if row.simple_affliction_l1 then summary.simple_affliction_l1 = summary.simple_affliction_l1 + 1; simpleIds[#simpleIds + 1] = id end
+  if row.simple_affliction_l1 then
+    summary.simple_affliction_l1 = summary.simple_affliction_l1 + 1
+    simpleIds[#simpleIds + 1] = id
+    if row.rank <= 2 then simpleLowRankIds[#simpleLowRankIds + 1] = id
+    elseif row.rank == 3 then simpleMidRankIds[#simpleMidRankIds + 1] = id
+    else simpleHighRankIds[#simpleHighRankIds + 1] = id end
+    if row.rank >= 3 then simplePriorityIds[#simplePriorityIds + 1] = id end
+  end
   if row.low_variety then summary.low_variety_units = summary.low_variety_units + 1; lowVarietyIds[#lowVarietyIds + 1] = id end
   if row.effect_count == 0 then summary.no_board_effect_units = summary.no_board_effect_units + 1; noEffectIds[#noEffectIds + 1] = id end
 
@@ -201,10 +219,18 @@ summary.level3_clutch_rate = summary.level3_clutch_units / summary.units
 summary.simple_affliction_l1_rate = summary.simple_affliction_l1 / summary.units
 summary.low_variety_rate = summary.low_variety_units / summary.units
 summary.no_board_effect_rate = summary.no_board_effect_units / summary.units
+summary.simple_affliction_l1_low_rank = #simpleLowRankIds
+summary.simple_affliction_l1_mid_rank = #simpleMidRankIds
+summary.simple_affliction_l1_high_rank = #simpleHighRankIds
+summary.simple_affliction_l1_high_rank_rate = #simpleHighRankIds / summary.units
 
 local recommendations = {
   redesign_first = lowVarietyIds,
   simple_affliction_l1 = simpleIds,
+  simple_affliction_l1_low_rank = simpleLowRankIds,
+  simple_affliction_l1_mid_rank = simpleMidRankIds,
+  simple_affliction_l1_high_rank = simpleHighRankIds,
+  simple_affliction_priority = simplePriorityIds,
   no_authored_level = noLevelIds,
   no_board_effect = noEffectIds,
   target_next_axes = {
@@ -229,10 +255,15 @@ local refSummary = {
   authored_level_rate = summary.authored_level_rate,
   level3_clutch_rate = summary.level3_clutch_rate,
   simple_affliction_l1_rate = summary.simple_affliction_l1_rate,
+  simple_affliction_l1_low_rank = summary.simple_affliction_l1_low_rank,
+  simple_affliction_l1_mid_rank = summary.simple_affliction_l1_mid_rank,
+  simple_affliction_l1_high_rank = summary.simple_affliction_l1_high_rank,
+  simple_affliction_l1_high_rank_rate = summary.simple_affliction_l1_high_rank_rate,
   low_variety_rate = summary.low_variety_rate,
   no_board_effect_rate = summary.no_board_effect_rate,
   axis_counts = summary.axis_counts,
   top_redesign_first = { lowVarietyIds[1], lowVarietyIds[2], lowVarietyIds[3], lowVarietyIds[4], lowVarietyIds[5] },
+  top_simple_affliction_priority = { simplePriorityIds[1], simplePriorityIds[2], simplePriorityIds[3], simplePriorityIds[4], simplePriorityIds[5] },
 }
 
 local path = Common.writeReport("mechanics", payload, { refSummary = refSummary })

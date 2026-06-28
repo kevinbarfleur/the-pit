@@ -2849,6 +2849,18 @@ Next implementation targets:
   aggregate completion `54.9%`, `9.17` wins, `95.5%` merge-per-pair,
   `2.51` leftover. Top low-rank duplicate pressure is still driven mainly by
   `carrion_pecker`/`gnaw_rat`, not by the six adjusted units.
+- mechanics report prioritization:
+  `tools/scenarios/mechanics.lua` now splits `simple_affliction_l1` into
+  low-rank, mid-rank, and high-rank buckets and exposes
+  `simple_affliction_priority` for the next design pass. Current read after the
+  rank-2 bridge pass: `27` simple L1 units remain, split as `11` low-rank,
+  `5` mid-rank, and `11` high-rank (`10.0%` of the full roster). The priority
+  list is now the right next creature-design input instead of the raw global
+  simple-affliction count. First priority rows are `necro_leech`,
+  `kiln_warden`, `bloodletter`, `tendon_render`, `vein_splitter`,
+  `plague_bearer`, `acid_maw`, `patient_worm`, `hollow_gut`, `venom_censer`,
+  `wither_bloom`, `stormlord`, `dynamo_priest`, `arc_warden`,
+  `storm_anchor`, and `deep_kraken`.
 3. Use the new compact economy summary first, and only drill into full
    `plan_access` / `support_access` when a row shows a concrete anomaly.
 4. Use `plan_support_watch` rows in the next economy/bossrush panels to separate
