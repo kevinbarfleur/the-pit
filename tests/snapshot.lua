@@ -11,21 +11,30 @@ local Store = require("src.net.snapstore")
 
 local ok, err = pcall(function()
   -- 1) ROUND-TRIP : capture -> encode (déterministe) -> decode = mêmes données.
-  local units = { { id = "bandit", level = 1, col = 2, row = 0 }, { id = "witch", level = 2, col = 1, row = 1 } }
+  local units = {
+    { id = "bandit", level = 1, col = 2, row = 0, mutations = { "echo_touched" } },
+    { id = "witch", level = 2, col = 1, row = 1 },
+  }
   local snap = Snapshot.capture(units, "croix", 4242, { version = "0.7", tier = 3 })
   local enc = Snapshot.encode(snap)
   assert(Snapshot.encode(snap) == enc, "encode deterministe")
   local dec = Snapshot.decode(enc)
   assert(dec.version == "0.7" and dec.tier == 3 and dec.seed == 4242 and dec.shape == "croix", "champs decodes")
-  assert(#dec.units == 2 and dec.units[1].id == "bandit" and dec.units[2].id == "witch" and dec.units[2].level == 2,
+  assert(#dec.units == 2 and dec.units[1].id == "bandit" and dec.units[1].mutations[1] == "echo_touched"
+    and dec.units[2].id == "witch" and dec.units[2].level == 2,
     "unites decodees (id/level/positions)")
 
   -- 2) toComp : compo jouable, stats scalées par niveau (witch niv2 : hp 36 -> 65), mirroir par side.
   local comp = Snapshot.toComp(dec, 1)
   assert(#comp == 2, "2 unites reconstruites")
-  local witch
-  for _, u in ipairs(comp) do if u.id == "witch" then witch = u end end
+  local witch, bandit
+  for _, u in ipairs(comp) do
+    if u.id == "witch" then witch = u end
+    if u.id == "bandit" then bandit = u end
+  end
   assert(witch and witch.level == 2 and witch.hp == math.floor(36 * 1.8 + 0.5), "witch niv2 : hp scale")
+  assert(bandit and bandit.mutations and bandit.mutations[1] == "echo_touched" and bandit.multicast == 2,
+    "bandit muté : mutation snapshot bakee dans le spec")
   assert(comp[1].facing == -1, "side=1 -> regarde a gauche (mirroir)")
 
   -- 3) STORE : filtre version + tier (sert v0.7 de tier <= 5 ; pas le tier 9 ni la v0.6).

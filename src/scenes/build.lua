@@ -33,6 +33,7 @@ local Stats = require("src.effects.stats") -- caps du framework payoff (value bo
 local Snapshot = require("src.net.snapshot")
 local Snapstore = require("src.net.snapstore")
 local Run = require("src.run.state")
+local Mutations = require("src.run.mutations")
 local RelicGen = require("src.gen.relicgen") -- icones de reliques (rangee type Slay the Spire + hover)
 local Rarity = require("src.gen.rarity") -- TIER (rang 1..5) -> couleur + nom de caste (source unique de rareté UI)
 local Bestiary = require("src.core.bestiary") -- marque les créatures vues en boutique (codex)
@@ -209,6 +210,33 @@ function Build:newRig(id)
   local c = Rig.new(def, self.palette)
   c.facing = 1
   return c
+end
+
+function Build:makeOcc(id, level, opts)
+  opts = opts or {}
+  return {
+    id = id,
+    level = level or 1,
+    char = opts.char or self:newRig(id),
+    copyId = opts.copyId,
+    mutations = Mutations.clone(opts.mutations),
+    d = opts.d,
+    bounce = opts.bounce,
+    pop = opts.pop,
+  }
+end
+
+function Build:cloneOcc(sr, opts)
+  opts = opts or {}
+  if not sr then return nil end
+  return self:makeOcc(opts.id or sr.id, opts.level or sr.level or 1, {
+    char = (opts.char ~= nil) and opts.char or sr.char,
+    copyId = (opts.copyId ~= nil) and opts.copyId or sr.copyId,
+    mutations = (opts.mutations ~= nil) and opts.mutations or sr.mutations,
+    d = (opts.d ~= nil) and opts.d or sr.d,
+    bounce = opts.bounce,
+    pop = opts.pop,
+  })
 end
 
 -- ── FIT-TO-BOX (FIX overflow) : étendue OPAQUE RÉELLE d'un rig (pose idle) en unités VIRTUELLES relatives à
@@ -1016,7 +1044,7 @@ end
 function Build:placeId(slot, id, level, opts)
   if not (self.board.slots[slot] and self.board.slots[slot].unlocked) then return false end
   opts = opts or {}
-  self.slotRigs[slot] = { id = id, level = level or 1, char = self:newRig(id), copyId = opts.copyId }
+  self.slotRigs[slot] = self:makeOcc(id, level or 1, opts)
   self.board.slots[slot].unit = id
   return true
 end
@@ -1066,13 +1094,22 @@ function Build:checkMerges()
             kind = p.kind, i = p.i, id = sr and sr.id or id,
             level = sr and (sr.level or fromLevel) or fromLevel,
             copyId = sr and sr.copyId or nil,
+            mutations = sr and Mutations.clone(sr.mutations) or nil,
           }
           if p.kind == "board" then self.slotRigs[p.i] = nil; self.board.slots[p.i].unit = nil
           else self.bench[p.i] = nil end
         end
         -- promeut la 1re copie + lui pose un `bounce` = état de chorégraphie (anticipation -> climax -> settle),
         -- timé sur la DERNIÈRE arrivée d'âme (#froms copies, 2 ici) ; lu par mergeLift/mergeScale/mergeGlow au DRAW.
-        local promoted = { id = id, level = lvl, char = self:newRig(id), bounce = newMergeAnim(#froms, lvl >= MAX_LEVEL), copyId = kr.copyId }
+        local mutationLists = { kr.mutations }
+        for _, entry in ipairs(consumed) do
+          if entry.mutations then mutationLists[#mutationLists + 1] = entry.mutations end
+        end
+        local promoted = self:makeOcc(id, lvl, {
+          bounce = newMergeAnim(#froms, lvl >= MAX_LEVEL),
+          copyId = kr.copyId,
+          mutations = Mutations.merge(mutationLists),
+        })
         if keep.kind == "board" then self.slotRigs[keep.i] = promoted; self.board.slots[keep.i].unit = id
         else self.bench[keep.i] = promoted end
         self:emitMergeEvent({
@@ -1221,10 +1258,10 @@ function Build:autoBuy(offerIndex, opts)
     if not id then return false end
     SFX.play("coin") -- ACHAT : pièce qui tombe (cloche grave Oniric)
     if bslot then
-      self.slotRigs[bslot] = { id = id, level = 1, char = self:newRig(id), copyId = opts.copyId }; self.board.slots[bslot].unit = id
+      self.slotRigs[bslot] = self:makeOcc(id, 1, opts); self.board.slots[bslot].unit = id
       self:popPlaced(self.slotRigs[bslot]) -- APPARITION : le monstre frémit sur sa case + son « place »
     else
-      self.bench[benchSlot] = { id = id, level = 1, char = self:newRig(id), copyId = opts.copyId }
+      self.bench[benchSlot] = self:makeOcc(id, 1, opts)
       self:popPlaced(self.bench[benchSlot]) -- APPARITION (banc) : frémissement + « place »
     end
     self:checkMerges()
@@ -1255,7 +1292,15 @@ function Build:buyMergeWhenFull(offerIndex, opts)
   local sx, sy = self:fxCenterOf(keep.kind, keep.i)        -- survivant
   local dxp, dyp = self:fxCenterOf(drop.kind, drop.i)      -- copie retirée (âme qui file)
   if drop.kind == "board" then self.slotRigs[drop.i] = nil; self.board.slots[drop.i].unit = nil else self.bench[drop.i] = nil end
-  local promoted = { id = id, level = 2, char = self:newRig(id), bounce = newMergeAnim(2), copyId = keepSr and keepSr.copyId or nil }
+  local mutationLists = {}
+  if keepSr and keepSr.mutations then mutationLists[#mutationLists + 1] = keepSr.mutations end
+  if dropSr and dropSr.mutations then mutationLists[#mutationLists + 1] = dropSr.mutations end
+  if opts.mutations then mutationLists[#mutationLists + 1] = opts.mutations end
+  local promoted = self:makeOcc(id, 2, {
+    bounce = newMergeAnim(2),
+    copyId = keepSr and keepSr.copyId or nil,
+    mutations = Mutations.merge(mutationLists),
+  })
   if keep.kind == "board" then self.slotRigs[keep.i] = promoted; self.board.slots[keep.i].unit = id
   else self.bench[keep.i] = promoted end
   self:emitMergeEvent({
@@ -1380,7 +1425,8 @@ function Build:mousepressed(vx, vy, button)
     if oi then -- prend une offre JOUABLE (achat consommé au lâcher sur une case, ou au CLIC via autoBuy) ; une
       local o = run.shop[oi] -- carte désactivée (pas d'or / plein sans level-up) est INERTE -> pas de pickup.
       if o and self:offerPlayable(o) then
-        self.drag = { id = o.id, level = 1, char = self:newRig(o.id), fromShop = oi, pressX = vx, pressY = vy }
+        self.drag = self:makeOcc(o.id, 1, { char = self:newRig(o.id) })
+        self.drag.fromShop, self.drag.pressX, self.drag.pressY = oi, vx, vy
         self:beginDrag(nil) -- offre neuve : pas de ressort source -> démarre sous le curseur (lift immédiat)
         SFX.play("pickup") -- DRAG : on saisit une offre (achat confirmé au lâcher -> coin)
       end
@@ -1390,7 +1436,8 @@ function Build:mousepressed(vx, vy, button)
   -- C3 : ramasse le COMMANDANT du piédestal (le rétrograde -> il repartira vers board/banc ou sera vendu).
   if self:commanderAt(vx, vy) and self.commanderSlot then
     local c = self.commanderSlot
-    self.drag = { id = c.id, level = c.level or 1, char = c.char, fromCommander = true }
+    self.drag = self:cloneOcc(c)
+    self.drag.fromCommander = true
     self:beginDrag(c.d) -- reprend son ressort -> il se soulève du piédestal, pas de saut
     self.commanderSlot = nil
     SFX.play("pickup") -- DRAG : on retire le commandant du piédestal
@@ -1398,7 +1445,8 @@ function Build:mousepressed(vx, vy, button)
   end
   local si = self:slotAt(vx, vy)
   if si and self.slotRigs[si] then -- ramasse une unité du PLATEAU (réarrangement / vente / vers banc)
-    self.drag = { id = self.slotRigs[si].id, level = self.slotRigs[si].level or 1, char = self.slotRigs[si].char, fromSlot = si }
+    self.drag = self:cloneOcc(self.slotRigs[si])
+    self.drag.fromSlot = si
     self:beginDrag(self.slotRigs[si].d) -- reprend son ressort -> elle se soulève de sa case
     self.slotRigs[si] = nil
     self.board.slots[si].unit = nil
@@ -1407,7 +1455,8 @@ function Build:mousepressed(vx, vy, button)
   end
   local bi = self:benchAt(vx, vy)
   if bi and self.bench[bi] then -- ramasse une unité du BANC (réarrangement / vente / vers plateau)
-    self.drag = { id = self.bench[bi].id, level = self.bench[bi].level or 1, char = self.bench[bi].char, fromBench = bi }
+    self.drag = self:cloneOcc(self.bench[bi])
+    self.drag.fromBench = bi
     self:beginDrag(self.bench[bi].d) -- reprend son ressort -> elle se soulève du banc
     self.bench[bi] = nil
     SFX.play("pickup") -- DRAG : on soulève une unité du banc
@@ -1444,7 +1493,7 @@ function Build:mousereleased(vx, vy, button)
       if id then
         SFX.play("coin") -- ACHAT (promotion directe au piédestal)
         local occ = self.commanderSlot
-        self.commanderSlot = { id = id, level = 1, char = d.char, d = d.d } -- ressort repris -> glisse au piédestal
+        self.commanderSlot = self:makeOcc(id, 1, { char = d.char, d = d.d, copyId = d.copyId, mutations = d.mutations }) -- ressort repris -> glisse au piédestal
         if occ then -- piédestal occupé : l'ancien commandant repart au banc (sinon disparaît en sandbox).
           self:stowUnit(occ)
         end
@@ -1457,7 +1506,7 @@ function Build:mousereleased(vx, vy, button)
     -- Unité EXISTANTE (board/banc/piédestal) -> piédestal. L'occupant repart vers l'ORIGINE du drag (swap propre).
     local occ = self.commanderSlot
     if occ then self:returnDragOrigin(d, occ) end
-    self.commanderSlot = { id = d.id, level = d.level or 1, char = d.char, d = d.d } -- ressort repris -> glisse au piédestal
+    self.commanderSlot = self:cloneOcc(d, { d = d.d }) -- ressort repris -> glisse au piédestal
     return
   end
 
@@ -1471,10 +1520,10 @@ function Build:mousereleased(vx, vy, button)
       if id then
         SFX.play("coin") -- ACHAT par drag sur une case/banc
         if toBoard then
-          self.slotRigs[si] = { id = id, level = 1, char = d.char, d = d.d }; self.board.slots[si].unit = id -- ressort repris -> glisse dans la case
+          self.slotRigs[si] = self:makeOcc(id, 1, { char = d.char, d = d.d, copyId = d.copyId, mutations = d.mutations }); self.board.slots[si].unit = id -- ressort repris -> glisse dans la case
           self:popPlaced(self.slotRigs[si]) -- APPARITION sur la case (lâcher du drag) : frémissement + « place »
         else
-          self.bench[bi] = { id = id, level = 1, char = d.char, d = d.d } -- ressort repris -> glisse au banc
+          self.bench[bi] = self:makeOcc(id, 1, { char = d.char, d = d.d, copyId = d.copyId, mutations = d.mutations }) -- ressort repris -> glisse au banc
           self:popPlaced(self.bench[bi]) -- APPARITION au banc (lâcher du drag) : frémissement + « place »
         end
         self:checkMerges() -- 3 copies (même id+niveau, plateau OU banc) -> fusion niveau+1 (arme pendingLevelRelic 1×/round)
@@ -1495,14 +1544,14 @@ function Build:mousereleased(vx, vy, button)
     -- -> CASE PLATEAU : place / swap (l'occupant repart vers l'ORIGINE du drag : plateau ou banc).
     local occ = self.slotRigs[si]
     if occ then self:returnDragOrigin(d, occ) end
-    self.slotRigs[si] = { id = d.id, level = d.level or 1, char = d.char, d = d.d } -- ressort repris -> glisse dans la case
+    self.slotRigs[si] = self:cloneOcc(d, { d = d.d }) -- ressort repris -> glisse dans la case
     self.board.slots[si].unit = d.id
     SFX.play("drop") -- DROP : on POSE l'unité sur une case (doux, grave, aucun bruit)
   elseif bi then
     -- -> SLOT BANC : place / swap.
     local occ = self.bench[bi]
     if occ then self:returnDragOrigin(d, occ) end
-    self.bench[bi] = { id = d.id, level = d.level or 1, char = d.char, d = d.d } -- ressort repris -> glisse au banc
+    self.bench[bi] = self:cloneOcc(d, { d = d.d }) -- ressort repris -> glisse au banc
     SFX.play("drop") -- DROP : on range l'unité au banc
   else
     -- Lâché HORS plateau ET banc : VENTE (remboursement) si run ; sinon l'unité disparaît (sandbox).
@@ -1531,7 +1580,7 @@ end
 
 -- Repose un drag à SON origine SANS swap (refus de drop : non-chef sur le piédestal). Reconstruit l'entrée.
 function Build:returnDrag(d)
-  local u = { id = d.id, level = d.level or 1, char = d.char, d = d.d } -- ressort repris -> glisse de retour à l'origine
+  local u = self:cloneOcc(d, { d = d.d }) -- ressort repris -> glisse de retour à l'origine
   if d.fromSlot then
     self.slotRigs[d.fromSlot] = u; self.board.slots[d.fromSlot].unit = d.id
   elseif d.fromBench then
@@ -1610,7 +1659,8 @@ function Build:buildComp(side)
   for i = 1, 9 do
     if self.slotRigs[i] then
       local c = self.board.shape.cells[i]
-      placed[#placed + 1] = { slot = i, id = self.slotRigs[i].id, col = c.x, row = c.y, level = self.slotRigs[i].level or 1 }
+      placed[#placed + 1] = { slot = i, id = self.slotRigs[i].id, col = c.x, row = c.y,
+        level = self.slotRigs[i].level or 1, mutations = Mutations.clone(self.slotRigs[i].mutations) }
     end
   end
   if #placed == 0 then return {} end
@@ -1998,7 +2048,7 @@ function Build:buildComp(side)
     -- W1 — RAINBOW : bonus PLAT (déjà borné par le count cappé + déjà scalé par le niveau au bake), ajouté
     -- APRÈS la couche multiplicative (comme un relic_flat_hp). nil = inerte -> hp/dmg base -> golden-safe.
     local rf = rainbowFlat[p.slot]
-    comp[#comp + 1] = { id = p.id, slot = p.slot, level = p.level,
+    local spec = { id = p.id, slot = p.slot, level = p.level,
       hp = math.floor(stats.hp * sf + 0.5) + (rf and rf.hp or 0),
       dmg = math.floor(stats.dmg * sf + 0.5) + (rf and rf.dmg or 0), cd = stats.cd,
       depth = b.maxC - p.col, col = p.col, row = p.row, effects = auraEffects(p.id, p.slot),
@@ -2015,6 +2065,7 @@ function Build:buildComp(side)
         reflect = casters[p.slot].reflect, overcharge = casters[p.slot].overcharge,
         targetSlots = casters[p.slot].targetSlots } or nil,
       x = x, y = y, facing = facing }
+    comp[#comp + 1] = Mutations.applyToSpec(spec, p.mutations)
   end
 
   -- ── C3 — LE COMMANDANT au comp (K4) : ajouté APRÈS le board, AVEC ses flags d'intouchabilité. L'arène le
@@ -2038,12 +2089,13 @@ function Build:buildComp(side)
     -- « le chef qui regarde de loin », distinct des combattants, jamais sur eux. (Ancien bug : commanderRect.x*4
     -- = coord DESIGN passée comme VIRTUEL -> ré-×4 par arena_draw -> hors écran.)
     local cmdX, cmdY = self:commanderCombatPos(side, comp)
-    comp[#comp + 1] = { id = cmd.id, slot = nil, level = cmd.level or 1,
+    local cmdSpec = { id = cmd.id, slot = nil, level = cmd.level or 1,
       hp = stats.hp, dmg = stats.dmg, cd = stats.cd,
       depth = -1, row = 0, effects = #cEff > 0 and cEff or nil,
       isCommander = true, untargetable = true, cdMult = COMMANDER_CD_MULT,
       x = cmdX, y = cmdY,
       facing = facing }
+    comp[#comp + 1] = Mutations.applyToSpec(cmdSpec, cmd.mutations)
   end
   return comp
 end
@@ -2079,7 +2131,8 @@ function Build:snapshotUnits()
     local sr = self.slotRigs[i]
     if sr then
       local c = self.board.shape.cells[i]
-      out[#out + 1] = { id = sr.id, level = sr.level or 1, col = c.x, row = c.y }
+      out[#out + 1] = { id = sr.id, level = sr.level or 1, col = c.x, row = c.y,
+        mutations = Mutations.clone(sr.mutations) }
     end
   end
   return out

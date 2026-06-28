@@ -7,8 +7,8 @@
 --     explicite pour le joueur ;
 --   * pas plus de 8 events actifs tant que l'equilibrage n'a pas mesure leur
 --     impact sur la boucle economie/TTK/power spikes ;
---   * les mutations de monstres sont une extension future : elles demandent un
---     modele d'instance persistant propre (fusion, snapshot, combat, UI).
+--   * les mutations de monstres ont une fondation d'instance persistante, mais
+--     ne sont pas encore des lanes actives tant que l'EV/UI/policy ne sont pas testes.
 
 local E = {}
 

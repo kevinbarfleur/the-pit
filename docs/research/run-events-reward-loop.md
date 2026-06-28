@@ -238,7 +238,9 @@ whether exact reroll plans lose too much best-of-3 relic access.
 
 ## Mutation Decision
 
-Do not implement monster mutations as a quick stat table on the side.
+Do not implement monster mutations as a quick stat table on the side. The safe
+foundation now exists as a first-class instance modifier, but it is not active
+as a live event reward yet.
 
 A mutation like "this unit has multicast" or "+damage" sounds simple, but it
 touches every persistent unit boundary:
@@ -251,13 +253,22 @@ touches every persistent unit boundary:
 - tooltip keyword explanations;
 - lab copy tracking.
 
-The safe version is a first-class instance modifier:
+Implemented foundation:
 
 ```text
 unit instance = id + level + copyId + mutations[]
 ```
 
-Merges need a rule before this goes live. Recommended first rule:
+Current code coverage:
+
+- `src/run/mutations.lua` defines stable mutation ids and combat-spec bake
+  rules;
+- build board/bench/commander instances preserve `mutations[]` through
+  drag/drop, stow, and merge;
+- snapshots encode/decode mutations backward-compatibly;
+- lab unit rewards can already carry a mutation in copy state.
+
+Current merge rule:
 
 - if one of the three consumed copies has a mutation, the promoted copy keeps
   one mutation;
@@ -272,8 +283,10 @@ Mutation examples worth testing later:
 - `iron_buried`: damage reduction or HP.
 - `quickened`: haste.
 
-This is promising, but it is phase 2. The current phase deliberately ships
-events without active mutations.
+This is promising, but live event activation is still phase 2. Before adding a
+mutation lane to the 8 active events, the lab must test targeting, reward EV,
+card/tooltip display, and policy valuation so it does not become another relic
+opportunity-cost trap.
 
 ## Event Product Step
 

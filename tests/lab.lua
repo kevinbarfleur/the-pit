@@ -276,6 +276,12 @@ local ok, err = pcall(function()
   local unitRewardEvent = findEvent(unitRewardDrv.events, "unit_reward")
   assert(unitRewardEvent and unitRewardEvent.progress == "single" and unitRewardEvent.where == "bench",
     "events: trace reward unite expose progression + destination")
+  local mutationRewardDrv = Rundriver.new(2026063206, { recordEvents = true })
+  assert(mutationRewardDrv:grantUnitReward({ kind = "unit", id = "marauder", level = 1, mutations = { "blood_fed" } }),
+    "events: reward unite peut porter une mutation d'instance")
+  local mutationCopies = mutationRewardDrv:copyState()
+  assert(mutationCopies[1] and mutationCopies[1].mutations and mutationCopies[1].mutations[1] == "blood_fed",
+    "events: mutation d'unite reward persiste dans le copyState")
   local pairRewardDrv = Rundriver.new(2026063204, { recordEvents = true })
   pairRewardDrv.build:placeId(5, "marauder", 1)
   assert(pairRewardDrv:grantUnitReward({ kind = "unit", id = "marauder", level = 1 }),

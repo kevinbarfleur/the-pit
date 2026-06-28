@@ -41,7 +41,7 @@ function Rundriver.new(seed, opts)
     fatigue = (opts.fatigue ~= nil) and opts.fatigue or pacing.fatigue,
     commanderMode = opts.commanderMode or "ignore", -- lab-only policy: ignore | decline | auto
     runEvents = opts.runEvents == true, -- lab-only experiment: replace merchant relics with thematic run events
-    eventUnitTargeting = opts.eventUnitTargeting, -- nil | "policy"; lab-only event unit materialization experiment
+    eventUnitTargeting = opts.eventUnitTargeting, -- nil | "policy" | "missing_copy" | "policy_missing_copy"; lab-only event unit materialization experiment
     eventUnitPickCap = opts.eventUnitPickCap, -- lab-only: max successful event unit rewards per run before preferring relics
     compMutator = opts.compMutator, -- lab-only overlay appliqué aux deux camps avant Match.run (pacing, probes)
     leftMutator = opts.leftMutator, -- lab-only overlay appliqué au joueur seulement (candidate balance)
@@ -618,7 +618,7 @@ function Rundriver:placeCommander(candidate)
   else
     return false
   end
-  self.build.commanderSlot = { id = sr.id, level = sr.level or 1 }
+  self.build.commanderSlot = self.build:cloneOcc(sr)
   self:_metric("commanderPlacements", 1)
   self:_event({
     type = "commander_place",
@@ -808,12 +808,10 @@ function Rundriver:grantUnitReward(reward)
   end
   self:_ensureCopyIds()
   local copyId = self:_newCopyId()
-  local occ = {
-    id = id,
-    level = math.max(1, math.min(2, reward.level or 1)),
-    char = self.build:newRig(id),
+  local occ = self.build:makeOcc(id, math.max(1, math.min(2, reward.level or 1)), {
     copyId = copyId,
-  }
+    mutations = reward.mutations,
+  })
   local sameLevelCopies = self:copyCount(id, occ.level)
   if not self.build:stowUnit(occ) then
     self:_metric("eventUnitFailures", 1)
@@ -999,7 +997,7 @@ function Rundriver:copyState()
     if sr then
       out[#out + 1] = {
         copyId = sr.copyId, id = sr.id, level = sr.level or 1,
-        where = "board", slot = i,
+        where = "board", slot = i, mutations = sr.mutations,
       }
     end
   end
@@ -1008,7 +1006,7 @@ function Rundriver:copyState()
     if sr then
       out[#out + 1] = {
         copyId = sr.copyId, id = sr.id, level = sr.level or 1,
-        where = "bench", slot = i,
+        where = "bench", slot = i, mutations = sr.mutations,
       }
     end
   end

@@ -2568,6 +2568,12 @@ Next implementation targets:
      tier. Mutated units remain a phase-2 opt-in profile after persistent unit
      instances exist (`id + level + copyId + mutations[]`), with merge,
      snapshot, tooltip, bossrush, and economy tests before live activation.
+     Foundation update: `src/run/mutations.lua` now defines stable mutation
+     ids, build board/bench/commander instances preserve `mutations[]` through
+     drag/drop/stow/merge, snapshots serialize them backward-compatibly, and
+     lab unit rewards can carry them in copy state. They are still not active
+     in the 8 live run events until targeting, EV, card/tooltip display, and
+     policy valuation are tested.
    - event-unit diagnostics:
      `Rundriver` now classifies unit rewards as single, pair-completer, or
      merge-completer, and records whether the granted copy lands on bench or
