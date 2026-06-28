@@ -229,11 +229,10 @@ end
 local function prepareAbilityBlocks(rawBlocks, bodyFont, _titleFont, maxW, activeTags)
   local out = {}
   local lineH = (bodyFont and bodyFont:getHeight() or 13) + 3
+  local headerH = math.max(12, bodyFont and bodyFont:getHeight() or 13)
+  local bodyW = math.max(32, maxW - ABILITY_PAD * 2)
   for _, block in ipairs(rawBlocks or {}) do
     local trigger = block.trigger or "PASSIVE"
-    local chipW = MechanicsInline.triggerChipWidth(trigger, bodyFont)
-    local textX = ABILITY_PAD + chipW + 5
-    local bodyW = math.max(32, maxW - ABILITY_PAD - textX)
     local lines = {}
     for _, raw in ipairs(block.lines or {}) do
       for _, line in ipairs(Keywords.wrapInline(raw, bodyFont, bodyW, activeTags)) do
@@ -241,14 +240,15 @@ local function prepareAbilityBlocks(rawBlocks, bodyFont, _titleFont, maxW, activ
       end
     end
     if #lines == 0 then lines[1] = "" end
-    local h = ABILITY_PAD + #lines * lineH + ABILITY_PAD - 3
+    local h = ABILITY_PAD + headerH + 5 + #lines * lineH + ABILITY_PAD - 3
     out[#out + 1] = {
       trigger = trigger,
       title = block.title or T("ui.ability"),
       lines = lines,
       h = h,
       lineH = lineH,
-      textX = textX,
+      headerH = headerH,
+      bodyW = bodyW,
     }
   end
   return out
@@ -273,9 +273,10 @@ local function drawAbilityBlock(block, x, y, w, fonts, activeTags, t, opts)
 
   local by = y + ABILITY_PAD
   MechanicsInline.drawTriggerChip(block.trigger, x + ABILITY_PAD, by, fonts.body)
+  by = by + (block.headerH or ((fonts.body and fonts.body:getHeight()) or 13)) + 5
   for _, line in ipairs(block.lines) do
-    local tx = x + (block.textX or ABILITY_PAD)
-    drawDescLine(line, tx, by, fonts.body, C.ink2, nil, w - (tx - x) - ABILITY_PAD, activeTags, t)
+    local tx = x + ABILITY_PAD
+    drawDescLine(line, tx, by, fonts.body, C.ink2, nil, block.bodyW or (w - ABILITY_PAD * 2), activeTags, t)
     by = by + block.lineH
   end
 end
@@ -334,7 +335,7 @@ function MonsterCard.draw(view, palette, id, anchorX, anchorY, t, opts)
   -- (grisé, honnête — sous-set curé). Mesuré comme un BANDEAU encastré (titre « AT COMMAND » + corps enroulé). ──
   local canCmd = U.commandBonus ~= nil
   local cmdHeadFont = Theme.label(8)            -- « AT COMMAND » (Space Mono, kicker doré)
-  local cmdBodyFont = Theme.body(11) or descFont -- corps lisible (Spectral)
+  local cmdBodyFont = descFont or Theme.body(12) -- même taille que les capacités : le commandement n'est pas secondaire.
   local commandTags = Keywords.tagsForUnit(U, { context = "commander" })
   local commandTagSet = {}
   for _, tid in ipairs(commandTags) do commandTagSet[tid] = true end
