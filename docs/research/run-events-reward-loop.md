@@ -90,17 +90,36 @@ These should be correlated with:
 - economy pressure;
 - bossrush entry and score.
 
-Latest small panel after policy scoring (`N=24`, `rot_bleed_rat_core`,
+Latest panel after policy scoring (`N=128`, `rot_bleed_rat_core`,
 `pair_completion_light`, `PIT_RUN_EVENTS=1`):
 
-- completion stayed neutral at `35.4%`;
-- event choices averaged `2.71` picks/run;
+- completion stayed neutral/slightly positive vs relic merchant baseline:
+  `32.8%` with events vs `32.0%` baseline;
+- event choices averaged `2.88` picks/run;
 - event rewards shifted toward explicit plan/power rewards:
-  `1.81` relics/run, `0.77` units/run, `0.50` shop XP/run;
+  `1.87` relics/run, `0.86` units/run, `0.35` gold/run,
+  `0.47` shop XP/run;
 - focused relic access became visible and mostly acted on:
-  `62.5%` focused offer run-rate, `60.4%` focused pick run-rate;
-- target board completion still needs larger-N confirmation because this small
-  panel saw held completion fall to `0%`.
+  `63.7%` focused offer run-rate, `61.7%` focused pick run-rate;
+- exact target-board completion is still worse than the classic relic merchant
+  path: `0.0%` board complete / `0.4%` held complete with events vs `1.2%` /
+  `2.0%` baseline.
+
+Bossrush-run check (`N=32`, same policies/economy, completed runs only) shows
+the same tradeoff:
+
+- baseline score damage per run: `7261`;
+- events score damage per run: `6579`;
+- baseline score per entry: `24458`;
+- events score per entry: `23391`.
+
+Interpretation: the event loop is promising for variety and does not currently
+break run completion, but it is not yet EV-positive for optimized plans. The
+main suspected cost is dilution of focused relic density plus extra unit-space
+pressure. Next tuning should either increase the quality of event relic lanes,
+give plan-aware events a clearer "take the focused relic" route, or make unit
+rewards less likely to compete with exact reroll-board completion unless they
+are actual target/core units.
 
 ## Mutation Decision
 

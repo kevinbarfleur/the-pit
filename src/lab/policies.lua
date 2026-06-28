@@ -199,6 +199,7 @@ local function runEventRewardScore(drv, reward, opts)
       local missing = math.max(0, targetLevel - heldLevelSum(drv, id))
       score = score + 520 + targetLevel * 40 + missing * 80
     end
+    if opts.supportWant and wants(opts.supportWant, id) then score = score + 45 end
     if opts.want and wants(opts.want, id) then score = score + 120 end
     if opts.coreWant and wants(opts.coreWant, id) then score = score + 180 end
     return score
@@ -1087,7 +1088,8 @@ function Policies.committed_archetype_plan_with(archetype, sigil, opts)
       local want = currentWant(self, drv)
       return pickRunEventByValue(drv, event, {
         targetUnits = targetUnits,
-        want = want,
+        want = opts.coreWant or want,
+        supportWant = want,
         coreWant = opts.coreWant,
         maxXpBuysPerRound = opts.maxXpBuysPerRound,
       })
