@@ -127,6 +127,24 @@ should therefore focus less on "the reward cannot fit" and more on whether
 event units should be core/target-filtered, auto-stowed with better priority,
 or offered less often to exact reroll plans before implementing the live UI.
 
+Cross-economy check (`N=64`, same rot/bleed policies, events vs classic
+merchant) adds two cautions:
+
+- completion is neutral or slightly positive with events across the tested
+  profiles: `baseline 31.2% -> 31.2%`, `pair_completion_light 31.2% -> 32.8%`,
+  `sap_cost 7.0% -> 7.0%`, `early_curve 13.3% -> 14.1%`;
+- focused relic pick-rate is still lower with events because the classic
+  merchant is a pure best-of-3 relic surface: baseline profile `82.0% -> 68.8%`,
+  pair-completion `80.5% -> 67.2%`, sap-cost `82.0% -> 67.2%`,
+  early-curve `84.4% -> 63.3%`.
+
+Cross-economy bossrush-run (`N=16`, noisy but useful smoke) keeps
+`pair_completion_light` as the strongest economy. Events are near-neutral on
+deep-reroll postgame score for baseline/pair-completion, worse for
+early-curve deep-reroll, but better for early-curve gated. Treat this as:
+events are healthy enough to keep iterating, but they should be tuned per
+economy/policy before becoming the only acquisition surface.
+
 ## Mutation Decision
 
 Do not implement monster mutations as a quick stat table on the side.
