@@ -2811,6 +2811,15 @@ Next implementation targets:
   deep-reroll completion (`93.8% -> 75.0%`) but did not erase the multi-copy
   board identity. Read: economy tax controls reachability; structural
   homogeneity needs a separate test if it becomes a design problem.
+- opponent pressure sweep on the taxed profile:
+  `runs/long-2026-06-28d/economy-oppgen-levelmult225-n64` keeps
+  `greedy_plan`/`econ_plan` high (`81.3%` / `79.7%`) while lowering
+  `committed_rot_bleed_rat_core_deep_reroll_plan` to `67.2%`.
+  `runs/long-2026-06-28d/economy-oppgen-levelmult25-n64` pushes aggregate
+  completion lower (`37.7%`) but starts hurting broad and tall plans more than
+  it hurts deep-reroll (`65.6%`). Current read: if generated-opponent pressure
+  becomes a tuning knob, `levelMult=2.25` is the better next candidate and
+  `2.5` is a high-stress bound, not a first live setting.
 3. Use the new compact economy summary first, and only drill into full
    `plan_access` / `support_access` when a row shows a concrete anomaly.
 4. Use `plan_support_watch` rows in the next economy/bossrush panels to separate

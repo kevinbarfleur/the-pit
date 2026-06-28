@@ -1327,6 +1327,22 @@ l'identite du board final. Si on juge que les boards multi-copies low-rank sont
 trop homogenes, il faudra tester un garde-fou de structure ou des counters de
 combat, pas seulement une taxe d'economie.
 
+Stress adversaire avec le profil taxé :
+
+- `runs/long-2026-06-28d/economy-oppgen-levelmult225-n64` :
+  completion agregee `43.4%`, `8.93` wins, combat winrate `73.0%` ;
+  `greedy_plan` reste a `81.3%`, `econ_plan` a `79.7%`,
+  `committed_rot_bleed_rat_core_deep_reroll_plan` descend a `67.2%`.
+- `runs/long-2026-06-28d/economy-oppgen-levelmult25-n64` :
+  completion agregee `37.7%`, `8.77` wins, combat winrate `70.9%` ;
+  `greedy_plan`/`econ_plan` tombent a `71.9%`, deep-reroll reste a `65.6%`,
+  et `tall_dense_plan` tombe a `34.4%`.
+
+Lecture : `PIT_OPPGEN_LEVEL_MULT=2.25` est un meilleur candidat de stress que
+`2.5`. Il reduit nettement le deep-reroll sans ecraser les broad plans. `2.5`
+est une borne haute : il punit davantage les plans generalistes et tall que le
+deep-reroll lui-meme, donc ce n'est pas un bon premier réglage.
+
 Policies minimales :
 
 - random baseline ;
