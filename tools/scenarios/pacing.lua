@@ -13,6 +13,7 @@ local Pacing = require("src.run.pacing")
 local N = require("tools.scenarios.argn")(30)
 local BASE_SEED = 1360000
 local COMMANDER_MODE = Common.env("PIT_COMMANDER_MODE") or "ignore"
+local RUN_EVENTS = Common.envBool("PIT_RUN_EVENTS", false)
 
 local DEFAULT_PACE_PROFILES = {
   { id = Pacing.profiles.legacy.id, label = Pacing.profiles.legacy.label,
@@ -95,6 +96,7 @@ for run = 1, N do
         hpMult = pace.hpMult,
         cooldownMult = pace.cdMult,
         commanderMode = COMMANDER_MODE,
+        runEvents = RUN_EVENTS,
         fatigue = Common.fatigueOptions(pace.fatigueStart, pace.fatigueBase, pace.fatigueRamp),
       })
       addRun(byPace[pace.id], traj)
@@ -159,6 +161,7 @@ local payload = {
   config = {
     policies = Common.env("PIT_POLICIES"),
     commander_mode = COMMANDER_MODE,
+    run_events = RUN_EVENTS,
     pace_ids = Common.env("PIT_PACE_IDS"),
     pace_profiles = Common.env("PIT_PACE_PROFILES"),
   },

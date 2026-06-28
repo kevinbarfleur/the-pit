@@ -69,6 +69,15 @@ function Common.envNumber(name, default)
   return n
 end
 
+function Common.envBool(name, default)
+  local v = Common.env(name)
+  if not v then return default == true end
+  v = tostring(v):lower()
+  if v == "1" or v == "true" or v == "yes" or v == "on" then return true end
+  if v == "0" or v == "false" or v == "no" or v == "off" then return false end
+  error(name .. " doit etre booleen (1/0, true/false), recu: " .. tostring(v))
+end
+
 function Common.csv(value)
   local out = {}
   for part in tostring(value or ""):gmatch("[^,]+") do

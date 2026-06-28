@@ -21,6 +21,7 @@ local HPM = Common.envNumber("PIT_HP_MULT", nil)
 local ORACLE_PACING = Pacing.arenaOptions()
 if HPM ~= nil then ORACLE_PACING.hpMult = HPM end
 local COMMANDER_MODE = Common.env("PIT_COMMANDER_MODE") or "ignore"
+local RUN_EVENTS = Common.envBool("PIT_RUN_EVENTS", false)
 -- Extra holding capacity beyond the real board+bench capacity used by Rundriver.
 -- Cap 0 is the current gameplay model; cap 4 answers "what if the player had 4 more reserve slots?"
 local BENCH_CAPS = Common.envNumberList("PIT_BENCH_CAPS", { 0, 2, 4, 6 })
@@ -214,6 +215,7 @@ local function newAgg()
     pairSupportOffers = 0, rerolls = 0, xpBuys = 0,
     boardDeploys = 0, boardSwaps = 0,
     commanderAccepts = 0, commanderDeclines = 0, commanderPlacements = 0, relicPicks = 0,
+    eventPicks = 0, eventRelics = 0, eventUnits = 0, eventGold = 0, eventShopXp = 0, eventShopTierUps = 0,
     slotDeclines = 0, slotAccepts = 0,
     xpGateBlocks = 0, xpGateObserved = 0, xpGateUnitCoverage = 0, xpGateLevelCoverage = 0,
     archetypeRuns = 0, archetypeCommitted = 0, archetypeCommitRoundSum = 0,
@@ -1366,6 +1368,12 @@ local function addRun(a, traj)
   a.runs = a.runs + 1
   a.wins = a.wins + (traj.wins or 0)
   a.relicPicks = a.relicPicks + ((traj.metrics and traj.metrics.relicPicks) or 0)
+  a.eventPicks = a.eventPicks + ((traj.metrics and traj.metrics.eventPicks) or 0)
+  a.eventRelics = a.eventRelics + ((traj.metrics and traj.metrics.eventRelics) or 0)
+  a.eventUnits = a.eventUnits + ((traj.metrics and traj.metrics.eventUnits) or 0)
+  a.eventGold = a.eventGold + ((traj.metrics and traj.metrics.eventGold) or 0)
+  a.eventShopXp = a.eventShopXp + ((traj.metrics and traj.metrics.eventShopXp) or 0)
+  a.eventShopTierUps = a.eventShopTierUps + ((traj.metrics and traj.metrics.eventShopTierUps) or 0)
   for _, ev in ipairs(traj.pairEvents or {}) do addUnitMergeEvent(a.unitMerge, ev, "pair") end
   for _, ev in ipairs(traj.mergeEvents or {}) do addUnitMergeEvent(a.unitMerge, ev, "merge") end
   Common.addMergeLifecycle(a.mergeLifecycle, traj)
@@ -1564,6 +1572,12 @@ local function finish(a)
     commander_declines_per_run = (a.runs > 0) and (a.commanderDeclines / a.runs) or 0,
     commander_placements_per_run = (a.runs > 0) and (a.commanderPlacements / a.runs) or 0,
     relic_picks_per_run = (a.runs > 0) and (a.relicPicks / a.runs) or 0,
+    event_picks_per_run = (a.runs > 0) and (a.eventPicks / a.runs) or 0,
+    event_relics_per_run = (a.runs > 0) and (a.eventRelics / a.runs) or 0,
+    event_units_per_run = (a.runs > 0) and (a.eventUnits / a.runs) or 0,
+    event_gold_per_run = (a.runs > 0) and (a.eventGold / a.runs) or 0,
+    event_shop_xp_per_run = (a.runs > 0) and (a.eventShopXp / a.runs) or 0,
+    event_shop_tier_ups_per_run = (a.runs > 0) and (a.eventShopTierUps / a.runs) or 0,
     slot_declines_per_run = (a.runs > 0) and (a.slotDeclines / a.runs) or 0,
     slot_accepts_per_run = (a.runs > 0) and (a.slotAccepts / a.runs) or 0,
     spend_split = {
@@ -1606,6 +1620,7 @@ for run = 1, N do
         economy = variant.profileId,
         benchSize = variant.benchSize,
         commanderMode = COMMANDER_MODE,
+        runEvents = RUN_EVENTS,
         recordBoards = #PLAN_TARGETS > 0,
         recordEvents = #PLAN_TARGETS > 0,
       })
@@ -1658,6 +1673,7 @@ local payload = {
   config = {
     hp_mult = HPM,
     commander_mode = COMMANDER_MODE,
+    run_events = RUN_EVENTS,
     policies = Common.env("PIT_POLICIES"),
     economy_profiles = Common.env("PIT_ECON_PROFILES"),
     bench_sizes = Common.env("PIT_BENCH_SIZES"),
@@ -1712,6 +1728,12 @@ for _, variant in ipairs(VARIANTS) do
     unit_merge_watch = p.unit_merge_watch,
     commander_placements_per_run = p.commander_placements_per_run,
     relic_picks_per_run = p.relic_picks_per_run,
+    event_picks_per_run = p.event_picks_per_run,
+    event_relics_per_run = p.event_relics_per_run,
+    event_units_per_run = p.event_units_per_run,
+    event_gold_per_run = p.event_gold_per_run,
+    event_shop_xp_per_run = p.event_shop_xp_per_run,
+    event_shop_tier_ups_per_run = p.event_shop_tier_ups_per_run,
     plan_access = p.plan_access,
     plan_support_watch = p.plan_support_watch,
     cohorts = {

@@ -48,9 +48,10 @@ Current reward kinds:
 The lab treats the normal victory milestones at wins 3 and 6 as relic
 ceremonies. By default it still keeps the ordinary every-3-combats merchant as a
 relic offer so historical balance reports remain comparable. With
-`Rundriver.new(seed, { runEvents = true })`, that merchant window becomes a run
-event. This is intentional: milestones were already a structured payoff, while
-the merchant was the flatter part of the loop.
+`Rundriver.new(seed, { runEvents = true })`, or scenario env
+`PIT_RUN_EVENTS=1`, that merchant window becomes a run event. This is
+intentional: milestones were already a structured payoff, while the merchant was
+the flatter part of the loop.
 
 ## Simulation Contract
 
@@ -134,8 +135,8 @@ events without active mutations.
 
 ## Next Steps
 
-1. Add a named scenario/profile that runs economy panels with
-   `runEvents=true`, then compare against the last relic-merchant baseline.
+1. Run paired economy/bossrush panels with `PIT_RUN_EVENTS=1`, then compare
+   against the last relic-merchant baseline.
 2. Add policy scoring for event choices instead of defaulting to option 1.
 3. Build the live UI only after the reward EV is acceptable in the lab.
 4. If the lab shows unit rewards are healthy, design the first-class mutation

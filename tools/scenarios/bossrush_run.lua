@@ -22,6 +22,7 @@ for _, profileId in ipairs(ECONOMY_ORDER) do
 end
 
 local COMMANDER_MODE = Common.env("PIT_COMMANDER_MODE") or "auto"
+local RUN_EVENTS = Common.envBool("PIT_RUN_EVENTS", false)
 local ELIGIBILITY = Common.env("PIT_BOSSRUSH_RUN_ELIGIBILITY") or "completed"
 assert(ELIGIBILITY == "completed" or ELIGIBILITY == "all",
   "PIT_BOSSRUSH_RUN_ELIGIBILITY doit valoir completed ou all")
@@ -169,6 +170,7 @@ for run = 1, N do
       local traj = Rundriver.run(seed, p, {
         economy = econ,
         commanderMode = COMMANDER_MODE,
+        runEvents = RUN_EVENTS,
       })
       local finalBoard = traj.finalSupportedBoard or traj.finalBoard
       local enters = eligible(traj) and hasBoard(finalBoard)
@@ -337,6 +339,7 @@ local payload = {
     policies = Common.env("PIT_POLICIES"),
     abominations = Common.env("PIT_ABOMINATIONS"),
     commander_mode = COMMANDER_MODE,
+    run_events = RUN_EVENTS,
     eligibility = ELIGIBILITY,
     score_seconds = SCORE_SECONDS,
     boss_hp_mult = BOSS_OPTS.hpMult,
