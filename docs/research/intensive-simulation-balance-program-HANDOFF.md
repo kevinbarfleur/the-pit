@@ -2509,6 +2509,26 @@ Next implementation targets:
      skipped by policy. This confirms the remaining blocker is mostly
      third-copy availability/timing for target copies, with a smaller
      target-priority edge case, not generic support access.
+   - Pair-support density profiles:
+     `src/run/economy.lua` now has opt-in lab profiles
+     `pair_completion_dense` and `pair_completion_dense_delayed`, both allowing
+     up to two pair-completion shop replacements per round. They are not in
+     `Economy.order`, so they do not change the default scenario grid or live
+     economy; they exist to isolate "third-copy odds/timing" from normal
+     economy pressure.
+   - Bench-size vs pair-density read:
+     `runs/long-2026-06-27u/rat-reroll-bench-density-n16` crossed
+     `pair_completion_light`/`pair_completion_dense` with bench sizes 4 and 6
+     for the `rot_bleed_rat_core` gated/deep-reroll policies. Bench size 6 is
+     the stronger lever in this small panel: completion moved from `31.2%` to
+     `46.9%` at the profile aggregate level, and `deep_reroll` went
+     `56.25% -> 75%` completion. Dense pair support improved target-pair
+     resolution (`deep_reroll` bench6 `94.47% -> 97.97%`; aggregate merge
+     `90.1% -> 95.1%`) but did not improve completion beyond the bench6 result.
+     The gated policy still only reached `6.25%` exact board completion and
+     `18.75%` run completion under bench6. Current read: extra reserve space is
+     probably a real run-access lever; denser pair pity is useful for diagnosis
+     but not obviously a live tuning knob yet.
    Remaining additions:
    - use `rot_bleed_rat_core` as the baseline reroll target for the next
      balance pass, but investigate cheap mid-board outliers before nerfing it;

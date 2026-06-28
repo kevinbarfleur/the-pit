@@ -52,6 +52,16 @@ Economy.profiles = {
     label = "baseline plus delayed pair-completion pity",
     pairCompletionSupport = { maxPerRound = 1, minRound = 2, minMissedWindows = 2 },
   },
+  pair_completion_dense = {
+    id = "pair_completion_dense",
+    label = "baseline plus denser pair-completion shop support",
+    pairCompletionSupport = { maxPerRound = 2, minRound = 2 },
+  },
+  pair_completion_dense_delayed = {
+    id = "pair_completion_dense_delayed",
+    label = "baseline plus denser delayed pair-completion pity",
+    pairCompletionSupport = { maxPerRound = 2, minRound = 2, minMissedWindows = 2 },
+  },
   sap_cost_pair_completion = {
     id = "sap_cost_pair_completion",
     label = "SAP-like costs plus pair-completion shop support",
