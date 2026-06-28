@@ -34,6 +34,8 @@ Pour une session agent:
   bossrush post-win et scoring.
 - `research/run-events-reward-loop.md` - events de run, recompenses
   explicites, garde-fous sur les mutations.
+- `inspiration/batodex/README.md` - donnees mecaniques Batodex normalisees
+  pour inspiration creature/trinket/item, a charger seulement quand necessaire.
 
 ## References techniques conservees
 

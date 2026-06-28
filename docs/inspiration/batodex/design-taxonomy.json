@@ -1,0 +1,1061 @@
+{
+  "counts": {
+    "items": 32,
+    "monsters": 80,
+    "nonMythicalMonsters": 74,
+    "trinkets": 58
+  },
+  "level4MulticastExamples": [
+    {
+      "id": "bumblebolt",
+      "multicast": 2,
+      "name": "Bumblebolt",
+      "rarity": "Common"
+    },
+    {
+      "id": "joltail",
+      "multicast": 2,
+      "name": "Joltail",
+      "rarity": "Common"
+    },
+    {
+      "id": "spinarai",
+      "multicast": 2,
+      "name": "Spinarai",
+      "rarity": "Common"
+    },
+    {
+      "id": "velocect",
+      "multicast": 8,
+      "name": "Velocect",
+      "rarity": "Common"
+    },
+    {
+      "id": "venopuff",
+      "multicast": 2,
+      "name": "Venopuff",
+      "rarity": "Common"
+    },
+    {
+      "id": "brawlmantis",
+      "multicast": 2,
+      "name": "Brawlmantis",
+      "rarity": "Uncommon"
+    },
+    {
+      "id": "cinderfly",
+      "multicast": 2,
+      "name": "Cinderfly",
+      "rarity": "Uncommon"
+    },
+    {
+      "id": "frizzly",
+      "multicast": 2,
+      "name": "Frizzly",
+      "rarity": "Uncommon"
+    },
+    {
+      "id": "noxnimbus",
+      "multicast": 2,
+      "name": "Noxnimbus",
+      "rarity": "Uncommon"
+    },
+    {
+      "id": "plunderbird",
+      "multicast": 8,
+      "name": "Plunderbird",
+      "rarity": "Uncommon"
+    },
+    {
+      "id": "puffloon",
+      "multicast": 12,
+      "name": "Puffloon",
+      "rarity": "Uncommon"
+    },
+    {
+      "id": "shogapede",
+      "multicast": 2,
+      "name": "Shogapede",
+      "rarity": "Uncommon"
+    },
+    {
+      "id": "aristobat",
+      "multicast": 8,
+      "name": "Aristobat",
+      "rarity": "Rare"
+    },
+    {
+      "id": "cherubble",
+      "multicast": 4,
+      "name": "Cherubble",
+      "rarity": "Rare"
+    },
+    {
+      "id": "cicadence",
+      "multicast": 2,
+      "name": "Cicadence",
+      "rarity": "Rare"
+    },
+    {
+      "id": "dirgefin",
+      "multicast": 2,
+      "name": "Dirgefin",
+      "rarity": "Rare"
+    },
+    {
+      "id": "humbolt",
+      "multicast": 8,
+      "name": "Humbolt",
+      "rarity": "Rare"
+    },
+    {
+      "id": "blazewing",
+      "multicast": 28,
+      "name": "Blazewing",
+      "rarity": "Super Rare"
+    },
+    {
+      "id": "clawnetic",
+      "multicast": 2,
+      "name": "Clawnetic",
+      "rarity": "Super Rare"
+    },
+    {
+      "id": "dryadell",
+      "multicast": 12,
+      "name": "Dryadell",
+      "rarity": "Super Rare"
+    },
+    {
+      "id": "shelldra",
+      "multicast": 6,
+      "name": "Shelldra",
+      "rarity": "Super Rare"
+    },
+    {
+      "id": "dragonarch",
+      "multicast": 24,
+      "name": "Draconarch",
+      "rarity": "Legendary"
+    },
+    {
+      "id": "torrantler",
+      "multicast": 30,
+      "name": "Torrantler",
+      "rarity": "Legendary"
+    }
+  ],
+  "mostCommonStatKeys": [
+    [
+      "damage",
+      156
+    ],
+    [
+      "burn",
+      48
+    ],
+    [
+      "poison",
+      44
+    ],
+    [
+      "heal",
+      40
+    ],
+    [
+      "shield",
+      36
+    ],
+    [
+      "shock",
+      32
+    ]
+  ],
+  "nonMythicalTierCounts": {
+    "1": 16,
+    "2": 14,
+    "3": 16,
+    "4": 17,
+    "5": 11
+  },
+  "nonMythicalTriggerCounts": {
+    "None": 28,
+    "On Battle Start": 9,
+    "On Cast": 27,
+    "On Knocked Out": 1,
+    "On Victory": 3,
+    "Ongoing": 6
+  },
+  "positionExamples": [
+    {
+      "ability": {
+        "byLevel": {
+          "1": "Knockout adjacent allies and gain +4 Poison this battle for each ally Knockout",
+          "2": "Knockout adjacent allies and gain +8 Poison this battle for each ally Knockout",
+          "3": "Knockout adjacent allies and gain +12 Poison this battle for each ally Knockout",
+          "4": "Knockout adjacent allies and gain +24 Poison this battle for each ally Knockout"
+        },
+        "description": "Knockout adjacent allies and gain +4 Poison this battle for each ally Knockout",
+        "trigger": "On Battle Start"
+      },
+      "id": "rattleghast",
+      "name": "Rattleghast",
+      "rarity": "Common",
+      "tier": 1
+    },
+    {
+      "ability": {
+        "byLevel": {
+          "1": "Give the ally to the left +4% Cooldown Speed permanently",
+          "2": "Give the ally to the left +8% Cooldown Speed permanently",
+          "3": "Give the ally to the left +12% Cooldown Speed permanently",
+          "4": "Give the ally to the left +24% Cooldown Speed permanently"
+        },
+        "description": "Give the ally to the left +4% Cooldown Speed permanently",
+        "trigger": "On Cast"
+      },
+      "id": "boomagon",
+      "name": "Boomagon",
+      "rarity": "Uncommon",
+      "tier": 2
+    },
+    {
+      "ability": {
+        "byLevel": {
+          "1": "Adjacent Toxic allies gain +2 Poison for this battle",
+          "2": "Adjacent Toxic allies gain +4 Poison for this battle",
+          "3": "Adjacent Toxic allies gain +6 Poison for this battle",
+          "4": "Adjacent Toxic allies gain +12 Poison for this battle"
+        },
+        "description": "Adjacent Toxic allies gain +2 Poison for this battle",
+        "trigger": "On Cast"
+      },
+      "id": "noxnimbus",
+      "name": "Noxnimbus",
+      "rarity": "Uncommon",
+      "tier": 2
+    },
+    {
+      "ability": {
+        "byLevel": {
+          "1": "Trigger this when adjacent Toxic allies trigger (Except other Puffloon)",
+          "2": "Trigger this when adjacent Toxic allies trigger (Except other Puffloon)",
+          "3": "Trigger this when adjacent Toxic allies trigger (Except other Puffloon)",
+          "4": "Trigger this when adjacent Toxic allies trigger (Except other Puffloon)"
+        },
+        "description": "Trigger this when adjacent Toxic allies trigger (Except other Puffloon)",
+        "trigger": null
+      },
+      "id": "puffloon",
+      "name": "Puffloon",
+      "rarity": "Uncommon",
+      "tier": 2
+    },
+    {
+      "ability": {
+        "byLevel": {
+          "1": "Adjacent Water allies gain +20 Heal permanently",
+          "2": "Adjacent Water allies gain +40 Heal permanently",
+          "3": "Adjacent Water allies gain +60 Heal permanently",
+          "4": "Adjacent Water allies gain +180 Heal permanently"
+        },
+        "description": "Adjacent Water allies gain +20 Heal permanently",
+        "trigger": "On Battle Start"
+      },
+      "id": "aster",
+      "name": "Aster",
+      "rarity": "Rare",
+      "tier": 3
+    },
+    {
+      "ability": {
+        "byLevel": {
+          "1": "Give adjacent allies Protect 1",
+          "2": "Give adjacent allies Protect 1",
+          "3": "Give adjacent allies Protect 1",
+          "4": "Give adjacent allies Protect 1"
+        },
+        "description": "Give adjacent allies Protect 1",
+        "trigger": "On Cast"
+      },
+      "id": "cherubble",
+      "name": "Cherubble",
+      "rarity": "Rare",
+      "tier": 3
+    },
+    {
+      "ability": {
+        "byLevel": {
+          "1": "Charge ally to the left by 1 second(s) (Dracana cannot receive charge)",
+          "2": "Charge ally to the left by 2 second(s) (Dracana cannot receive charge)",
+          "3": "Charge ally to the left by 3 second(s) (Dracana cannot receive charge)",
+          "4": "Charge ally to the left by 18 second(s) (Dracana cannot receive charge)"
+        },
+        "description": "Charge ally to the left by 1 second(s) (Dracana cannot receive charge)",
+        "trigger": "On Cast"
+      },
+      "id": "dracana",
+      "name": "Dracana",
+      "rarity": "Rare",
+      "tier": 3
+    },
+    {
+      "ability": {
+        "byLevel": {
+          "1": "Adjacent Common allies have +33% Cooldown Speed",
+          "2": "Adjacent Common allies have +67% Cooldown Speed",
+          "3": "Adjacent Common allies have +100% Cooldown Speed",
+          "4": "Adjacent Common allies have +300% Cooldown Speed"
+        },
+        "description": "Adjacent Common allies have +33% Cooldown Speed",
+        "trigger": "Ongoing"
+      },
+      "id": "formiqueen",
+      "name": "Formiqueen",
+      "rarity": "Rare",
+      "tier": 3
+    },
+    {
+      "ability": {
+        "byLevel": {
+          "1": "Charge adjacent Electric allies by 1 second(s) (Ironcore cannot receive charge)",
+          "2": "Charge adjacent Electric allies by 2 second(s) (Ironcore cannot receive charge)",
+          "3": "Charge adjacent Electric allies by 3 second(s) (Ironcore cannot receive charge)",
+          "4": "Charge adjacent Electric allies by 6 second(s) (Ironcore cannot receive charge)"
+        },
+        "description": "Charge adjacent Electric allies by 1 second(s) (Ironcore cannot receive charge)",
+        "trigger": "On Cast"
+      },
+      "id": "ironcore",
+      "name": "Ironcore",
+      "rarity": "Rare",
+      "tier": 3
+    },
+    {
+      "ability": {
+        "byLevel": {
+          "1": "Gain Shield equal to 1x the Shield of adjacent allies for this battle (Except other Aegistruct)",
+          "2": "Gain Shield equal to 2x the Shield of adjacent allies for this battle (Except other Aegistruct)",
+          "3": "Gain Shield equal to 3x the Shield of adjacent allies for this battle (Except other Aegistruct)",
+          "4": "Gain Shield equal to 12x the Shield of adjacent allies for this battle (Except other Aegistruct)"
+        },
+        "description": "Gain Shield equal to 1x the Shield of adjacent allies for this battle (Except other Aegistruct)",
+        "trigger": "On Battle Start"
+      },
+      "id": "aegistruct",
+      "name": "Aegistruct",
+      "rarity": "Super Rare",
+      "tier": 4
+    },
+    {
+      "ability": {
+        "byLevel": {
+          "1": "Disable abilities of all Ongoing monsters in this row",
+          "2": "Disable abilities of all Ongoing monsters in this row",
+          "3": "Disable abilities of all Ongoing monsters in this row",
+          "4": "Disable abilities of all Ongoing monsters in this row"
+        },
+        "description": "Disable abilities of all Ongoing monsters in this row",
+        "trigger": "On Battle Start"
+      },
+      "id": "celestia",
+      "name": "Celestia",
+      "rarity": "Super Rare",
+      "tier": 4
+    },
+    {
+      "ability": {
+        "byLevel": {
+          "1": "Ally to the left has +100% Shock",
+          "2": "Ally to the left has +200% Shock",
+          "3": "Ally to the left has +300% Shock",
+          "4": "Ally to the left has +2400% Shock"
+        },
+        "description": "Ally to the left has +100% Shock",
+        "trigger": "Ongoing"
+      },
+      "id": "pylong",
+      "name": "Pylong",
+      "rarity": "Super Rare",
+      "tier": 4
+    },
+    {
+      "ability": {
+        "byLevel": {
+          "1": "Give the Flying ally to the right +1 Multicast permanently (This monster cannot gain Multicast)",
+          "2": "Give the Flying ally to the right +2 Multicast permanently (This monster cannot gain Multicast)",
+          "3": "Give the Flying ally to the right +3 Multicast permanently (This monster cannot gain Multicast)",
+          "4": "Give the Flying ally to the right +12 Multicast permanently (This monster cannot gain Multicast)"
+        },
+        "description": "Give the Flying ally to the right +1 Multicast permanently (This monster cannot gain Multicast)",
+        "trigger": "On Cast"
+      },
+      "id": "zephyrex",
+      "name": "Zephyrex",
+      "rarity": "Super Rare",
+      "tier": 4
+    },
+    {
+      "ability": {
+        "byLevel": {
+          "1": "Give the Fire ally to the left {multiplier}this monster's Burn for this battle",
+          "2": "Give the Fire ally to the left 2x this monster's Burn for this battle",
+          "3": "Give the Fire ally to the left 3x this monster's Burn for this battle",
+          "4": "Give the Fire ally to the left 30x this monster's Burn for this battle"
+        },
+        "description": "Give the Fire ally to the left {multiplier}this monster's Burn for this battle",
+        "trigger": "On Cast"
+      },
+      "id": "blixie",
+      "name": "Blixie",
+      "rarity": "Legendary",
+      "tier": 5
+    },
+    {
+      "ability": {
+        "byLevel": {
+          "1": "Activate the On Battle Start abilities of adjacent allies and increase this monster's Cooldown by 6 for this battle",
+          "2": "Activate the On Battle Start abilities of adjacent allies and increase this monster's Cooldown by 3 for this battle",
+          "3": "Activate the On Battle Start abilities of adjacent allies and increase this monster's Cooldown by 2 for this battle",
+          "4": "Activate the On Battle Start abilities of adjacent allies and increase this monster's Cooldown by 1 for this battle"
+        },
+        "description": "Activate the On Battle Start abilities of adjacent allies and increase this monster's Cooldown by 6 for this battle",
+        "trigger": "On Cast"
+      },
+      "id": "dragonarch",
+      "name": "Draconarch",
+      "rarity": "Legendary",
+      "tier": 5
+    },
+    {
+      "ability": {
+        "byLevel": {
+          "1": "Has additional Damage equal to 100% of the total Damage of adjacent allies (Except other Gaiadrasil)",
+          "2": "Has additional Damage equal to 100% of the total Damage of adjacent allies (Except other Gaiadrasil)",
+          "3": "Has additional Damage equal to 100% of the total Damage of adjacent allies (Except other Gaiadrasil)",
+          "4": "Has additional Damage equal to 1000% of the total Damage of adjacent allies (Except other Gaiadrasil)"
+        },
+        "description": "Has additional Damage equal to 100% of the total Damage of adjacent allies (Except other Gaiadrasil)",
+        "trigger": "Ongoing"
+      },
+      "id": "gaiadrasil",
+      "name": "Gaiadrasil",
+      "rarity": "Legendary",
+      "tier": 5
+    },
+    {
+      "ability": {
+        "byLevel": {
+          "1": "Give adjacent allies +70% Shield for this battle",
+          "2": "Give adjacent allies +140% Shield for this battle",
+          "3": "Give adjacent allies +210% Shield for this battle",
+          "4": "Give adjacent allies +2100% Shield for this battle"
+        },
+        "description": "Give adjacent allies +70% Shield for this battle",
+        "trigger": "On Cast"
+      },
+      "id": "geminiss",
+      "name": "Geminiss",
+      "rarity": "Legendary",
+      "tier": 5
+    },
+    {
+      "ability": {
+        "byLevel": {
+          "1": "Ally to the left apply their Ongoing abilities 1 additional time(s)",
+          "2": "Ally to the left apply their Ongoing abilities 2 additional time(s)",
+          "3": "Ally to the left apply their Ongoing abilities 3 additional time(s)",
+          "4": "Ally to the left apply their Ongoing abilities 24 additional time(s)"
+        },
+        "description": "Ally to the left apply their Ongoing abilities 1 additional time(s)",
+        "trigger": null
+      },
+      "id": "onsetra",
+      "name": "Onsetra",
+      "rarity": "Legendary",
+      "tier": 5
+    },
+    {
+      "ability": {
+        "byLevel": {
+          "1": "Give the ally to the right +1 Multicast and increase this monster's Cooldown by 8 seconds for this battle",
+          "2": "Give the ally to the right +2 Multicast and increase this monster's Cooldown by 8 seconds for this battle",
+          "3": "Give the ally to the right +3 Multicast and increase this monster's Cooldown by 8 seconds for this battle",
+          "4": "Give the ally to the right +24 Multicast and increase this monster's Cooldown by 8 seconds for this battle"
+        },
+        "description": "Give the ally to the right +1 Multicast and increase this monster's Cooldown by 8 seconds for this battle",
+        "trigger": "On Cast"
+      },
+      "id": "saberhorn",
+      "name": "Saberhorn",
+      "rarity": "Legendary",
+      "tier": 5
+    },
+    {
+      "ability": {
+        "byLevel": {
+          "1": "Adjacent allies with no abilities have +2 Multicast",
+          "2": "Adjacent allies with no abilities have +4 Multicast",
+          "3": "Adjacent allies with no abilities have +6 Multicast",
+          "4": "Adjacent allies with no abilities have +60 Multicast"
+        },
+        "description": "Adjacent allies with no abilities have +2 Multicast",
+        "trigger": "Ongoing"
+      },
+      "id": "stellagon",
+      "name": "Stellagon",
+      "rarity": "Legendary",
+      "tier": 5
+    },
+    {
+      "ability": {
+        "byLevel": {
+          "1": "Trigger adjacent Water allies (Except other Torrantler)",
+          "2": "Trigger adjacent Water allies (Except other Torrantler)",
+          "3": "Trigger adjacent Water allies (Except other Torrantler)",
+          "4": "Trigger adjacent Water allies (Except other Torrantler)"
+        },
+        "description": "Trigger adjacent Water allies (Except other Torrantler)",
+        "trigger": "On Cast"
+      },
+      "id": "torrantler",
+      "name": "Torrantler",
+      "rarity": "Legendary",
+      "tier": 5
+    }
+  ],
+  "rarityCounts": {
+    "Common": 16,
+    "Legendary": 11,
+    "Mythical": 6,
+    "Rare": 16,
+    "Super Rare": 17,
+    "Uncommon": 14
+  },
+  "referencePrinciplesForThePit": [
+    "Use Batodex/SAP as baseline: short effects, obvious trigger, one positional/support idea at a time.",
+    "Ignore Mythical Batomon for current balancing inspiration; they are preserved only for later reference.",
+    "Treat level 4 as bonus-only inspiration, not normal progression; The Pit normal progression remains level 1-3.",
+    "Use The Bazaar as a spice source for occasional rare effects, not as the primary complexity target."
+  ],
+  "retrievedOn": "2026-06-28",
+  "sources": {
+    "items": "https://batodex.com/items",
+    "monsters": "https://batodex.com/",
+    "trinkets": "https://batodex.com/trinkets"
+  },
+  "supportExamples": [
+    {
+      "ability": {
+        "byLevel": {
+          "1": "+15 Shield for this battle",
+          "2": "+30 Shield for this battle",
+          "3": "+45 Shield for this battle",
+          "4": "+90 Shield for this battle"
+        },
+        "description": "+15 Shield for this battle",
+        "trigger": "On Cast"
+      },
+      "id": "pebbler",
+      "name": "Pebbler",
+      "rarity": "Common",
+      "tier": 1
+    },
+    {
+      "ability": {
+        "byLevel": {
+          "1": "Knockout adjacent allies and gain +4 Poison this battle for each ally Knockout",
+          "2": "Knockout adjacent allies and gain +8 Poison this battle for each ally Knockout",
+          "3": "Knockout adjacent allies and gain +12 Poison this battle for each ally Knockout",
+          "4": "Knockout adjacent allies and gain +24 Poison this battle for each ally Knockout"
+        },
+        "description": "Knockout adjacent allies and gain +4 Poison this battle for each ally Knockout",
+        "trigger": "On Battle Start"
+      },
+      "id": "rattleghast",
+      "name": "Rattleghast",
+      "rarity": "Common",
+      "tier": 1
+    },
+    {
+      "ability": {
+        "byLevel": {
+          "1": "Give the ally to the left +4% Cooldown Speed permanently",
+          "2": "Give the ally to the left +8% Cooldown Speed permanently",
+          "3": "Give the ally to the left +12% Cooldown Speed permanently",
+          "4": "Give the ally to the left +24% Cooldown Speed permanently"
+        },
+        "description": "Give the ally to the left +4% Cooldown Speed permanently",
+        "trigger": "On Cast"
+      },
+      "id": "boomagon",
+      "name": "Boomagon",
+      "rarity": "Uncommon",
+      "tier": 2
+    },
+    {
+      "ability": {
+        "byLevel": {
+          "1": "This and Common allies gain +10 Damage permanently",
+          "2": "This and Common allies gain +20 Damage permanently",
+          "3": "This and Common allies gain +30 Damage permanently",
+          "4": "This and Common allies gain +60 Damage permanently"
+        },
+        "description": "This and Common allies gain +10 Damage permanently",
+        "trigger": "On Victory"
+      },
+      "id": "brawlmantis",
+      "name": "Brawlmantis",
+      "rarity": "Uncommon",
+      "tier": 2
+    },
+    {
+      "ability": {
+        "byLevel": {
+          "1": "After you buy a Bug monster, this gains +10% Cooldown Speed",
+          "2": "After you buy a Bug monster, this gains +20% Cooldown Speed",
+          "3": "After you buy a Bug monster, this gains +30% Cooldown Speed",
+          "4": "After you buy a Bug monster, this gains +60% Cooldown Speed"
+        },
+        "description": "After you buy a Bug monster, this gains +10% Cooldown Speed",
+        "trigger": null
+      },
+      "id": "cinderfly",
+      "name": "Cinderfly",
+      "rarity": "Uncommon",
+      "tier": 2
+    },
+    {
+      "ability": {
+        "byLevel": {
+          "1": "When you use an item, this gains +20 Damage and Shield",
+          "2": "When you use an item, this gains +40 Damage and Shield",
+          "3": "When you use an item, this gains +60 Damage and Shield",
+          "4": "When you use an item, this gains +120 Damage and Shield"
+        },
+        "description": "When you use an item, this gains +20 Damage and Shield",
+        "trigger": null
+      },
+      "id": "alpinine",
+      "name": "Craghorn",
+      "rarity": "Uncommon",
+      "tier": 2
+    },
+    {
+      "ability": {
+        "byLevel": {
+          "1": "Adjacent Toxic allies gain +2 Poison for this battle",
+          "2": "Adjacent Toxic allies gain +4 Poison for this battle",
+          "3": "Adjacent Toxic allies gain +6 Poison for this battle",
+          "4": "Adjacent Toxic allies gain +12 Poison for this battle"
+        },
+        "description": "Adjacent Toxic allies gain +2 Poison for this battle",
+        "trigger": "On Cast"
+      },
+      "id": "noxnimbus",
+      "name": "Noxnimbus",
+      "rarity": "Uncommon",
+      "tier": 2
+    },
+    {
+      "ability": {
+        "byLevel": {
+          "1": "Trigger this when adjacent Toxic allies trigger (Except other Puffloon)",
+          "2": "Trigger this when adjacent Toxic allies trigger (Except other Puffloon)",
+          "3": "Trigger this when adjacent Toxic allies trigger (Except other Puffloon)",
+          "4": "Trigger this when adjacent Toxic allies trigger (Except other Puffloon)"
+        },
+        "description": "Trigger this when adjacent Toxic allies trigger (Except other Puffloon)",
+        "trigger": null
+      },
+      "id": "puffloon",
+      "name": "Puffloon",
+      "rarity": "Uncommon",
+      "tier": 2
+    },
+    {
+      "ability": {
+        "byLevel": {
+          "1": "After you buy a Bug monster, this gains +10% Cooldown Speed",
+          "2": "After you buy a Bug monster, this gains +20% Cooldown Speed",
+          "3": "After you buy a Bug monster, this gains +30% Cooldown Speed",
+          "4": "After you buy a Bug monster, this gains +60% Cooldown Speed"
+        },
+        "description": "After you buy a Bug monster, this gains +10% Cooldown Speed",
+        "trigger": null
+      },
+      "id": "shogapede",
+      "name": "Shogapede",
+      "rarity": "Uncommon",
+      "tier": 2
+    },
+    {
+      "ability": {
+        "byLevel": {
+          "1": "Adjacent Water allies gain +20 Heal permanently",
+          "2": "Adjacent Water allies gain +40 Heal permanently",
+          "3": "Adjacent Water allies gain +60 Heal permanently",
+          "4": "Adjacent Water allies gain +180 Heal permanently"
+        },
+        "description": "Adjacent Water allies gain +20 Heal permanently",
+        "trigger": "On Battle Start"
+      },
+      "id": "aster",
+      "name": "Aster",
+      "rarity": "Rare",
+      "tier": 3
+    },
+    {
+      "ability": {
+        "byLevel": {
+          "1": "Give adjacent allies Protect 1",
+          "2": "Give adjacent allies Protect 1",
+          "3": "Give adjacent allies Protect 1",
+          "4": "Give adjacent allies Protect 1"
+        },
+        "description": "Give adjacent allies Protect 1",
+        "trigger": "On Cast"
+      },
+      "id": "cherubble",
+      "name": "Cherubble",
+      "rarity": "Rare",
+      "tier": 3
+    },
+    {
+      "ability": {
+        "byLevel": {
+          "1": "Trigger the Bug ally above",
+          "2": "Trigger the Bug ally above",
+          "3": "Trigger the Bug ally above",
+          "4": "Trigger the Bug ally above"
+        },
+        "description": "Trigger the Bug ally above",
+        "trigger": "On Cast"
+      },
+      "id": "cicadence",
+      "name": "Cicadence",
+      "rarity": "Rare",
+      "tier": 3
+    },
+    {
+      "ability": {
+        "byLevel": {
+          "1": "Knockout all Common allies and enemies",
+          "2": "Knockout all Common allies and enemies",
+          "3": "Knockout all Common allies and enemies",
+          "4": "Knockout all Common allies and enemies"
+        },
+        "description": "Knockout all Common allies and enemies",
+        "trigger": "On Cast"
+      },
+      "id": "dirgefin",
+      "name": "Dirgefin",
+      "rarity": "Rare",
+      "tier": 3
+    },
+    {
+      "ability": {
+        "byLevel": {
+          "1": "Charge ally to the left by 1 second(s) (Dracana cannot receive charge)",
+          "2": "Charge ally to the left by 2 second(s) (Dracana cannot receive charge)",
+          "3": "Charge ally to the left by 3 second(s) (Dracana cannot receive charge)",
+          "4": "Charge ally to the left by 18 second(s) (Dracana cannot receive charge)"
+        },
+        "description": "Charge ally to the left by 1 second(s) (Dracana cannot receive charge)",
+        "trigger": "On Cast"
+      },
+      "id": "dracana",
+      "name": "Dracana",
+      "rarity": "Rare",
+      "tier": 3
+    },
+    {
+      "ability": {
+        "byLevel": {
+          "1": "Adjacent Common allies have +33% Cooldown Speed",
+          "2": "Adjacent Common allies have +67% Cooldown Speed",
+          "3": "Adjacent Common allies have +100% Cooldown Speed",
+          "4": "Adjacent Common allies have +300% Cooldown Speed"
+        },
+        "description": "Adjacent Common allies have +33% Cooldown Speed",
+        "trigger": "Ongoing"
+      },
+      "id": "formiqueen",
+      "name": "Formiqueen",
+      "rarity": "Rare",
+      "tier": 3
+    },
+    {
+      "ability": {
+        "byLevel": {
+          "1": "Charge adjacent Electric allies by 1 second(s) (Ironcore cannot receive charge)",
+          "2": "Charge adjacent Electric allies by 2 second(s) (Ironcore cannot receive charge)",
+          "3": "Charge adjacent Electric allies by 3 second(s) (Ironcore cannot receive charge)",
+          "4": "Charge adjacent Electric allies by 6 second(s) (Ironcore cannot receive charge)"
+        },
+        "description": "Charge adjacent Electric allies by 1 second(s) (Ironcore cannot receive charge)",
+        "trigger": "On Cast"
+      },
+      "id": "ironcore",
+      "name": "Ironcore",
+      "rarity": "Rare",
+      "tier": 3
+    },
+    {
+      "ability": {
+        "byLevel": {
+          "1": "Give the ally above +2 Burn permanently",
+          "2": "Give the ally above +4 Burn permanently",
+          "3": "Give the ally above +6 Burn permanently",
+          "4": "Give the ally above +24 Burn permanently"
+        },
+        "description": "Give the ally above +2 Burn permanently",
+        "trigger": "On Cast"
+      },
+      "id": "magmalith",
+      "name": "Magmalith",
+      "rarity": "Rare",
+      "tier": 3
+    },
+    {
+      "ability": {
+        "byLevel": {
+          "1": "Give the ally above +2 Poison permanently",
+          "2": "Give the ally above +4 Poison permanently",
+          "3": "Give the ally above +6 Poison permanently",
+          "4": "Give the ally above +24 Poison permanently"
+        },
+        "description": "Give the ally above +2 Poison permanently",
+        "trigger": "On Cast"
+      },
+      "id": "noxalith",
+      "name": "Noxalith",
+      "rarity": "Rare",
+      "tier": 3
+    },
+    {
+      "ability": {
+        "byLevel": {
+          "1": "When you receive shield, this gains Damage for this battle equal to 10% of the amount shielded.",
+          "2": "When you receive shield, this gains Damage for this battle equal to 20% of the amount shielded.",
+          "3": "When you receive shield, this gains Damage for this battle equal to 30% of the amount shielded.",
+          "4": "When you receive shield, this gains Damage for this battle equal to 120% of the amount shielded."
+        },
+        "description": "When you receive shield, this gains Damage for this battle equal to 10% of the amount shielded.",
+        "trigger": null
+      },
+      "id": "stalagrove",
+      "name": "Stalagrove",
+      "rarity": "Rare",
+      "tier": 3
+    },
+    {
+      "ability": {
+        "byLevel": {
+          "1": "When allies inflict Poison, this gains +4 Damage permanently",
+          "2": "When allies inflict Poison, this gains +8 Damage permanently",
+          "3": "When allies inflict Poison, this gains +12 Damage permanently",
+          "4": "When allies inflict Poison, this gains +48 Damage permanently"
+        },
+        "description": "When allies inflict Poison, this gains +4 Damage permanently",
+        "trigger": null
+      },
+      "id": "thorntail",
+      "name": "Thorntail",
+      "rarity": "Rare",
+      "tier": 3
+    },
+    {
+      "ability": {
+        "byLevel": {
+          "1": "Give the ally above +2 Shock permanently",
+          "2": "Give the ally above +4 Shock permanently",
+          "3": "Give the ally above +6 Shock permanently",
+          "4": "Give the ally above +24 Shock permanently"
+        },
+        "description": "Give the ally above +2 Shock permanently",
+        "trigger": "On Cast"
+      },
+      "id": "voltalith",
+      "name": "Voltalith",
+      "rarity": "Rare",
+      "tier": 3
+    },
+    {
+      "ability": {
+        "byLevel": {
+          "1": "Gain Shield equal to 1x the Shield of adjacent allies for this battle (Except other Aegistruct)",
+          "2": "Gain Shield equal to 2x the Shield of adjacent allies for this battle (Except other Aegistruct)",
+          "3": "Gain Shield equal to 3x the Shield of adjacent allies for this battle (Except other Aegistruct)",
+          "4": "Gain Shield equal to 12x the Shield of adjacent allies for this battle (Except other Aegistruct)"
+        },
+        "description": "Gain Shield equal to 1x the Shield of adjacent allies for this battle (Except other Aegistruct)",
+        "trigger": "On Battle Start"
+      },
+      "id": "aegistruct",
+      "name": "Aegistruct",
+      "rarity": "Super Rare",
+      "tier": 4
+    },
+    {
+      "ability": {
+        "byLevel": {
+          "1": "Whenever an ally inflicts Shock, Charge this by 1",
+          "2": "Whenever an ally inflicts Shock, Charge this by 2",
+          "3": "Whenever an ally inflicts Shock, Charge this by 3",
+          "4": "Whenever an ally inflicts Shock, Charge this by 3"
+        },
+        "description": "Whenever an ally inflicts Shock, Charge this by 1",
+        "trigger": null
+      },
+      "id": "clawnetic",
+      "name": "Clawnetic",
+      "rarity": "Super Rare",
+      "tier": 4
+    },
+    {
+      "ability": {
+        "byLevel": {
+          "1": "Trigger the Grass ally above",
+          "2": "Trigger the Grass ally above",
+          "3": "Trigger the Grass ally above",
+          "4": "Trigger the Grass ally above"
+        },
+        "description": "Trigger the Grass ally above",
+        "trigger": "On Cast"
+      },
+      "id": "dryadell",
+      "name": "Dryadell",
+      "rarity": "Super Rare",
+      "tier": 4
+    },
+    {
+      "ability": {
+        "byLevel": {
+          "1": "Ally to the left has +100% Shock",
+          "2": "Ally to the left has +200% Shock",
+          "3": "Ally to the left has +300% Shock",
+          "4": "Ally to the left has +2400% Shock"
+        },
+        "description": "Ally to the left has +100% Shock",
+        "trigger": "Ongoing"
+      },
+      "id": "pylong",
+      "name": "Pylong",
+      "rarity": "Super Rare",
+      "tier": 4
+    },
+    {
+      "ability": {
+        "byLevel": {
+          "1": "Give the Flying ally to the right +1 Multicast permanently (This monster cannot gain Multicast)",
+          "2": "Give the Flying ally to the right +2 Multicast permanently (This monster cannot gain Multicast)",
+          "3": "Give the Flying ally to the right +3 Multicast permanently (This monster cannot gain Multicast)",
+          "4": "Give the Flying ally to the right +12 Multicast permanently (This monster cannot gain Multicast)"
+        },
+        "description": "Give the Flying ally to the right +1 Multicast permanently (This monster cannot gain Multicast)",
+        "trigger": "On Cast"
+      },
+      "id": "zephyrex",
+      "name": "Zephyrex",
+      "rarity": "Super Rare",
+      "tier": 4
+    },
+    {
+      "ability": {
+        "byLevel": {
+          "1": "Give the Fire ally to the left {multiplier}this monster's Burn for this battle",
+          "2": "Give the Fire ally to the left 2x this monster's Burn for this battle",
+          "3": "Give the Fire ally to the left 3x this monster's Burn for this battle",
+          "4": "Give the Fire ally to the left 30x this monster's Burn for this battle"
+        },
+        "description": "Give the Fire ally to the left {multiplier}this monster's Burn for this battle",
+        "trigger": "On Cast"
+      },
+      "id": "blixie",
+      "name": "Blixie",
+      "rarity": "Legendary",
+      "tier": 5
+    },
+    {
+      "ability": {
+        "byLevel": {
+          "1": "Whenever an ally inflicts Poison, Charge this by 1",
+          "2": "Whenever an ally inflicts Poison, Charge this by 1",
+          "3": "Whenever an ally inflicts Poison, Charge this by 1",
+          "4": "Whenever an ally inflicts Poison, Charge this by 1"
+        },
+        "description": "Whenever an ally inflicts Poison, Charge this by 1",
+        "trigger": null
+      },
+      "id": "cobrex",
+      "name": "Cobrex",
+      "rarity": "Legendary",
+      "tier": 5
+    },
+    {
+      "ability": {
+        "byLevel": {
+          "1": "Activate the On Battle Start abilities of adjacent allies and increase this monster's Cooldown by 6 for this battle",
+          "2": "Activate the On Battle Start abilities of adjacent allies and increase this monster's Cooldown by 3 for this battle",
+          "3": "Activate the On Battle Start abilities of adjacent allies and increase this monster's Cooldown by 2 for this battle",
+          "4": "Activate the On Battle Start abilities of adjacent allies and increase this monster's Cooldown by 1 for this battle"
+        },
+        "description": "Activate the On Battle Start abilities of adjacent allies and increase this monster's Cooldown by 6 for this battle",
+        "trigger": "On Cast"
+      },
+      "id": "dragonarch",
+      "name": "Draconarch",
+      "rarity": "Legendary",
+      "tier": 5
+    },
+    {
+      "ability": {
+        "byLevel": {
+          "1": "Has additional Damage equal to 100% of the total Damage of adjacent allies (Except other Gaiadrasil)",
+          "2": "Has additional Damage equal to 100% of the total Damage of adjacent allies (Except other Gaiadrasil)",
+          "3": "Has additional Damage equal to 100% of the total Damage of adjacent allies (Except other Gaiadrasil)",
+          "4": "Has additional Damage equal to 1000% of the total Damage of adjacent allies (Except other Gaiadrasil)"
+        },
+        "description": "Has additional Damage equal to 100% of the total Damage of adjacent allies (Except other Gaiadrasil)",
+        "trigger": "Ongoing"
+      },
+      "id": "gaiadrasil",
+      "name": "Gaiadrasil",
+      "rarity": "Legendary",
+      "tier": 5
+    },
+    {
+      "ability": {
+        "byLevel": {
+          "1": "+50% Cooldown Speed and +2 Shock for this battle",
+          "2": "+50% Cooldown Speed and +4 Shock for this battle",
+          "3": "+50% Cooldown Speed and +6 Shock for this battle",
+          "4": "+50% Cooldown Speed and +48 Shock for this battle"
+        },
+        "description": "+50% Cooldown Speed and +2 Shock for this battle",
+        "trigger": "On Cast"
+      },
+      "id": "galvanine",
+      "name": "Galvanine",
+      "rarity": "Legendary",
+      "tier": 5
+    },
+    {
+      "ability": {
+        "byLevel": {
+          "1": "Give adjacent allies +70% Shield for this battle",
+          "2": "Give adjacent allies +140% Shield for this battle",
+          "3": "Give adjacent allies +210% Shield for this battle",
+          "4": "Give adjacent allies +2100% Shield for this battle"
+        },
+        "description": "Give adjacent allies +70% Shield for this battle",
+        "trigger": "On Cast"
+      },
+      "id": "geminiss",
+      "name": "Geminiss",
+      "rarity": "Legendary",
+      "tier": 5
+    }
+  ]
+}

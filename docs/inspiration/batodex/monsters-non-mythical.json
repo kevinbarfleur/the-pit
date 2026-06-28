@@ -1,0 +1,6594 @@
+[
+  {
+    "ability": null,
+    "cost": 10,
+    "id": "bumblebolt",
+    "keywords": [],
+    "levels": [
+      {
+        "cooldown": 2.5,
+        "level": 1,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 3
+          },
+          {
+            "color": "#e7c61c",
+            "key": "shock",
+            "label": "Shock",
+            "value": 1
+          }
+        ]
+      },
+      {
+        "cooldown": 2.5,
+        "level": 2,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 6
+          },
+          {
+            "color": "#e7c61c",
+            "key": "shock",
+            "label": "Shock",
+            "value": 2
+          }
+        ]
+      },
+      {
+        "cooldown": 2.5,
+        "level": 3,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 9
+          },
+          {
+            "color": "#e7c61c",
+            "key": "shock",
+            "label": "Shock",
+            "value": 3
+          }
+        ]
+      },
+      {
+        "cooldown": 2.5,
+        "level": 4,
+        "multicast": 2,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 9
+          },
+          {
+            "color": "#e7c61c",
+            "key": "shock",
+            "label": "Shock",
+            "value": 3
+          }
+        ]
+      }
+    ],
+    "name": "Bumblebolt",
+    "rarity": {
+      "color": "#70707a",
+      "label": "Common"
+    },
+    "sourceUrl": "https://batodex.com/monsters/bumblebolt",
+    "tier": 1,
+    "types": [
+      {
+        "color": "#a2a53c",
+        "id": "bug",
+        "name": "Bug"
+      },
+      {
+        "color": "#cfbf32",
+        "id": "electric",
+        "name": "Electric"
+      }
+    ]
+  },
+  {
+    "ability": {
+      "byLevel": {
+        "1": "Evolves at level 3",
+        "2": "Evolves at level 3",
+        "3": null,
+        "4": null
+      },
+      "description": "Evolves at level 3",
+      "trigger": null
+    },
+    "cost": 10,
+    "id": "dribblet",
+    "keywords": [],
+    "levels": [
+      {
+        "cooldown": 3.5,
+        "level": 1,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#578ac9",
+            "key": "heal",
+            "label": "Heal",
+            "value": 15
+          }
+        ]
+      },
+      {
+        "cooldown": 3.5,
+        "level": 2,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#578ac9",
+            "key": "heal",
+            "label": "Heal",
+            "value": 30
+          }
+        ]
+      },
+      {
+        "cooldown": 3.5,
+        "level": 3,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#578ac9",
+            "key": "heal",
+            "label": "Heal",
+            "value": 45
+          }
+        ]
+      },
+      {
+        "cooldown": 3.5,
+        "level": 4,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#578ac9",
+            "key": "heal",
+            "label": "Heal",
+            "value": 45
+          }
+        ]
+      }
+    ],
+    "name": "Dribblet",
+    "rarity": {
+      "color": "#70707a",
+      "label": "Common"
+    },
+    "sourceUrl": "https://batodex.com/monsters/dribblet",
+    "tier": 1,
+    "types": [
+      {
+        "color": "#578ac9",
+        "id": "water",
+        "name": "Water"
+      }
+    ]
+  },
+  {
+    "ability": {
+      "byLevel": {
+        "1": "After you buy a Bug monster, this gains +7 Damage",
+        "2": "After you buy a Bug monster, this gains +14 Damage",
+        "3": "After you buy a Bug monster, this gains +21 Damage",
+        "4": "After you buy a Bug monster, this gains +42 Damage"
+      },
+      "description": "After you buy a Bug monster, this gains +7 Damage",
+      "trigger": null
+    },
+    "cost": 15,
+    "id": "guardiant",
+    "keywords": [],
+    "levels": [
+      {
+        "cooldown": 3.5,
+        "level": 1,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 15
+          }
+        ]
+      },
+      {
+        "cooldown": 3.5,
+        "level": 2,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 15
+          }
+        ]
+      },
+      {
+        "cooldown": 3.5,
+        "level": 3,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 15
+          }
+        ]
+      },
+      {
+        "cooldown": 3.5,
+        "level": 4,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 30
+          }
+        ]
+      }
+    ],
+    "name": "Guardiant",
+    "rarity": {
+      "color": "#70707a",
+      "label": "Common"
+    },
+    "sourceUrl": "https://batodex.com/monsters/guardiant",
+    "tier": 1,
+    "types": [
+      {
+        "color": "#a2a53c",
+        "id": "bug",
+        "name": "Bug"
+      }
+    ]
+  },
+  {
+    "ability": null,
+    "cost": 15,
+    "id": "joltail",
+    "keywords": [],
+    "levels": [
+      {
+        "cooldown": 4.5,
+        "level": 1,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 1
+          },
+          {
+            "color": "#e7c61c",
+            "key": "shock",
+            "label": "Shock",
+            "value": 4
+          }
+        ]
+      },
+      {
+        "cooldown": 4.5,
+        "level": 2,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 2
+          },
+          {
+            "color": "#e7c61c",
+            "key": "shock",
+            "label": "Shock",
+            "value": 8
+          }
+        ]
+      },
+      {
+        "cooldown": 4.5,
+        "level": 3,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 3
+          },
+          {
+            "color": "#e7c61c",
+            "key": "shock",
+            "label": "Shock",
+            "value": 12
+          }
+        ]
+      },
+      {
+        "cooldown": 4.5,
+        "level": 4,
+        "multicast": 2,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 3
+          },
+          {
+            "color": "#e7c61c",
+            "key": "shock",
+            "label": "Shock",
+            "value": 12
+          }
+        ]
+      }
+    ],
+    "name": "Joltail",
+    "rarity": {
+      "color": "#70707a",
+      "label": "Common"
+    },
+    "sourceUrl": "https://batodex.com/monsters/joltail",
+    "tier": 1,
+    "types": [
+      {
+        "color": "#cfbf32",
+        "id": "electric",
+        "name": "Electric"
+      }
+    ]
+  },
+  {
+    "ability": null,
+    "cost": 15,
+    "id": "magmite",
+    "keywords": [],
+    "levels": [
+      {
+        "cooldown": 4.5,
+        "level": 1,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#a47c41",
+            "key": "shield",
+            "label": "Shield",
+            "value": 40
+          },
+          {
+            "color": "#ed6b3a",
+            "key": "burn",
+            "label": "Burn",
+            "value": 4
+          }
+        ]
+      },
+      {
+        "cooldown": 4.5,
+        "level": 2,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#a47c41",
+            "key": "shield",
+            "label": "Shield",
+            "value": 80
+          },
+          {
+            "color": "#ed6b3a",
+            "key": "burn",
+            "label": "Burn",
+            "value": 8
+          }
+        ]
+      },
+      {
+        "cooldown": 4.5,
+        "level": 3,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#a47c41",
+            "key": "shield",
+            "label": "Shield",
+            "value": 120
+          },
+          {
+            "color": "#ed6b3a",
+            "key": "burn",
+            "label": "Burn",
+            "value": 12
+          }
+        ]
+      },
+      {
+        "cooldown": 4.5,
+        "level": 4,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#a47c41",
+            "key": "shield",
+            "label": "Shield",
+            "value": 480
+          },
+          {
+            "color": "#ed6b3a",
+            "key": "burn",
+            "label": "Burn",
+            "value": 12
+          }
+        ]
+      }
+    ],
+    "name": "Magmite",
+    "rarity": {
+      "color": "#70707a",
+      "label": "Common"
+    },
+    "sourceUrl": "https://batodex.com/monsters/magmite",
+    "tier": 1,
+    "types": [
+      {
+        "color": "#ed6b3a",
+        "id": "fire",
+        "name": "Fire"
+      },
+      {
+        "color": "#a47c41",
+        "id": "rock",
+        "name": "Rock"
+      }
+    ]
+  },
+  {
+    "ability": {
+      "byLevel": {
+        "1": "+20 Damage for this battle",
+        "2": "+40 Damage for this battle",
+        "3": "+60 Damage for this battle",
+        "4": "+120 Damage for this battle"
+      },
+      "description": "+20 Damage for this battle",
+      "trigger": "On Cast"
+    },
+    "cost": 10,
+    "id": "mosslug",
+    "keywords": [],
+    "levels": [
+      {
+        "cooldown": 5,
+        "level": 1,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#578ac9",
+            "key": "heal",
+            "label": "Heal",
+            "value": 30
+          }
+        ]
+      },
+      {
+        "cooldown": 5,
+        "level": 2,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#578ac9",
+            "key": "heal",
+            "label": "Heal",
+            "value": 60
+          }
+        ]
+      },
+      {
+        "cooldown": 5,
+        "level": 3,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#578ac9",
+            "key": "heal",
+            "label": "Heal",
+            "value": 90
+          }
+        ]
+      },
+      {
+        "cooldown": 5,
+        "level": 4,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#578ac9",
+            "key": "heal",
+            "label": "Heal",
+            "value": 90
+          }
+        ]
+      }
+    ],
+    "name": "Mosslug",
+    "rarity": {
+      "color": "#70707a",
+      "label": "Common"
+    },
+    "sourceUrl": "https://batodex.com/monsters/mosslug",
+    "tier": 1,
+    "types": [
+      {
+        "color": "#578ac9",
+        "id": "water",
+        "name": "Water"
+      },
+      {
+        "color": "#6cb645",
+        "id": "grass",
+        "name": "Grass"
+      }
+    ]
+  },
+  {
+    "ability": {
+      "byLevel": {
+        "1": "Evolves at level 3",
+        "2": "Evolves at level 3",
+        "3": null,
+        "4": null
+      },
+      "description": "Evolves at level 3",
+      "trigger": null
+    },
+    "cost": 10,
+    "id": "panbud",
+    "keywords": [],
+    "levels": [
+      {
+        "cooldown": 5.5,
+        "level": 1,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 25
+          }
+        ]
+      },
+      {
+        "cooldown": 5.5,
+        "level": 2,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 50
+          }
+        ]
+      },
+      {
+        "cooldown": 5.5,
+        "level": 3,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 75
+          }
+        ]
+      },
+      {
+        "cooldown": 5.5,
+        "level": 4,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 75
+          }
+        ]
+      }
+    ],
+    "name": "Panbud",
+    "rarity": {
+      "color": "#70707a",
+      "label": "Common"
+    },
+    "sourceUrl": "https://batodex.com/monsters/panbud",
+    "tier": 1,
+    "types": [
+      {
+        "color": "#6cb645",
+        "id": "grass",
+        "name": "Grass"
+      }
+    ]
+  },
+  {
+    "ability": {
+      "byLevel": {
+        "1": "+15 Shield for this battle",
+        "2": "+30 Shield for this battle",
+        "3": "+45 Shield for this battle",
+        "4": "+90 Shield for this battle"
+      },
+      "description": "+15 Shield for this battle",
+      "trigger": "On Cast"
+    },
+    "cost": 15,
+    "id": "pebbler",
+    "keywords": [],
+    "levels": [
+      {
+        "cooldown": 5,
+        "level": 1,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#a47c41",
+            "key": "shield",
+            "label": "Shield",
+            "value": 20
+          }
+        ]
+      },
+      {
+        "cooldown": 5,
+        "level": 2,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#a47c41",
+            "key": "shield",
+            "label": "Shield",
+            "value": 40
+          }
+        ]
+      },
+      {
+        "cooldown": 5,
+        "level": 3,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#a47c41",
+            "key": "shield",
+            "label": "Shield",
+            "value": 60
+          }
+        ]
+      },
+      {
+        "cooldown": 5,
+        "level": 4,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#a47c41",
+            "key": "shield",
+            "label": "Shield",
+            "value": 120
+          }
+        ]
+      }
+    ],
+    "name": "Pebbler",
+    "rarity": {
+      "color": "#70707a",
+      "label": "Common"
+    },
+    "sourceUrl": "https://batodex.com/monsters/pebbler",
+    "tier": 1,
+    "types": [
+      {
+        "color": "#a47c41",
+        "id": "rock",
+        "name": "Rock"
+      }
+    ]
+  },
+  {
+    "ability": {
+      "byLevel": {
+        "1": "Evolve after experiencing Knockout 2 times",
+        "2": "Evolve after experiencing Knockout 2 times",
+        "3": "Evolve after experiencing Knockout 2 times",
+        "4": "Evolve after experiencing Knockout 2 times"
+      },
+      "description": "Evolve after experiencing Knockout 2 times",
+      "trigger": null
+    },
+    "cost": 15,
+    "id": "pipskull",
+    "keywords": [
+      {
+        "color": "#3c3061",
+        "description": "Cannot trigger anymore for this battle",
+        "id": "knockout",
+        "name": "Knockout"
+      }
+    ],
+    "levels": [
+      {
+        "cooldown": 4,
+        "level": 1,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 15
+          }
+        ]
+      },
+      {
+        "cooldown": 4,
+        "level": 2,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 30
+          }
+        ]
+      },
+      {
+        "cooldown": 4,
+        "level": 3,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 45
+          }
+        ]
+      },
+      {
+        "cooldown": 4,
+        "level": 4,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 90
+          }
+        ]
+      }
+    ],
+    "name": "Pipskull",
+    "rarity": {
+      "color": "#70707a",
+      "label": "Common"
+    },
+    "sourceUrl": "https://batodex.com/monsters/pipskull",
+    "tier": 1,
+    "types": [
+      {
+        "color": "#3c3061",
+        "id": "ghost",
+        "name": "Ghost"
+      }
+    ]
+  },
+  {
+    "ability": {
+      "byLevel": {
+        "1": "+30 Damage permanently",
+        "2": "+60 Damage permanently",
+        "3": "+90 Damage permanently",
+        "4": "+180 Damage permanently"
+      },
+      "description": "+30 Damage permanently",
+      "trigger": "On Knocked Out"
+    },
+    "cost": 15,
+    "id": "ratacomb",
+    "keywords": [
+      {
+        "color": "#3c3061",
+        "description": "Cannot trigger anymore for this battle",
+        "id": "knockout",
+        "name": "Knockout"
+      }
+    ],
+    "levels": [
+      {
+        "cooldown": 4,
+        "level": 1,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 15
+          }
+        ]
+      },
+      {
+        "cooldown": 4,
+        "level": 2,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 15
+          }
+        ]
+      },
+      {
+        "cooldown": 4,
+        "level": 3,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 15
+          }
+        ]
+      },
+      {
+        "cooldown": 4,
+        "level": 4,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 15
+          }
+        ]
+      }
+    ],
+    "name": "Ratacomb",
+    "rarity": {
+      "color": "#70707a",
+      "label": "Common"
+    },
+    "sourceUrl": "https://batodex.com/monsters/ratacomb",
+    "tier": 1,
+    "types": [
+      {
+        "color": "#3c3061",
+        "id": "ghost",
+        "name": "Ghost"
+      }
+    ]
+  },
+  {
+    "ability": {
+      "byLevel": {
+        "1": "Knockout adjacent allies and gain +4 Poison this battle for each ally Knockout",
+        "2": "Knockout adjacent allies and gain +8 Poison this battle for each ally Knockout",
+        "3": "Knockout adjacent allies and gain +12 Poison this battle for each ally Knockout",
+        "4": "Knockout adjacent allies and gain +24 Poison this battle for each ally Knockout"
+      },
+      "description": "Knockout adjacent allies and gain +4 Poison this battle for each ally Knockout",
+      "trigger": "On Battle Start"
+    },
+    "cost": 15,
+    "id": "rattleghast",
+    "keywords": [
+      {
+        "color": "#3c3061",
+        "description": "Cannot trigger anymore for this battle",
+        "id": "knockout",
+        "name": "Knockout"
+      }
+    ],
+    "levels": [
+      {
+        "cooldown": 6,
+        "level": 1,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#7b57a1",
+            "key": "poison",
+            "label": "Poison",
+            "value": 1
+          }
+        ]
+      },
+      {
+        "cooldown": 6,
+        "level": 2,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#7b57a1",
+            "key": "poison",
+            "label": "Poison",
+            "value": 1
+          }
+        ]
+      },
+      {
+        "cooldown": 6,
+        "level": 3,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#7b57a1",
+            "key": "poison",
+            "label": "Poison",
+            "value": 1
+          }
+        ]
+      },
+      {
+        "cooldown": 6,
+        "level": 4,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#7b57a1",
+            "key": "poison",
+            "label": "Poison",
+            "value": 1
+          }
+        ]
+      }
+    ],
+    "name": "Rattleghast",
+    "rarity": {
+      "color": "#70707a",
+      "label": "Common"
+    },
+    "sourceUrl": "https://batodex.com/monsters/rattleghast",
+    "tier": 1,
+    "types": [
+      {
+        "color": "#3c3061",
+        "id": "ghost",
+        "name": "Ghost"
+      },
+      {
+        "color": "#7b57a1",
+        "id": "toxic",
+        "name": "Toxic"
+      }
+    ]
+  },
+  {
+    "ability": {
+      "byLevel": {
+        "1": "Evolves at level 3",
+        "2": "Evolves at level 3",
+        "3": null,
+        "4": null
+      },
+      "description": "Evolves at level 3",
+      "trigger": null
+    },
+    "cost": 10,
+    "id": "scorchimp",
+    "keywords": [],
+    "levels": [
+      {
+        "cooldown": 5.5,
+        "level": 1,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 5
+          },
+          {
+            "color": "#ed6b3a",
+            "key": "burn",
+            "label": "Burn",
+            "value": 5
+          }
+        ]
+      },
+      {
+        "cooldown": 5.5,
+        "level": 2,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 10
+          },
+          {
+            "color": "#ed6b3a",
+            "key": "burn",
+            "label": "Burn",
+            "value": 10
+          }
+        ]
+      },
+      {
+        "cooldown": 5.5,
+        "level": 3,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 15
+          },
+          {
+            "color": "#ed6b3a",
+            "key": "burn",
+            "label": "Burn",
+            "value": 15
+          }
+        ]
+      },
+      {
+        "cooldown": 5.5,
+        "level": 4,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 15
+          },
+          {
+            "color": "#ed6b3a",
+            "key": "burn",
+            "label": "Burn",
+            "value": 15
+          }
+        ]
+      }
+    ],
+    "name": "Scorchimp",
+    "rarity": {
+      "color": "#70707a",
+      "label": "Common"
+    },
+    "sourceUrl": "https://batodex.com/monsters/scorchimp",
+    "tier": 1,
+    "types": [
+      {
+        "color": "#ed6b3a",
+        "id": "fire",
+        "name": "Fire"
+      }
+    ]
+  },
+  {
+    "ability": null,
+    "cost": 10,
+    "id": "spinarai",
+    "keywords": [],
+    "levels": [
+      {
+        "cooldown": 2.5,
+        "level": 1,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 3
+          },
+          {
+            "color": "#7b57a1",
+            "key": "poison",
+            "label": "Poison",
+            "value": 1
+          }
+        ]
+      },
+      {
+        "cooldown": 2.5,
+        "level": 2,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 6
+          },
+          {
+            "color": "#7b57a1",
+            "key": "poison",
+            "label": "Poison",
+            "value": 2
+          }
+        ]
+      },
+      {
+        "cooldown": 2.5,
+        "level": 3,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 9
+          },
+          {
+            "color": "#7b57a1",
+            "key": "poison",
+            "label": "Poison",
+            "value": 3
+          }
+        ]
+      },
+      {
+        "cooldown": 2.5,
+        "level": 4,
+        "multicast": 2,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 9
+          },
+          {
+            "color": "#7b57a1",
+            "key": "poison",
+            "label": "Poison",
+            "value": 3
+          }
+        ]
+      }
+    ],
+    "name": "Spinarai",
+    "rarity": {
+      "color": "#70707a",
+      "label": "Common"
+    },
+    "sourceUrl": "https://batodex.com/monsters/spinarai",
+    "tier": 1,
+    "types": [
+      {
+        "color": "#a2a53c",
+        "id": "bug",
+        "name": "Bug"
+      },
+      {
+        "color": "#7b57a1",
+        "id": "toxic",
+        "name": "Toxic"
+      }
+    ]
+  },
+  {
+    "ability": {
+      "byLevel": {
+        "1": "Knockout self",
+        "2": "Knockout self",
+        "3": "Knockout self",
+        "4": "Knockout self"
+      },
+      "description": "Knockout self",
+      "trigger": "On Cast"
+    },
+    "cost": 10,
+    "id": "stingarde",
+    "keywords": [
+      {
+        "color": "#3c3061",
+        "description": "Cannot trigger anymore for this battle",
+        "id": "knockout",
+        "name": "Knockout"
+      }
+    ],
+    "levels": [
+      {
+        "cooldown": 5,
+        "level": 1,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 150
+          }
+        ]
+      },
+      {
+        "cooldown": 5,
+        "level": 2,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 300
+          }
+        ]
+      },
+      {
+        "cooldown": 5,
+        "level": 3,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 450
+          }
+        ]
+      },
+      {
+        "cooldown": 5,
+        "level": 4,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 1350
+          }
+        ]
+      }
+    ],
+    "name": "Stingarde",
+    "rarity": {
+      "color": "#70707a",
+      "label": "Common"
+    },
+    "sourceUrl": "https://batodex.com/monsters/stingarde",
+    "tier": 1,
+    "types": [
+      {
+        "color": "#a2a53c",
+        "id": "bug",
+        "name": "Bug"
+      }
+    ]
+  },
+  {
+    "ability": null,
+    "cost": 15,
+    "id": "velocect",
+    "keywords": [],
+    "levels": [
+      {
+        "cooldown": 3.5,
+        "level": 1,
+        "multicast": 2,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 15
+          }
+        ]
+      },
+      {
+        "cooldown": 3.5,
+        "level": 2,
+        "multicast": 3,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 20
+          }
+        ]
+      },
+      {
+        "cooldown": 3.5,
+        "level": 3,
+        "multicast": 4,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 25
+          }
+        ]
+      },
+      {
+        "cooldown": 3.5,
+        "level": 4,
+        "multicast": 8,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 25
+          }
+        ]
+      }
+    ],
+    "name": "Velocect",
+    "rarity": {
+      "color": "#70707a",
+      "label": "Common"
+    },
+    "sourceUrl": "https://batodex.com/monsters/velocect",
+    "tier": 1,
+    "types": [
+      {
+        "color": "#a2a53c",
+        "id": "bug",
+        "name": "Bug"
+      },
+      {
+        "color": "#a4c7ed",
+        "id": "flying",
+        "name": "Flying"
+      }
+    ]
+  },
+  {
+    "ability": null,
+    "cost": 15,
+    "id": "venopuff",
+    "keywords": [],
+    "levels": [
+      {
+        "cooldown": 3.5,
+        "level": 1,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#7b57a1",
+            "key": "poison",
+            "label": "Poison",
+            "value": 4
+          }
+        ]
+      },
+      {
+        "cooldown": 3.5,
+        "level": 2,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#7b57a1",
+            "key": "poison",
+            "label": "Poison",
+            "value": 8
+          }
+        ]
+      },
+      {
+        "cooldown": 3.5,
+        "level": 3,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#7b57a1",
+            "key": "poison",
+            "label": "Poison",
+            "value": 12
+          }
+        ]
+      },
+      {
+        "cooldown": 3.5,
+        "level": 4,
+        "multicast": 2,
+        "stats": [
+          {
+            "color": "#7b57a1",
+            "key": "poison",
+            "label": "Poison",
+            "value": 12
+          }
+        ]
+      }
+    ],
+    "name": "Venopuff",
+    "rarity": {
+      "color": "#70707a",
+      "label": "Common"
+    },
+    "sourceUrl": "https://batodex.com/monsters/venopuff",
+    "tier": 1,
+    "types": [
+      {
+        "color": "#7b57a1",
+        "id": "toxic",
+        "name": "Toxic"
+      }
+    ]
+  },
+  {
+    "ability": {
+      "byLevel": {
+        "1": "You can use 1 additional Item per day.",
+        "2": "You can use 2 additional Item per day.",
+        "3": "You can use 3 additional Item per day.",
+        "4": "You can use 6 additional Item per day."
+      },
+      "description": "You can use 1 additional Item per day.",
+      "trigger": null
+    },
+    "cost": 20,
+    "id": "berroon",
+    "keywords": [],
+    "levels": [
+      {
+        "cooldown": 4,
+        "level": 1,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 40
+          }
+        ]
+      },
+      {
+        "cooldown": 4,
+        "level": 2,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 40
+          }
+        ]
+      },
+      {
+        "cooldown": 4,
+        "level": 3,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 40
+          }
+        ]
+      },
+      {
+        "cooldown": 4,
+        "level": 4,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 160
+          }
+        ]
+      }
+    ],
+    "name": "Berroon",
+    "rarity": {
+      "color": "#4ab500",
+      "label": "Uncommon"
+    },
+    "sourceUrl": "https://batodex.com/monsters/berroon",
+    "tier": 2,
+    "types": [
+      {
+        "color": "#6cb645",
+        "id": "grass",
+        "name": "Grass"
+      }
+    ]
+  },
+  {
+    "ability": {
+      "byLevel": {
+        "1": "Give the ally to the left +4% Cooldown Speed permanently",
+        "2": "Give the ally to the left +8% Cooldown Speed permanently",
+        "3": "Give the ally to the left +12% Cooldown Speed permanently",
+        "4": "Give the ally to the left +24% Cooldown Speed permanently"
+      },
+      "description": "Give the ally to the left +4% Cooldown Speed permanently",
+      "trigger": "On Cast"
+    },
+    "cost": 30,
+    "id": "boomagon",
+    "keywords": [],
+    "levels": [
+      {
+        "cooldown": 6,
+        "level": 1,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 40
+          }
+        ]
+      },
+      {
+        "cooldown": 6,
+        "level": 2,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 40
+          }
+        ]
+      },
+      {
+        "cooldown": 6,
+        "level": 3,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 40
+          }
+        ]
+      },
+      {
+        "cooldown": 6,
+        "level": 4,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 40
+          }
+        ]
+      }
+    ],
+    "name": "Boomagon",
+    "rarity": {
+      "color": "#4ab500",
+      "label": "Uncommon"
+    },
+    "sourceUrl": "https://batodex.com/monsters/boomagon",
+    "tier": 2,
+    "types": [
+      {
+        "color": "#5260a9",
+        "id": "dragon",
+        "name": "Dragon"
+      }
+    ]
+  },
+  {
+    "ability": {
+      "byLevel": {
+        "1": "This and Common allies gain +10 Damage permanently",
+        "2": "This and Common allies gain +20 Damage permanently",
+        "3": "This and Common allies gain +30 Damage permanently",
+        "4": "This and Common allies gain +60 Damage permanently"
+      },
+      "description": "This and Common allies gain +10 Damage permanently",
+      "trigger": "On Victory"
+    },
+    "cost": 30,
+    "id": "brawlmantis",
+    "keywords": [],
+    "levels": [
+      {
+        "cooldown": 5.5,
+        "level": 1,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 50
+          }
+        ]
+      },
+      {
+        "cooldown": 5.5,
+        "level": 2,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 100
+          }
+        ]
+      },
+      {
+        "cooldown": 5.5,
+        "level": 3,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 150
+          }
+        ]
+      },
+      {
+        "cooldown": 5.5,
+        "level": 4,
+        "multicast": 2,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 150
+          }
+        ]
+      }
+    ],
+    "name": "Brawlmantis",
+    "rarity": {
+      "color": "#4ab500",
+      "label": "Uncommon"
+    },
+    "sourceUrl": "https://batodex.com/monsters/brawlmantis",
+    "tier": 2,
+    "types": [
+      {
+        "color": "#a2a53c",
+        "id": "bug",
+        "name": "Bug"
+      },
+      {
+        "color": "#f1a73c",
+        "id": "fighting",
+        "name": "Fighting"
+      }
+    ]
+  },
+  {
+    "ability": {
+      "byLevel": {
+        "1": "After you buy a Bug monster, this gains +10% Cooldown Speed",
+        "2": "After you buy a Bug monster, this gains +20% Cooldown Speed",
+        "3": "After you buy a Bug monster, this gains +30% Cooldown Speed",
+        "4": "After you buy a Bug monster, this gains +60% Cooldown Speed"
+      },
+      "description": "After you buy a Bug monster, this gains +10% Cooldown Speed",
+      "trigger": null
+    },
+    "cost": 30,
+    "id": "cinderfly",
+    "keywords": [],
+    "levels": [
+      {
+        "cooldown": 5,
+        "level": 1,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ed6b3a",
+            "key": "burn",
+            "label": "Burn",
+            "value": 6
+          }
+        ]
+      },
+      {
+        "cooldown": 5,
+        "level": 2,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ed6b3a",
+            "key": "burn",
+            "label": "Burn",
+            "value": 6
+          }
+        ]
+      },
+      {
+        "cooldown": 5,
+        "level": 3,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ed6b3a",
+            "key": "burn",
+            "label": "Burn",
+            "value": 6
+          }
+        ]
+      },
+      {
+        "cooldown": 5,
+        "level": 4,
+        "multicast": 2,
+        "stats": [
+          {
+            "color": "#ed6b3a",
+            "key": "burn",
+            "label": "Burn",
+            "value": 12
+          }
+        ]
+      }
+    ],
+    "name": "Cinderfly",
+    "rarity": {
+      "color": "#4ab500",
+      "label": "Uncommon"
+    },
+    "sourceUrl": "https://batodex.com/monsters/cinderfly",
+    "tier": 2,
+    "types": [
+      {
+        "color": "#a2a53c",
+        "id": "bug",
+        "name": "Bug"
+      },
+      {
+        "color": "#ed6b3a",
+        "id": "fire",
+        "name": "Fire"
+      }
+    ]
+  },
+  {
+    "ability": {
+      "byLevel": {
+        "1": "When you use an item, this gains +20 Damage and Shield",
+        "2": "When you use an item, this gains +40 Damage and Shield",
+        "3": "When you use an item, this gains +60 Damage and Shield",
+        "4": "When you use an item, this gains +120 Damage and Shield"
+      },
+      "description": "When you use an item, this gains +20 Damage and Shield",
+      "trigger": null
+    },
+    "cost": 25,
+    "id": "alpinine",
+    "keywords": [],
+    "levels": [
+      {
+        "cooldown": 6,
+        "level": 1,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 20
+          },
+          {
+            "color": "#a47c41",
+            "key": "shield",
+            "label": "Shield",
+            "value": 20
+          }
+        ]
+      },
+      {
+        "cooldown": 6,
+        "level": 2,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 20
+          },
+          {
+            "color": "#a47c41",
+            "key": "shield",
+            "label": "Shield",
+            "value": 20
+          }
+        ]
+      },
+      {
+        "cooldown": 6,
+        "level": 3,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 20
+          },
+          {
+            "color": "#a47c41",
+            "key": "shield",
+            "label": "Shield",
+            "value": 20
+          }
+        ]
+      },
+      {
+        "cooldown": 6,
+        "level": 4,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 80
+          },
+          {
+            "color": "#a47c41",
+            "key": "shield",
+            "label": "Shield",
+            "value": 80
+          }
+        ]
+      }
+    ],
+    "name": "Craghorn",
+    "rarity": {
+      "color": "#4ab500",
+      "label": "Uncommon"
+    },
+    "sourceUrl": "https://batodex.com/monsters/alpinine",
+    "tier": 2,
+    "types": [
+      {
+        "color": "#6cb645",
+        "id": "grass",
+        "name": "Grass"
+      },
+      {
+        "color": "#a47c41",
+        "id": "rock",
+        "name": "Rock"
+      }
+    ]
+  },
+  {
+    "ability": {
+      "byLevel": {
+        "1": "Knockout self",
+        "2": "Knockout self",
+        "3": "Knockout self",
+        "4": "Knockout self"
+      },
+      "description": "Knockout self",
+      "trigger": "On Cast"
+    },
+    "cost": 25,
+    "id": "galvanade",
+    "keywords": [
+      {
+        "color": "#3c3061",
+        "description": "Cannot trigger anymore for this battle",
+        "id": "knockout",
+        "name": "Knockout"
+      }
+    ],
+    "levels": [
+      {
+        "cooldown": 4.5,
+        "level": 1,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#e7c61c",
+            "key": "shock",
+            "label": "Shock",
+            "value": 25
+          }
+        ]
+      },
+      {
+        "cooldown": 4.5,
+        "level": 2,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#e7c61c",
+            "key": "shock",
+            "label": "Shock",
+            "value": 50
+          }
+        ]
+      },
+      {
+        "cooldown": 4.5,
+        "level": 3,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#e7c61c",
+            "key": "shock",
+            "label": "Shock",
+            "value": 75
+          }
+        ]
+      },
+      {
+        "cooldown": 4.5,
+        "level": 4,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#e7c61c",
+            "key": "shock",
+            "label": "Shock",
+            "value": 300
+          }
+        ]
+      }
+    ],
+    "name": "Electranade",
+    "rarity": {
+      "color": "#4ab500",
+      "label": "Uncommon"
+    },
+    "sourceUrl": "https://batodex.com/monsters/galvanade",
+    "tier": 2,
+    "types": [
+      {
+        "color": "#cfbf32",
+        "id": "electric",
+        "name": "Electric"
+      }
+    ]
+  },
+  {
+    "ability": {
+      "byLevel": {
+        "1": "Trigger this",
+        "2": "Trigger this",
+        "3": "Trigger this",
+        "4": "Trigger this"
+      },
+      "description": "Trigger this",
+      "trigger": "On Battle Start"
+    },
+    "cost": 25,
+    "id": "frizzly",
+    "keywords": [],
+    "levels": [
+      {
+        "cooldown": 7,
+        "level": 1,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 1
+          },
+          {
+            "color": "#e7c61c",
+            "key": "shock",
+            "label": "Shock",
+            "value": 8
+          }
+        ]
+      },
+      {
+        "cooldown": 7,
+        "level": 2,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 1
+          },
+          {
+            "color": "#e7c61c",
+            "key": "shock",
+            "label": "Shock",
+            "value": 16
+          }
+        ]
+      },
+      {
+        "cooldown": 7,
+        "level": 3,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 1
+          },
+          {
+            "color": "#e7c61c",
+            "key": "shock",
+            "label": "Shock",
+            "value": 24
+          }
+        ]
+      },
+      {
+        "cooldown": 7,
+        "level": 4,
+        "multicast": 2,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 1
+          },
+          {
+            "color": "#e7c61c",
+            "key": "shock",
+            "label": "Shock",
+            "value": 48
+          }
+        ]
+      }
+    ],
+    "name": "Frizzly",
+    "rarity": {
+      "color": "#4ab500",
+      "label": "Uncommon"
+    },
+    "sourceUrl": "https://batodex.com/monsters/frizzly",
+    "tier": 2,
+    "types": [
+      {
+        "color": "#cfbf32",
+        "id": "electric",
+        "name": "Electric"
+      }
+    ]
+  },
+  {
+    "ability": {
+      "byLevel": {
+        "1": "+20 Sell Value permanently",
+        "2": "+40 Sell Value permanently",
+        "3": "+60 Sell Value permanently",
+        "4": "+240 Sell Value permanently"
+      },
+      "description": "+20 Sell Value permanently",
+      "trigger": "On Battle Start"
+    },
+    "cost": 20,
+    "id": "gildshell",
+    "keywords": [],
+    "levels": [
+      {
+        "cooldown": 2,
+        "level": 1,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 1
+          }
+        ]
+      },
+      {
+        "cooldown": 2,
+        "level": 2,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 1
+          }
+        ]
+      },
+      {
+        "cooldown": 2,
+        "level": 3,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 1
+          }
+        ]
+      },
+      {
+        "cooldown": 2,
+        "level": 4,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 100
+          }
+        ]
+      }
+    ],
+    "name": "Gildshell",
+    "rarity": {
+      "color": "#4ab500",
+      "label": "Uncommon"
+    },
+    "sourceUrl": "https://batodex.com/monsters/gildshell",
+    "tier": 2,
+    "types": [
+      {
+        "color": "#a2a53c",
+        "id": "bug",
+        "name": "Bug"
+      }
+    ]
+  },
+  {
+    "ability": {
+      "byLevel": {
+        "1": "Adjacent Toxic allies gain +2 Poison for this battle",
+        "2": "Adjacent Toxic allies gain +4 Poison for this battle",
+        "3": "Adjacent Toxic allies gain +6 Poison for this battle",
+        "4": "Adjacent Toxic allies gain +12 Poison for this battle"
+      },
+      "description": "Adjacent Toxic allies gain +2 Poison for this battle",
+      "trigger": "On Cast"
+    },
+    "cost": 25,
+    "id": "noxnimbus",
+    "keywords": [],
+    "levels": [
+      {
+        "cooldown": 4,
+        "level": 1,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#7b57a1",
+            "key": "poison",
+            "label": "Poison",
+            "value": 1
+          }
+        ]
+      },
+      {
+        "cooldown": 4,
+        "level": 2,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#7b57a1",
+            "key": "poison",
+            "label": "Poison",
+            "value": 1
+          }
+        ]
+      },
+      {
+        "cooldown": 4,
+        "level": 3,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#7b57a1",
+            "key": "poison",
+            "label": "Poison",
+            "value": 1
+          }
+        ]
+      },
+      {
+        "cooldown": 4,
+        "level": 4,
+        "multicast": 2,
+        "stats": [
+          {
+            "color": "#7b57a1",
+            "key": "poison",
+            "label": "Poison",
+            "value": 1
+          }
+        ]
+      }
+    ],
+    "name": "Noxnimbus",
+    "rarity": {
+      "color": "#4ab500",
+      "label": "Uncommon"
+    },
+    "sourceUrl": "https://batodex.com/monsters/noxnimbus",
+    "tier": 2,
+    "types": [
+      {
+        "color": "#7b57a1",
+        "id": "toxic",
+        "name": "Toxic"
+      }
+    ]
+  },
+  {
+    "ability": {
+      "byLevel": {
+        "1": "Gain $1",
+        "2": "Gain $1",
+        "3": "Gain $1",
+        "4": "Gain $2"
+      },
+      "description": "Gain $1",
+      "trigger": "On Cast"
+    },
+    "cost": 30,
+    "id": "plunderbird",
+    "keywords": [],
+    "levels": [
+      {
+        "cooldown": 5,
+        "level": 1,
+        "multicast": 2,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 1
+          },
+          {
+            "color": "#578ac9",
+            "key": "heal",
+            "label": "Heal",
+            "value": 25
+          }
+        ]
+      },
+      {
+        "cooldown": 5,
+        "level": 2,
+        "multicast": 3,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 1
+          },
+          {
+            "color": "#578ac9",
+            "key": "heal",
+            "label": "Heal",
+            "value": 35
+          }
+        ]
+      },
+      {
+        "cooldown": 5,
+        "level": 3,
+        "multicast": 4,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 1
+          },
+          {
+            "color": "#578ac9",
+            "key": "heal",
+            "label": "Heal",
+            "value": 55
+          }
+        ]
+      },
+      {
+        "cooldown": 5,
+        "level": 4,
+        "multicast": 8,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 1
+          },
+          {
+            "color": "#578ac9",
+            "key": "heal",
+            "label": "Heal",
+            "value": 55
+          }
+        ]
+      }
+    ],
+    "name": "Plunderbird",
+    "rarity": {
+      "color": "#4ab500",
+      "label": "Uncommon"
+    },
+    "sourceUrl": "https://batodex.com/monsters/plunderbird",
+    "tier": 2,
+    "types": [
+      {
+        "color": "#578ac9",
+        "id": "water",
+        "name": "Water"
+      },
+      {
+        "color": "#a4c7ed",
+        "id": "flying",
+        "name": "Flying"
+      }
+    ]
+  },
+  {
+    "ability": {
+      "byLevel": {
+        "1": "Trigger this when adjacent Toxic allies trigger (Except other Puffloon)",
+        "2": "Trigger this when adjacent Toxic allies trigger (Except other Puffloon)",
+        "3": "Trigger this when adjacent Toxic allies trigger (Except other Puffloon)",
+        "4": "Trigger this when adjacent Toxic allies trigger (Except other Puffloon)"
+      },
+      "description": "Trigger this when adjacent Toxic allies trigger (Except other Puffloon)",
+      "trigger": null
+    },
+    "cost": 30,
+    "id": "puffloon",
+    "keywords": [],
+    "levels": [
+      {
+        "cooldown": 10,
+        "level": 1,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#578ac9",
+            "key": "heal",
+            "label": "Heal",
+            "value": 10
+          },
+          {
+            "color": "#7b57a1",
+            "key": "poison",
+            "label": "Poison",
+            "value": 1
+          }
+        ]
+      },
+      {
+        "cooldown": 10,
+        "level": 2,
+        "multicast": 2,
+        "stats": [
+          {
+            "color": "#578ac9",
+            "key": "heal",
+            "label": "Heal",
+            "value": 5
+          },
+          {
+            "color": "#7b57a1",
+            "key": "poison",
+            "label": "Poison",
+            "value": 1
+          }
+        ]
+      },
+      {
+        "cooldown": 10,
+        "level": 3,
+        "multicast": 3,
+        "stats": [
+          {
+            "color": "#578ac9",
+            "key": "heal",
+            "label": "Heal",
+            "value": 5
+          },
+          {
+            "color": "#7b57a1",
+            "key": "poison",
+            "label": "Poison",
+            "value": 1
+          }
+        ]
+      },
+      {
+        "cooldown": 10,
+        "level": 4,
+        "multicast": 12,
+        "stats": [
+          {
+            "color": "#578ac9",
+            "key": "heal",
+            "label": "Heal",
+            "value": 5
+          },
+          {
+            "color": "#7b57a1",
+            "key": "poison",
+            "label": "Poison",
+            "value": 1
+          }
+        ]
+      }
+    ],
+    "name": "Puffloon",
+    "rarity": {
+      "color": "#4ab500",
+      "label": "Uncommon"
+    },
+    "sourceUrl": "https://batodex.com/monsters/puffloon",
+    "tier": 2,
+    "types": [
+      {
+        "color": "#578ac9",
+        "id": "water",
+        "name": "Water"
+      },
+      {
+        "color": "#7b57a1",
+        "id": "toxic",
+        "name": "Toxic"
+      }
+    ]
+  },
+  {
+    "ability": {
+      "byLevel": {
+        "1": "Knockout self",
+        "2": "Knockout self",
+        "3": "Knockout self",
+        "4": "Knockout self"
+      },
+      "description": "Knockout self",
+      "trigger": "On Cast"
+    },
+    "cost": 25,
+    "id": "infernade",
+    "keywords": [
+      {
+        "color": "#3c3061",
+        "description": "Cannot trigger anymore for this battle",
+        "id": "knockout",
+        "name": "Knockout"
+      }
+    ],
+    "levels": [
+      {
+        "cooldown": 4.5,
+        "level": 1,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ed6b3a",
+            "key": "burn",
+            "label": "Burn",
+            "value": 20
+          }
+        ]
+      },
+      {
+        "cooldown": 4.5,
+        "level": 2,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ed6b3a",
+            "key": "burn",
+            "label": "Burn",
+            "value": 40
+          }
+        ]
+      },
+      {
+        "cooldown": 4.5,
+        "level": 3,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ed6b3a",
+            "key": "burn",
+            "label": "Burn",
+            "value": 60
+          }
+        ]
+      },
+      {
+        "cooldown": 4.5,
+        "level": 4,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ed6b3a",
+            "key": "burn",
+            "label": "Burn",
+            "value": 240
+          }
+        ]
+      }
+    ],
+    "name": "Pyronade",
+    "rarity": {
+      "color": "#4ab500",
+      "label": "Uncommon"
+    },
+    "sourceUrl": "https://batodex.com/monsters/infernade",
+    "tier": 2,
+    "types": [
+      {
+        "color": "#ed6b3a",
+        "id": "fire",
+        "name": "Fire"
+      }
+    ]
+  },
+  {
+    "ability": {
+      "byLevel": {
+        "1": "After you buy a Bug monster, this gains +10% Cooldown Speed",
+        "2": "After you buy a Bug monster, this gains +20% Cooldown Speed",
+        "3": "After you buy a Bug monster, this gains +30% Cooldown Speed",
+        "4": "After you buy a Bug monster, this gains +60% Cooldown Speed"
+      },
+      "description": "After you buy a Bug monster, this gains +10% Cooldown Speed",
+      "trigger": null
+    },
+    "cost": 30,
+    "id": "shogapede",
+    "keywords": [],
+    "levels": [
+      {
+        "cooldown": 5,
+        "level": 1,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#7b57a1",
+            "key": "poison",
+            "label": "Poison",
+            "value": 6
+          }
+        ]
+      },
+      {
+        "cooldown": 5,
+        "level": 2,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#7b57a1",
+            "key": "poison",
+            "label": "Poison",
+            "value": 6
+          }
+        ]
+      },
+      {
+        "cooldown": 5,
+        "level": 3,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#7b57a1",
+            "key": "poison",
+            "label": "Poison",
+            "value": 6
+          }
+        ]
+      },
+      {
+        "cooldown": 5,
+        "level": 4,
+        "multicast": 2,
+        "stats": [
+          {
+            "color": "#7b57a1",
+            "key": "poison",
+            "label": "Poison",
+            "value": 12
+          }
+        ]
+      }
+    ],
+    "name": "Shogapede",
+    "rarity": {
+      "color": "#4ab500",
+      "label": "Uncommon"
+    },
+    "sourceUrl": "https://batodex.com/monsters/shogapede",
+    "tier": 2,
+    "types": [
+      {
+        "color": "#a2a53c",
+        "id": "bug",
+        "name": "Bug"
+      },
+      {
+        "color": "#7b57a1",
+        "id": "toxic",
+        "name": "Toxic"
+      }
+    ]
+  },
+  {
+    "ability": {
+      "byLevel": {
+        "1": "Trigger this",
+        "2": "Trigger this",
+        "3": "Trigger this",
+        "4": "Trigger this"
+      },
+      "description": "Trigger this",
+      "trigger": "On Battle Start"
+    },
+    "cost": 20,
+    "id": "tortress",
+    "keywords": [],
+    "levels": [
+      {
+        "cooldown": 14,
+        "level": 1,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#a47c41",
+            "key": "shield",
+            "label": "Shield",
+            "value": 250
+          }
+        ]
+      },
+      {
+        "cooldown": 14,
+        "level": 2,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#a47c41",
+            "key": "shield",
+            "label": "Shield",
+            "value": 500
+          }
+        ]
+      },
+      {
+        "cooldown": 14,
+        "level": 3,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#a47c41",
+            "key": "shield",
+            "label": "Shield",
+            "value": 750
+          }
+        ]
+      },
+      {
+        "cooldown": 14,
+        "level": 4,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#a47c41",
+            "key": "shield",
+            "label": "Shield",
+            "value": 3000
+          }
+        ]
+      }
+    ],
+    "name": "Tortress",
+    "rarity": {
+      "color": "#4ab500",
+      "label": "Uncommon"
+    },
+    "sourceUrl": "https://batodex.com/monsters/tortress",
+    "tier": 2,
+    "types": [
+      {
+        "color": "#a47c41",
+        "id": "rock",
+        "name": "Rock"
+      }
+    ]
+  },
+  {
+    "ability": null,
+    "cost": 25,
+    "id": "aristobat",
+    "keywords": [],
+    "levels": [
+      {
+        "cooldown": 4,
+        "level": 1,
+        "multicast": 2,
+        "stats": [
+          {
+            "color": "#7b57a1",
+            "key": "poison",
+            "label": "Poison",
+            "value": 4
+          }
+        ]
+      },
+      {
+        "cooldown": 4,
+        "level": 2,
+        "multicast": 3,
+        "stats": [
+          {
+            "color": "#7b57a1",
+            "key": "poison",
+            "label": "Poison",
+            "value": 6
+          }
+        ]
+      },
+      {
+        "cooldown": 4,
+        "level": 3,
+        "multicast": 4,
+        "stats": [
+          {
+            "color": "#7b57a1",
+            "key": "poison",
+            "label": "Poison",
+            "value": 8
+          }
+        ]
+      },
+      {
+        "cooldown": 4,
+        "level": 4,
+        "multicast": 8,
+        "stats": [
+          {
+            "color": "#7b57a1",
+            "key": "poison",
+            "label": "Poison",
+            "value": 16
+          }
+        ]
+      }
+    ],
+    "name": "Aristobat",
+    "rarity": {
+      "color": "#0084bd",
+      "label": "Rare"
+    },
+    "sourceUrl": "https://batodex.com/monsters/aristobat",
+    "tier": 3,
+    "types": [
+      {
+        "color": "#7b57a1",
+        "id": "toxic",
+        "name": "Toxic"
+      },
+      {
+        "color": "#a4c7ed",
+        "id": "flying",
+        "name": "Flying"
+      }
+    ]
+  },
+  {
+    "ability": {
+      "byLevel": {
+        "1": "Adjacent Water allies gain +20 Heal permanently",
+        "2": "Adjacent Water allies gain +40 Heal permanently",
+        "3": "Adjacent Water allies gain +60 Heal permanently",
+        "4": "Adjacent Water allies gain +180 Heal permanently"
+      },
+      "description": "Adjacent Water allies gain +20 Heal permanently",
+      "trigger": "On Battle Start"
+    },
+    "cost": 40,
+    "id": "aster",
+    "keywords": [],
+    "levels": [
+      {
+        "cooldown": 3,
+        "level": 1,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#578ac9",
+            "key": "heal",
+            "label": "Heal",
+            "value": 40
+          }
+        ]
+      },
+      {
+        "cooldown": 3,
+        "level": 2,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#578ac9",
+            "key": "heal",
+            "label": "Heal",
+            "value": 40
+          }
+        ]
+      },
+      {
+        "cooldown": 3,
+        "level": 3,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#578ac9",
+            "key": "heal",
+            "label": "Heal",
+            "value": 40
+          }
+        ]
+      },
+      {
+        "cooldown": 3,
+        "level": 4,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#578ac9",
+            "key": "heal",
+            "label": "Heal",
+            "value": 160
+          }
+        ]
+      }
+    ],
+    "name": "Aster",
+    "rarity": {
+      "color": "#0084bd",
+      "label": "Rare"
+    },
+    "sourceUrl": "https://batodex.com/monsters/aster",
+    "tier": 3,
+    "types": [
+      {
+        "color": "#578ac9",
+        "id": "water",
+        "name": "Water"
+      }
+    ]
+  },
+  {
+    "ability": {
+      "byLevel": {
+        "1": "Give adjacent allies Protect 1",
+        "2": "Give adjacent allies Protect 1",
+        "3": "Give adjacent allies Protect 1",
+        "4": "Give adjacent allies Protect 1"
+      },
+      "description": "Give adjacent allies Protect 1",
+      "trigger": "On Cast"
+    },
+    "cost": 25,
+    "id": "cherubble",
+    "keywords": [
+      {
+        "color": "#f1a73c",
+        "description": "Prevents Knockout. Protect decreases by 1 when triggered",
+        "id": "protect",
+        "name": "Protect"
+      }
+    ],
+    "levels": [
+      {
+        "cooldown": 4,
+        "level": 1,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#a47c41",
+            "key": "shield",
+            "label": "Shield",
+            "value": 100
+          }
+        ]
+      },
+      {
+        "cooldown": 2,
+        "level": 2,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#a47c41",
+            "key": "shield",
+            "label": "Shield",
+            "value": 100
+          }
+        ]
+      },
+      {
+        "cooldown": 1.3,
+        "level": 3,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#a47c41",
+            "key": "shield",
+            "label": "Shield",
+            "value": 100
+          }
+        ]
+      },
+      {
+        "cooldown": 1.3,
+        "level": 4,
+        "multicast": 4,
+        "stats": [
+          {
+            "color": "#a47c41",
+            "key": "shield",
+            "label": "Shield",
+            "value": 100
+          }
+        ]
+      }
+    ],
+    "name": "Cherubble",
+    "rarity": {
+      "color": "#0084bd",
+      "label": "Rare"
+    },
+    "sourceUrl": "https://batodex.com/monsters/cherubble",
+    "tier": 3,
+    "types": [
+      {
+        "color": "#a47c41",
+        "id": "rock",
+        "name": "Rock"
+      }
+    ]
+  },
+  {
+    "ability": {
+      "byLevel": {
+        "1": "Trigger the Bug ally above",
+        "2": "Trigger the Bug ally above",
+        "3": "Trigger the Bug ally above",
+        "4": "Trigger the Bug ally above"
+      },
+      "description": "Trigger the Bug ally above",
+      "trigger": "On Cast"
+    },
+    "cost": 25,
+    "id": "cicadence",
+    "keywords": [],
+    "levels": [
+      {
+        "cooldown": 6,
+        "level": 1,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 100
+          }
+        ]
+      },
+      {
+        "cooldown": 3,
+        "level": 2,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 100
+          }
+        ]
+      },
+      {
+        "cooldown": 2,
+        "level": 3,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 100
+          }
+        ]
+      },
+      {
+        "cooldown": 2,
+        "level": 4,
+        "multicast": 2,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 200
+          }
+        ]
+      }
+    ],
+    "name": "Cicadence",
+    "rarity": {
+      "color": "#0084bd",
+      "label": "Rare"
+    },
+    "sourceUrl": "https://batodex.com/monsters/cicadence",
+    "tier": 3,
+    "types": [
+      {
+        "color": "#a2a53c",
+        "id": "bug",
+        "name": "Bug"
+      }
+    ]
+  },
+  {
+    "ability": {
+      "byLevel": {
+        "1": "Knockout all Common allies and enemies",
+        "2": "Knockout all Common allies and enemies",
+        "3": "Knockout all Common allies and enemies",
+        "4": "Knockout all Common allies and enemies"
+      },
+      "description": "Knockout all Common allies and enemies",
+      "trigger": "On Cast"
+    },
+    "cost": 25,
+    "id": "dirgefin",
+    "keywords": [
+      {
+        "color": "#3c3061",
+        "description": "Cannot trigger anymore for this battle",
+        "id": "knockout",
+        "name": "Knockout"
+      }
+    ],
+    "levels": [
+      {
+        "cooldown": 9,
+        "level": 1,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 50
+          },
+          {
+            "color": "#578ac9",
+            "key": "heal",
+            "label": "Heal",
+            "value": 100
+          }
+        ]
+      },
+      {
+        "cooldown": 4.5,
+        "level": 2,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 50
+          },
+          {
+            "color": "#578ac9",
+            "key": "heal",
+            "label": "Heal",
+            "value": 100
+          }
+        ]
+      },
+      {
+        "cooldown": 3,
+        "level": 3,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 50
+          },
+          {
+            "color": "#578ac9",
+            "key": "heal",
+            "label": "Heal",
+            "value": 100
+          }
+        ]
+      },
+      {
+        "cooldown": 3,
+        "level": 4,
+        "multicast": 2,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 100
+          },
+          {
+            "color": "#578ac9",
+            "key": "heal",
+            "label": "Heal",
+            "value": 200
+          }
+        ]
+      }
+    ],
+    "name": "Dirgefin",
+    "rarity": {
+      "color": "#0084bd",
+      "label": "Rare"
+    },
+    "sourceUrl": "https://batodex.com/monsters/dirgefin",
+    "tier": 3,
+    "types": [
+      {
+        "color": "#3c3061",
+        "id": "ghost",
+        "name": "Ghost"
+      },
+      {
+        "color": "#578ac9",
+        "id": "water",
+        "name": "Water"
+      }
+    ]
+  },
+  {
+    "ability": {
+      "byLevel": {
+        "1": "Charge ally to the left by 1 second(s) (Dracana cannot receive charge)",
+        "2": "Charge ally to the left by 2 second(s) (Dracana cannot receive charge)",
+        "3": "Charge ally to the left by 3 second(s) (Dracana cannot receive charge)",
+        "4": "Charge ally to the left by 18 second(s) (Dracana cannot receive charge)"
+      },
+      "description": "Charge ally to the left by 1 second(s) (Dracana cannot receive charge)",
+      "trigger": "On Cast"
+    },
+    "cost": 30,
+    "id": "dracana",
+    "keywords": [
+      {
+        "color": "#79aed0",
+        "description": "Progresses cooldown timer",
+        "id": "charge",
+        "name": "Charge"
+      }
+    ],
+    "levels": [
+      {
+        "cooldown": 3,
+        "level": 1,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 5
+          }
+        ]
+      },
+      {
+        "cooldown": 3,
+        "level": 2,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 10
+          }
+        ]
+      },
+      {
+        "cooldown": 3,
+        "level": 3,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 15
+          }
+        ]
+      },
+      {
+        "cooldown": 3,
+        "level": 4,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 45
+          }
+        ]
+      }
+    ],
+    "name": "Dracana",
+    "rarity": {
+      "color": "#0084bd",
+      "label": "Rare"
+    },
+    "sourceUrl": "https://batodex.com/monsters/dracana",
+    "tier": 3,
+    "types": [
+      {
+        "color": "#5260a9",
+        "id": "dragon",
+        "name": "Dragon"
+      }
+    ]
+  },
+  {
+    "ability": {
+      "byLevel": {
+        "1": "Adjacent Common allies have +33% Cooldown Speed",
+        "2": "Adjacent Common allies have +67% Cooldown Speed",
+        "3": "Adjacent Common allies have +100% Cooldown Speed",
+        "4": "Adjacent Common allies have +300% Cooldown Speed"
+      },
+      "description": "Adjacent Common allies have +33% Cooldown Speed",
+      "trigger": "Ongoing"
+    },
+    "cost": 25,
+    "id": "formiqueen",
+    "keywords": [],
+    "levels": [
+      {
+        "cooldown": 4,
+        "level": 1,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 60
+          }
+        ]
+      },
+      {
+        "cooldown": 4,
+        "level": 2,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 120
+          }
+        ]
+      },
+      {
+        "cooldown": 4,
+        "level": 3,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 180
+          }
+        ]
+      },
+      {
+        "cooldown": 4,
+        "level": 4,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 720
+          }
+        ]
+      }
+    ],
+    "name": "Formiqueen",
+    "rarity": {
+      "color": "#0084bd",
+      "label": "Rare"
+    },
+    "sourceUrl": "https://batodex.com/monsters/formiqueen",
+    "tier": 3,
+    "types": [
+      {
+        "color": "#a2a53c",
+        "id": "bug",
+        "name": "Bug"
+      }
+    ]
+  },
+  {
+    "ability": null,
+    "cost": 25,
+    "id": "humbolt",
+    "keywords": [],
+    "levels": [
+      {
+        "cooldown": 4,
+        "level": 1,
+        "multicast": 2,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 30
+          },
+          {
+            "color": "#e7c61c",
+            "key": "shock",
+            "label": "Shock",
+            "value": 1
+          }
+        ]
+      },
+      {
+        "cooldown": 4,
+        "level": 2,
+        "multicast": 3,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 40
+          },
+          {
+            "color": "#e7c61c",
+            "key": "shock",
+            "label": "Shock",
+            "value": 1
+          }
+        ]
+      },
+      {
+        "cooldown": 4,
+        "level": 3,
+        "multicast": 4,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 45
+          },
+          {
+            "color": "#e7c61c",
+            "key": "shock",
+            "label": "Shock",
+            "value": 1
+          }
+        ]
+      },
+      {
+        "cooldown": 4,
+        "level": 4,
+        "multicast": 8,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 45
+          },
+          {
+            "color": "#e7c61c",
+            "key": "shock",
+            "label": "Shock",
+            "value": 1
+          }
+        ]
+      }
+    ],
+    "name": "Humbolt",
+    "rarity": {
+      "color": "#0084bd",
+      "label": "Rare"
+    },
+    "sourceUrl": "https://batodex.com/monsters/humbolt",
+    "tier": 3,
+    "types": [
+      {
+        "color": "#cfbf32",
+        "id": "electric",
+        "name": "Electric"
+      },
+      {
+        "color": "#a4c7ed",
+        "id": "flying",
+        "name": "Flying"
+      }
+    ]
+  },
+  {
+    "ability": {
+      "byLevel": {
+        "1": "Evolve",
+        "2": "Evolve",
+        "3": "Evolve",
+        "4": "Evolve"
+      },
+      "description": "Evolve",
+      "trigger": "On Victory"
+    },
+    "cost": 40,
+    "id": "ignit",
+    "keywords": [],
+    "levels": [
+      {
+        "cooldown": 8,
+        "level": 1,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ed6b3a",
+            "key": "burn",
+            "label": "Burn",
+            "value": 1
+          }
+        ]
+      },
+      {
+        "cooldown": 8,
+        "level": 2,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ed6b3a",
+            "key": "burn",
+            "label": "Burn",
+            "value": 2
+          }
+        ]
+      },
+      {
+        "cooldown": 8,
+        "level": 3,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ed6b3a",
+            "key": "burn",
+            "label": "Burn",
+            "value": 3
+          }
+        ]
+      },
+      {
+        "cooldown": 1,
+        "level": 4,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ed6b3a",
+            "key": "burn",
+            "label": "Burn",
+            "value": 3
+          }
+        ]
+      }
+    ],
+    "name": "Ignit",
+    "rarity": {
+      "color": "#0084bd",
+      "label": "Rare"
+    },
+    "sourceUrl": "https://batodex.com/monsters/ignit",
+    "tier": 3,
+    "types": [
+      {
+        "color": "#ed6b3a",
+        "id": "fire",
+        "name": "Fire"
+      }
+    ]
+  },
+  {
+    "ability": {
+      "byLevel": {
+        "1": "Charge adjacent Electric allies by 1 second(s) (Ironcore cannot receive charge)",
+        "2": "Charge adjacent Electric allies by 2 second(s) (Ironcore cannot receive charge)",
+        "3": "Charge adjacent Electric allies by 3 second(s) (Ironcore cannot receive charge)",
+        "4": "Charge adjacent Electric allies by 6 second(s) (Ironcore cannot receive charge)"
+      },
+      "description": "Charge adjacent Electric allies by 1 second(s) (Ironcore cannot receive charge)",
+      "trigger": "On Cast"
+    },
+    "cost": 40,
+    "id": "ironcore",
+    "keywords": [
+      {
+        "color": "#79aed0",
+        "description": "Progresses cooldown timer",
+        "id": "charge",
+        "name": "Charge"
+      }
+    ],
+    "levels": [
+      {
+        "cooldown": 2,
+        "level": 1,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 30
+          }
+        ]
+      },
+      {
+        "cooldown": 2,
+        "level": 2,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 30
+          }
+        ]
+      },
+      {
+        "cooldown": 2,
+        "level": 3,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 30
+          }
+        ]
+      },
+      {
+        "cooldown": 2,
+        "level": 4,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 30
+          }
+        ]
+      }
+    ],
+    "name": "Ironcore",
+    "rarity": {
+      "color": "#0084bd",
+      "label": "Rare"
+    },
+    "sourceUrl": "https://batodex.com/monsters/ironcore",
+    "tier": 3,
+    "types": [
+      {
+        "color": "#79aed0",
+        "id": "steel",
+        "name": "Steel"
+      }
+    ]
+  },
+  {
+    "ability": {
+      "byLevel": {
+        "1": "Has additional Damage equal to 15 times this monster's Burn",
+        "2": "Has additional Damage equal to 30 times this monster's Burn",
+        "3": "Has additional Damage equal to 45 times this monster's Burn",
+        "4": "Has additional Damage equal to 90 times this monster's Burn"
+      },
+      "description": "Has additional Damage equal to 15 times this monster's Burn",
+      "trigger": "Ongoing"
+    },
+    "cost": 30,
+    "id": "lignite",
+    "keywords": [],
+    "levels": [
+      {
+        "cooldown": 4,
+        "level": 1,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ed6b3a",
+            "key": "burn",
+            "label": "Burn",
+            "value": 3
+          }
+        ]
+      },
+      {
+        "cooldown": 4,
+        "level": 2,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ed6b3a",
+            "key": "burn",
+            "label": "Burn",
+            "value": 3
+          }
+        ]
+      },
+      {
+        "cooldown": 4,
+        "level": 3,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ed6b3a",
+            "key": "burn",
+            "label": "Burn",
+            "value": 3
+          }
+        ]
+      },
+      {
+        "cooldown": 4,
+        "level": 4,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ed6b3a",
+            "key": "burn",
+            "label": "Burn",
+            "value": 3
+          }
+        ]
+      }
+    ],
+    "name": "Lignite",
+    "rarity": {
+      "color": "#0084bd",
+      "label": "Rare"
+    },
+    "sourceUrl": "https://batodex.com/monsters/lignite",
+    "tier": 3,
+    "types": [
+      {
+        "color": "#ed6b3a",
+        "id": "fire",
+        "name": "Fire"
+      }
+    ]
+  },
+  {
+    "ability": {
+      "byLevel": {
+        "1": "Give the ally above +2 Burn permanently",
+        "2": "Give the ally above +4 Burn permanently",
+        "3": "Give the ally above +6 Burn permanently",
+        "4": "Give the ally above +24 Burn permanently"
+      },
+      "description": "Give the ally above +2 Burn permanently",
+      "trigger": "On Cast"
+    },
+    "cost": 30,
+    "id": "magmalith",
+    "keywords": [],
+    "levels": [
+      {
+        "cooldown": 8,
+        "level": 1,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ed6b3a",
+            "key": "burn",
+            "label": "Burn",
+            "value": 5
+          }
+        ]
+      },
+      {
+        "cooldown": 8,
+        "level": 2,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ed6b3a",
+            "key": "burn",
+            "label": "Burn",
+            "value": 10
+          }
+        ]
+      },
+      {
+        "cooldown": 8,
+        "level": 3,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ed6b3a",
+            "key": "burn",
+            "label": "Burn",
+            "value": 15
+          }
+        ]
+      },
+      {
+        "cooldown": 8,
+        "level": 4,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ed6b3a",
+            "key": "burn",
+            "label": "Burn",
+            "value": 30
+          }
+        ]
+      }
+    ],
+    "name": "Magmalith",
+    "rarity": {
+      "color": "#0084bd",
+      "label": "Rare"
+    },
+    "sourceUrl": "https://batodex.com/monsters/magmalith",
+    "tier": 3,
+    "types": [
+      {
+        "color": "#ed6b3a",
+        "id": "fire",
+        "name": "Fire"
+      }
+    ]
+  },
+  {
+    "ability": {
+      "byLevel": {
+        "1": "Give the ally above +2 Poison permanently",
+        "2": "Give the ally above +4 Poison permanently",
+        "3": "Give the ally above +6 Poison permanently",
+        "4": "Give the ally above +24 Poison permanently"
+      },
+      "description": "Give the ally above +2 Poison permanently",
+      "trigger": "On Cast"
+    },
+    "cost": 30,
+    "id": "noxalith",
+    "keywords": [],
+    "levels": [
+      {
+        "cooldown": 8,
+        "level": 1,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#7b57a1",
+            "key": "poison",
+            "label": "Poison",
+            "value": 5
+          }
+        ]
+      },
+      {
+        "cooldown": 8,
+        "level": 2,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#7b57a1",
+            "key": "poison",
+            "label": "Poison",
+            "value": 10
+          }
+        ]
+      },
+      {
+        "cooldown": 8,
+        "level": 3,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#7b57a1",
+            "key": "poison",
+            "label": "Poison",
+            "value": 15
+          }
+        ]
+      },
+      {
+        "cooldown": 8,
+        "level": 4,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#7b57a1",
+            "key": "poison",
+            "label": "Poison",
+            "value": 30
+          }
+        ]
+      }
+    ],
+    "name": "Noxalith",
+    "rarity": {
+      "color": "#0084bd",
+      "label": "Rare"
+    },
+    "sourceUrl": "https://batodex.com/monsters/noxalith",
+    "tier": 3,
+    "types": [
+      {
+        "color": "#7b57a1",
+        "id": "toxic",
+        "name": "Toxic"
+      }
+    ]
+  },
+  {
+    "ability": {
+      "byLevel": {
+        "1": "When you receive shield, this gains Damage for this battle equal to 10% of the amount shielded.",
+        "2": "When you receive shield, this gains Damage for this battle equal to 20% of the amount shielded.",
+        "3": "When you receive shield, this gains Damage for this battle equal to 30% of the amount shielded.",
+        "4": "When you receive shield, this gains Damage for this battle equal to 120% of the amount shielded."
+      },
+      "description": "When you receive shield, this gains Damage for this battle equal to 10% of the amount shielded.",
+      "trigger": null
+    },
+    "cost": 35,
+    "id": "stalagrove",
+    "keywords": [],
+    "levels": [
+      {
+        "cooldown": 5.5,
+        "level": 1,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#a47c41",
+            "key": "shield",
+            "label": "Shield",
+            "value": 60
+          }
+        ]
+      },
+      {
+        "cooldown": 5.5,
+        "level": 2,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#a47c41",
+            "key": "shield",
+            "label": "Shield",
+            "value": 60
+          }
+        ]
+      },
+      {
+        "cooldown": 5.5,
+        "level": 3,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#a47c41",
+            "key": "shield",
+            "label": "Shield",
+            "value": 60
+          }
+        ]
+      },
+      {
+        "cooldown": 5.5,
+        "level": 4,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#a47c41",
+            "key": "shield",
+            "label": "Shield",
+            "value": 60
+          }
+        ]
+      }
+    ],
+    "name": "Stalagrove",
+    "rarity": {
+      "color": "#0084bd",
+      "label": "Rare"
+    },
+    "sourceUrl": "https://batodex.com/monsters/stalagrove",
+    "tier": 3,
+    "types": [
+      {
+        "color": "#6cb645",
+        "id": "grass",
+        "name": "Grass"
+      },
+      {
+        "color": "#a47c41",
+        "id": "rock",
+        "name": "Rock"
+      }
+    ]
+  },
+  {
+    "ability": {
+      "byLevel": {
+        "1": "When allies inflict Poison, this gains +4 Damage permanently",
+        "2": "When allies inflict Poison, this gains +8 Damage permanently",
+        "3": "When allies inflict Poison, this gains +12 Damage permanently",
+        "4": "When allies inflict Poison, this gains +48 Damage permanently"
+      },
+      "description": "When allies inflict Poison, this gains +4 Damage permanently",
+      "trigger": null
+    },
+    "cost": 35,
+    "id": "thorntail",
+    "keywords": [],
+    "levels": [
+      {
+        "cooldown": 6.5,
+        "level": 1,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 50
+          },
+          {
+            "color": "#7b57a1",
+            "key": "poison",
+            "label": "Poison",
+            "value": 1
+          }
+        ]
+      },
+      {
+        "cooldown": 6.5,
+        "level": 2,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 50
+          },
+          {
+            "color": "#7b57a1",
+            "key": "poison",
+            "label": "Poison",
+            "value": 1
+          }
+        ]
+      },
+      {
+        "cooldown": 6.5,
+        "level": 3,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 50
+          },
+          {
+            "color": "#7b57a1",
+            "key": "poison",
+            "label": "Poison",
+            "value": 1
+          }
+        ]
+      },
+      {
+        "cooldown": 6.5,
+        "level": 4,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 150
+          },
+          {
+            "color": "#7b57a1",
+            "key": "poison",
+            "label": "Poison",
+            "value": 1
+          }
+        ]
+      }
+    ],
+    "name": "Thorntail",
+    "rarity": {
+      "color": "#0084bd",
+      "label": "Rare"
+    },
+    "sourceUrl": "https://batodex.com/monsters/thorntail",
+    "tier": 3,
+    "types": [
+      {
+        "color": "#6cb645",
+        "id": "grass",
+        "name": "Grass"
+      },
+      {
+        "color": "#7b57a1",
+        "id": "toxic",
+        "name": "Toxic"
+      }
+    ]
+  },
+  {
+    "ability": {
+      "byLevel": {
+        "1": "Give the ally above +2 Shock permanently",
+        "2": "Give the ally above +4 Shock permanently",
+        "3": "Give the ally above +6 Shock permanently",
+        "4": "Give the ally above +24 Shock permanently"
+      },
+      "description": "Give the ally above +2 Shock permanently",
+      "trigger": "On Cast"
+    },
+    "cost": 30,
+    "id": "voltalith",
+    "keywords": [],
+    "levels": [
+      {
+        "cooldown": 8,
+        "level": 1,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#e7c61c",
+            "key": "shock",
+            "label": "Shock",
+            "value": 5
+          }
+        ]
+      },
+      {
+        "cooldown": 8,
+        "level": 2,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#e7c61c",
+            "key": "shock",
+            "label": "Shock",
+            "value": 10
+          }
+        ]
+      },
+      {
+        "cooldown": 8,
+        "level": 3,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#e7c61c",
+            "key": "shock",
+            "label": "Shock",
+            "value": 15
+          }
+        ]
+      },
+      {
+        "cooldown": 8,
+        "level": 4,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#e7c61c",
+            "key": "shock",
+            "label": "Shock",
+            "value": 30
+          }
+        ]
+      }
+    ],
+    "name": "Voltalith",
+    "rarity": {
+      "color": "#0084bd",
+      "label": "Rare"
+    },
+    "sourceUrl": "https://batodex.com/monsters/voltalith",
+    "tier": 3,
+    "types": [
+      {
+        "color": "#cfbf32",
+        "id": "electric",
+        "name": "Electric"
+      }
+    ]
+  },
+  {
+    "ability": {
+      "byLevel": {
+        "1": "Gain Shield equal to 1x the Shield of adjacent allies for this battle (Except other Aegistruct)",
+        "2": "Gain Shield equal to 2x the Shield of adjacent allies for this battle (Except other Aegistruct)",
+        "3": "Gain Shield equal to 3x the Shield of adjacent allies for this battle (Except other Aegistruct)",
+        "4": "Gain Shield equal to 12x the Shield of adjacent allies for this battle (Except other Aegistruct)"
+      },
+      "description": "Gain Shield equal to 1x the Shield of adjacent allies for this battle (Except other Aegistruct)",
+      "trigger": "On Battle Start"
+    },
+    "cost": 45,
+    "id": "aegistruct",
+    "keywords": [],
+    "levels": [
+      {
+        "cooldown": 8,
+        "level": 1,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#a47c41",
+            "key": "shield",
+            "label": "Shield",
+            "value": 150
+          }
+        ]
+      },
+      {
+        "cooldown": 8,
+        "level": 2,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#a47c41",
+            "key": "shield",
+            "label": "Shield",
+            "value": 150
+          }
+        ]
+      },
+      {
+        "cooldown": 8,
+        "level": 3,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#a47c41",
+            "key": "shield",
+            "label": "Shield",
+            "value": 150
+          }
+        ]
+      },
+      {
+        "cooldown": 4,
+        "level": 4,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#a47c41",
+            "key": "shield",
+            "label": "Shield",
+            "value": 150
+          }
+        ]
+      }
+    ],
+    "name": "Aegistruct",
+    "rarity": {
+      "color": "#a040a0",
+      "label": "Super Rare"
+    },
+    "sourceUrl": "https://batodex.com/monsters/aegistruct",
+    "tier": 4,
+    "types": [
+      {
+        "color": "#a47c41",
+        "id": "rock",
+        "name": "Rock"
+      }
+    ]
+  },
+  {
+    "ability": null,
+    "cost": 35,
+    "id": "blazewing",
+    "keywords": [],
+    "levels": [
+      {
+        "cooldown": 5,
+        "level": 1,
+        "multicast": 3,
+        "stats": [
+          {
+            "color": "#ed6b3a",
+            "key": "burn",
+            "label": "Burn",
+            "value": 5
+          }
+        ]
+      },
+      {
+        "cooldown": 5,
+        "level": 2,
+        "multicast": 5,
+        "stats": [
+          {
+            "color": "#ed6b3a",
+            "key": "burn",
+            "label": "Burn",
+            "value": 5
+          }
+        ]
+      },
+      {
+        "cooldown": 5,
+        "level": 3,
+        "multicast": 7,
+        "stats": [
+          {
+            "color": "#ed6b3a",
+            "key": "burn",
+            "label": "Burn",
+            "value": 5
+          }
+        ]
+      },
+      {
+        "cooldown": 5,
+        "level": 4,
+        "multicast": 28,
+        "stats": [
+          {
+            "color": "#ed6b3a",
+            "key": "burn",
+            "label": "Burn",
+            "value": 10
+          }
+        ]
+      }
+    ],
+    "name": "Blazewing",
+    "rarity": {
+      "color": "#a040a0",
+      "label": "Super Rare"
+    },
+    "sourceUrl": "https://batodex.com/monsters/blazewing",
+    "tier": 4,
+    "types": [
+      {
+        "color": "#ed6b3a",
+        "id": "fire",
+        "name": "Fire"
+      },
+      {
+        "color": "#a4c7ed",
+        "id": "flying",
+        "name": "Flying"
+      }
+    ]
+  },
+  {
+    "ability": {
+      "byLevel": {
+        "1": "Disable abilities of all Ongoing monsters in this row",
+        "2": "Disable abilities of all Ongoing monsters in this row",
+        "3": "Disable abilities of all Ongoing monsters in this row",
+        "4": "Disable abilities of all Ongoing monsters in this row"
+      },
+      "description": "Disable abilities of all Ongoing monsters in this row",
+      "trigger": "On Battle Start"
+    },
+    "cost": 30,
+    "id": "celestia",
+    "keywords": [],
+    "levels": [
+      {
+        "cooldown": 6.5,
+        "level": 1,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 130
+          }
+        ]
+      },
+      {
+        "cooldown": 6.5,
+        "level": 2,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 260
+          }
+        ]
+      },
+      {
+        "cooldown": 6.5,
+        "level": 3,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 390
+          }
+        ]
+      },
+      {
+        "cooldown": 6.5,
+        "level": 4,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 3120
+          }
+        ]
+      }
+    ],
+    "name": "Celestia",
+    "rarity": {
+      "color": "#a040a0",
+      "label": "Super Rare"
+    },
+    "sourceUrl": "https://batodex.com/monsters/celestia",
+    "tier": 4,
+    "types": [
+      {
+        "color": "#5260a9",
+        "id": "dragon",
+        "name": "Dragon"
+      }
+    ]
+  },
+  {
+    "ability": {
+      "byLevel": {
+        "1": "Whenever an ally inflicts Shock, Charge this by 1",
+        "2": "Whenever an ally inflicts Shock, Charge this by 2",
+        "3": "Whenever an ally inflicts Shock, Charge this by 3",
+        "4": "Whenever an ally inflicts Shock, Charge this by 3"
+      },
+      "description": "Whenever an ally inflicts Shock, Charge this by 1",
+      "trigger": null
+    },
+    "cost": 45,
+    "id": "clawnetic",
+    "keywords": [
+      {
+        "color": "#79aed0",
+        "description": "Progresses cooldown timer",
+        "id": "charge",
+        "name": "Charge"
+      }
+    ],
+    "levels": [
+      {
+        "cooldown": 3,
+        "level": 1,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 60
+          }
+        ]
+      },
+      {
+        "cooldown": 3,
+        "level": 2,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 60
+          }
+        ]
+      },
+      {
+        "cooldown": 3,
+        "level": 3,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 60
+          }
+        ]
+      },
+      {
+        "cooldown": 3,
+        "level": 4,
+        "multicast": 2,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 600
+          }
+        ]
+      }
+    ],
+    "name": "Clawnetic",
+    "rarity": {
+      "color": "#a040a0",
+      "label": "Super Rare"
+    },
+    "sourceUrl": "https://batodex.com/monsters/clawnetic",
+    "tier": 4,
+    "types": [
+      {
+        "color": "#79aed0",
+        "id": "steel",
+        "name": "Steel"
+      }
+    ]
+  },
+  {
+    "ability": {
+      "byLevel": {
+        "1": "Trigger this",
+        "2": "Trigger this",
+        "3": "Trigger this",
+        "4": "Trigger this"
+      },
+      "description": "Trigger this",
+      "trigger": "On Battle Start"
+    },
+    "cost": 45,
+    "id": "coalem",
+    "keywords": [],
+    "levels": [
+      {
+        "cooldown": 15,
+        "level": 1,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#a47c41",
+            "key": "shield",
+            "label": "Shield",
+            "value": 400
+          },
+          {
+            "color": "#ed6b3a",
+            "key": "burn",
+            "label": "Burn",
+            "value": 20
+          }
+        ]
+      },
+      {
+        "cooldown": 15,
+        "level": 2,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#a47c41",
+            "key": "shield",
+            "label": "Shield",
+            "value": 800
+          },
+          {
+            "color": "#ed6b3a",
+            "key": "burn",
+            "label": "Burn",
+            "value": 40
+          }
+        ]
+      },
+      {
+        "cooldown": 15,
+        "level": 3,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#a47c41",
+            "key": "shield",
+            "label": "Shield",
+            "value": 1200
+          },
+          {
+            "color": "#ed6b3a",
+            "key": "burn",
+            "label": "Burn",
+            "value": 60
+          }
+        ]
+      },
+      {
+        "cooldown": 5,
+        "level": 4,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#a47c41",
+            "key": "shield",
+            "label": "Shield",
+            "value": 4800
+          },
+          {
+            "color": "#ed6b3a",
+            "key": "burn",
+            "label": "Burn",
+            "value": 240
+          }
+        ]
+      }
+    ],
+    "name": "Coalem",
+    "rarity": {
+      "color": "#a040a0",
+      "label": "Super Rare"
+    },
+    "sourceUrl": "https://batodex.com/monsters/coalem",
+    "tier": 4,
+    "types": [
+      {
+        "color": "#ed6b3a",
+        "id": "fire",
+        "name": "Fire"
+      },
+      {
+        "color": "#a47c41",
+        "id": "rock",
+        "name": "Rock"
+      }
+    ]
+  },
+  {
+    "ability": {
+      "byLevel": {
+        "1": "Hatches a Legendary Dragon monster in 3 days",
+        "2": "Hatches a Legendary Dragon monster in 3 days",
+        "3": "Hatches a Legendary Dragon monster in 3 days",
+        "4": "Hatches a Legendary Dragon monster in 3 days"
+      },
+      "description": "Hatches a Legendary Dragon monster in 3 days",
+      "trigger": null
+    },
+    "cost": 0,
+    "id": "dragon_egg_0",
+    "keywords": [],
+    "levels": [
+      {
+        "cooldown": 10,
+        "level": 1,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 1
+          }
+        ]
+      },
+      {
+        "cooldown": 10,
+        "level": 2,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 1
+          }
+        ]
+      },
+      {
+        "cooldown": 10,
+        "level": 3,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 1
+          }
+        ]
+      },
+      {
+        "cooldown": 10,
+        "level": 4,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 1
+          }
+        ]
+      }
+    ],
+    "name": "Dragon Egg",
+    "rarity": {
+      "color": "#a040a0",
+      "label": "Super Rare"
+    },
+    "sourceUrl": "https://batodex.com/monsters/dragon_egg_0",
+    "tier": 4,
+    "types": []
+  },
+  {
+    "ability": {
+      "byLevel": {
+        "1": "Trigger the Grass ally above",
+        "2": "Trigger the Grass ally above",
+        "3": "Trigger the Grass ally above",
+        "4": "Trigger the Grass ally above"
+      },
+      "description": "Trigger the Grass ally above",
+      "trigger": "On Cast"
+    },
+    "cost": 45,
+    "id": "dryadell",
+    "keywords": [],
+    "levels": [
+      {
+        "cooldown": 6,
+        "level": 1,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 70
+          }
+        ]
+      },
+      {
+        "cooldown": 6,
+        "level": 2,
+        "multicast": 2,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 70
+          }
+        ]
+      },
+      {
+        "cooldown": 6,
+        "level": 3,
+        "multicast": 3,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 70
+          }
+        ]
+      },
+      {
+        "cooldown": 6,
+        "level": 4,
+        "multicast": 12,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 140
+          }
+        ]
+      }
+    ],
+    "name": "Dryadell",
+    "rarity": {
+      "color": "#a040a0",
+      "label": "Super Rare"
+    },
+    "sourceUrl": "https://batodex.com/monsters/dryadell",
+    "tier": 4,
+    "types": [
+      {
+        "color": "#6cb645",
+        "id": "grass",
+        "name": "Grass"
+      }
+    ]
+  },
+  {
+    "ability": {
+      "byLevel": {
+        "1": "Evolve",
+        "2": "Evolve",
+        "3": "Evolve",
+        "4": "Evolve"
+      },
+      "description": "Evolve",
+      "trigger": "On Victory"
+    },
+    "cost": 60,
+    "id": "flarilisk",
+    "keywords": [],
+    "levels": [
+      {
+        "cooldown": 8,
+        "level": 1,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ed6b3a",
+            "key": "burn",
+            "label": "Burn",
+            "value": 10
+          }
+        ]
+      },
+      {
+        "cooldown": 8,
+        "level": 2,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ed6b3a",
+            "key": "burn",
+            "label": "Burn",
+            "value": 20
+          }
+        ]
+      },
+      {
+        "cooldown": 8,
+        "level": 3,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ed6b3a",
+            "key": "burn",
+            "label": "Burn",
+            "value": 30
+          }
+        ]
+      },
+      {
+        "cooldown": 1,
+        "level": 4,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ed6b3a",
+            "key": "burn",
+            "label": "Burn",
+            "value": 60
+          }
+        ]
+      }
+    ],
+    "name": "Flarilisk",
+    "rarity": {
+      "color": "#a040a0",
+      "label": "Super Rare"
+    },
+    "sourceUrl": "https://batodex.com/monsters/flarilisk",
+    "tier": 4,
+    "types": [
+      {
+        "color": "#ed6b3a",
+        "id": "fire",
+        "name": "Fire"
+      }
+    ]
+  },
+  {
+    "ability": {
+      "byLevel": {
+        "1": "Has additional Damage equal to 1x  the Poison on the enemy",
+        "2": "Has additional Damage equal to 2x  the Poison on the enemy",
+        "3": "Has additional Damage equal to 3x  the Poison on the enemy",
+        "4": "Has additional Damage equal to 12x  the Poison on the enemy"
+      },
+      "description": "Has additional Damage equal to 1x  the Poison on the enemy",
+      "trigger": "Ongoing"
+    },
+    "cost": 40,
+    "id": "fumungus",
+    "keywords": [],
+    "levels": [
+      {
+        "cooldown": 3,
+        "level": 1,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#7b57a1",
+            "key": "poison",
+            "label": "Poison",
+            "value": 6
+          }
+        ]
+      },
+      {
+        "cooldown": 3,
+        "level": 2,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#7b57a1",
+            "key": "poison",
+            "label": "Poison",
+            "value": 6
+          }
+        ]
+      },
+      {
+        "cooldown": 3,
+        "level": 3,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#7b57a1",
+            "key": "poison",
+            "label": "Poison",
+            "value": 6
+          }
+        ]
+      },
+      {
+        "cooldown": 1.5,
+        "level": 4,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#7b57a1",
+            "key": "poison",
+            "label": "Poison",
+            "value": 12
+          }
+        ]
+      }
+    ],
+    "name": "Fumungus",
+    "rarity": {
+      "color": "#a040a0",
+      "label": "Super Rare"
+    },
+    "sourceUrl": "https://batodex.com/monsters/fumungus",
+    "tier": 4,
+    "types": [
+      {
+        "color": "#6cb645",
+        "id": "grass",
+        "name": "Grass"
+      },
+      {
+        "color": "#7b57a1",
+        "id": "toxic",
+        "name": "Toxic"
+      }
+    ]
+  },
+  {
+    "ability": {
+      "byLevel": {
+        "1": "+5 Damage permanently for each unique type on your team",
+        "2": "+10 Damage permanently for each unique type on your team",
+        "3": "+15 Damage permanently for each unique type on your team",
+        "4": "+120 Damage permanently for each unique type on your team"
+      },
+      "description": "+5 Damage permanently for each unique type on your team",
+      "trigger": "On Cast"
+    },
+    "cost": 45,
+    "id": "prismagon",
+    "keywords": [],
+    "levels": [
+      {
+        "cooldown": 4.5,
+        "level": 1,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 100
+          }
+        ]
+      },
+      {
+        "cooldown": 4.5,
+        "level": 2,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 100
+          }
+        ]
+      },
+      {
+        "cooldown": 4.5,
+        "level": 3,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 100
+          }
+        ]
+      },
+      {
+        "cooldown": 4.5,
+        "level": 4,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 100
+          }
+        ]
+      }
+    ],
+    "name": "Prismagon",
+    "rarity": {
+      "color": "#a040a0",
+      "label": "Super Rare"
+    },
+    "sourceUrl": "https://batodex.com/monsters/prismagon",
+    "tier": 4,
+    "types": [
+      {
+        "color": "#5260a9",
+        "id": "dragon",
+        "name": "Dragon"
+      }
+    ]
+  },
+  {
+    "ability": {
+      "byLevel": {
+        "1": "Hatches {monster_name} in {amount} day(s)",
+        "2": "Hatches {monster_name} in {amount} day(s)",
+        "3": "Hatches {monster_name} in {amount} day(s)",
+        "4": "Hatches {monster_name} in {amount} day(s)"
+      },
+      "description": "Hatches {monster_name} in {amount} day(s)",
+      "trigger": null
+    },
+    "cost": 0,
+    "id": "purple_egg",
+    "keywords": [],
+    "levels": [
+      {
+        "cooldown": 10,
+        "level": 1,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 1
+          }
+        ]
+      },
+      {
+        "cooldown": 10,
+        "level": 2,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 1
+          }
+        ]
+      },
+      {
+        "cooldown": 10,
+        "level": 3,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 1
+          }
+        ]
+      },
+      {
+        "cooldown": 10,
+        "level": 4,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 1
+          }
+        ]
+      }
+    ],
+    "name": "Purple Egg",
+    "rarity": {
+      "color": "#a040a0",
+      "label": "Super Rare"
+    },
+    "sourceUrl": "https://batodex.com/monsters/purple_egg",
+    "tier": 4,
+    "types": []
+  },
+  {
+    "ability": {
+      "byLevel": {
+        "1": "Ally to the left has +100% Shock",
+        "2": "Ally to the left has +200% Shock",
+        "3": "Ally to the left has +300% Shock",
+        "4": "Ally to the left has +2400% Shock"
+      },
+      "description": "Ally to the left has +100% Shock",
+      "trigger": "Ongoing"
+    },
+    "cost": 40,
+    "id": "pylong",
+    "keywords": [],
+    "levels": [
+      {
+        "cooldown": 7,
+        "level": 1,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 1
+          },
+          {
+            "color": "#e7c61c",
+            "key": "shock",
+            "label": "Shock",
+            "value": 15
+          }
+        ]
+      },
+      {
+        "cooldown": 7,
+        "level": 2,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 1
+          },
+          {
+            "color": "#e7c61c",
+            "key": "shock",
+            "label": "Shock",
+            "value": 15
+          }
+        ]
+      },
+      {
+        "cooldown": 7,
+        "level": 3,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 1
+          },
+          {
+            "color": "#e7c61c",
+            "key": "shock",
+            "label": "Shock",
+            "value": 15
+          }
+        ]
+      },
+      {
+        "cooldown": 7,
+        "level": 4,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 1
+          },
+          {
+            "color": "#e7c61c",
+            "key": "shock",
+            "label": "Shock",
+            "value": 15
+          }
+        ]
+      }
+    ],
+    "name": "Pylong",
+    "rarity": {
+      "color": "#a040a0",
+      "label": "Super Rare"
+    },
+    "sourceUrl": "https://batodex.com/monsters/pylong",
+    "tier": 4,
+    "types": [
+      {
+        "color": "#cfbf32",
+        "id": "electric",
+        "name": "Electric"
+      }
+    ]
+  },
+  {
+    "ability": {
+      "byLevel": {
+        "1": "Knockout the enemy opposite of this",
+        "2": "Knockout the enemy opposite of this",
+        "3": "Knockout the enemy opposite of this",
+        "4": "Knockout a random enemy"
+      },
+      "description": "Knockout the enemy opposite of this",
+      "trigger": "On Cast"
+    },
+    "cost": 35,
+    "id": "reapra",
+    "keywords": [
+      {
+        "color": "#3c3061",
+        "description": "Cannot trigger anymore for this battle",
+        "id": "knockout",
+        "name": "Knockout"
+      }
+    ],
+    "levels": [
+      {
+        "cooldown": 6,
+        "level": 1,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 120
+          }
+        ]
+      },
+      {
+        "cooldown": 3,
+        "level": 2,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 120
+          }
+        ]
+      },
+      {
+        "cooldown": 2,
+        "level": 3,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 120
+          }
+        ]
+      },
+      {
+        "cooldown": 2,
+        "level": 4,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 960
+          }
+        ]
+      }
+    ],
+    "name": "Reapra",
+    "rarity": {
+      "color": "#a040a0",
+      "label": "Super Rare"
+    },
+    "sourceUrl": "https://batodex.com/monsters/reapra",
+    "tier": 4,
+    "types": [
+      {
+        "color": "#3c3061",
+        "id": "ghost",
+        "name": "Ghost"
+      }
+    ]
+  },
+  {
+    "ability": {
+      "byLevel": {
+        "1": "Every 4 seconds, +1 Multicast for this battle",
+        "2": "Every 4 seconds, +2 Multicast for this battle",
+        "3": "Every 4 seconds, +3 Multicast for this battle",
+        "4": "Every 4 seconds, +12 Multicast for this battle"
+      },
+      "description": "Every 4 seconds, +1 Multicast for this battle",
+      "trigger": null
+    },
+    "cost": 40,
+    "id": "shelldra",
+    "keywords": [],
+    "levels": [
+      {
+        "cooldown": 4.5,
+        "level": 1,
+        "multicast": 3,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 15
+          },
+          {
+            "color": "#578ac9",
+            "key": "heal",
+            "label": "Heal",
+            "value": 15
+          }
+        ]
+      },
+      {
+        "cooldown": 4.5,
+        "level": 2,
+        "multicast": 3,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 15
+          },
+          {
+            "color": "#578ac9",
+            "key": "heal",
+            "label": "Heal",
+            "value": 15
+          }
+        ]
+      },
+      {
+        "cooldown": 4.5,
+        "level": 3,
+        "multicast": 3,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 15
+          },
+          {
+            "color": "#578ac9",
+            "key": "heal",
+            "label": "Heal",
+            "value": 15
+          }
+        ]
+      },
+      {
+        "cooldown": 4.5,
+        "level": 4,
+        "multicast": 6,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 30
+          },
+          {
+            "color": "#578ac9",
+            "key": "heal",
+            "label": "Heal",
+            "value": 30
+          }
+        ]
+      }
+    ],
+    "name": "Shelldra",
+    "rarity": {
+      "color": "#a040a0",
+      "label": "Super Rare"
+    },
+    "sourceUrl": "https://batodex.com/monsters/shelldra",
+    "tier": 4,
+    "types": [
+      {
+        "color": "#578ac9",
+        "id": "water",
+        "name": "Water"
+      },
+      {
+        "color": "#5260a9",
+        "id": "dragon",
+        "name": "Dragon"
+      }
+    ]
+  },
+  {
+    "ability": {
+      "byLevel": {
+        "1": "Remove 20% of debuffs on your team",
+        "2": "Remove 35% of debuffs on your team",
+        "3": "Remove 50% of debuffs on your team",
+        "4": "Remove 80% of debuffs on your team"
+      },
+      "description": "Remove 20% of debuffs on your team",
+      "trigger": "On Cast"
+    },
+    "cost": 40,
+    "id": "sirenade",
+    "keywords": [],
+    "levels": [
+      {
+        "cooldown": 4,
+        "level": 1,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#578ac9",
+            "key": "heal",
+            "label": "Heal",
+            "value": 100
+          }
+        ]
+      },
+      {
+        "cooldown": 4,
+        "level": 2,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#578ac9",
+            "key": "heal",
+            "label": "Heal",
+            "value": 200
+          }
+        ]
+      },
+      {
+        "cooldown": 4,
+        "level": 3,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#578ac9",
+            "key": "heal",
+            "label": "Heal",
+            "value": 300
+          }
+        ]
+      },
+      {
+        "cooldown": 4,
+        "level": 4,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#578ac9",
+            "key": "heal",
+            "label": "Heal",
+            "value": 1200
+          }
+        ]
+      }
+    ],
+    "name": "Sirenade",
+    "rarity": {
+      "color": "#a040a0",
+      "label": "Super Rare"
+    },
+    "sourceUrl": "https://batodex.com/monsters/sirenade",
+    "tier": 4,
+    "types": [
+      {
+        "color": "#578ac9",
+        "id": "water",
+        "name": "Water"
+      }
+    ]
+  },
+  {
+    "ability": {
+      "byLevel": {
+        "1": "Gain a random Uncommon trinket permanently",
+        "2": "Gain a random Rare trinket permanently",
+        "3": "Gain a random Super Rare trinket permanently",
+        "4": "Gain a random Legendary trinket permanently"
+      },
+      "description": "Gain a random Uncommon trinket permanently",
+      "trigger": "On Battle Start"
+    },
+    "cost": 0,
+    "id": "wishwash",
+    "keywords": [],
+    "levels": [
+      {
+        "cooldown": 3.5,
+        "level": 1,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#578ac9",
+            "key": "heal",
+            "label": "Heal",
+            "value": 100
+          }
+        ]
+      },
+      {
+        "cooldown": 3.5,
+        "level": 2,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#578ac9",
+            "key": "heal",
+            "label": "Heal",
+            "value": 200
+          }
+        ]
+      },
+      {
+        "cooldown": 3.5,
+        "level": 3,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#578ac9",
+            "key": "heal",
+            "label": "Heal",
+            "value": 300
+          }
+        ]
+      },
+      {
+        "cooldown": 3.5,
+        "level": 4,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#578ac9",
+            "key": "heal",
+            "label": "Heal",
+            "value": 2400
+          }
+        ]
+      }
+    ],
+    "name": "Wishwash",
+    "rarity": {
+      "color": "#a040a0",
+      "label": "Super Rare"
+    },
+    "sourceUrl": "https://batodex.com/monsters/wishwash",
+    "tier": 4,
+    "types": [
+      {
+        "color": "#578ac9",
+        "id": "water",
+        "name": "Water"
+      }
+    ]
+  },
+  {
+    "ability": {
+      "byLevel": {
+        "1": "Give the Flying ally to the right +1 Multicast permanently (This monster cannot gain Multicast)",
+        "2": "Give the Flying ally to the right +2 Multicast permanently (This monster cannot gain Multicast)",
+        "3": "Give the Flying ally to the right +3 Multicast permanently (This monster cannot gain Multicast)",
+        "4": "Give the Flying ally to the right +12 Multicast permanently (This monster cannot gain Multicast)"
+      },
+      "description": "Give the Flying ally to the right +1 Multicast permanently (This monster cannot gain Multicast)",
+      "trigger": "On Cast"
+    },
+    "cost": 60,
+    "id": "zephyrex",
+    "keywords": [],
+    "levels": [
+      {
+        "cooldown": 11,
+        "level": 1,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 100
+          }
+        ]
+      },
+      {
+        "cooldown": 11,
+        "level": 2,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 100
+          }
+        ]
+      },
+      {
+        "cooldown": 11,
+        "level": 3,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 100
+          }
+        ]
+      },
+      {
+        "cooldown": 11,
+        "level": 4,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 800
+          }
+        ]
+      }
+    ],
+    "name": "Zephyrex",
+    "rarity": {
+      "color": "#a040a0",
+      "label": "Super Rare"
+    },
+    "sourceUrl": "https://batodex.com/monsters/zephyrex",
+    "tier": 4,
+    "types": [
+      {
+        "color": "#a4c7ed",
+        "id": "flying",
+        "name": "Flying"
+      }
+    ]
+  },
+  {
+    "ability": null,
+    "cost": 100,
+    "id": "basilord",
+    "keywords": [],
+    "levels": [
+      {
+        "cooldown": 8,
+        "level": 1,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ed6b3a",
+            "key": "burn",
+            "label": "Burn",
+            "value": 150
+          }
+        ]
+      },
+      {
+        "cooldown": 8,
+        "level": 2,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ed6b3a",
+            "key": "burn",
+            "label": "Burn",
+            "value": 300
+          }
+        ]
+      },
+      {
+        "cooldown": 8,
+        "level": 3,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ed6b3a",
+            "key": "burn",
+            "label": "Burn",
+            "value": 450
+          }
+        ]
+      },
+      {
+        "cooldown": 1,
+        "level": 4,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ed6b3a",
+            "key": "burn",
+            "label": "Burn",
+            "value": 450
+          }
+        ]
+      }
+    ],
+    "name": "Basilord",
+    "rarity": {
+      "color": "#d47c00",
+      "label": "Legendary"
+    },
+    "sourceUrl": "https://batodex.com/monsters/basilord",
+    "tier": 5,
+    "types": [
+      {
+        "color": "#ed6b3a",
+        "id": "fire",
+        "name": "Fire"
+      }
+    ]
+  },
+  {
+    "ability": {
+      "byLevel": {
+        "1": "Give the Fire ally to the left {multiplier}this monster's Burn for this battle",
+        "2": "Give the Fire ally to the left 2x this monster's Burn for this battle",
+        "3": "Give the Fire ally to the left 3x this monster's Burn for this battle",
+        "4": "Give the Fire ally to the left 30x this monster's Burn for this battle"
+      },
+      "description": "Give the Fire ally to the left {multiplier}this monster's Burn for this battle",
+      "trigger": "On Cast"
+    },
+    "cost": 55,
+    "id": "blixie",
+    "keywords": [],
+    "levels": [
+      {
+        "cooldown": 6,
+        "level": 1,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ed6b3a",
+            "key": "burn",
+            "label": "Burn",
+            "value": 30
+          }
+        ]
+      },
+      {
+        "cooldown": 6,
+        "level": 2,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ed6b3a",
+            "key": "burn",
+            "label": "Burn",
+            "value": 30
+          }
+        ]
+      },
+      {
+        "cooldown": 6,
+        "level": 3,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ed6b3a",
+            "key": "burn",
+            "label": "Burn",
+            "value": 30
+          }
+        ]
+      },
+      {
+        "cooldown": 6,
+        "level": 4,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ed6b3a",
+            "key": "burn",
+            "label": "Burn",
+            "value": 300
+          }
+        ]
+      }
+    ],
+    "name": "Blixie",
+    "rarity": {
+      "color": "#d47c00",
+      "label": "Legendary"
+    },
+    "sourceUrl": "https://batodex.com/monsters/blixie",
+    "tier": 5,
+    "types": [
+      {
+        "color": "#ed6b3a",
+        "id": "fire",
+        "name": "Fire"
+      }
+    ]
+  },
+  {
+    "ability": {
+      "byLevel": {
+        "1": "Whenever an ally inflicts Poison, Charge this by 1",
+        "2": "Whenever an ally inflicts Poison, Charge this by 1",
+        "3": "Whenever an ally inflicts Poison, Charge this by 1",
+        "4": "Whenever an ally inflicts Poison, Charge this by 1"
+      },
+      "description": "Whenever an ally inflicts Poison, Charge this by 1",
+      "trigger": null
+    },
+    "cost": 50,
+    "id": "cobrex",
+    "keywords": [
+      {
+        "color": "#79aed0",
+        "description": "Progresses cooldown timer",
+        "id": "charge",
+        "name": "Charge"
+      }
+    ],
+    "levels": [
+      {
+        "cooldown": 15,
+        "level": 1,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#7b57a1",
+            "key": "poison",
+            "label": "Poison",
+            "value": 300
+          }
+        ]
+      },
+      {
+        "cooldown": 15,
+        "level": 2,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#7b57a1",
+            "key": "poison",
+            "label": "Poison",
+            "value": 600
+          }
+        ]
+      },
+      {
+        "cooldown": 15,
+        "level": 3,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#7b57a1",
+            "key": "poison",
+            "label": "Poison",
+            "value": 900
+          }
+        ]
+      },
+      {
+        "cooldown": 2,
+        "level": 4,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#7b57a1",
+            "key": "poison",
+            "label": "Poison",
+            "value": 900
+          }
+        ]
+      }
+    ],
+    "name": "Cobrex",
+    "rarity": {
+      "color": "#d47c00",
+      "label": "Legendary"
+    },
+    "sourceUrl": "https://batodex.com/monsters/cobrex",
+    "tier": 5,
+    "types": [
+      {
+        "color": "#7b57a1",
+        "id": "toxic",
+        "name": "Toxic"
+      }
+    ]
+  },
+  {
+    "ability": {
+      "byLevel": {
+        "1": "Activate the On Battle Start abilities of adjacent allies and increase this monster's Cooldown by 6 for this battle",
+        "2": "Activate the On Battle Start abilities of adjacent allies and increase this monster's Cooldown by 3 for this battle",
+        "3": "Activate the On Battle Start abilities of adjacent allies and increase this monster's Cooldown by 2 for this battle",
+        "4": "Activate the On Battle Start abilities of adjacent allies and increase this monster's Cooldown by 1 for this battle"
+      },
+      "description": "Activate the On Battle Start abilities of adjacent allies and increase this monster's Cooldown by 6 for this battle",
+      "trigger": "On Cast"
+    },
+    "cost": 60,
+    "id": "dragonarch",
+    "keywords": [],
+    "levels": [
+      {
+        "cooldown": 5,
+        "level": 1,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 100
+          }
+        ]
+      },
+      {
+        "cooldown": 5,
+        "level": 2,
+        "multicast": 2,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 100
+          }
+        ]
+      },
+      {
+        "cooldown": 5,
+        "level": 3,
+        "multicast": 3,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 100
+          }
+        ]
+      },
+      {
+        "cooldown": 5,
+        "level": 4,
+        "multicast": 24,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 100
+          }
+        ]
+      }
+    ],
+    "name": "Draconarch",
+    "rarity": {
+      "color": "#d47c00",
+      "label": "Legendary"
+    },
+    "sourceUrl": "https://batodex.com/monsters/dragonarch",
+    "tier": 5,
+    "types": [
+      {
+        "color": "#5260a9",
+        "id": "dragon",
+        "name": "Dragon"
+      }
+    ]
+  },
+  {
+    "ability": {
+      "byLevel": {
+        "1": "Has additional Damage equal to 100% of the total Damage of adjacent allies (Except other Gaiadrasil)",
+        "2": "Has additional Damage equal to 100% of the total Damage of adjacent allies (Except other Gaiadrasil)",
+        "3": "Has additional Damage equal to 100% of the total Damage of adjacent allies (Except other Gaiadrasil)",
+        "4": "Has additional Damage equal to 1000% of the total Damage of adjacent allies (Except other Gaiadrasil)"
+      },
+      "description": "Has additional Damage equal to 100% of the total Damage of adjacent allies (Except other Gaiadrasil)",
+      "trigger": "Ongoing"
+    },
+    "cost": 60,
+    "id": "gaiadrasil",
+    "keywords": [],
+    "levels": [
+      {
+        "cooldown": 9,
+        "level": 1,
+        "multicast": null,
+        "stats": []
+      },
+      {
+        "cooldown": 4.5,
+        "level": 2,
+        "multicast": null,
+        "stats": []
+      },
+      {
+        "cooldown": 3,
+        "level": 3,
+        "multicast": null,
+        "stats": []
+      },
+      {
+        "cooldown": 3,
+        "level": 4,
+        "multicast": null,
+        "stats": []
+      }
+    ],
+    "name": "Gaiadrasil",
+    "rarity": {
+      "color": "#d47c00",
+      "label": "Legendary"
+    },
+    "sourceUrl": "https://batodex.com/monsters/gaiadrasil",
+    "tier": 5,
+    "types": [
+      {
+        "color": "#6cb645",
+        "id": "grass",
+        "name": "Grass"
+      }
+    ]
+  },
+  {
+    "ability": {
+      "byLevel": {
+        "1": "+50% Cooldown Speed and +2 Shock for this battle",
+        "2": "+50% Cooldown Speed and +4 Shock for this battle",
+        "3": "+50% Cooldown Speed and +6 Shock for this battle",
+        "4": "+50% Cooldown Speed and +48 Shock for this battle"
+      },
+      "description": "+50% Cooldown Speed and +2 Shock for this battle",
+      "trigger": "On Cast"
+    },
+    "cost": 50,
+    "id": "galvanine",
+    "keywords": [],
+    "levels": [
+      {
+        "cooldown": 8,
+        "level": 1,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 10
+          },
+          {
+            "color": "#e7c61c",
+            "key": "shock",
+            "label": "Shock",
+            "value": 6
+          }
+        ]
+      },
+      {
+        "cooldown": 8,
+        "level": 2,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 20
+          },
+          {
+            "color": "#e7c61c",
+            "key": "shock",
+            "label": "Shock",
+            "value": 12
+          }
+        ]
+      },
+      {
+        "cooldown": 8,
+        "level": 3,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 30
+          },
+          {
+            "color": "#e7c61c",
+            "key": "shock",
+            "label": "Shock",
+            "value": 18
+          }
+        ]
+      },
+      {
+        "cooldown": 8,
+        "level": 4,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 30
+          },
+          {
+            "color": "#e7c61c",
+            "key": "shock",
+            "label": "Shock",
+            "value": 144
+          }
+        ]
+      }
+    ],
+    "name": "Galvanine",
+    "rarity": {
+      "color": "#d47c00",
+      "label": "Legendary"
+    },
+    "sourceUrl": "https://batodex.com/monsters/galvanine",
+    "tier": 5,
+    "types": [
+      {
+        "color": "#cfbf32",
+        "id": "electric",
+        "name": "Electric"
+      }
+    ]
+  },
+  {
+    "ability": {
+      "byLevel": {
+        "1": "Give adjacent allies +70% Shield for this battle",
+        "2": "Give adjacent allies +140% Shield for this battle",
+        "3": "Give adjacent allies +210% Shield for this battle",
+        "4": "Give adjacent allies +2100% Shield for this battle"
+      },
+      "description": "Give adjacent allies +70% Shield for this battle",
+      "trigger": "On Cast"
+    },
+    "cost": 50,
+    "id": "geminiss",
+    "keywords": [],
+    "levels": [
+      {
+        "cooldown": 10,
+        "level": 1,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#a47c41",
+            "key": "shield",
+            "label": "Shield",
+            "value": 100
+          }
+        ]
+      },
+      {
+        "cooldown": 10,
+        "level": 2,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#a47c41",
+            "key": "shield",
+            "label": "Shield",
+            "value": 100
+          }
+        ]
+      },
+      {
+        "cooldown": 10,
+        "level": 3,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#a47c41",
+            "key": "shield",
+            "label": "Shield",
+            "value": 100
+          }
+        ]
+      },
+      {
+        "cooldown": 10,
+        "level": 4,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#a47c41",
+            "key": "shield",
+            "label": "Shield",
+            "value": 1000
+          }
+        ]
+      }
+    ],
+    "name": "Geminiss",
+    "rarity": {
+      "color": "#d47c00",
+      "label": "Legendary"
+    },
+    "sourceUrl": "https://batodex.com/monsters/geminiss",
+    "tier": 5,
+    "types": [
+      {
+        "color": "#a47c41",
+        "id": "rock",
+        "name": "Rock"
+      }
+    ]
+  },
+  {
+    "ability": {
+      "byLevel": {
+        "1": "Ally to the left apply their Ongoing abilities 1 additional time(s)",
+        "2": "Ally to the left apply their Ongoing abilities 2 additional time(s)",
+        "3": "Ally to the left apply their Ongoing abilities 3 additional time(s)",
+        "4": "Ally to the left apply their Ongoing abilities 24 additional time(s)"
+      },
+      "description": "Ally to the left apply their Ongoing abilities 1 additional time(s)",
+      "trigger": null
+    },
+    "cost": 50,
+    "id": "onsetra",
+    "keywords": [],
+    "levels": [
+      {
+        "cooldown": 4,
+        "level": 1,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 100
+          }
+        ]
+      },
+      {
+        "cooldown": 4,
+        "level": 2,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 200
+          }
+        ]
+      },
+      {
+        "cooldown": 4,
+        "level": 3,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 300
+          }
+        ]
+      },
+      {
+        "cooldown": 4,
+        "level": 4,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 3000
+          }
+        ]
+      }
+    ],
+    "name": "Onsetra",
+    "rarity": {
+      "color": "#d47c00",
+      "label": "Legendary"
+    },
+    "sourceUrl": "https://batodex.com/monsters/onsetra",
+    "tier": 5,
+    "types": [
+      {
+        "color": "#5260a9",
+        "id": "dragon",
+        "name": "Dragon"
+      }
+    ]
+  },
+  {
+    "ability": {
+      "byLevel": {
+        "1": "Give the ally to the right +1 Multicast and increase this monster's Cooldown by 8 seconds for this battle",
+        "2": "Give the ally to the right +2 Multicast and increase this monster's Cooldown by 8 seconds for this battle",
+        "3": "Give the ally to the right +3 Multicast and increase this monster's Cooldown by 8 seconds for this battle",
+        "4": "Give the ally to the right +24 Multicast and increase this monster's Cooldown by 8 seconds for this battle"
+      },
+      "description": "Give the ally to the right +1 Multicast and increase this monster's Cooldown by 8 seconds for this battle",
+      "trigger": "On Cast"
+    },
+    "cost": 60,
+    "id": "saberhorn",
+    "keywords": [],
+    "levels": [
+      {
+        "cooldown": 8,
+        "level": 1,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 100
+          }
+        ]
+      },
+      {
+        "cooldown": 8,
+        "level": 2,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 100
+          }
+        ]
+      },
+      {
+        "cooldown": 8,
+        "level": 3,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 100
+          }
+        ]
+      },
+      {
+        "cooldown": 8,
+        "level": 4,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 100
+          }
+        ]
+      }
+    ],
+    "name": "Saberhorn",
+    "rarity": {
+      "color": "#d47c00",
+      "label": "Legendary"
+    },
+    "sourceUrl": "https://batodex.com/monsters/saberhorn",
+    "tier": 5,
+    "types": [
+      {
+        "color": "#5260a9",
+        "id": "dragon",
+        "name": "Dragon"
+      }
+    ]
+  },
+  {
+    "ability": {
+      "byLevel": {
+        "1": "Adjacent allies with no abilities have +2 Multicast",
+        "2": "Adjacent allies with no abilities have +4 Multicast",
+        "3": "Adjacent allies with no abilities have +6 Multicast",
+        "4": "Adjacent allies with no abilities have +60 Multicast"
+      },
+      "description": "Adjacent allies with no abilities have +2 Multicast",
+      "trigger": "Ongoing"
+    },
+    "cost": 50,
+    "id": "stellagon",
+    "keywords": [],
+    "levels": [
+      {
+        "cooldown": 6,
+        "level": 1,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 150
+          }
+        ]
+      },
+      {
+        "cooldown": 6,
+        "level": 2,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 300
+          }
+        ]
+      },
+      {
+        "cooldown": 6,
+        "level": 3,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 450
+          }
+        ]
+      },
+      {
+        "cooldown": 6,
+        "level": 4,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#ef426b",
+            "key": "damage",
+            "label": "Damage",
+            "value": 4500
+          }
+        ]
+      }
+    ],
+    "name": "Stellagon",
+    "rarity": {
+      "color": "#d47c00",
+      "label": "Legendary"
+    },
+    "sourceUrl": "https://batodex.com/monsters/stellagon",
+    "tier": 5,
+    "types": [
+      {
+        "color": "#5260a9",
+        "id": "dragon",
+        "name": "Dragon"
+      }
+    ]
+  },
+  {
+    "ability": {
+      "byLevel": {
+        "1": "Trigger adjacent Water allies (Except other Torrantler)",
+        "2": "Trigger adjacent Water allies (Except other Torrantler)",
+        "3": "Trigger adjacent Water allies (Except other Torrantler)",
+        "4": "Trigger adjacent Water allies (Except other Torrantler)"
+      },
+      "description": "Trigger adjacent Water allies (Except other Torrantler)",
+      "trigger": "On Cast"
+    },
+    "cost": 50,
+    "id": "torrantler",
+    "keywords": [],
+    "levels": [
+      {
+        "cooldown": 10,
+        "level": 1,
+        "multicast": null,
+        "stats": [
+          {
+            "color": "#578ac9",
+            "key": "heal",
+            "label": "Heal",
+            "value": 200
+          }
+        ]
+      },
+      {
+        "cooldown": 10,
+        "level": 2,
+        "multicast": 2,
+        "stats": [
+          {
+            "color": "#578ac9",
+            "key": "heal",
+            "label": "Heal",
+            "value": 200
+          }
+        ]
+      },
+      {
+        "cooldown": 10,
+        "level": 3,
+        "multicast": 3,
+        "stats": [
+          {
+            "color": "#578ac9",
+            "key": "heal",
+            "label": "Heal",
+            "value": 200
+          }
+        ]
+      },
+      {
+        "cooldown": 10,
+        "level": 4,
+        "multicast": 30,
+        "stats": [
+          {
+            "color": "#578ac9",
+            "key": "heal",
+            "label": "Heal",
+            "value": 200
+          }
+        ]
+      }
+    ],
+    "name": "Torrantler",
+    "rarity": {
+      "color": "#d47c00",
+      "label": "Legendary"
+    },
+    "sourceUrl": "https://batodex.com/monsters/torrantler",
+    "tier": 5,
+    "types": [
+      {
+        "color": "#578ac9",
+        "id": "water",
+        "name": "Water"
+      }
+    ]
+  }
+]
