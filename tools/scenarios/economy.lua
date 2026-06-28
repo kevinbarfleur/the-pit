@@ -215,7 +215,8 @@ local function newAgg()
     pairSupportOffers = 0, rerolls = 0, xpBuys = 0,
     boardDeploys = 0, boardSwaps = 0,
     commanderAccepts = 0, commanderDeclines = 0, commanderPlacements = 0, relicPicks = 0,
-    eventPicks = 0, eventRelics = 0, eventUnits = 0, eventGold = 0, eventShopXp = 0, eventShopTierUps = 0,
+    eventPicks = 0, eventRelics = 0, eventUnits = 0, eventUnitFailures = 0,
+    eventGold = 0, eventShopXp = 0, eventShopTierUps = 0,
     slotDeclines = 0, slotAccepts = 0,
     xpGateBlocks = 0, xpGateObserved = 0, xpGateUnitCoverage = 0, xpGateLevelCoverage = 0,
     archetypeRuns = 0, archetypeCommitted = 0, archetypeCommitRoundSum = 0,
@@ -1392,6 +1393,7 @@ local function addRun(a, traj)
   a.eventPicks = a.eventPicks + ((traj.metrics and traj.metrics.eventPicks) or 0)
   a.eventRelics = a.eventRelics + ((traj.metrics and traj.metrics.eventRelics) or 0)
   a.eventUnits = a.eventUnits + ((traj.metrics and traj.metrics.eventUnits) or 0)
+  a.eventUnitFailures = a.eventUnitFailures + ((traj.metrics and traj.metrics.eventUnitFailures) or 0)
   a.eventGold = a.eventGold + ((traj.metrics and traj.metrics.eventGold) or 0)
   a.eventShopXp = a.eventShopXp + ((traj.metrics and traj.metrics.eventShopXp) or 0)
   a.eventShopTierUps = a.eventShopTierUps + ((traj.metrics and traj.metrics.eventShopTierUps) or 0)
@@ -1596,6 +1598,9 @@ local function finish(a)
     event_picks_per_run = (a.runs > 0) and (a.eventPicks / a.runs) or 0,
     event_relics_per_run = (a.runs > 0) and (a.eventRelics / a.runs) or 0,
     event_units_per_run = (a.runs > 0) and (a.eventUnits / a.runs) or 0,
+    event_unit_failures_per_run = (a.runs > 0) and (a.eventUnitFailures / a.runs) or 0,
+    event_unit_failure_rate = ((a.eventUnits + a.eventUnitFailures) > 0)
+      and (a.eventUnitFailures / (a.eventUnits + a.eventUnitFailures)) or 0,
     event_gold_per_run = (a.runs > 0) and (a.eventGold / a.runs) or 0,
     event_shop_xp_per_run = (a.runs > 0) and (a.eventShopXp / a.runs) or 0,
     event_shop_tier_ups_per_run = (a.runs > 0) and (a.eventShopTierUps / a.runs) or 0,

@@ -270,6 +270,16 @@ local ok, err = pcall(function()
     "events: reward unite se range via Build")
   assert(unitRewardDrv:copyCount("marauder", 2) == 1,
     "events: reward unite respecte le niveau materialise")
+  local fullRewardDrv = Rundriver.new(2026063203, { recordEvents = true })
+  fullRewardDrv.build.board:ensureOpen(9)
+  for i = 1, 9 do fullRewardDrv.build:placeId(i, "skeleton", 1) end
+  for i = 1, #fullRewardDrv.build.benchSlots do
+    fullRewardDrv.build.bench[i] = { id = "witch", level = 1, char = fullRewardDrv.build:newRig("witch") }
+  end
+  assert(not fullRewardDrv:grantUnitReward({ kind = "unit", id = "marauder", level = 2 }),
+    "events: reward unite echoue proprement si plateau+banc pleins")
+  assert(fullRewardDrv:metricSnapshot().eventUnitFailures == 1,
+    "events: reward unite impossible est comptee")
   local function commanderEventRun()
     local d = Rundriver.new(20260633, { recordEvents = true, commanderMode = "auto" })
     d.run.pendingCommanderGrant = true

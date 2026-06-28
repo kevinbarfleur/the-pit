@@ -117,8 +117,15 @@ non-relic lane. That preserves the user-facing event fantasy while keeping
 enough build-definer density for optimized plans. The remaining cost is exact
 reroll-board completion: events are now healthy for run completion and PvE
 scoring, but still slightly worse when the metric is "assemble this exact
-target board." Next tuning should focus on unit-space pressure and maybe a
-future "core unit only" reward filter before implementing the live UI.
+target board."
+
+Instrumentation added after that panel shows event units are not being lost to
+hard inventory overflow in the tested rot/bleed policies: `event_unit_failure_rate`
+is `0.0%` at `N=64`. The softer pressure is churn: about `2.0` board swaps/run,
+`4.0` bench sells/run, and `20.5%` desired-offer slot limitation. Next tuning
+should therefore focus less on "the reward cannot fit" and more on whether
+event units should be core/target-filtered, auto-stowed with better priority,
+or offered less often to exact reroll plans before implementing the live UI.
 
 ## Mutation Decision
 

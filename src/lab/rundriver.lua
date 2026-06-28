@@ -65,7 +65,8 @@ function Rundriver.new(seed, opts)
       commanderPlacements = 0,
       boardDeploys = 0, boardSwaps = 0,
       relicPicks = 0,
-      eventPicks = 0, eventRelics = 0, eventUnits = 0, eventGold = 0, eventShopXp = 0, eventShopTierUps = 0,
+      eventPicks = 0, eventRelics = 0, eventUnits = 0, eventUnitFailures = 0,
+      eventGold = 0, eventShopXp = 0, eventShopTierUps = 0,
     },
   }, Rundriver)
   build.mergeObserver = function(ev) self:_recordExactMerge(ev) end
@@ -81,7 +82,8 @@ local METRIC_KEYS = {
   "commanderAccepts", "commanderDeclines", "commanderDeclineGold", "commanderPlacements",
   "boardDeploys", "boardSwaps",
   "relicPicks",
-  "eventPicks", "eventRelics", "eventUnits", "eventGold", "eventShopXp", "eventShopTierUps",
+  "eventPicks", "eventRelics", "eventUnits", "eventUnitFailures",
+  "eventGold", "eventShopXp", "eventShopTierUps",
 }
 
 function Rundriver:_metric(key, n)
@@ -774,7 +776,10 @@ end
 function Rundriver:grantUnitReward(reward)
   reward = reward or {}
   local id = reward.id
-  if not Units[id] then return false end
+  if not Units[id] then
+    self:_metric("eventUnitFailures", 1)
+    return false
+  end
   self:_ensureCopyIds()
   local copyId = self:_newCopyId()
   local occ = {
@@ -784,6 +789,7 @@ function Rundriver:grantUnitReward(reward)
     copyId = copyId,
   }
   if not self.build:stowUnit(occ) then
+    self:_metric("eventUnitFailures", 1)
     self:_event({ type = "run_event_reward_failed", reason = "no_space", kind = "unit", id = id, level = occ.level })
     return false
   end
