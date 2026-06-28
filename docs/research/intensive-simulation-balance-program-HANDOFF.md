@@ -2860,6 +2860,19 @@ Next implementation targets:
   `11` simple L1 units remain, split as `8` low-rank, `2` mid-rank, and `1`
   high-rank (`deep_kraken`). The next creature-design input is therefore much
   narrower: `vein_splitter`, `stormlord`, and `deep_kraken`.
+- mid/high simple-affliction cleanup:
+  the narrowed priority list was handled with one modest placement hook each:
+  `vein_splitter` gives the ally ahead `Bleed +7%`, `stormlord` gives the ally
+  behind `Haste +5%`, and `deep_kraken` gives neighbors `Poison +10%`. Level 2
+  and 3 deltas scale those hooks (`+8%/+10%`, `+6%/+7%`, `+12%/+15%`). The
+  mechanics audit now reports only `8/110` truly basic simple-affliction L1
+  units (`7.3%`), all low-rank; `simple_affliction_priority` is empty, with
+  `0` mid-rank and `0` high-rank basic units. The remaining low-rank basics are
+  acceptable candidates for readable early/shop pieces unless future sim data
+  shows they are overpicked or underperforming. The N=32 economy guard under
+  `sap_cost_pair_completion_tiered_reroll` + generated opponents
+  `levelMult=2.25` stayed unchanged at `54.9%` completion, `9.17` wins,
+  `95.5%` merge-per-pair, `2.51` leftover.
 3. Use the new compact economy summary first, and only drill into full
    `plan_access` / `support_access` when a row shows a concrete anomaly.
 4. Use `plan_support_watch` rows in the next economy/bossrush panels to separate

@@ -330,7 +330,10 @@ local U = {
   },
   vein_splitter = { -- saignement profond et rapide (« deux entailles » ; 2-instances approximé par 1 fort)
     id = "vein_splitter", bodyplan = "humanoid", rank = 3, type = "flesh", family = "bandit", arch = "cutthroat", cost = 3, hp = 46, dmg = 4, cd = 44,
-    effects = { { trigger = "on_hit", op = "bleed", params = { dps = 4, dur = 180, slowPct = 0.15 } } },
+    effects = {
+      { trigger = "on_hit", op = "bleed", params = { dps = 4, dur = 180, slowPct = 0.15 } },
+      { trigger = "combat_start", op = "aura_stat", target = "ahead", params = { stat = "bleedInc", value = 0.07 } },
+    },
     -- COMMANDANT (LES DEUX VEINES) : « deux entailles » -> empower l'avant (plus de frappes-vecteur, atkInc role:front). cf. spec §3.3.
     commandBonus = { trigger = "combat_start", op = "aura_stat", target = "role:front", params = { stat = "atkInc", value = 0.12 } },
   },
@@ -508,7 +511,10 @@ local U = {
   },
   stormlord = { -- T2 : add 2 + volt fort + cap max — marque une proie, les alliés font sauter la charge
     id = "stormlord", bodyplan = "eye", rank = 3, type = "arcane", family = "cristal", arch = "shardwalker", cost = 3, hp = 50, dmg = 6, cd = 54, aggro = 5,
-    effects = { { trigger = "on_hit", op = "shock", params = { add = 2, volt = 4, cap = 8, dur = 240 } } },
+    effects = {
+      { trigger = "on_hit", op = "shock", params = { add = 2, volt = 4, cap = 8, dur = 240 } },
+      { trigger = "combat_start", op = "aura_stat", target = "behind", params = { stat = "haste", value = 0.05 } },
+    },
     -- COMMANDANT (LA MARQUE DE L'ORAGE) : marque une proie -> transform forked_tongue (grant_team shockChain, le choc
     -- rebondit, flag existant). cf. spec §3.6.
     commandBonus = { trigger = "combat_start", op = "grant_team", params = { shockChain = 1 } },
@@ -725,7 +731,10 @@ local U = {
   },
   deep_kraken = { -- KRAKEN / léviathan, étreinte venimeuse (légendaire)
     id = "deep_kraken", type = "abyss", family = "kraken", arch = "kraken", rank = 5, cost = 5, hp = 84, dmg = 12, cd = 78,
-    effects = { { trigger = "on_hit", op = "poison", params = { dps = 4, dur = 200 } } },
+    effects = {
+      { trigger = "on_hit", op = "poison", params = { dps = 4, dur = 200 } },
+      { trigger = "combat_start", op = "aura_stat", target = "neighbors", params = { stat = "poisonInc", value = 0.10 } },
+    },
     -- COMMANDANT (L'AÏEUL) : conditionnel level-1 — ce qui n'a jamais grandi sous sa coupe (level==1, donc tes
     -- plus GROSSES bêtes non-fusionnées) enfle d'un coup (baké, cappé STAT_INC_CAP). cf. §2.2 (#3).
     -- TUNING ÉQUILIBRAGE (2026-06-25) : 0.40 -> 0.22 -> 0.15. À 0.40/0.22 il buffait encore TOUT le board early

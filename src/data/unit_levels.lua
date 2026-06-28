@@ -531,12 +531,14 @@ return {
     [2] = {
       effects = {
         [1] = { params = { dps = 5, dur = 190, slowPct = 0.15 } },
+        [2] = { params = { value = 0.08 } },
       },
       commandBonus = { params = { value = 0.14 } },
     },
     [3] = {
       effects = {
         [1] = { params = { dps = 5, dur = 210, slowPct = 0.18 } },
+        [2] = { params = { value = 0.10 } },
       },
       commandBonus = { params = { value = 0.16 } },
     },
@@ -604,11 +606,13 @@ return {
     [2] = {
       effects = {
         [1] = { params = { add = 2, volt = 5, cap = 8, dur = 240 } },
+        [2] = { params = { value = 0.06 } },
       },
     },
     [3] = {
       effects = {
         [1] = { params = { add = 3, volt = 5, cap = 9, dur = 260 } },
+        [2] = { params = { value = 0.07 } },
       },
     },
   },
@@ -1018,6 +1022,7 @@ return {
     [2] = {
       effects = {
         [1] = { params = { dps = 5, dur = 220 } },
+        [2] = { params = { value = 0.12 } },
       },
       commandBonus = { params = { value = 0.17 } },
     },
@@ -1025,6 +1030,7 @@ return {
       transformative = true,
       effects = {
         [1] = { params = { dps = 6, dur = 240, weaken = 0.08 } },
+        [2] = { params = { value = 0.15 } },
       },
       commandBonus = { params = { value = 0.20 } },
     },
