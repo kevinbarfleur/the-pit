@@ -236,6 +236,27 @@ probably needs to be one of: explicitly level-2, explicitly mutation-bearing,
 or rare enough that it reads as a special event spike instead of a relic
 substitute.
 
+Live-capacity alignment panel (`N=64`, `pair_completion_light`,
+`rot_bleed_rat_core`, gated + deep-reroll policies) tested the new
+`PIT_EVENT_UNIT_TARGETING=space` family so simulation can mirror the product
+rule that event units are only offered when board or bench space exists:
+
+- `policy_space`: completion `31.2%`, wins `8.95`, event relics `1.57/run`,
+  event units `1.20/run`, unit progress `57.5%`, failures `0`;
+- `policy_space_missing_copy`: completion `31.2%`, wins `8.96`, event relics
+  `1.76/run`, event units `1.02/run`, unit progress `100%`, failures `0`;
+- the stricter missing-copy profile removed singles entirely (`65.6%` pair
+  completions, `34.4%` merge completions), but exact plan completion did not
+  improve in this slice.
+
+Interpretation: the live capacity filter is now mechanically aligned and safe.
+It prevents impossible rewards, but it does not make units free from an EV
+perspective. `policy_space_missing_copy` is the cleanest unit-quality rule so
+far, yet it still cannibalizes too much relic density for exact reroll plans.
+Default live events should therefore keep unit offers rare and special:
+level-2 spike, missing-copy rescue, future mutation-bearing monster, or another
+non-relic lane that does not crowd out build-defining relic access every time.
+
 Cross-economy check (`N=64`, same rot/bleed policies, events vs classic
 merchant) adds two cautions:
 
@@ -384,9 +405,9 @@ offers: a low-rank monster with `echo_touched`, a mid-rank monster with
 4. Add target-filtering experiments for unit lanes before increasing their
    frequency.
 5. Test a capped target-filter policy that preserves relic density before
-   considering live event-unit targeting.
-6. Test a stricter "missing copy only" unit lane, or keep units disabled for
-   exact reroll plans until mutations exist.
-7. Build the live UI only after the reward EV is acceptable in the lab.
-8. Design the first-class mutation instance model separately, then run it behind
-   an opt-in lab profile.
+   considering stronger live event-unit weighting.
+6. Keep `policy_space_missing_copy` as the current quality floor for special
+   unit events, but do not make it a broad replacement for relic choices.
+7. Use `--shoot=runevent` after visual changes to the event picker.
+8. Continue mutation panels behind the opt-in lab profile before enabling
+   mutated event units in the live run loop.

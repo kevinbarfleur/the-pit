@@ -2561,13 +2561,14 @@ Next implementation targets:
      combat-pacing risk in this slice. The next event work should focus on
      reward EV, relic access, exact-board completion, and unit churn.
    - product direction for the next gameplay enrichment:
-     the recurring relic merchant should become a small cryptic event surface
-     once the lab EV is acceptable. The event prose can be grim and indirect,
-     but every choice must clearly display the actual reward. Reward lanes can
-     include relics, level-1 units, rare level-2 units, gold, shop XP, and shop
-     tier. Mutated units remain a phase-2 opt-in profile after persistent unit
-     instances exist (`id + level + copyId + mutations[]`), with merge,
-     snapshot, tooltip, bossrush, and economy tests before live activation.
+     the recurring relic merchant has become a small cryptic event surface with
+     fallback to the old relic offer if no clean event choice can be
+     materialized. The event prose can be grim and indirect, but every choice
+     must clearly display the actual reward. Reward lanes can include relics,
+     level-1 units, rare level-2 units, gold, shop XP, and shop tier. Mutated
+     units remain a phase-2 opt-in profile after persistent unit instances
+     exist (`id + level + copyId + mutations[]`), with merge, snapshot,
+     tooltip, bossrush, and economy tests before live activation.
      Foundation update: `src/run/mutations.lua` now defines stable mutation
      ids, build board/bench/commander instances preserve `mutations[]` through
      drag/drop/stow/merge, snapshots serialize them backward-compatibly, and
@@ -2626,17 +2627,29 @@ Next implementation targets:
      relics/run, no event units. Current read: for exact reroll plans, event
      units need a special payoff (missing-copy-only, rare level-2, or future
      mutation) before they beat relic opportunity cost.
-  - missing-copy event-unit materialization:
-    `PIT_EVENT_UNIT_TARGETING=policy_missing_copy` combines policy priority
-    with a copy-chain filter: an event unit is only materialized if the run
-    already owns a same-id, same-level copy. In the same N=64 rot/bleed slice,
-    reward quality became clean (`100%` pair-or-merge progress, `0%` singles,
-    `0%` failure; `65.6%` pair completions and `34.4%` merge completions), but
-    completion stayed weak at `31.2%` and relic density fell to `1.76/run`.
-    Current read: this is a useful quality floor for future unit events, not a
-    live default. Unit lanes should remain special: rare level-2, mutation
-    carrier, or explicitly framed as a high-value event spike, while ordinary
-    build-defining access still needs enough relic lanes.
+   - missing-copy event-unit materialization:
+     `PIT_EVENT_UNIT_TARGETING=policy_missing_copy` combines policy priority
+     with a copy-chain filter: an event unit is only materialized if the run
+     already owns a same-id, same-level copy. In the same N=64 rot/bleed slice,
+     reward quality became clean (`100%` pair-or-merge progress, `0%` singles,
+     `0%` failure; `65.6%` pair completions and `34.4%` merge completions), but
+     completion stayed weak at `31.2%` and relic density fell to `1.76/run`.
+     Current read: this is a useful quality floor for future unit events, not a
+     live default. Unit lanes should remain special: rare level-2, mutation
+     carrier, or explicitly framed as a high-value event spike, while ordinary
+     build-defining access still needs enough relic lanes.
+   - live-capacity event-unit alignment:
+     `PIT_EVENT_UNIT_TARGETING=space` now mirrors the live board/bench capacity
+     filter in simulation. The latest N=64 rot/bleed panel compared
+     `policy_space` and `policy_space_missing_copy` under
+     `pair_completion_light`: both stayed at `31.2%` completion with `0` unit
+     failures. `policy_space` produced `1.57` event relics/run, `1.20` units/run,
+     and `57.5%` unit progress. `policy_space_missing_copy` produced `1.76`
+     event relics/run, `1.02` units/run, and `100%` unit progress, but still no
+     exact-plan completion lift in this slice. Current read: the capacity filter
+     is correct and safe, but the limiting factor remains relic opportunity
+     cost. Treat `space_missing_copy` as the current unit-quality floor for
+     special events, not as permission to increase ordinary unit frequency.
 3. Use the new `plan_support_watch` rows in the next economy/bossrush panels to
    separate "support never offered", "support offered but not picked", and
    "support picked but plan still inaccessible".
