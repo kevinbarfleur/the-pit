@@ -2581,6 +2581,17 @@ Next implementation targets:
      pair-or-merge progress, `87.9%` singles, `94.5%` bench placement. Read:
      do not raise unit-lane frequency yet; test target-filtered unit rewards
      or rare level-2/mutation lanes later.
+   - event-unit targeting experiment:
+     `PIT_EVENT_UNIT_TARGETING=policy` is now a lab-only option for the economy
+     scenario. It lets a policy priority-score eligible event unit rewards
+     before materialization; default behavior remains random within the event
+     reward rank band. In the first N=64 rot/bleed panel, targeting improved
+     unit reward progress from `12.1%` to `57.5%` and final held level coverage
+     from `73.1%` to `75.7%`, but it also shifted choices from relics to units
+     (`2.10 -> 1.57` event relics/run, `0.71 -> 1.20` event units/run) and
+     completion moved `32.8% -> 31.3%`. Read: target-filtering is promising for
+     reward quality, but live tuning should preserve relic-lane density or cap
+     unit-over-relic preference.
 3. Use the new `plan_support_watch` rows in the next economy/bossrush panels to
    separate "support never offered", "support offered but not picked", and
    "support picked but plan still inaccessible".

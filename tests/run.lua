@@ -606,6 +606,23 @@ local ok, err = pcall(function()
     end
     assert(eventSig(6060) == eventSig(6060), "run events : meme seed -> meme event materialise")
 
+    local targeted = RunState.new(60605)
+    targeted.wins, targeted.losses = 2, 1
+    local exclude = {}
+    for _, id in ipairs(RunEvents.order) do
+      if id ~= "hollow_carcass" then exclude[id] = true end
+    end
+    local tev = targeted:rollRunEvent({
+      exclude = exclude,
+      unitPriority = function(id) return (id == "marauder") and 1000 or 0 end,
+    })
+    local targetedReward
+    for _, c in ipairs((tev and tev.choices) or {}) do
+      if c.reward and c.reward.kind == "unit" then targetedReward = c.reward end
+    end
+    assert(targetedReward and targetedReward.id == "marauder" and targetedReward.targeted,
+      "run events : ciblage optionnel d'unite respecte le pool eligible")
+
     local r = RunState.new(6061)
     r.wins, r.losses = 3, 1
     local seen = {}

@@ -155,6 +155,21 @@ frequency. The next healthier levers are target-filtered unit rewards,
 event-specific level-2 rarity, or later mutation rewards once unit instances are
 first-class.
 
+Target-filter experiment (`PIT_EVENT_UNIT_TARGETING=policy`, same `N=64` panel)
+raises unit reward quality but also exposes a relic-cannibalization risk:
+
+- generic unit materialization: completion `32.8%`, wins `8.94`, event relics
+  `2.10/run`, event units `0.71/run`, event unit progress `12.1%`;
+- policy-targeted unit materialization: completion `31.3%`, wins `8.95`, event
+  relics `1.57/run`, event units `1.20/run`, event unit progress `57.5%`;
+- held target level coverage improved `73.1% -> 75.7%`, and held-complete rose
+  from `0.0%` to `1.6%`, but run completion did not improve in this slice.
+
+Interpretation: target-filtering is the right direction for unit lanes, but it
+cannot be a naive "make units more tempting" switch. The next test should keep
+the relic-lane density floor while targeting only the unit reward itself, or
+cap how often a policy can prefer a unit over a relic.
+
 Cross-economy check (`N=64`, same rot/bleed policies, events vs classic
 merchant) adds two cautions:
 
@@ -272,6 +287,8 @@ offers: a low-rank monster with `echo_touched`, a mid-rank monster with
    churn" before changing reward weights.
 4. Add target-filtering experiments for unit lanes before increasing their
    frequency.
-5. Build the live UI only after the reward EV is acceptable in the lab.
-6. Design the first-class mutation instance model separately, then run it behind
+5. Test a capped target-filter policy that preserves relic density before
+   considering live event-unit targeting.
+6. Build the live UI only after the reward EV is acceptable in the lab.
+7. Design the first-class mutation instance model separately, then run it behind
    an opt-in lab profile.

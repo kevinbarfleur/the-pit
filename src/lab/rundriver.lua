@@ -41,6 +41,7 @@ function Rundriver.new(seed, opts)
     fatigue = (opts.fatigue ~= nil) and opts.fatigue or pacing.fatigue,
     commanderMode = opts.commanderMode or "ignore", -- lab-only policy: ignore | decline | auto
     runEvents = opts.runEvents == true, -- lab-only experiment: replace merchant relics with thematic run events
+    eventUnitTargeting = opts.eventUnitTargeting, -- nil | "policy"; lab-only event unit materialization experiment
     compMutator = opts.compMutator, -- lab-only overlay appliqué aux deux camps avant Match.run (pacing, probes)
     leftMutator = opts.leftMutator, -- lab-only overlay appliqué au joueur seulement (candidate balance)
     rightMutator = opts.rightMutator, -- lab-only overlay appliqué à l'adversaire seulement
@@ -777,6 +778,17 @@ function Rundriver:_startRound(source)
   self:applyShopSupport(source or "start_round")
 end
 
+function Rundriver:runEventRollOptions()
+  if self.eventUnitTargeting ~= "policy" then return nil end
+  local policy = self.policy
+  if not (policy and policy.runEventUnitPriority) then return nil end
+  return {
+    unitPriority = function(id, rewardSpec)
+      return policy:runEventUnitPriority(self, id, rewardSpec)
+    end,
+  }
+end
+
 function Rundriver:grantUnitReward(reward)
   reward = reward or {}
   local id = reward.id
@@ -892,7 +904,7 @@ function Rundriver:fight()
   local combats = self.run.wins + self.run.losses
   if combats % 3 == 0 then
     if self.runEvents then
-      local event = self.run:rollRunEvent()
+      local event = self.run:rollRunEvent(self:runEventRollOptions())
       if event and #(event.choices or {}) > 0 then
         self.pendingRunEvent = event
         self:_event({

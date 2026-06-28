@@ -561,7 +561,20 @@ local function rollEventRelicReward(self, spec, usedRelics)
   return nil
 end
 
-local function rollEventUnitReward(self, spec)
+local function prioritizedEventUnit(candidates, spec, opts)
+  local fn = opts and opts.unitPriority
+  if not fn then return nil end
+  local bestId, bestScore
+  for _, id in ipairs(candidates or {}) do
+    local score = fn(id, spec) or 0
+    if score > 0 and (not bestScore or score > bestScore) then
+      bestId, bestScore = id, score
+    end
+  end
+  return bestId
+end
+
+local function rollEventUnitReward(self, spec, opts)
   local minRank = spec.rank or spec.rankMin or 1
   local maxRank = spec.rank or spec.rankMax or minRank
   minRank = math.max(1, math.min(MAX_TIER, minRank))
@@ -573,17 +586,19 @@ local function rollEventUnitReward(self, spec)
     if rank >= minRank and rank <= maxRank then candidates[#candidates + 1] = id end
   end
   if #candidates == 0 then return nil end
+  local id = prioritizedEventUnit(candidates, spec, opts)
   return {
     kind = "unit",
-    id = candidates[self.rng:random(1, #candidates)],
+    id = id or candidates[self.rng:random(1, #candidates)],
     level = math.max(1, math.min(2, spec.level or 1)), -- jamais de niveau 3 via event.
+    targeted = id and true or nil,
   }
 end
 
-local function materializeEventReward(self, spec, usedRelics)
+local function materializeEventReward(self, spec, usedRelics, opts)
   spec = spec or {}
   if spec.kind == "relic" then return rollEventRelicReward(self, spec, usedRelics) end
-  if spec.kind == "unit" then return rollEventUnitReward(self, spec) end
+  if spec.kind == "unit" then return rollEventUnitReward(self, spec, opts) end
   if spec.kind == "gold" then
     return { kind = "gold", amount = math.max(0, spec.amount or 0) }
   end
@@ -619,7 +634,7 @@ function RunState:rollRunEvent(opts)
     local event = candidates[((start + n - 2) % #candidates) + 1]
     local usedRelics, choices = {}, {}
     for _, choice in ipairs(event.choices or {}) do
-      local reward = materializeEventReward(self, choice.reward, usedRelics)
+      local reward = materializeEventReward(self, choice.reward, usedRelics, opts)
       if reward then
         choices[#choices + 1] = {
           id = choice.id,

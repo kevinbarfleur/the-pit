@@ -219,6 +219,26 @@ local function runEventRewardScore(drv, reward, opts)
   return 0
 end
 
+local function runEventUnitPriorityScore(drv, id, rewardSpec, opts)
+  opts = opts or {}
+  rewardSpec = rewardSpec or {}
+  local level = math.max(1, math.min(2, rewardSpec.level or 1))
+  local score = 0
+  local targetLevel = rewardTargetLevel(opts.targetUnits, id)
+  if targetLevel > 0 then
+    local missing = math.max(0, targetLevel - heldLevelSum(drv, id))
+    score = score + 520 + targetLevel * 40 + missing * 100
+  end
+  if opts.coreWant and wants(opts.coreWant, id) then score = score + 180 end
+  if opts.want and wants(opts.want, id) then score = score + 120 end
+  if opts.supportWant and wants(opts.supportWant, id) then score = score + 45 end
+  local counts = drv and copyCounts(drv) or {}
+  local same = sameLevelCount(counts, id, level)
+  if same >= 2 then score = score + 260
+  elseif same == 1 then score = score + 110 end
+  return score
+end
+
 local function pickRunEventByValue(drv, event, opts)
   local bestIndex, bestScore = 1, -math.huge
   for i, choice in ipairs((event and event.choices) or {}) do
@@ -1092,6 +1112,15 @@ function Policies.committed_archetype_plan_with(archetype, sigil, opts)
         supportWant = want,
         coreWant = opts.coreWant,
         maxXpBuysPerRound = opts.maxXpBuysPerRound,
+      })
+    end,
+    runEventUnitPriority = function(self, drv, id, rewardSpec)
+      local want = currentWant(self, drv)
+      return runEventUnitPriorityScore(drv, id, rewardSpec, {
+        targetUnits = targetUnits,
+        want = opts.coreWant or want,
+        supportWant = want,
+        coreWant = opts.coreWant,
       })
     end,
     chooseCommanderCandidate = function(_, _, candidates)
