@@ -212,6 +212,7 @@ local function newAgg()
     buyGold = 0, sellGold = 0, benchSellGold = 0, boardSellGold = 0, rerollGold = 0, xpGold = 0,
     buys = 0, sells = 0, benchSells = 0, boardSells = 0, pairBuys = 0, mergeBuys = 0,
     pairSupportOffers = 0, rerolls = 0, xpBuys = 0,
+    boardDeploys = 0, boardSwaps = 0,
     commanderAccepts = 0, commanderDeclines = 0, commanderPlacements = 0, relicPicks = 0,
     slotDeclines = 0, slotAccepts = 0,
     xpGateBlocks = 0, xpGateObserved = 0, xpGateUnitCoverage = 0, xpGateLevelCoverage = 0,
@@ -1396,6 +1397,8 @@ local function addRun(a, traj)
     a.pairBuys = a.pairBuys + (e.pairBuys or 0)
     a.mergeBuys = a.mergeBuys + (e.mergeBuys or 0)
     a.pairSupportOffers = a.pairSupportOffers + (e.pairSupportOffers or 0)
+    a.boardDeploys = a.boardDeploys + (e.boardDeploys or 0)
+    a.boardSwaps = a.boardSwaps + (e.boardSwaps or 0)
     a.rerolls = a.rerolls + (e.rerolls or 0)
     a.xpBuys = a.xpBuys + (e.xpBuys or 0)
     a.commanderAccepts = a.commanderAccepts + (e.commanderAccepts or 0)
@@ -1518,6 +1521,8 @@ local function finish(a)
     pair_buys_per_run = (a.runs > 0) and (a.pairBuys / a.runs) or 0,
     merge_buys_per_run = (a.runs > 0) and (a.mergeBuys / a.runs) or 0,
     pair_support_offers_per_run = (a.runs > 0) and (a.pairSupportOffers / a.runs) or 0,
+    board_deploys_per_run = (a.runs > 0) and (a.boardDeploys / a.runs) or 0,
+    board_swaps_per_run = (a.runs > 0) and (a.boardSwaps / a.runs) or 0,
     merge_per_pair_buy = (a.pairBuys > 0) and (a.mergeBuys / a.pairBuys) or 0,
     rerolls_per_run = (a.runs > 0) and (a.rerolls / a.runs) or 0,
     xp_buys_per_run = (a.runs > 0) and (a.xpBuys / a.runs) or 0,

@@ -2451,6 +2451,47 @@ Next implementation targets:
      without board completion. Current read: priority is worth keeping because
      it matches how a player forces a plan, but the next missing feature is
      late-board deployment/replacement, not more raw pair access.
+   - Late-board deployment pass:
+     `Rundriver` now exposes deterministic bench/board moves for lab policies:
+     `moveBenchToBoard` and `moveBoardToBench` mirror the live drag/swap model
+     without render, audio, wall-clock state, or random input. Committed target
+     policies now run a conservative deploy step after buying/rerolling: target
+     units sitting on the bench fill empty board slots first, then may swap over
+     non-core level-1 temporary units. The economy report exposes
+     `board_deploys_per_run` and `board_swaps_per_run` so future panels can
+     distinguish "owned but never placed" from "not actually assembled".
+   - Deployment read:
+     `runs/long-2026-06-27u/rat-reroll-deploy-n24` repeated the previous
+     `rot_bleed_rat_core` comparison across `baseline`,
+     `pair_completion_light`, and `pair_completion_delayed`. Relative to
+     `rat-reroll-target-priority-n24`, the target deployment rule raised final
+     board level coverage for the gated policy from `0.564 -> 0.669` in
+     baseline, `0.592 -> 0.711` in delayed pair completion, and
+     `0.642 -> 0.744` in light pair completion. The best current line is
+     `pair_completion_light + committed_rot_bleed_rat_core_gated_plan`:
+     `4.17%` exact board completion, `8.33%` exact held completion,
+     `0.744` final board level coverage, `0.783` final held level coverage,
+     `2.71` board deploys/run, and `2.38` board swaps/run.
+   - Deployment interpretation:
+     this confirms a real policy bug was present: supported pieces were often
+     owned before they were actually deployed. The remaining gap is now smaller
+     and more specific. Some "held complete but board incomplete" cases are not
+     just an idle-bench bug; they look like unresolved level/copy pressure or
+     board-capacity pressure where extra target levels exist as bench copies but
+     cannot become a legal final board without another merge or another slot.
+     The next lever should therefore inspect terminal merge causes and slot
+     timing before blindly adding more shop support.
+   - Connected bossrush smoke after deployment:
+     a tiny post-win panel,
+     `runs/long-2026-06-27u/rat-reroll-deploy-bossrush-run-completed-n6`,
+     crossed `pair_completion_light` with the gated and deep-reroll
+     `rot_bleed_rat_core` policies against `kraken`, `brasier`, `ruche`, and
+     `ossuaire`. `committed_rot_bleed_rat_core_deep_reroll_plan` reached
+     `50%` normal-run completion/entry and scored `4887.0` damage/run
+     (`9774.0` per entry, `100%` clear/full-window). The gated policy had
+     `0%` post-win entry in this small sample. This keeps the earlier bossrush
+     lesson intact: current PvE scoring is still primarily access-gated by run
+     completion and final-board quality, not by boss-side tuning.
    Remaining additions:
    - use `rot_bleed_rat_core` as the baseline reroll target for the next
      balance pass, but investigate cheap mid-board outliers before nerfing it;

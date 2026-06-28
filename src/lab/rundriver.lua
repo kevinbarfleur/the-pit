@@ -62,6 +62,7 @@ function Rundriver.new(seed, opts)
       slotAccepts = 0, slotDeclines = 0, slotDeclineGold = 0,
       commanderAccepts = 0, commanderDeclines = 0, commanderDeclineGold = 0,
       commanderPlacements = 0,
+      boardDeploys = 0, boardSwaps = 0,
       relicPicks = 0,
     },
   }, Rundriver)
@@ -76,6 +77,7 @@ local METRIC_KEYS = {
   "rerolls", "rerollGold", "xpBuys", "xpGold",
   "slotAccepts", "slotDeclines", "slotDeclineGold",
   "commanderAccepts", "commanderDeclines", "commanderDeclineGold", "commanderPlacements",
+  "boardDeploys", "boardSwaps",
   "relicPicks",
 }
 
@@ -681,6 +683,61 @@ function Rundriver:move(from, to)
   elseif from ~= to then
     self.build.slotRigs[from] = nil; self.build.board.slots[from].unit = nil
   end
+  return true
+end
+
+function Rundriver:moveBenchToBoard(benchSlot, boardSlot)
+  local sr = self.build.bench[benchSlot]
+  if not sr then return false end
+  local bs = self.build.board.slots[boardSlot]
+  if not (bs and bs.unlocked) then return false end
+  local occ = self.build.slotRigs[boardSlot]
+  self.build.slotRigs[boardSlot] = sr
+  self.build.board.slots[boardSlot].unit = sr.id
+  self.build.bench[benchSlot] = occ
+  self:_metric("boardDeploys", 1)
+  if occ then self:_metric("boardSwaps", 1) end
+  self:_event({
+    type = "move",
+    from = "bench",
+    fromSlot = benchSlot,
+    to = "board",
+    toSlot = boardSlot,
+    id = sr.id,
+    level = sr.level or 1,
+    copyId = sr.copyId,
+    replacedId = occ and occ.id or nil,
+    replacedLevel = occ and (occ.level or 1) or nil,
+    replacedCopyId = occ and occ.copyId or nil,
+  })
+  return true
+end
+
+function Rundriver:moveBoardToBench(boardSlot, benchSlot)
+  local sr = self.build.slotRigs[boardSlot]
+  if not sr then return false end
+  local bs = self.build.board.slots[boardSlot]
+  if not (bs and bs.unlocked) then return false end
+  if benchSlot < 1 or benchSlot > #(self.build.benchSlots or {}) then return false end
+  local occ = self.build.bench[benchSlot]
+  self.build.bench[benchSlot] = sr
+  self.build.slotRigs[boardSlot] = occ
+  self.build.board.slots[boardSlot].unit = occ and occ.id or nil
+  self:_metric("boardDeploys", 1)
+  if occ then self:_metric("boardSwaps", 1) end
+  self:_event({
+    type = "move",
+    from = "board",
+    fromSlot = boardSlot,
+    to = "bench",
+    toSlot = benchSlot,
+    id = sr.id,
+    level = sr.level or 1,
+    copyId = sr.copyId,
+    replacedId = occ and occ.id or nil,
+    replacedLevel = occ and (occ.level or 1) or nil,
+    replacedCopyId = occ and occ.copyId or nil,
+  })
   return true
 end
 

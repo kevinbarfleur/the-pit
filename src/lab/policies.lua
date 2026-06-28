@@ -350,6 +350,109 @@ local function boardPruneCandidates(drv, opts, offer)
   return out
 end
 
+local function targetLevelNeeds(targetUnits)
+  local out = {}
+  for _, u in ipairs(targetUnits or {}) do
+    if u.id then out[u.id] = (out[u.id] or 0) + (u.level or 1) end
+  end
+  return out
+end
+
+local function boardLevelSums(drv)
+  local out = {}
+  for i = 1, 9 do
+    local sr = drv.build.slotRigs[i]
+    if sr then out[sr.id] = (out[sr.id] or 0) + (sr.level or 1) end
+  end
+  return out
+end
+
+local function targetBenchDeployCandidates(drv, targetUnits)
+  local needs = targetLevelNeeds(targetUnits)
+  local board = boardLevelSums(drv)
+  local out = {}
+  for i = 1, #(drv.build.benchSlots or {}) do
+    local sr = drv.build.bench[i]
+    local need = sr and needs[sr.id] or nil
+    if need and (board[sr.id] or 0) < need then
+      local level = sr.level or 1
+      local gap = need - (board[sr.id] or 0)
+      out[#out + 1] = {
+        slot = i,
+        id = sr.id,
+        level = level,
+        gap = gap,
+        rank = unitRank(sr.id),
+        score = math.min(level, gap) * 1000 + need * 100 + unitRank(sr.id) * 10 + level,
+      }
+    end
+  end
+  table.sort(out, function(a, b)
+    if a.score ~= b.score then return a.score > b.score end
+    if a.gap ~= b.gap then return a.gap > b.gap end
+    if a.rank ~= b.rank then return a.rank > b.rank end
+    if a.id ~= b.id then return a.id < b.id end
+    return a.slot < b.slot
+  end)
+  return out
+end
+
+local function boardReplaceCandidatesForDeployment(drv, opts)
+  opts = opts or {}
+  local counts = copyCounts(drv)
+  local out = {}
+  for i = 1, 9 do
+    local sr = drv.build.slotRigs[i]
+    if sr then
+      local id, level = sr.id, sr.level or 1
+      local keep = false
+      if level > 1 then keep = true end
+      if sameLevelCount(counts, id, level) >= 2 then keep = true end
+      if opts.keepWant and wants(opts.keepWant, id) then keep = true end
+      if opts.coreWant and wants(opts.coreWant, id) then keep = true end
+      if not keep then
+        local value = unitPlanValue(drv, sr, opts, counts)
+        out[#out + 1] = {
+          slot = i,
+          id = id,
+          level = level,
+          rank = unitRank(id),
+          value = value,
+        }
+      end
+    end
+  end
+  table.sort(out, function(a, b)
+    if a.value ~= b.value then return a.value < b.value end
+    if a.rank ~= b.rank then return a.rank < b.rank end
+    if a.id ~= b.id then return a.id < b.id end
+    return a.slot < b.slot
+  end)
+  return out
+end
+
+local function deployTargetBench(drv, targetUnits, opts)
+  opts = opts or {}
+  local deployed, swaps = 0, 0
+  local maxMoves = opts.maxMoves or 3
+  for _ = 1, maxMoves do
+    local targets = targetBenchDeployCandidates(drv, targetUnits)
+    if #targets == 0 then break end
+    local boardSlot = drv:firstEmptySlot()
+    local willSwap = false
+    if not boardSlot then
+      local replace = boardReplaceCandidatesForDeployment(drv, opts)[1]
+      if not replace then break end
+      boardSlot = replace.slot
+      willSwap = true
+    end
+    if not drv:moveBenchToBoard(targets[1].slot, boardSlot) then break end
+    deployed = deployed + 1
+    if willSwap then swaps = swaps + 1 end
+  end
+  return deployed, swaps
+end
+
 local function benchSellPlan(drv, opts)
   local count, refund = 0, 0
   for _, c in ipairs(benchPruneCandidates(drv, opts)) do
@@ -843,10 +946,17 @@ function Policies.committed_archetype_plan_with(archetype, sigil, opts)
         sold = sold + s
         boardSold = boardSold + bs
       end
+      local deployed, boardSwaps = deployTargetBench(drv, targetUnits, {
+        keepWant = opts.keepWant,
+        coreWant = opts.coreWant,
+        maxMoves = opts.maxDeployMovesPerRound or 3,
+      })
       ensureNonEmpty(drv)
       return {
         archetype = self.archetype, bought = bought, sold = sold, boardSold = boardSold,
         rerolls = rerolls, xpBuys = xpBuys,
+        deployed = (deployed > 0) and deployed or nil,
+        boardSwaps = (boardSwaps > 0) and boardSwaps or nil,
         xpGateBlocked = xpGateBlocked or nil,
         xpGateUnitCoverage = xpGateCoverage and xpGateCoverage.unitCoverage or nil,
         xpGateLevelCoverage = xpGateCoverage and xpGateCoverage.levelCoverage or nil,
