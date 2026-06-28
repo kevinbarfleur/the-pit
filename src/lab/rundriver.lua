@@ -44,9 +44,10 @@ function Rundriver.new(seed, opts)
     commanderMode = opts.commanderMode or "ignore", -- lab-only policy: ignore | decline | auto
     runEvents = opts.runEvents == true, -- lab-only experiment: replace merchant relics with thematic run events
     runEventMutations = opts.runEventMutations == true, -- lab-only: materialize mutation lanes with exact copy targets
-    eventUnitTargeting = opts.eventUnitTargeting, -- nil | "policy" | "missing_copy" | "policy_missing_copy"; lab-only event unit materialization experiment
+    eventUnitTargeting = opts.eventUnitTargeting, -- nil | "policy" | "space" | "missing_copy" | combinations; lab-only event unit materialization experiment
     eventUnitPickCap = opts.eventUnitPickCap, -- lab-only: max successful event unit rewards per run before preferring relics
     eventMutationPickCap = opts.eventMutationPickCap, -- lab-only: max successful mutation rewards per run before preferring relics
+    eventUnitRelicMargin = opts.eventUnitRelicMargin, -- lab-only: unit rewards must beat an offered relic by this much
     compMutator = opts.compMutator, -- lab-only overlay appliqué aux deux camps avant Match.run (pacing, probes)
     leftMutator = opts.leftMutator, -- lab-only overlay appliqué au joueur seulement (candidate balance)
     rightMutator = opts.rightMutator, -- lab-only overlay appliqué à l'adversaire seulement

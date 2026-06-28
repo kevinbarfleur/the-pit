@@ -257,6 +257,30 @@ Default live events should therefore keep unit offers rare and special:
 level-2 spike, missing-copy rescue, future mutation-bearing monster, or another
 non-relic lane that does not crowd out build-defining relic access every time.
 
+Relic-margin experiment adds a lab-only policy guard,
+`PIT_EVENT_UNIT_RELIC_MARGIN`, so a policy can still see unit choices but only
+pick one over an offered relic if the unit clears an explicit value margin.
+This does not remove non-relic lanes from the event surface; it tests whether
+"special unit" should mean "worth skipping a relic."
+
+Latest `N=64` panels on the same `pair_completion_light` / `rot_bleed_rat_core`
+slice:
+
+- `policy_space` without margin: `1.57` relics/run, `1.20` units/run, focused
+  relic pick `57.0%`;
+- `policy_space + margin500`: only a mild shift, `1.60` relics/run and `1.16`
+  units/run;
+- `policy_space + margin1000`: stronger relic recovery, `1.84` relics/run and
+  `0.92` units/run, focused relic pick `67.9%`;
+- `policy_space_missing_copy + margin1000`: best current reward contract,
+  `2.06` relics/run, `0.71` units/run, `100%` unit progress, focused relic
+  offer/pick both `69.5%`.
+
+Completion stayed `31.2%` across those slices, so this is not a full balance
+fix. It is still a better event-policy constraint: preserve clean unit spikes
+while avoiding the constant "unit over relic" drift that makes exact reroll
+plans lose build-defining support.
+
 Cross-economy check (`N=64`, same rot/bleed policies, events vs classic
 merchant) adds two cautions:
 

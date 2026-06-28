@@ -374,6 +374,21 @@ local ok, err = pcall(function()
     },
   }, { targetUnits = { { id = "rot_hound", level = 2 } } }) == 2,
     "policy plan: cap event-unit force le retour vers une relique")
+  local marginEventDrv = Rundriver.new(2026063404, { eventUnitRelicMargin = 1000 })
+  assert(Policies.pickRunEventByValue(marginEventDrv, {
+    choices = {
+      { reward = { kind = "unit", id = "rot_hound", level = 2 } },
+      { reward = { kind = "relic", id = "grave_cap" } },
+    },
+  }, { targetUnits = { { id = "rot_hound", level = 2 } } }) == 2,
+    "policy plan: marge event-unit preserve la relique quand elle est offerte")
+  assert(Policies.pickRunEventByValue(marginEventDrv, {
+    choices = {
+      { reward = { kind = "unit", id = "rot_hound", level = 2 } },
+      { reward = { kind = "gold", amount = 5 } },
+    },
+  }, { targetUnits = { { id = "rot_hound", level = 2 } } }) == 1,
+    "policy plan: marge event-unit ne bloque pas une unite sans relique concurrente")
   local missingCopyDrv = Rundriver.new(2026063403, { eventUnitTargeting = "missing_copy" })
   missingCopyDrv.build:placeId(5, "marauder", 2)
   local missingOpts = missingCopyDrv:runEventRollOptions()

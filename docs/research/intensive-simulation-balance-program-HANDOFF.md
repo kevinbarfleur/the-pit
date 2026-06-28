@@ -2650,6 +2650,18 @@ Next implementation targets:
      is correct and safe, but the limiting factor remains relic opportunity
      cost. Treat `space_missing_copy` as the current unit-quality floor for
      special events, not as permission to increase ordinary unit frequency.
+   - event-unit relic-margin guard:
+     `PIT_EVENT_UNIT_RELIC_MARGIN` is now a lab-only policy parameter. It does
+     not remove unit choices from events; it requires a unit reward to beat an
+     offered relic by an explicit score margin before the policy picks it. In
+     the N=64 rot/bleed panel, `policy_space + margin500` barely moved reward
+     mix (`1.60` relics/run, `1.16` units/run). `policy_space + margin1000`
+     recovered more relic density (`1.84` relics/run, `0.92` units/run) and
+     raised focused relic pick-rate to `67.9%`. The cleanest current contract is
+     `policy_space_missing_copy + margin1000`: `2.06` relics/run, `0.71`
+     units/run, `100%` unit progress, focused relic offer/pick both `69.5%`.
+     Completion still stayed at `31.2%`, so this is a reward-EV guardrail, not
+     a solved balance pass.
 3. Use the new `plan_support_watch` rows in the next economy/bossrush panels to
    separate "support never offered", "support offered but not picked", and
    "support picked but plan still inaccessible".

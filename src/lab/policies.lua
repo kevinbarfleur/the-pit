@@ -259,9 +259,20 @@ local function runEventUnitPriorityScore(drv, id, rewardSpec, opts)
 end
 
 local function pickRunEventByValue(drv, event, opts)
+  local hasRelicChoice = false
+  for _, choice in ipairs((event and event.choices) or {}) do
+    if choice.reward and choice.reward.kind == "relic" then
+      hasRelicChoice = true
+      break
+    end
+  end
+  local unitRelicMargin = (opts and opts.eventUnitRelicMargin) or (drv and drv.eventUnitRelicMargin) or 0
   local bestIndex, bestScore = 1, -math.huge
   for i, choice in ipairs((event and event.choices) or {}) do
     local score = runEventRewardScore(drv, choice.reward, opts)
+    if hasRelicChoice and choice.reward and choice.reward.kind == "unit" and unitRelicMargin > 0 then
+      score = score - unitRelicMargin
+    end
     if score > bestScore then
       bestIndex, bestScore = i, score
     end

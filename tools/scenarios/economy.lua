@@ -26,6 +26,7 @@ local RUN_EVENT_MUTATIONS = Common.envBool("PIT_RUN_EVENT_MUTATIONS", false)
 local EVENT_UNIT_TARGETING = Common.env("PIT_EVENT_UNIT_TARGETING")
 local EVENT_UNIT_PICK_CAP = Common.envNumber("PIT_EVENT_UNIT_PICK_CAP", nil)
 local EVENT_MUTATION_PICK_CAP = Common.envNumber("PIT_EVENT_MUTATION_PICK_CAP", nil)
+local EVENT_UNIT_RELIC_MARGIN = Common.envNumber("PIT_EVENT_UNIT_RELIC_MARGIN", nil)
 -- Extra holding capacity beyond the real board+bench capacity used by Rundriver.
 -- Cap 0 is the current gameplay model; cap 4 answers "what if the player had 4 more reserve slots?"
 local BENCH_CAPS = Common.envNumberList("PIT_BENCH_CAPS", { 0, 2, 4, 6 })
@@ -1673,6 +1674,7 @@ for run = 1, N do
         runEventMutations = RUN_EVENT_MUTATIONS,
         eventUnitTargeting = EVENT_UNIT_TARGETING,
         eventUnitPickCap = EVENT_UNIT_PICK_CAP,
+        eventUnitRelicMargin = EVENT_UNIT_RELIC_MARGIN,
         eventMutationPickCap = EVENT_MUTATION_PICK_CAP,
         recordBoards = #PLAN_TARGETS > 0,
         recordEvents = #PLAN_TARGETS > 0,
