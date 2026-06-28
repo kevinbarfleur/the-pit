@@ -132,6 +132,9 @@ local ok, err = pcall(function()
         "mode economy : accessibilite de la troisieme copie reportee")
       assert(body:find('"pair_support_offers_per_run"', 1, true),
         "mode economy : offres support de paire reportees")
+      assert(body:find('"final_duplicate_saturation"', 1, true)
+        and body:find('"final_low_rank_duplicate_run_rate"', 1, true),
+        "mode economy : saturation finale en duplicatas low-rank reportee")
       assert(body:find('"spec_support"', 1, true)
         and body:find('"relics":["grave_cap"]', 1, true)
         and body:find('"commander":"clot_mender"', 1, true),

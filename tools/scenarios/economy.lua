@@ -269,6 +269,128 @@ local function makePolicies(runIndex)
   return Common.filteredRows(pols, Common.envCsv("PIT_POLICIES"), "name")
 end
 
+local function unitRank(id)
+  local u = id and Units[id]
+  return u and (u.rank or 1) or 1
+end
+
+local function newFinalDuplicateAgg()
+  return {
+    runs = 0,
+    duplicateRuns = 0,
+    lowRankDuplicateRuns = 0,
+    duplicateSlots = 0,
+    duplicateLevelPoints = 0,
+    lowRankDuplicateSlots = 0,
+    lowRankDuplicateLevelPoints = 0,
+    byUnit = {},
+  }
+end
+
+local function addFinalDuplicate(a, traj)
+  a.runs = a.runs + 1
+  local byId = {}
+  for _, u in ipairs((traj.finalBoard and traj.finalBoard.units) or {}) do
+    if u.id then
+      local rec = byId[u.id]
+      if not rec then
+        rec = { id = u.id, rank = unitRank(u.id), slots = 0, levelPoints = 0, maxLevel = 0 }
+        byId[u.id] = rec
+      end
+      local level = u.level or 1
+      rec.slots = rec.slots + 1
+      rec.levelPoints = rec.levelPoints + level
+      if level > rec.maxLevel then rec.maxLevel = level end
+    end
+  end
+
+  local duplicateRun, lowRankDuplicateRun = false, false
+  for id, rec in pairs(byId) do
+    if rec.slots > 1 then
+      duplicateRun = true
+      a.duplicateSlots = a.duplicateSlots + rec.slots
+      a.duplicateLevelPoints = a.duplicateLevelPoints + rec.levelPoints
+      if rec.rank <= 2 then
+        lowRankDuplicateRun = true
+        a.lowRankDuplicateSlots = a.lowRankDuplicateSlots + rec.slots
+        a.lowRankDuplicateLevelPoints = a.lowRankDuplicateLevelPoints + rec.levelPoints
+      end
+
+      local row = a.byUnit[id]
+      if not row then
+        row = {
+          id = id,
+          rank = rec.rank,
+          runs = 0,
+          slots = 0,
+          levelPoints = 0,
+          maxLevel = 0,
+          wins = 0,
+          completions = 0,
+        }
+        a.byUnit[id] = row
+      end
+      row.runs = row.runs + 1
+      row.slots = row.slots + rec.slots
+      row.levelPoints = row.levelPoints + rec.levelPoints
+      if rec.maxLevel > row.maxLevel then row.maxLevel = rec.maxLevel end
+      row.wins = row.wins + (traj.wins or 0)
+      if traj.result == "win" then row.completions = row.completions + 1 end
+    end
+  end
+  if duplicateRun then a.duplicateRuns = a.duplicateRuns + 1 end
+  if lowRankDuplicateRun then a.lowRankDuplicateRuns = a.lowRankDuplicateRuns + 1 end
+end
+
+local function finishFinalDuplicate(a)
+  local runs = a.runs or 0
+  local byUnit, top = {}, {}
+  for id, row in pairs(a.byUnit or {}) do
+    local out = {
+      rank = row.rank,
+      duplicate_run_rate = (runs > 0) and (row.runs / runs) or 0,
+      avg_slots_when_duplicate = (row.runs > 0) and (row.slots / row.runs) or 0,
+      avg_level_points_when_duplicate = (row.runs > 0) and (row.levelPoints / row.runs) or 0,
+      avg_wins_when_duplicate = (row.runs > 0) and (row.wins / row.runs) or 0,
+      completion_when_duplicate = (row.runs > 0) and (row.completions / row.runs) or 0,
+      max_level_seen = row.maxLevel or 0,
+    }
+    byUnit[id] = out
+    top[#top + 1] = {
+      id = id,
+      rank = out.rank,
+      duplicate_run_rate = out.duplicate_run_rate,
+      avg_slots_when_duplicate = out.avg_slots_when_duplicate,
+      avg_level_points_when_duplicate = out.avg_level_points_when_duplicate,
+      avg_wins_when_duplicate = out.avg_wins_when_duplicate,
+      completion_when_duplicate = out.completion_when_duplicate,
+      max_level_seen = out.max_level_seen,
+    }
+  end
+  table.sort(top, function(aRow, bRow)
+    if aRow.duplicate_run_rate ~= bRow.duplicate_run_rate then
+      return aRow.duplicate_run_rate > bRow.duplicate_run_rate
+    end
+    if aRow.avg_level_points_when_duplicate ~= bRow.avg_level_points_when_duplicate then
+      return aRow.avg_level_points_when_duplicate > bRow.avg_level_points_when_duplicate
+    end
+    if aRow.rank ~= bRow.rank then return aRow.rank < bRow.rank end
+    return aRow.id < bRow.id
+  end)
+  while #top > 12 do top[#top] = nil end
+  return {
+    runs = runs,
+    duplicate_id_run_rate = (runs > 0) and (a.duplicateRuns / runs) or 0,
+    low_rank_duplicate_run_rate = (runs > 0) and (a.lowRankDuplicateRuns / runs) or 0,
+    duplicate_slots_per_run = (runs > 0) and (a.duplicateSlots / runs) or 0,
+    duplicate_level_points_per_run = (runs > 0) and (a.duplicateLevelPoints / runs) or 0,
+    low_rank_duplicate_slots_per_run = (runs > 0) and (a.lowRankDuplicateSlots / runs) or 0,
+    low_rank_duplicate_level_points_per_run = (runs > 0) and (a.lowRankDuplicateLevelPoints / runs) or 0,
+    by_unit = byUnit,
+    top_units = top,
+  }
+end
+
 local function newAgg()
   return {
     runs = 0, completions = 0, rounds = 0, wins = 0,
@@ -293,6 +415,7 @@ local function newAgg()
     archetypeRuns = 0, archetypeCommitted = 0, archetypeCommitRoundSum = 0,
     virtualBench = {}, tiers = {}, archetypes = {}, unitMerge = {}, planTargets = {},
     mergeLifecycle = Common.mergeLifecycleAgg(),
+    finalDuplicates = newFinalDuplicateAgg(),
   }
 end
 
@@ -1479,6 +1602,7 @@ local function addRun(a, traj)
   for _, ev in ipairs(traj.mergeEvents or {}) do addUnitMergeEvent(a.unitMerge, ev, "merge") end
   Common.addMergeLifecycle(a.mergeLifecycle, traj)
   if traj.result == "win" then a.completions = a.completions + 1 end
+  addFinalDuplicate(a.finalDuplicates, traj)
   addCommitment(a, traj)
   addPlanAccess(a, traj)
   for _, rd in ipairs(traj.rounds or {}) do
@@ -1552,6 +1676,7 @@ local function finish(a)
   local spend = a.buyGold + a.rerollGold + a.xpGold
   local byUnitMerge, unitMergeWatch = finishUnitMerge(a.unitMerge)
   local mergeLifecycle = Common.finishMergeLifecycle(a.mergeLifecycle)
+  local finalDuplicate = finishFinalDuplicate(a.finalDuplicates)
   local planAccess = {}
   for id, rec in pairs(a.planTargets or {}) do
     local supportAccess = finishSupportAccess(rec.support, rec.runs)
@@ -1706,6 +1831,7 @@ local function finish(a)
     by_unit_merge = byUnitMerge,
     unit_merge_watch = unitMergeWatch,
     merge_lifecycle = mergeLifecycle,
+    final_duplicate_saturation = finalDuplicate,
     plan_access = planAccess,
     plan_support_watch = summarizePlanSupport(planAccess),
   }
@@ -1795,6 +1921,7 @@ end
 
 local function profileSummaryRow(variant)
   local p = profiles[variant.key]
+  local dup = p.final_duplicate_saturation or {}
   return {
     economy_variant = variant.key,
     economy = p.economy,
@@ -1821,10 +1948,16 @@ local function profileSummaryRow(variant)
     avg_leftover_gold = p.avg_leftover_gold,
     event_unit_progress_rate = p.event_unit_progress_rate,
     event_mutations_per_run = p.event_mutations_per_run,
+    final_duplicate_id_run_rate = dup.duplicate_id_run_rate or 0,
+    final_low_rank_duplicate_run_rate = dup.low_rank_duplicate_run_rate or 0,
+    final_low_rank_duplicate_slots_per_run = dup.low_rank_duplicate_slots_per_run or 0,
+    final_low_rank_duplicate_level_points_per_run = dup.low_rank_duplicate_level_points_per_run or 0,
+    final_duplicate_top_units = dup.top_units or {},
   }
 end
 
 local function policySummaryRow(economyVariant, policyName, p)
+  local dup = p.final_duplicate_saturation or {}
   return {
     economy_variant = economyVariant,
     policy = policyName,
@@ -1844,6 +1977,11 @@ local function policySummaryRow(economyVariant, policyName, p)
     avg_xp_gate_unit_coverage = p.avg_xp_gate_unit_coverage,
     avg_xp_gate_level_coverage = p.avg_xp_gate_level_coverage,
     event_unit_progress_rate = p.event_unit_progress_rate,
+    final_duplicate_id_run_rate = dup.duplicate_id_run_rate or 0,
+    final_low_rank_duplicate_run_rate = dup.low_rank_duplicate_run_rate or 0,
+    final_low_rank_duplicate_slots_per_run = dup.low_rank_duplicate_slots_per_run or 0,
+    final_low_rank_duplicate_level_points_per_run = dup.low_rank_duplicate_level_points_per_run or 0,
+    final_duplicate_top_units = dup.top_units or {},
   }
 end
 

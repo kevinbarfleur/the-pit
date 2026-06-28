@@ -1309,6 +1309,24 @@ creatures low-rank, le meilleur candidat est
 `gnaw_rat`/`carrion_pecker`. Il faut encore le tester sur un panel plus large
 avant de l'appliquer au live.
 
+Instrumentation ajoutee apres ce constat :
+
+- `tools/scenarios/economy.lua` expose maintenant
+  `final_duplicate_saturation`, avec un focus `low_rank` rang 1-2 ;
+- les resumes compacts ajoutent `final_low_rank_duplicate_run_rate`,
+  `final_low_rank_duplicate_slots_per_run`,
+  `final_low_rank_duplicate_level_points_per_run` et les top units ;
+- mini-panel `N=32` sur `sap_cost_pair_completion` vs
+  `sap_cost_pair_completion_tiered_reroll` : le tax baisse la completion du
+  deep-reroll (`93.8% -> 75.0%`) mais ne supprime pas sa structure finale
+  (`100%` de runs avec duplicatas low-rank dans les deux cas). Les principaux
+  duplicatas restent `carrion_pecker` et `gnaw_rat`.
+
+Lecture nuancee : le reroll-tax controle l'acces au win/postgame, pas encore
+l'identite du board final. Si on juge que les boards multi-copies low-rank sont
+trop homogenes, il faudra tester un garde-fou de structure ou des counters de
+combat, pas seulement une taxe d'economie.
+
 Policies minimales :
 
 - random baseline ;

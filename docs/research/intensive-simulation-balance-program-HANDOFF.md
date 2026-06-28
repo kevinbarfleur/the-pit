@@ -2801,6 +2801,16 @@ Next implementation targets:
   `runs/long-2026-06-28c/bossrush-reroll-tax-n8` keeps postgame scoring alive
   under the taxed profile, but lowers entry/score-run as expected. Treat it as
   a tradeoff signal, not a final verdict because N is small.
+- final duplicate saturation instrumentation:
+  `tools/scenarios/economy.lua` now reports `final_duplicate_saturation` and
+  compact fields for final low-rank duplicate boards. A targeted N=32 probe on
+  `sap_cost_pair_completion` vs `sap_cost_pair_completion_tiered_reroll`
+  confirms the metric catches the observed pattern: `carrion_pecker` and
+  `gnaw_rat` are the top duplicate units, and the deep-reroll line has `100%`
+  final low-rank duplicate boards under both profiles. The reroll tax lowered
+  deep-reroll completion (`93.8% -> 75.0%`) but did not erase the multi-copy
+  board identity. Read: economy tax controls reachability; structural
+  homogeneity needs a separate test if it becomes a design problem.
 3. Use the new compact economy summary first, and only drill into full
    `plan_access` / `support_access` when a row shows a concrete anomaly.
 4. Use `plan_support_watch` rows in the next economy/bossrush panels to separate
