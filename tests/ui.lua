@@ -935,15 +935,20 @@ local ok, err = pcall(function()
     assert(action == "abandon", "confirmation : abandon appelle host.abandonRun")
   end
 
-  -- Runover : panneau forge + bannière (win/defeat) + bouton-œil de relance. host stub recoit newRun.
+  -- Runover : victoire -> choix bossrush/claim ; défaite -> bouton-œil de relance. host stub recoit les routes.
   do
     local Runover = require("src.scenes.runover")
     for _, res in ipairs({ "win", "lose" }) do
-      local restarted = false
-      local host = { newRun = function() restarted = true end }
+      local restarted, bossrush = false, false
+      local host = {
+        newRun = function() restarted = true end,
+        startBossrush = function() bossrush = true end,
+      }
       local ro = Runover.new(Palette, 320, 180, host,
         { result = res, run = { wins = 7, losses = 2, round = 12, level = 5 } })
       assert(ro.panel and ro.cta, "runover : panneau + bouton construits")
+      if res == "win" then assert(ro.alt, "runover win : bouton claim victory construit")
+      else assert(not ro.alt, "runover lose : pas de bouton bossrush secondaire") end
       ro:update(1.0)
       ro:drawBack(view); ro:drawWorld(); ro:drawOverlay(view)
       local cta = ro.cta
@@ -953,11 +958,59 @@ local ok, err = pcall(function()
       ro:mousepressed((cta.x + cta.w / 2) / 4, (cta.y + cta.h / 2) / 4, 1)
       ro:mousereleased()
       ro:update(60) -- ⭐ mûrit l'action différée (Feel) : le press du CTA est visible avant la relance
-      assert(restarted, "runover : clic relance la run (" .. res .. ", apres differe)")
+      if res == "win" then
+        assert(bossrush and not restarted, "runover win : CTA principal entre en bossrush")
+        ro = Runover.new(Palette, 320, 180, host, { result = res, run = { wins = 7, losses = 2, round = 12, level = 5 } })
+        local alt = ro.alt
+        ro:mousepressed((alt.x + alt.w / 2) / 4, (alt.y + alt.h / 2) / 4, 1)
+        ro:update(60)
+        assert(restarted, "runover win : claim victory relance proprement")
+      else
+        assert(restarted, "runover lose : clic relance la run apres differe")
+      end
     end
     -- relance clavier [r] (no crash).
     local ro2 = Runover.new(Palette, 320, 180, { newRun = function() end }, { result = "lose" })
     ro2:keypressed("r")
+  end
+
+  -- Bossrush result : scene post-win calcule un score deterministe, archive un record et expose des sorties.
+  do
+    local BossrushScene = require("src.scenes.bossrush")
+    local Units = require("src.data.units")
+    local function spec(id, x, y, row)
+      local u = Units[id]
+      return {
+        id = id, level = 1, hp = u.hp, dmg = u.dmg, cd = u.cd, effects = u.effects,
+        shield = 0, depth = 0, row = row or 0, x = x, y = y, facing = 1,
+      }
+    end
+    local run = { seed = 77, wins = 10, losses = 1, round = 12, bossrushResults = {} }
+    local restarted, menu = false, false
+    local host = {
+      run = run,
+      newRun = function() restarted = true end,
+      abandonRun = function() menu = true end,
+    }
+    local s = BossrushScene.new(Palette, 320, 180, host, {
+      run = run,
+      left = { spec("marauder", 92, 78, 0), spec("witch", 82, 106, 1), spec("skeleton", 102, 134, 2) },
+      bossKey = "brasier",
+      seed = 177,
+      scoreTicks = 12,
+      tickCap = 420,
+    })
+    assert(s.result and s.result.boss_key == "brasier", "bossrush : resultat calcule pour le boss demande")
+    assert(#run.bossrushResults == 1, "bossrush : record score archive sur le run")
+    s:update(1.0); s:drawBack(view); s:drawWorld(); s:drawOverlay(view)
+    local b = s.btnNew
+    s:mousepressed((b.x + b.w / 2) / 4, (b.y + b.h / 2) / 4, 1)
+    s:update(60)
+    assert(restarted, "bossrush : CTA nouvelle run route au host")
+    local m = s.btnMenu
+    s:mousepressed((m.x + m.w / 2) / 4, (m.y + m.h / 2) / 4, 1)
+    s:update(60)
+    assert(menu, "bossrush : bouton menu route au host")
   end
 
   -- ── src/ui/overlay.lua : CHORÉGRAPHIE d'entrée UNIFIÉE des overlays flottants (transplant modalstack). On

@@ -109,6 +109,13 @@ local function unitCost(self, id)
   return Economy.unitCost(self and self.economy, u, DEFAULT_COST)
 end
 
+local function pairSupportConfig(economy)
+  local cfg = economy and economy.pairCompletionSupport
+  if cfg == true then return {} end
+  if type(cfg) == "table" then return cfg end
+  return nil
+end
+
 -- Bonus d'or de série : streak 0-1 -> 0, 2 -> 1, 3 -> 2, 4+ -> STREAK_CAP. Victoires OU défaites.
 local function streakBonus(self)
   local s = math.max(self.winStreak, self.lossStreak)
@@ -141,12 +148,16 @@ function RunState.new(seed, opts)
     shopOddsShift = 0,             -- Lot 6 : décalage PERSISTANT du tier utilisé POUR LES COTES (relique beggars_lantern = -1). 0 = identique au tier réel.
     freezeSlots = 0,               -- W8 : nombre d'offres de boutique pouvant être gelées (relique frost_seal)
     frozenOffers = {},             -- [slot] = {id,cost} conservé sur reroll/round tant qu'il n'est pas acheté
+    pairSupportMisses = {},        -- [unitId] = fenetres ratees pour le support de 3e copie.
+    pairSupportRound = 0,          -- round courant du compteur de support.
+    pairSupportCount = 0,          -- nb d'injections de support deja faites ce round.
     shop = {},
     relics = {}, -- possédées : { { id } } (modèle LISIBLE : effet affiché ; collection Grimoire inscrite au grant)
     runEventsSeen = {}, -- events post-combat deja servis cette run (anti repetition tant que possible)
     _pendingGold = 0, -- A3 : or DIFFÉRÉ au prochain round (reliques d'éco : or-sur-victoire). Hors RNG.
     relicFromLevelThisRound = false, -- Lot 5 (§5.2) : une seule récompense de relique par level-up et PAR round
     chronicles = {}, -- HISTORIQUE des journaux de combat (1 par combat) pour le sélecteur de round (UI, hors éco)
+    bossrushResults = {}, -- Scores PvE post-victoire : seed, boss, degats, survie, causes (debug/replay V1).
   }, RunState)
   self:startRound()
   return self
@@ -382,6 +393,65 @@ function RunState:currentRerollCost() return Economy.rerollCost(self.economy, se
 function RunState:goldPerRoundFor(round) return Economy.goldForRound(self.economy, round or self.round) end
 
 function RunState:unitCost(id) return unitCost(self, id) end
+
+function RunState:_pairSupportCountForRound()
+  local round = self.round or 0
+  if self.pairSupportRound ~= round then
+    self.pairSupportRound = round
+    self.pairSupportCount = 0
+  end
+  return self.pairSupportCount or 0
+end
+
+function RunState:applyPairCompletionSupport(candidates, source)
+  local cfg = pairSupportConfig(self.economy)
+  if not cfg then return false end
+  if (self.round or 0) < (cfg.minRound or 1) then return false end
+  if self:_pairSupportCountForRound() >= (cfg.maxPerRound or 1) then return false end
+  if not candidates or #candidates == 0 then return false end
+
+  local candidateSet, offered = {}, {}
+  for _, id in ipairs(candidates) do candidateSet[id] = true end
+  for _, offer in ipairs(self.shop or {}) do
+    if offer and not offer.sold and candidateSet[offer.id] then offered[offer.id] = true end
+  end
+
+  self.pairSupportMisses = self.pairSupportMisses or {}
+  for id in pairs(self.pairSupportMisses) do
+    if not candidateSet[id] then self.pairSupportMisses[id] = nil end
+  end
+
+  local id
+  local minMissed = cfg.minMissedWindows or 0
+  for _, candidate in ipairs(candidates) do
+    if offered[candidate] then
+      self.pairSupportMisses[candidate] = 0
+    else
+      self.pairSupportMisses[candidate] = (self.pairSupportMisses[candidate] or 0) + 1
+      if not id and self.pairSupportMisses[candidate] >= minMissed then id = candidate end
+    end
+  end
+  if not id then return false end
+
+  local slot
+  for i = #(self.shop or {}), 1, -1 do
+    local offer = self.shop[i]
+    if offer and not offer.sold and not offer.frozen then slot = i; break end
+  end
+  if not slot then return false end
+
+  local old = self.shop[slot]
+  self.shop[slot] = {
+    id = id,
+    cost = self:unitCost(id),
+    sold = false,
+    support = "pair_completion",
+    supportSource = source,
+    replacedId = old and old.id or nil,
+  }
+  self.pairSupportCount = (self.pairSupportCount or 0) + 1
+  return true, id, slot, old and old.id or nil
+end
 
 function RunState:canReroll() return self.gold >= self:currentRerollCost() end
 

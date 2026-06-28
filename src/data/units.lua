@@ -64,9 +64,8 @@ local U = {
   witch = {
     id = "witch", type = "arcane", family = "cocon", arch = "broodsac", rank = 2, cost = 2, hp = 36, dmg = 13, cd = 72, aggro = 5, -- WITCH / Venom (carry)
     effects = { { trigger = "on_hit", op = "poison", params = { dps = 2, dur = 180 } } },
-    -- COMMANDANT (LE VENIN PROFOND) : carry poison -> ampli poison d'équipe (mono-école, TROU #1 cablé). Chaque
-    -- venin de la fosse mord un tiers plus profond. poisonInc baké en buffer dédié, cappé DOT_CAP_MULT. cf. spec §3.1.
-    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "team", params = { stat = "poisonInc", value = 0.18 } },
+    -- COMMANDANT (LE VENIN PROFOND) : amplifie le poison de l'arrière-garde, pas toute l'équipe (1 cible forte).
+    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "role:back", params = { stat = "poisonInc", value = 0.24 } },
   },
   demon = {
     -- GREFFE 9c (Leurre/T7) : aggro 25 (soft-leurre — le fanal ATTIRE le focus). 25 < tank 40 (les tanks gardent
@@ -82,9 +81,8 @@ local U = {
   spore_tick = { -- POISON : cadence rapide, petits stacks (empile vite)
     id = "spore_tick", bodyplan = "blob", rank = 1, type = "arcane", family = "spore", arch = "sporewalker", cost = 1, hp = 30, dmg = 3, cd = 30, aggro = 5,
     effects = { { trigger = "on_hit", op = "poison", params = { dps = 1, dur = 180 } } },
-    -- COMMANDANT (LES SPORES PROMPTES) : commune poison-cadence -> tempo team (haste 0.05 ; PAS ampli poison : évite
-    -- de gonfler l'apex, cf. spec §3.4). Les spores dérivent vite, et toute la fosse frappe plus vite.
-    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "team", params = { stat = "haste", value = 0.05 } },
+    -- COMMANDANT (LES SPORES PROMPTES) : tempo des créatures arcane, pour pousser le build école plutôt qu'un buff universel.
+    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "type:arcane", params = { stat = "haste", value = 0.06 } },
   },
   corruptor = { -- POISON + malus de valeur (anti-stat) + AMPLI MARQUE (vuln-on-hit : la plaie trop fétide)
     id = "corruptor", bodyplan = "cephalopod", rank = 3, type = "abyss", family = "kraken", arch = "kraken", cost = 3, hp = 46, dmg = 6, cd = 62,
@@ -101,8 +99,8 @@ local U = {
   emberling = { -- BRÛLURE : burst qui décroît, lèche le bouclier
     id = "emberling", bodyplan = "blob", rank = 2, type = "abyss", family = "demon", arch = "fiend", cost = 2, hp = 40, dmg = 5, cd = 50,
     effects = { { trigger = "on_hit", op = "burn", params = { dps = 6, dur = 150 } } },
-    -- COMMANDANT (LA BRAISE QUI MORD) : burst burn -> ampli burn école (burnInc team, TROU #1). Les feux de la fosse rongent plus chaud. cf. spec §3.2.
-    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "team", params = { stat = "burnInc", value = 0.20 } },
+    -- COMMANDANT (LA BRAISE QUI MORD) : concentre le burn sur l'avant, là où les combats s'ouvrent.
+    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "role:front", params = { stat = "burnInc", value = 0.26 } },
   },
   razorkin = { -- SAIGNEMENT : slow de cadence
     id = "razorkin", bodyplan = "humanoid", rank = 2, type = "flesh", family = "bete", arch = "direcat", cost = 2, hp = 52, dmg = 5, cd = 46,
@@ -110,8 +108,8 @@ local U = {
       { trigger = "on_hit", op = "bleed", params = { dps = 2, dur = 240, slowPct = 0.20 } },
       { trigger = "combat_start", op = "aura_stat", target = "behind", params = { stat = "bleedInc", value = 0.06 } },
     },
-    -- COMMANDANT (LES PLAIES QUI COURENT) : bleed standard -> ampli bleed école (bleedInc team 0.18, TROU #1). cf. spec §3.3.
-    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "team", params = { stat = "bleedInc", value = 0.18 } },
+    -- COMMANDANT (LES PLAIES QUI COURENT) : bleed réservé aux chairs, plus lisible qu'un bonus d'équipe générique.
+    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "type:flesh", params = { stat = "bleedInc", value = 0.16 } },
   },
   rot_hound = { -- POURRITURE : enfle, ampute les PV max
     -- ÉQUILIBRAGE r2 (2026-06-25, levier A « rot front-load ») : base 1->2, growth 1->2. Le rot OUVRE plus fort et
@@ -119,8 +117,8 @@ local U = {
     -- tué en ~12-16 s avant maturation). capDps/maxHpFrac INCHANGÉS = plafond/amputation (identité anti-mur) intacts.
     id = "rot_hound", bodyplan = "quadruped", rank = 2, type = "bone", family = "larve", arch = "grub", cost = 2, hp = 54, dmg = 5, cd = 56,
     effects = { { trigger = "on_hit", op = "rot", params = { base = 2, growth = 2, dur = 240, capDps = 10, maxHpFrac = 0.15 } } },
-    -- COMMANDANT (LA POURRITURE QUI ENFLE) : rot standard -> ampli rot école (rotInc team 0.18, TROU #1). cf. spec §3.5.
-    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "team", params = { stat = "rotInc", value = 0.18 } },
+    -- COMMANDANT (LA POURRITURE QUI ENFLE) : rot sur l'avant-garde, pour faire mûrir le mur exposé.
+    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "role:front", params = { stat = "rotInc", value = 0.22 } },
   },
   stormcaller = { -- CHOC : charge un condensateur (décharge stacks × volt) + AMPLI MARQUE (là où il regarde, ça frappe)
     id = "stormcaller", bodyplan = "robe", rank = 2, type = "arcane", family = "oeil", arch = "eyecluster", cost = 2, hp = 38, dmg = 6, cd = 58, aggro = 5,
@@ -155,8 +153,8 @@ local U = {
       { trigger = "on_hit", op = "burn", params = { dps = 4, dur = 120, refresh = true } },
       { trigger = "combat_start", op = "aura_stat", target = "neighbors", params = { stat = "haste", value = 0.02 } },
     },
-    -- COMMANDANT (LE FEU PROMPT) : cadence rapide -> tempo team (sert tout DoT, haste sans cap -> 0.06). cf. spec §3.2.
-    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "team", params = { stat = "haste", value = 0.06 } },
+    -- COMMANDANT (LE FEU PROMPT) : cadence sur l'arrière-garde, pour accélérer un carry protégé.
+    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "role:back", params = { stat = "haste", value = 0.08 } },
   },
   pyre_tender = { -- gros coup lent -> grosse brûlure de départ (front-load)
     id = "pyre_tender", bodyplan = "deformed", rank = 2, type = "flesh", family = "echassier", arch = "heron", cost = 2, hp = 50, dmg = 7, cd = 72,
@@ -170,16 +168,16 @@ local U = {
   ash_moth = { -- coût bas, brûlure qui décroît vite (éphémère mais bon marché)
     id = "ash_moth", bodyplan = "eye", rank = 1, type = "flesh", family = "echassier", arch = "strider", cost = 1, hp = 26, dmg = 3, cd = 40,
     effects = { { trigger = "on_hit", op = "burn", params = { dps = 7, dur = 120, decayPct = 0.45 } } },
-    -- COMMANDANT (LA CENDRE AU VENT) : commune éphémère -> micro-tempo (défaut sûr rang 1, haste 0.04). cf. spec §3.2.
-    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "team", params = { stat = "haste", value = 0.04 } },
+    -- COMMANDANT (LA CENDRE AU VENT) : tempo low-reroll, réservé aux rangs 1.
+    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "tier:1", params = { stat = "haste", value = 0.05 } },
   },
 
   -- SAIGNEMENT (bas DPS, slow de cadence) : intensité / contrôle pur / épines
   gash_fiend = { -- saignement un peu plus fort, slow standard
     id = "gash_fiend", bodyplan = "humanoid", rank = 2, type = "flesh", family = "echassier", arch = "heron", cost = 2, hp = 50, dmg = 5, cd = 48,
     effects = { { trigger = "on_hit", op = "bleed", params = { dps = 3, dur = 240, slowPct = 0.20 } } },
-    -- COMMANDANT (LES PLAIES BÉANTES) : bleed un peu fort -> ampli bleed école (bleedInc team, TROU #1). Les coupes de la fosse courent profond. cf. spec §3.3.
-    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "team", params = { stat = "bleedInc", value = 0.20 } },
+    -- COMMANDANT (LES PLAIES BÉANTES) : le front saigne plus fort, au lieu d'un doublon bleed d'équipe.
+    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "role:front", params = { stat = "bleedInc", value = 0.25 } },
   },
   hookjaw = { -- bleed léger + AMPLI ÉCHO : multicast-aura sur le frappeur de la ligne avant (l'exemple-fondateur)
     id = "hookjaw", bodyplan = "quadruped", rank = 2, type = "flesh", family = "bete", arch = "behemoth", cost = 2, hp = 58, dmg = 3, cd = 54,
@@ -199,8 +197,8 @@ local U = {
       { trigger = "on_hit", op = "bleed", params = { dps = 2, dur = 180, slowPct = 0.10 } },
       { trigger = "on_attacked", op = "thorns", params = { value = 3 } },
     },
-    -- COMMANDANT (LA PEAU ÉPINEUSE) : épines -> défensif team (varie l'école, pas un ampli bleed ; dmgReduce 0.06). cf. spec §3.3.
-    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "team", params = { stat = "dmgReduce", value = 0.06 } },
+    -- COMMANDANT (LA PEAU ÉPINEUSE) : défense des os, pour ouvrir un vrai axe mono-bone.
+    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "type:bone", params = { stat = "dmgReduce", value = 0.07 } },
   },
 
   -- POISON (N stacks, malus de valeur) : malus de base / longue durée
@@ -210,8 +208,8 @@ local U = {
       { trigger = "on_hit", op = "poison", params = { dps = 2, dur = 180, weaken = 0.10 } },
       { trigger = "combat_start", op = "aura_stat", target = "ahead", params = { stat = "poisonInc", value = 0.08 } },
     },
-    -- COMMANDANT (LE CRACHAT ÂCRE) : poison-malus -> ampli poison modéré (conservateur, apex ; poisonInc team, TROU #1). cf. spec §3.4.
-    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "team", params = { stat = "poisonInc", value = 0.18 } },
+    -- COMMANDANT (LE CRACHAT ÂCRE) : poison du carry arrière, plus pointu qu'un bonus poison global.
+    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "role:back", params = { stat = "poisonInc", value = 0.24 } },
   },
   rot_grub = { -- stacks LONGUE durée (entretien facile du total) — POISON malgré le nom
     id = "rot_grub", bodyplan = "serpent", rank = 2, type = "abyss", family = "hydre", arch = "hydra", cost = 2, hp = 48, dmg = 4, cd = 58,
@@ -219,8 +217,8 @@ local U = {
       { trigger = "on_hit", op = "poison", params = { dps = 2, dur = 300 } },
       { trigger = "combat_start", op = "aura_stat", target = "neighbors", params = { stat = "regen", value = 1 } },
     },
-    -- COMMANDANT (LE VENIN QUI DURE) : poison longue durée -> sustain team (varie l'école ; regen, sans cap -> 2). cf. spec §3.4.
-    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "team", params = { stat = "regen", value = 2 } },
+    -- COMMANDANT (LE VENIN QUI DURE) : sustain abyssal, moins universel et plus identifiable.
+    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "type:abyss", params = { stat = "regen", value = 2 } },
   },
 
   -- POURRITURE (enfle, ampute les PV max) : cadence / long terme / amputation forte
@@ -252,8 +250,8 @@ local U = {
     id = "necro_leech", bodyplan = "serpent", rank = 3, type = "abyss", family = "ombre", arch = "shade", cost = 3, hp = 50, dmg = 5, cd = 56,
     -- ÉQUILIBRAGE r2 (levier A) : base 1->2, growth 1->2 (front-load). maxHpFrac=0.35 (signature amputation) INCHANGÉ.
     effects = { { trigger = "on_hit", op = "rot", params = { base = 2, growth = 2, dur = 240, capDps = 10, maxHpFrac = 0.35 } } },
-    -- COMMANDANT (LA CHAIR QUI TOMBE) : amputation forte -> ampli rot (rotInc team, TROU #1). cf. spec §3.5.
-    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "team", params = { stat = "rotInc", value = 0.20 } },
+    -- COMMANDANT (LA CHAIR QUI TOMBE) : rot abyssal, pour ne pas dupliquer le rot global.
+    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "type:abyss", params = { stat = "rotInc", value = 0.18 } },
   },
 
   -- ══ VAGUE 2 : AURAS d'adjacence (T1.5 « semeurs »). Build-résolues via le GRAPHE du sigil (buildComp +
@@ -262,26 +260,26 @@ local U = {
   soot_acolyte = { -- BRÛLURE : +50% dps (increased) aux brûlures des voisins (cappé ×3 à la lecture)
     id = "soot_acolyte", bodyplan = "robe", rank = 3, type = "arcane", family = "chimere", arch = "chimera", cost = 3, hp = 46, dmg = 6, cd = 54,
     effects = { { trigger = "combat_start", op = "aura_burn_dps", target = "neighbors", params = { inc = 0.5 } } },
-    -- COMMANDANT (LA SUIE DANS LES POUMONS) : aura burn d'adjacence -> généralise à team (burnInc, TROU #1). cf. spec §3.2.
-    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "team", params = { stat = "burnInc", value = 0.20 } },
+    -- COMMANDANT (LA SUIE DANS LES POUMONS) : brûlure arcane, orientée école plutôt que team-wide.
+    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "type:arcane", params = { stat = "burnInc", value = 0.18 } },
   },
   clot_mender = { -- SAIGNEMENT : les voisins appliquent AUSSI un petit bleed
     id = "clot_mender", bodyplan = "robe", rank = 3, type = "bone", family = "wendigo", arch = "wendigo", cost = 3, hp = 44, dmg = 4, cd = 56,
     effects = { { trigger = "combat_start", op = "aura_grant_bleed", target = "neighbors", params = { dps = 1, dur = 180, slowPct = 0.10 } } },
-    -- COMMANDANT (LES VIEILLES CICATRICES) : aura bleed d'adjacence -> généralise à team (bleedInc, TROU #1). cf. spec §3.3.
-    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "team", params = { stat = "bleedInc", value = 0.18 } },
+    -- COMMANDANT (LES VIEILLES CICATRICES) : bleed des os, pour soutenir le sous-archétype bone.
+    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "type:bone", params = { stat = "bleedInc", value = 0.18 } },
   },
   miasma_acolyte = { -- POISON : +50% dps (increased) aux stacks de poison des voisins (cappé ×3 ; hérité par le spread)
     id = "miasma_acolyte", bodyplan = "robe", rank = 3, type = "arcane", family = "cocon", arch = "bilesac", cost = 3, hp = 36, dmg = 4, cd = 60,
     effects = { { trigger = "combat_start", op = "aura_poison_dps", target = "neighbors", params = { inc = 0.5 } } },
-    -- COMMANDANT (LA BRUME QUI S'ÉTEND) : aura poison d'adjacence -> généralise à team (poisonInc, TROU #1). cf. spec §3.4.
-    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "team", params = { stat = "poisonInc", value = 0.18 } },
+    -- COMMANDANT (LA BRUME QUI S'ÉTEND) : poison arcane, plus typé que le doublon poison team.
+    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "type:arcane", params = { stat = "poisonInc", value = 0.16 } },
   },
   decay_tender = { -- POURRITURE : +growth aux pourritures des voisins (enflent plus vite)
     id = "decay_tender", bodyplan = "robe", rank = 3, type = "bone", family = "pendu", arch = "hanged", cost = 3, hp = 50, dmg = 4, cd = 60,
     effects = { { trigger = "combat_start", op = "aura_rot_growth", target = "neighbors", params = { bonus = 1 } } },
-    -- COMMANDANT (LA DÉCOMPOSITION HÂTIVE) : aura rot d'adjacence -> généralise à team (rotInc, TROU #1). cf. spec §3.5.
-    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "team", params = { stat = "rotInc", value = 0.18 } },
+    -- COMMANDANT (LA DÉCOMPOSITION HÂTIVE) : rot des os, lisible avec les cartes qui affichent maintenant le type.
+    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "type:bone", params = { stat = "rotInc", value = 0.18 } },
   },
 
   -- ══ VAGUE 3 : T2 « twists » (cf. effects-dot-families.md §H). Chacun = l'effet + UNE torsion. Ops
@@ -296,8 +294,8 @@ local U = {
       { trigger = "on_hit", op = "burn", params = { dps = 6, dur = 180, decayPct = 0.15 } },
       { trigger = "combat_start", op = "aura_stat", target = "neighbors", params = { stat = "haste", value = 0.12 } },
     },
-    -- COMMANDANT (LE TAMBOUR DE GUERRE) : équipe-faible — toute la fosse frappe au même souffle (+8% cadence). cf. §2.2 (#1).
-    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "team", params = { stat = "haste", value = 0.08 } },
+    -- COMMANDANT (LE TAMBOUR DE GUERRE) : le centre donne le rythme, pas toute l'équipe.
+    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "role:center", params = { stat = "haste", value = 0.12 } },
   },
   wildfire_hound = { -- à la mort d'un ennemi en feu, propage la brûlure à ses voisins (proximité champ)
     id = "wildfire_hound", bodyplan = "quadruped", rank = 4, type = "abyss", family = "demon", arch = "serpent", cost = 4, hp = 48, dmg = 5, cd = 54,
@@ -311,8 +309,8 @@ local U = {
   kiln_warden = { -- convertit le surplus : une brûlure plus faible PROLONGE au lieu d'être perdue
     id = "kiln_warden", bodyplan = "deformed", rank = 4, type = "flesh", family = "colosse", arch = "ogre", cost = 4, hp = 52, dmg = 5, cd = 60,
     effects = { { trigger = "on_hit", op = "burn", params = { dps = 5, dur = 180, mode = "extend_if_weaker" } } },
-    -- COMMANDANT (LE FOUR NOURRI) : conservation burn -> ampli fort burn (burnInc team 0.22, TROU #1, rang 4). cf. spec §3.2.
-    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "team", params = { stat = "burnInc", value = 0.22 } },
+    -- COMMANDANT (LE FOUR NOURRI) : brûlure très forte sur le centre du board.
+    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "role:center", params = { stat = "burnInc", value = 0.28 } },
   },
 
   -- SAIGNEMENT T2
@@ -325,8 +323,8 @@ local U = {
   tendon_render = { -- le slow SCALE avec les PV manquants (plus elle saigne, plus elle ralentit)
     id = "tendon_render", bodyplan = "arachnid", rank = 4, type = "bone", family = "wendigo", arch = "wendigo", cost = 4, hp = 50, dmg = 4, cd = 50,
     effects = { { trigger = "on_hit", op = "bleed", params = { dps = 2, dur = 240, slowPct = 0.15, slowScalesMissingHp = true } } },
-    -- COMMANDANT (LES COUPES PROFONDES) : bleed-control -> ampli bleed fort (bleedInc team 0.22, TROU #1, rang 4). cf. spec §3.3.
-    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "team", params = { stat = "bleedInc", value = 0.22 } },
+    -- COMMANDANT (LES COUPES PROFONDES) : saignement concentré sur l'arrière-garde.
+    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "role:back", params = { stat = "bleedInc", value = 0.28 } },
   },
   vein_splitter = { -- saignement profond et rapide (« deux entailles » ; 2-instances approximé par 1 fort)
     id = "vein_splitter", bodyplan = "humanoid", rank = 3, type = "flesh", family = "bandit", arch = "cutthroat", cost = 3, hp = 46, dmg = 4, cd = 44,
@@ -726,8 +724,8 @@ local U = {
   ink_horror = { -- CÉPHALOPODE / encre toxique abyssale
     id = "ink_horror", type = "abyss", family = "cephalo", arch = "octopus", rank = 2, cost = 2, hp = 44, dmg = 6, cd = 54,
     effects = { { trigger = "on_hit", op = "poison", params = { dps = 3, dur = 170 } } },
-    -- COMMANDANT (L'ENCRE ABYSSALE) : encre toxique -> ampli poison modéré (poisonInc team 0.16, TROU #1). cf. spec §3.4.
-    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "team", params = { stat = "poisonInc", value = 0.16 } },
+    -- COMMANDANT (L'ENCRE ABYSSALE) : poison réservé aux Abyss, cohérent avec son type.
+    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "type:abyss", params = { stat = "poisonInc", value = 0.16 } },
   },
   deep_kraken = { -- KRAKEN / léviathan, étreinte venimeuse (légendaire)
     id = "deep_kraken", type = "abyss", family = "kraken", arch = "kraken", rank = 5, cost = 5, hp = 84, dmg = 12, cd = 78,
@@ -776,13 +774,13 @@ local U = {
   bone_choir = { id = "bone_choir", type = "bone", family = "pendu", arch = "hanged", rank = 2, cost = 2, hp = 60, dmg = 5, cd = 60,
     -- « os sur os, rien ne passe » : armure (dmgReduce, lu damage cause=attack) à toutes les unités bone.
     effects = { { trigger = "combat_start", op = "aura_stat", target = "type:bone", params = { stat = "dmgReduce", value = 0.08 } } },
-    -- COMMANDANT : l'ossuaire généralise son armure à toute la meute (dmgReduce team léger, sans cap moteur).
-    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "team", params = { stat = "dmgReduce", value = 0.06 } } },
+    -- COMMANDANT : l'ossuaire durcit les Bone, au lieu d'un guard global de plus.
+    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "type:bone", params = { stat = "dmgReduce", value = 0.06 } } },
   arcane_seer = { id = "arcane_seer", type = "arcane", family = "oeil", arch = "eyecluster", rank = 2, cost = 2, hp = 40, dmg = 6, cd = 56, aggro = 5,
     -- cadence (haste, cappé HASTE_CAP à la lecture) à toutes les unités arcane (la fréquence du savoir).
     effects = { { trigger = "combat_start", op = "aura_stat", target = "type:arcane", params = { stat = "haste", value = 0.08 } } },
-    -- COMMANDANT : la prescience presse toute la meute (haste team, cappé HASTE_CAP à la lecture).
-    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "team", params = { stat = "haste", value = 0.06 } } },
+    -- COMMANDANT : la prescience presse les Arcane, pas toute la meute.
+    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "type:arcane", params = { stat = "haste", value = 0.06 } } },
   abyss_maw = { id = "abyss_maw", type = "abyss", family = "cephalo", arch = "squid", rank = 2, cost = 2, hp = 46, dmg = 6, cd = 58, aggro = 5,
     -- ampli POISON (poisonInc, routé vers le buffer dédié, cappé DOT_CAP_MULT) à toutes les unités abyss : croise
     -- l'axe 1 (un « commandant toxique de type »). Mono-abyss = la marée venimeuse.
@@ -792,8 +790,8 @@ local U = {
   order_marshal = { id = "order_marshal", type = "order", family = "automate", arch = "automaton", rank = 2, cost = 2, hp = 58, dmg = 6, cd = 60, aggro = 20,
     -- sustain (regen, lu par tickDots) à toutes les unités order : l'empire qui se répare (mur regen mono-order).
     effects = { { trigger = "combat_start", op = "aura_stat", target = "type:order", params = { stat = "regen", value = 2 } } },
-    -- COMMANDANT : l'ordre permanent répare toute la meute (regen team, sans cap moteur -> valeur prudente).
-    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "team", params = { stat = "regen", value = 2 } } },
+    -- COMMANDANT : l'ordre permanent répare les Order, pour un payoff mono-type clair.
+    commandBonus = { trigger = "combat_start", op = "aura_stat", target = "type:order", params = { stat = "regen", value = 2 } } },
   prism_horror = { id = "prism_horror", type = "abyss", family = "chimere", arch = "chimera", rank = 4, cost = 4, hp = 52, dmg = 6, cd = 58,
     -- RAINBOW : « chaque chair étrangère le nourrit » — +2 dmg / +4 hp par TYPE DISTINCT du board (max 5 -> +10/+20).
     -- SELF-aura build-résolue (aura_per_unique_type) : punit l'empilage mono-type, récompense le toolbox. Cappé par count.

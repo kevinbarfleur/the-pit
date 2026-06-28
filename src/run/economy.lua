@@ -1,8 +1,10 @@
 -- src/run/economy.lua
--- Pure economy tuning profiles for simulations. The live game keeps the
--- baseline unless a RunState is explicitly created with opts.economy.
+-- Pure economy tuning profiles for simulations and live runs. The legacy
+-- baseline stays addressable by id; nil resolves to the current live profile.
 
 local Economy = {}
+
+Economy.liveProfileId = "sap_cost_pair_completion_tiered_reroll"
 
 local DEFAULTS = {
   id = "baseline",
@@ -20,7 +22,7 @@ local DEFAULTS = {
 Economy.profiles = {
   baseline = {
     id = "baseline",
-    label = "current: 10g, cost=rank, reroll=1",
+    label = "legacy baseline: 10g, cost=rank, reroll=1",
   },
   sap_cost = {
     id = "sap_cost",
@@ -117,10 +119,16 @@ local function merge(base, extra)
   return out
 end
 
+function Economy.defaultProfileId()
+  local id = os.getenv("PIT_LIVE_ECONOMY")
+  if id and id ~= "" and Economy.profiles[id] then return id end
+  return Economy.liveProfileId
+end
+
 function Economy.resolve(profile)
   local src
   if profile == nil then
-    src = Economy.profiles.baseline
+    src = Economy.profiles[Economy.defaultProfileId()] or Economy.profiles.baseline
   elseif type(profile) == "string" then
     src = assert(Economy.profiles[profile], "unknown economy profile: " .. tostring(profile))
   elseif type(profile) == "table" then

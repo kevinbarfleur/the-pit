@@ -429,8 +429,8 @@ function MonsterCard.draw(view, palette, id, anchorX, anchorY, t, opts)
   drawCardPortrait(view, palette, id, opts.rig, portRegion, rank, rarCol, rich, t)
   cy = cy + PORTRAIT_H + GAP
 
-  -- (c) IDENTITÉ : [ pastille de TIER · NOM DE CASTE (couleur de rang) ........ ◆◆ rareté ]. La famille
-  -- (pip + mot) est RETIRÉE : aucune incidence mécanique (retour user 2026-06) -> la carte se lit par le TIER.
+  -- (c) IDENTITÉ : [ pastille de TIER · TYPE mécanique ........ ◆◆ rareté ]. Le TYPE redevient visible car les
+  -- auras/reliques peuvent cibler `type:abyss`, `type:flesh`, etc. Sans ce mot, la cible mécanique est opaque.
   local midI = math.floor(cy + hIdent / 2)
   local tierC = Rarity.tierColor(rank)
   if love.graphics and love.graphics.circle then
@@ -438,7 +438,15 @@ function MonsterCard.draw(view, palette, id, anchorX, anchorY, t, opts)
     love.graphics.setColor(0, 0, 0, 0.5); love.graphics.circle("line", bodyX + 5, midI, 4.5)
     love.graphics.setColor(1, 1, 1, 1)
   end
-  Draw.text(T(Rarity.tierNameKey(rank)), bodyX + 14, midI - hIdent / 2, Rarity.tierBright(rank), idFont)
+  local identX = bodyX + 14
+  local tierText = T(Rarity.tierNameKey(rank))
+  Draw.text(tierText, identX, midI - hIdent / 2, Rarity.tierBright(rank), idFont)
+  identX = identX + (idFont and idFont:getWidth(tierText) or (#tierText * 6)) + 8
+  local ty = U.type
+  if ty then
+    local typeCol = (Theme.type(ty) and Theme.type(ty).color) or C.ink3
+    Draw.text("· " .. T("type." .. ty):upper(), identX, midI - hIdent / 2, typeCol, idFont)
+  end
   -- rangée de losanges de rareté (Badge.diamond), alignée à droite.
   local DSP = 8
   local rx0 = rightX - (rank * DSP) + 4

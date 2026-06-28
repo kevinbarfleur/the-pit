@@ -139,8 +139,32 @@ return {
   ["scenario.arc_storm.label"]      = "Forked Storm",
   ["scenario.arc_storm.note"]       = "Rare shock modifiers on show: discharges chain to nearby foes, charges leap to neighbors, and never fully drain.",
 
-  -- ── Run-over (CTA forge de relance) : libellé court du bouton-œil « descendre à nouveau » ──
+  -- ── Run-over / bossrush post-win : choix entre terminer la run ou descendre vers le score PvE. ──
   ["runover.descend"] = "DESCEND AGAIN",
+  ["runover.descend_further"] = "DESCEND FURTHER",
+  ["runover.claim_victory"] = "CLAIM VICTORY",
+  ["scene.bossrush"] = "bossrush",
+  ["ui.hint_bossrush"] = "[r] new run   -   [m] menu",
+  ["bossrush.word"] = "ABOMINATION",
+  ["bossrush.kicker"] = "the victorious build is measured below",
+  ["bossrush.score"] = "SCORE {score}",
+  ["bossrush.result_title"] = "THE DEEPER MEASURE",
+  ["bossrush.metric_damage"] = "SCORE DAMAGE",
+  ["bossrush.metric_dps"] = "SCORE DPS",
+  ["bossrush.metric_window"] = "FULL WINDOW",
+  ["bossrush.metric_survived"] = "SURVIVED",
+  ["bossrush.yes"] = "YES",
+  ["bossrush.no"] = "NO",
+  ["bossrush.boss_hp"] = "BOSS WOUND",
+  ["bossrush.hp_left"] = "{hp}/{max} HP left",
+  ["bossrush.causes"] = "SCORING SOURCES",
+  ["bossrush.no_score_causes"] = "No scoring damage reached the boss.",
+  ["bossrush.no_boss"] = "No abomination",
+  ["bossrush.new_run"] = "DESCEND AGAIN",
+  ["bossrush.menu"] = "MAIN MENU",
+  ["combat.cause.thorns"] = "thorns",
+  ["combat.cause.cleave"] = "cleave",
+  ["combat.cause.fatigue"] = "fatigue",
 
   -- ── Barre du bas du BUILD (kit forge) : labels SANS le coût (le coût va dans le diamant du bouton éco) ──
   ["ui.reroll_label"] = "REROLL",

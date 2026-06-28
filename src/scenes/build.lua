@@ -199,6 +199,39 @@ function Build:benchCapacity()
   return self.benchSize or DEFAULT_BENCH_SIZE
 end
 
+local function unitRank(id)
+  local u = Units[id]
+  return u and (u.rank or 1) or 1
+end
+
+function Build:pairCompletionCandidates()
+  local counts = {}
+  for i = 1, 9 do
+    local sr = self.slotRigs[i]
+    if sr and (sr.level or 1) == 1 then counts[sr.id] = (counts[sr.id] or 0) + 1 end
+  end
+  for i = 1, self:benchCapacity() do
+    local sr = self.bench[i]
+    if sr and (sr.level or 1) == 1 then counts[sr.id] = (counts[sr.id] or 0) + 1 end
+  end
+  local candidates = {}
+  for id, n in pairs(counts) do
+    if n == 2 then candidates[#candidates + 1] = id end
+  end
+  table.sort(candidates, function(a, b)
+    local ar, br = unitRank(a), unitRank(b)
+    if ar ~= br then return ar < br end
+    return a < b
+  end)
+  return candidates
+end
+
+function Build:applyShopSupport(source)
+  local run = self.host and self.host.run
+  if not (run and run.applyPairCompletionSupport) then return false end
+  return run:applyPairCompletionSupport(self:pairCompletionCandidates(), source)
+end
+
 function Build:newRig(id)
   -- Visuel : rig dessiné MAIN (Creatures[id], les 6 vanille) sinon créature GÉNÉRÉE procéduralement
   -- (déterministe par id) — COHÉRENT avec le rendu de combat (arena_draw). Boutique = combat.
@@ -1414,7 +1447,14 @@ function Build:mousepressed(vx, vy, button)
     -- BUY XP / REROLL : feedback de press IMMÉDIAT (Feel.press sans action) + action TOUT DE SUITE (l'e2e
     -- headless asserte l'or débité juste après le clic -> on ne diffère PAS ces actions de boutique).
     if inRect(vx, vy, self.raiseBtn) then Feel.press("build.raise"); if run:canBuyXp() then run:buyXp(); SFX.play("coin") end; return end -- LEVEL/XP : pièce (achat d'XP)
-    if inRect(vx, vy, self.rerollBtn) then Feel.press("build.reroll"); run:reroll(); SFX.play("pop"); return end -- REROLL : « pop » (les offres se re-tirent)
+    if inRect(vx, vy, self.rerollBtn) then
+      Feel.press("build.reroll")
+      if run:reroll() then
+        self:applyShopSupport("reroll")
+        SFX.play("pop")
+      end
+      return
+    end -- REROLL : « pop » (les offres se re-tirent)
     local fi = self:shopFreezeAt(vx, vy)
     if fi then
       Feel.press("build.freeze." .. fi)
@@ -2273,53 +2313,223 @@ local function baseAfflDps(id, kind, level)
   return sum
 end
 
+local function auraPercent(value, signed)
+  local n = math.floor((value or 0) * 100 + 0.5)
+  return (signed and n >= 0 and "+" or "") .. tostring(n) .. "%"
+end
+
+local function auraAdd(value)
+  local n = math.floor((value or 0) + 0.5)
+  return (n >= 0 and "+" or "") .. tostring(n)
+end
+
+local function auraKindColor(kind)
+  local c = Theme.c
+  if kind == "shield" or kind == "guard" or kind == "armor" then return c.armor or c.steel or c.ink3 end
+  if kind == "multicast" then return c.echo or c.bloodL end
+  if kind == "mimicry" then return Theme.type("arcane").color end
+  if kind == "heal" or kind == "lifesteal" then return c.heal or c.regen or c.gold end
+  if kind == "growth" or kind == "stat" then return c.gold end
+  return c[kind] or c.gold
+end
+
+function Build:auraColor(kind)
+  return auraKindColor(kind)
+end
+
+function Build:auraPoint(ref)
+  if ref == "commander" and self.commanderRect then
+    local r = self.commanderRect
+    return { x = r.x + r.w / 2, y = r.y + r.h / 2 }
+  end
+  return type(ref) == "number" and self.pos[ref] or nil
+end
+
+local function auraUpperAscii(s)
+  return tostring(s or ""):gsub("[a-z]", string.upper)
+end
+
+function Build:auraSourceName(lk)
+  if lk.sourceKind == "commander" or lk.from == "commander" then
+    local cmd = self.commanderSlot
+    return cmd and auraUpperAscii(T("unit." .. cmd.id .. ".name")) or T("ui.command_word")
+  elseif lk.sourceKind == "relic" then
+    return lk.sourceId and auraUpperAscii(T("relic." .. lk.sourceId .. ".name")) or T("ui.relics")
+  elseif type(lk.from) == "number" and self.slotRigs[lk.from] then
+    return auraUpperAscii(T("unit." .. self.slotRigs[lk.from].id .. ".name"))
+  end
+  return "?"
+end
+
+function Build:auraTargetName(slot)
+  local sr = self.slotRigs[slot]
+  return sr and auraUpperAscii(T("unit." .. sr.id .. ".name")) or "?"
+end
+
+local function statAuraVisual(stat, value, targetId, targetLevel)
+  local v = value or 0
+  if stat == "dmgReduce" then return "armor", "-" .. math.floor(v * 100 + 0.5) .. "%"
+  elseif stat == "atkInc" then return "empower", auraPercent(v, true)
+  elseif stat == "haste" then return "haste", auraPercent(v, true)
+  elseif stat == "multicast" then return "multicast", "x" .. (1 + math.floor(v))
+  elseif stat == "regen" then return "regen", auraAdd(v)
+  elseif stat == "lifesteal" then return "heal", auraPercent(v, false)
+  elseif stat == "statInc" then return "growth", auraPercent(v, true)
+  elseif stat == "focusWith" then return "empower", "FOCUS"
+  elseif stat == "poisonInc" or stat == "burnInc" or stat == "bleedInc" or stat == "rotInc" then
+    local kind = stat:gsub("Inc$", "")
+    local add = targetId and math.floor(baseAfflDps(targetId, kind, targetLevel or 1) * v + 0.5) or 0
+    if add > 0 then return kind, "+" .. add end
+    return nil, nil
+  end
+  return nil, nil
+end
+
+local function grantTeamVisual(params)
+  params = params or {}
+  if params.burnNoDecay then return "burn", "∞" end
+  if params.bleedNoExpire then return "bleed", "∞" end
+  if params.poisonNoCap then return "poison", "CAP" end
+  if params.shockChain then return "shock", "+" .. tostring(params.shockChain) end
+  if params.plagueAmp then return "empower", auraPercent(params.plagueAmp, true) end
+  if params.markEnemiesVuln then return "empower", auraPercent(params.markEnemiesVuln, true) end
+  if params.stripEnemyShield then return "guard", "-" .. math.floor(params.stripEnemyShield * 100 + 0.5) .. "%" end
+  if params.rotEnemies then return "rot", "+" .. tostring(params.rotEnemies.base or 1) end
+  if params.slowEnemies then return "haste", "-" .. math.floor(params.slowEnemies * 100 + 0.5) .. "%" end
+  if params.pierceHeal then return "heal", "-" .. math.floor(params.pierceHeal * 100 + 0.5) .. "%" end
+  if params.invulnT then return "guard", "START" end
+  if params.teamExecute then return "empower", "EXEC" end
+  return "empower", "TEAM"
+end
+
 -- ── LIENS D'AURA pour l'AFFICHAGE (refonte « Build Screen » : « les interactions visibles en temps réel ») ──
--- Pour chaque case occupée SOURCE d'une aura d'adjacence (combat_start / target=neighbors), un lien
--- { from, to, kind, label } vers chaque voisin OCCUPÉ. C'est le MIROIR de la logique de bake de buildComp
--- (auras simples) : ici on RÉCOLTE pour DESSINER (arêtes colorées + chips chiffrés + readout de fiche) au
--- lieu de baker sur la cible. PUR (lecture data), réévalué chaque frame (cheap : ≤9 cases).
--- LABEL = VALEUR RÉELLE plate (retour user) : +N bouclier (flat) ; pour les amplificateurs poison/burn, le
--- bonus CONCRET reçu par CE voisin = sa dps de base × le multiplicateur (pas un % abstrait) -> colle au texte
--- de la carte ; si le voisin ne pose pas l'affliction (bonus 0), la synergie est inerte -> AUCUN lien dessiné.
+-- Collecte tous les bonus directs lisibles en build : auras de créatures, commandant et effets team type
+-- grant_team. Les reliques sont ajoutées dans l'inspecteur de hover pour éviter un réseau permanent illisible.
 function Build:resolveAuraLinks()
   local links = {}
+  local byCell, byColRow = {}, {}
   for i = 1, 9 do
     local sr = self.slotRigs[i]
     if sr and self.board.slots[i].unlocked then
-      for _, e in ipairs(UnitResolver.effectsFor(sr.id, sr.level or 1)) do
-        local sm = UnitResolver.legacyEffectLevelMult(e, sr.level or 1) -- authored level effects already carry final values
-        if e.trigger == "combat_start" and e.target == "neighbors" then
-          local pa = e.params or {}
-          local kind, fixed, inc
-          if e.op == "shield_aura" then kind = "shield"; fixed = "+" .. math.floor((pa.value or 0) * sm + 0.5)
-          elseif e.op == "aura_poison_dps" then kind = "poison"; inc = (pa.inc or 0.5) * sm
-          elseif e.op == "aura_burn_dps" then kind = "burn"; inc = (pa.inc or 0.5) * sm
-          elseif e.op == "aura_rot_growth" then kind = "rot"; fixed = "+" .. math.floor((pa.bonus or 0) * sm + 0.5)
-          elseif e.op == "aura_grant_bleed" then kind = "bleed"; fixed = "+" .. math.floor((pa.dps or 1) * sm + 0.5)
-          -- K1 aura_stat (9c) : amplificateurs agnostiques (modifient un % du voisin -> label en % faute de
-          -- valeur plate au niveau du chip). multicast = entier NON scalé (cap dur en combat) -> "x N coups".
-          elseif e.op == "aura_stat" then
-            local st, v = pa.stat, (pa.value or 0)
-            if st == "dmgReduce" then kind = "armor"; fixed = "-" .. math.floor(v * 100 + 0.5) .. "%"
-            elseif st == "atkInc" then kind = "empower"; fixed = "+" .. math.floor(v * sm * 100 + 0.5) .. "%"
-            elseif st == "haste" then kind = "haste"; fixed = "+" .. math.floor(v * sm * 100 + 0.5) .. "%"
-            elseif st == "multicast" then kind = "echo"; fixed = "x" .. (1 + math.floor(v))
-            end
-          end
-          if kind then
-            for _, nb in ipairs(self.board:neighbors(i)) do
-              local nbr = self.slotRigs[nb]
-              if nbr and self.board.slots[nb].unlocked then
-                local label = fixed
-                if inc then -- amplificateur : bonus PLAT concret = dps de base du voisin × multiplicateur (0 -> rien)
-                  local add = math.floor(baseAfflDps(nbr.id, kind, nbr.level or 1) * inc + 0.5)
-                  label = (add > 0) and ("+" .. add) or nil
-                end
-                if label then links[#links + 1] = { from = i, to = nb, kind = kind, label = label } end
-              end
-            end
-          end
+      local cell = self.board.shape.cells[i]
+      byCell[i] = { slot = i, id = sr.id, level = sr.level or 1, col = cell.x, row = cell.y }
+      byColRow[cell.x .. ":" .. cell.y] = i
+    end
+  end
+
+  local function addTarget(out, slot, seen)
+    if slot and byCell[slot] and not seen[slot] then seen[slot] = true; out[#out + 1] = slot end
+  end
+  local function resolveTargets(target, srcSlot)
+    target = target or "neighbors"
+    local out, seen = {}, {}
+    if target == "neighbors" then
+      if srcSlot then
+        for _, nb in ipairs(self.board:neighbors(srcSlot)) do addTarget(out, nb, seen) end
+      end
+    elseif target == "ahead" or target == "behind" or target == "above" or target == "below" then
+      local src = srcSlot and byCell[srcSlot]
+      if src then
+        local dc = (target == "ahead" and 1) or (target == "behind" and -1) or 0
+        local dr = (target == "below" and 1) or (target == "above" and -1) or 0
+        addTarget(out, byColRow[(src.col + dc) .. ":" .. (src.row + dr)], seen)
+      end
+    elseif target == "team" then
+      for i = 1, 9 do addTarget(out, i, seen) end
+    elseif type(target) == "string" and target:sub(1, 5) == "role:" then
+      addTarget(out, self:resolveRoleSlot(target:sub(6)), seen)
+    elseif type(target) == "string" and target:sub(1, 5) == "tier:" then
+      local n = tonumber(target:sub(6))
+      for i, q in pairs(byCell) do if (Units[q.id].rank or 0) == n then addTarget(out, i, seen) end end
+    elseif type(target) == "string" and target:sub(1, 6) == "level:" then
+      local n = tonumber(target:sub(7))
+      for i, q in pairs(byCell) do if (q.level or 1) == n then addTarget(out, i, seen) end end
+    elseif type(target) == "string" and target:sub(1, 5) == "type:" then
+      local ty = target:sub(6)
+      for i, q in pairs(byCell) do if Units[q.id] and Units[q.id].type == ty then addTarget(out, i, seen) end end
+    end
+    table.sort(out)
+    return out
+  end
+
+  local function addLink(from, to, kind, label, sourceKind, sourceId)
+    if to and kind and label then
+      links[#links + 1] = { from = from, to = to, kind = kind, label = label,
+        sourceKind = sourceKind or "unit", sourceId = sourceId }
+    end
+  end
+
+  local function addEffectLinks(e, from, id, level, sourceKind)
+    if not e or e.trigger ~= "combat_start" then return end
+    local pa = e.params or {}
+    local sm = UnitResolver.legacyEffectLevelMult(e, level or 1)
+    local target = e.target or pa.target or "neighbors"
+    if e.op == "shield_aura" then
+      for _, to in ipairs(resolveTargets(target, from)) do
+        addLink(from, to, "shield", auraAdd((pa.value or 0) * sm), sourceKind, id)
+      end
+    elseif e.op == "aura_poison_dps" or e.op == "aura_burn_dps" then
+      local kind = (e.op == "aura_poison_dps") and "poison" or "burn"
+      local inc = (pa.inc or 0.5) * sm
+      for _, to in ipairs(resolveTargets(target, from)) do
+        local dst = byCell[to]
+        local add = dst and math.floor(baseAfflDps(dst.id, kind, dst.level) * inc + 0.5) or 0
+        if add > 0 then addLink(from, to, kind, "+" .. add, sourceKind, id) end
+      end
+    elseif e.op == "aura_rot_growth" then
+      for _, to in ipairs(resolveTargets(target, from)) do
+        addLink(from, to, "rot", auraAdd((pa.bonus or 0) * sm), sourceKind, id)
+      end
+    elseif e.op == "aura_grant_bleed" then
+      for _, to in ipairs(resolveTargets(target, from)) do
+        addLink(from, to, "bleed", auraAdd((pa.dps or 1) * sm), sourceKind, id)
+      end
+    elseif e.op == "aura_stat" then
+      local value = (pa.stat == "multicast") and (pa.value or 0) or ((pa.value or 0) * sm)
+      for _, to in ipairs(resolveTargets(target, from)) do
+        local dst = byCell[to]
+        local kind, label = statAuraVisual(pa.stat, value, dst and dst.id, dst and dst.level)
+        addLink(from, to, kind, label, sourceKind, id)
+      end
+    elseif e.op == "aura_shield" then
+      local label = pa.cdr and ("-" .. math.floor(pa.cdr * 100 + 0.5) .. "% CD")
+        or (pa.valueInc and auraPercent(pa.valueInc, true)) or "SH"
+      for _, to in ipairs(resolveTargets(target, from)) do addLink(from, to, "shield", label, sourceKind, id) end
+    elseif e.op == "repeat_ability" then
+      local who = pa.who or "ahead"
+      local targets = resolveTargets(who == "neighbors" and "neighbors" or "ahead", from)
+      for _, to in ipairs(targets) do
+        local dst = byCell[to]
+        local hasHit = false
+        for _, ne in ipairs(UnitResolver.effectsFor(dst.id, dst.level)) do
+          if ne.trigger == "on_hit" and not ne.viaCopy then hasHit = true; break end
         end
+        if hasHit then addLink(from, to, "mimicry", "COPY", sourceKind, id) end
+      end
+    elseif e.op == "amplify_auras" then
+      for _, to in ipairs(resolveTargets(pa.target or "team", from)) do
+        addLink(from, to, "mimicry", auraPercent(pa.frac or 0, true), sourceKind, id)
+      end
+    elseif e.op == "aura_per_unique_type" then
+      addLink(from, from, "growth", "+TYPE", sourceKind, id)
+    end
+  end
+
+  for i, q in pairs(byCell) do
+    for _, e in ipairs(UnitResolver.effectsFor(q.id, q.level)) do
+      addEffectLinks(e, i, q.id, q.level, "unit")
+    end
+  end
+
+  local cmd = self.commanderSlot
+  if cmd and self:commanderUnlocked() then
+    local cb = UnitResolver.commandBonusFor(cmd.id, cmd.level or 1)
+    if cb then
+      if cb.op == "aura_stat" then
+        addEffectLinks(cb, "commander", cmd.id, cmd.level or 1, "commander")
+      elseif cb.op == "grant_team" then
+        local kind, label = grantTeamVisual(cb.params)
+        for _, to in ipairs(resolveTargets("team", nil)) do addLink("commander", to, kind, label, "commander", cmd.id) end
       end
     end
   end
@@ -2388,15 +2598,17 @@ function Build:drawBack(view)
   -- (poison/burn/bleed/rot/shield) + lueur additive. Couche d'info posée PAR-DESSUS les arêtes du graphe ->
   -- la synergie positionnelle se lit d'un coup d'œil sans survoler. Les chips chiffrés se posent en overlay.
   for _, lk in ipairs(ui.auraLinks or {}) do
-    local pf, pt = self.pos[lk.from], self.pos[lk.to]
-    local col = c[lk.kind] or c.gold
-    if love.graphics.setBlendMode then
-      love.graphics.setBlendMode("add"); Draw.setColor({ col[1], col[2], col[3], 0.32 })
-      love.graphics.setLineWidth(6); love.graphics.line(pf.x * 4, pf.y * 4, pt.x * 4, pt.y * 4)
-      love.graphics.setBlendMode("alpha")
+    local pf, pt = self:auraPoint(lk.from), self:auraPoint(lk.to)
+    if pf and pt and (pf.x ~= pt.x or pf.y ~= pt.y) then
+      local col = self:auraColor(lk.kind)
+      if love.graphics.setBlendMode then
+        love.graphics.setBlendMode("add"); Draw.setColor({ col[1], col[2], col[3], 0.32 })
+        love.graphics.setLineWidth(6); love.graphics.line(pf.x * 4, pf.y * 4, pt.x * 4, pt.y * 4)
+        love.graphics.setBlendMode("alpha")
+      end
+      Draw.setColor(col); love.graphics.setLineWidth(2.5)
+      love.graphics.line(pf.x * 4, pf.y * 4, pt.x * 4, pt.y * 4)
     end
-    Draw.setColor(col); love.graphics.setLineWidth(2.5)
-    love.graphics.line(pf.x * 4, pf.y * 4, pt.x * 4, pt.y * 4)
   end
   love.graphics.setLineWidth(1); Draw.reset()
 
@@ -2903,7 +3115,7 @@ function Build:drawOverlay(view)
       if o then self:drawShopCard(i, rect, o, ui.shopHover == i) end
     end
     self:drawShopXpBar(run) -- rail de tier (5 crans) au pied de la colonne THE OFFERING
-    self:drawEcoButton("build.reroll", self.rerollBtn, T("ui.reroll_label"), Run.REROLL_COST, run:canReroll())
+    self:drawEcoButton("build.reroll", self.rerollBtn, T("ui.reroll_label"), run:currentRerollCost(), run:canReroll())
     -- Bouton REFUSER : visible seulement quand un grant de slot attend (sinon les slots ne s'achètent plus).
     if run.pendingSlotGrant then
       self:drawEcoButton("build.decline", self.declineBtn, T("ui.refuse_label"), Run.SLOT_DECLINE_GOLD, true)
@@ -2948,20 +3160,20 @@ function Build:drawOverlay(view)
     -- C4 — SURVOL DU PIÉDESTAL (rempli) : la MÊME fiche de monstre qu'une unité du board (MonsterCard), qui
     -- contient déjà le bandeau « AT COMMAND » détaillant l'aura -> on COMPREND ce que fait le commandant (fix du
     -- retour user : « le hover ne marche pas dessus »). Les cases commandées pulsent en or en parallèle (drawBack).
-    self:drawTooltip(self.commanderSlot.id, nil, { context = "commander" })
+    self:drawTooltip(self.commanderSlot.id, nil, { context = "commander", occ = self.commanderSlot })
   else
-    local id, boardSlot
+    local id, boardSlot, occ
     local oi = self:shopAt(self.mx, self.my)
     if oi then id = run.shop[oi].id
     else
       local si = self:slotAt(self.mx, self.my)
-      if si and self.slotRigs[si] then id = self.slotRigs[si].id; boardSlot = si
+      if si and self.slotRigs[si] then id = self.slotRigs[si].id; boardSlot = si; occ = self.slotRigs[si]
       else
         local bi = self:benchAt(self.mx, self.my)
-        if bi and self.bench[bi] then id = self.bench[bi].id end
+        if bi and self.bench[bi] then id = self.bench[bi].id; occ = self.bench[bi] end
       end
     end
-    if id then self:drawTooltip(id, boardSlot) end
+    if id then self:drawTooltip(id, boardSlot, { occ = occ }) end
   end
 
   self:drawFx() -- GAME FEEL : bursts achat/vente/level-up PAR-DESSUS tout (transitoires)
@@ -3506,8 +3718,7 @@ end
 -- dans le gap entre deux cases avec la ligne visible de chaque côté. L'ICÔNE d'affliction n'y est PAS (le type
 -- est déjà porté par la COULEUR de l'arête + du bord + de la lueur) ; elle vit dans le readout de la fiche.
 function Build:drawAuraChip(cx, cy, kind, label)
-  local c = Theme.c
-  local col = c[kind] or c.gold
+  local col = self:auraColor(kind)
   local f = Theme.value(10)
   local tw = (f and f:getWidth(label)) or (#label * 6)
   local padX, h = 5, 15
@@ -3528,16 +3739,24 @@ end
 -- BIDIRECTIONNEL (2 liens sur la même arête, ex. bouclier<->bouclier) : chacun légèrement vers SA source.
 function Build:drawAuraChips(ui)
   if not (ui and ui.auraLinks) then return end
+  local function linkKey(a, b)
+    local sa, sb = tostring(a), tostring(b)
+    if sa < sb then return sa .. ">" .. sb end
+    return sb .. ">" .. sa
+  end
   local count = {}
   for _, lk in ipairs(ui.auraLinks) do
     local a, b = lk.from, lk.to
-    count[(a < b) and (a * 16 + b) or (b * 16 + a)] = (count[(a < b) and (a * 16 + b) or (b * 16 + a)] or 0) + 1
+    if a ~= b then
+      local k = linkKey(a, b)
+      count[k] = (count[k] or 0) + 1
+    end
   end
   for _, lk in ipairs(ui.auraLinks) do
-    local pf, pt = self.pos[lk.from], self.pos[lk.to]
-    if pf and pt then
+    local pf, pt = self:auraPoint(lk.from), self:auraPoint(lk.to)
+    if pf and pt and (pf.x ~= pt.x or pf.y ~= pt.y) then
       local a, b = lk.from, lk.to
-      local t = (count[(a < b) and (a * 16 + b) or (b * 16 + a)] >= 2) and 0.37 or 0.5
+      local t = ((count[linkKey(a, b)] or 0) >= 2) and 0.37 or 0.5
       self:drawAuraChip((pf.x + (pt.x - pf.x) * t) * 4, (pf.y + (pt.y - pf.y) * t) * 4, lk.kind, lk.label)
     end
   end
@@ -3569,9 +3788,12 @@ end
 -- EXPOSURE) — l'inspecteur du design, mais ANCRÉ AU CURSEUR (décision user : pas de panneau fixe à droite).
 function Build:drawTooltip(id, boardSlot, opts)
   opts = opts or {}
+  local occ = opts.occ or (boardSlot and self.slotRigs[boardSlot]) or nil
+  local level = opts.level or (occ and occ.level) or 1
+  local unit = opts.unit or UnitResolver.unitForLevel(id, level)
   local tagOpts = opts.tagOpts or (opts.context and { context = opts.context }) or nil
   local box = MonsterCard.draw(self.view, self.palette, id, self.mx * 4, self.my * 4, self.t / 60,
-    { rig = self.previewRigs[id], keywordHint = true, tagOpts = tagOpts })
+    { rig = self.previewRigs[id], keywordHint = true, tagOpts = tagOpts, unit = unit, level = level })
   if box and boardSlot and self.slotRigs[boardSlot] then
     self:drawBoardInspectorExtra(box, boardSlot)
   end
@@ -3579,8 +3801,94 @@ function Build:drawTooltip(id, boardSlot, opts)
     or (love and love.keyboard and love.keyboard.isDown and love.keyboard.isDown("lshift", "rshift"))
   if box and showKeywords then
     CardGlossary.drawMonster(self.view, box, id, self.t / 60,
-      { showKeywords = true, scroll = self.tagGlossaryScroll or 0, tagOpts = tagOpts })
+      { showKeywords = true, scroll = self.tagGlossaryScroll or 0, tagOpts = tagOpts, unit = unit })
   end
+end
+
+function Build:slotMatchesRelicTarget(slot, target)
+  local sr = self.slotRigs[slot]
+  if not sr then return false end
+  target = target or "team"
+  if target == "team" then return true end
+  if target == "role:front" then return self:resolveRoleSlot("front") == slot end
+  if target == "role:back" then return self:resolveRoleSlot("back") == slot end
+  if target == "role:center" then return self:resolveRoleSlot("center") == slot end
+  if type(target) == "string" and target:sub(1, 5) == "type:" then
+    return Units[sr.id] and Units[sr.id].type == target:sub(6)
+  end
+  if target == "ahead" or target == "behind" or target == "above" or target == "below" then
+    local cells = self.board.shape.cells
+    local byKey = {}
+    for i = 1, 9 do
+      if self.slotRigs[i] then
+        local c = cells[i]
+        byKey[c.x .. ":" .. c.y] = i
+      end
+    end
+    local dc = (target == "ahead" and 1) or (target == "behind" and -1) or 0
+    local dr = (target == "below" and 1) or (target == "above" and -1) or 0
+    for i = 1, 9 do
+      if self.slotRigs[i] then
+        local c = cells[i]
+        if byKey[(c.x + dc) .. ":" .. (c.y + dr)] == slot then return true end
+      end
+    end
+  end
+  return false
+end
+
+function Build:relicAuraRowsForSlot(slot)
+  local run = self.host and self.host.run
+  if not (run and run.relics and self.slotRigs[slot]) then return {} end
+  local sr = self.slotRigs[slot]
+  local rows = {}
+  local placed = self:placedCount()
+  local function add(id, kind, value)
+    if kind and value then
+      rows[#rows + 1] = {
+        kind = kind,
+        text = T("ui.aura_takes", { name = auraUpperAscii(T("relic." .. id .. ".name")) }),
+        value = value,
+        sourceKind = "relic",
+        sourceId = id,
+      }
+    end
+  end
+  local function addIfTarget(id, target, kind, value)
+    if self:slotMatchesRelicTarget(slot, target) then add(id, kind, value) end
+  end
+  for _, rr in ipairs(run.relics) do
+    local id = rr.id or rr
+    local relic = RelicsData[id]
+    local p = relic and (relic.params or {})
+    if relic and relic.op == "relic_aura_stat" then
+      if self:slotMatchesRelicTarget(slot, p.target or "team") then
+        local kind, label = statAuraVisual(p.stat, p.value or 0, sr.id, sr.level or 1)
+        add(id, kind, label)
+      end
+    elseif relic and relic.op == "relic_affliction_inc" then
+      local kind = p.family
+      local addDps = kind and math.floor(baseAfflDps(sr.id, kind, sr.level or 1) * (p.inc or 0) + 0.5) or 0
+      if addDps > 0 then add(id, kind, "+" .. addDps) end
+    elseif relic and relic.op == "relic_more_dmg" then
+      add(id, "empower", auraPercent(p.mult or 0, true))
+    elseif relic and relic.op == "relic_flat_hp" then
+      add(id, "growth", auraAdd(p.value or 0))
+    elseif relic and relic.op == "relic_dmg_reduce" then
+      add(id, "guard", "-" .. math.floor((p.frac or 0) * 100 + 0.5) .. "%")
+    elseif relic and relic.op == "relic_haste" then
+      add(id, "haste", auraPercent(p.value or 0, true))
+    elseif relic and relic.op == "relic_few_units" and placed <= (p.max or 3) then
+      add(id, "growth", auraPercent(math.max(p.dmgInc or 0, p.hpInc or 0), true))
+    elseif relic and relic.op == "relic_rainbow" then
+      add(id, "growth", "TYPE")
+    elseif relic and relic.op == "relic_second_breath" then
+      add(id, "guard", "1 HP")
+    elseif relic and relic.op == "relic_amplify_auras" then
+      addIfTarget(id, p.target or "team", "mimicry", auraPercent(p.frac or 0, true))
+    end
+  end
+  return rows
 end
 
 -- ── INSPECTEUR DE BOARD (refonte « Build Screen ») : sous la fiche d'une unité POSÉE, un panneau
@@ -3595,14 +3903,15 @@ function Build:drawBoardInspectorExtra(cardBox, slot)
   local rows = {}
   for _, lk in ipairs(links) do
     if lk.from == slot and self.slotRigs[lk.to] then
-      rows[#rows + 1] = { kind = lk.kind, text = T("ui.aura_gives", { names = upperAscii(T("unit." .. self.slotRigs[lk.to].id .. ".name")) }), value = lk.label }
+      rows[#rows + 1] = { kind = lk.kind, text = T("ui.aura_gives", { names = self:auraTargetName(lk.to) }), value = lk.label }
     end
   end
   for _, lk in ipairs(links) do
-    if lk.to == slot and self.slotRigs[lk.from] then
-      rows[#rows + 1] = { kind = lk.kind, text = T("ui.aura_takes", { name = upperAscii(T("unit." .. self.slotRigs[lk.from].id .. ".name")) }), value = lk.label }
+    if lk.to == slot and lk.from ~= slot then
+      rows[#rows + 1] = { kind = lk.kind, text = T("ui.aura_takes", { name = self:auraSourceName(lk) }), value = lk.label }
     end
   end
+  for _, r in ipairs(self:relicAuraRowsForSlot(slot)) do rows[#rows + 1] = r end
   -- (2) exposition : front-ness dérivée de la colonne (depth = maxCol - cell.x) sur les cases OCCUPÉES.
   local cell = self.board.shape.cells[slot]
   local minC, maxC = math.huge, -math.huge
@@ -3633,7 +3942,7 @@ function Build:drawBoardInspectorExtra(cardBox, slot)
     Draw.textR(T("ui.links_count", { n = #rows }), rightX, cy, c.ink4, headF)
     cy = cy + headF:getHeight() + 8
     for _, r in ipairs(rows) do
-      local col = c[r.kind] or c.gold
+      local col = self:auraColor(r.kind)
       local icon = (r.kind ~= "shield") and Keywords.icon(r.kind) or nil
       local ix = bx
       if icon and icon.image and love.graphics then

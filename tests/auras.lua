@@ -289,7 +289,7 @@ local ok, err = pcall(function()
   -- On vérifie la forme + le mapping exact (portée → stat → valeur) ; la RÉSOLUTION live est testée en C3.
   do
     local expected = {
-      bellows_priest = { op = "aura_stat", target = "team",       stat = "haste",     value = 0.08 },
+      bellows_priest = { op = "aura_stat", target = "role:center", stat = "haste",    value = 0.12 },
       demon          = { op = "aura_stat", target = "team",       stat = "lifesteal", value = 0.05 },
       deep_kraken    = { op = "aura_stat", target = "level:1",    stat = "statInc",   value = 0.15 }, -- tuning 2026-06-25 : 0.40 -> 0.15
       galvanizer     = { op = "aura_stat", target = "tier:1",     stat = "statInc",   value = 0.14 }, -- tuning 2026-06-25 : 0.50 -> 0.14

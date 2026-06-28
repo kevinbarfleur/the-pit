@@ -16,6 +16,7 @@ local OppGen   = require("src.data.oppgen") -- A4 : adversaire généré scalé 
 local Build     = require("src.scenes.build")
 local Combat    = require("src.scenes.combat")
 local Runover   = require("src.scenes.runover")
+local Bossrush  = require("src.scenes.bossrush")
 local Relicpick = require("src.scenes.relicpick")
 local Menu      = require("src.scenes.menu")
 local Gallery   = require("src.scenes.gallery")
@@ -319,6 +320,19 @@ function Builders.build_relic_hover(host)
   return b
 end
 
+-- BUILD_AURA_HOVER : board + commandant + reliques, curseur sur une unite affectee. Capture de regression pour
+-- les liens permanents d'aura et l'inspecteur "takes from" (unite, commandant, reliques).
+function Builders.build_aura_hover(host)
+  local b = makeBuild(host)
+  host.run.commanderUnlocked = true
+  b.commanderSlot = { id = "galvanizer", level = 1, char = b:newRig("galvanizer") }
+  host.run:grantRelic("aegis")
+  host.run:grantRelic("blood_banner")
+  local p = b.pos[4] -- marauder: voisin du templar + rang 1 commande par galvanizer + reliques team.
+  b.mx, b.my = p.x, p.y
+  return b
+end
+
 local function makeSystemShot(host, mode)
   local b = makeBuild(host)
   host.name = "build"
@@ -348,6 +362,22 @@ function Builders.settings(host) return makeSystemShot(host, "settings") end
 function Builders.runover(host)
   host.run = RunState.new(SEED)
   return Runover.new(Palette, VW, VH, host, { result = "win", run = host.run })
+end
+
+function Builders.bossrush(host)
+  host.run = RunState.new(SEED)
+  host.run.wins = RunState.WIN_TARGET
+  local Comps = require("src.data.compositions")
+  local Compbuild = require("src.lab.compbuild")
+  local comp = Comps.byId["poison_diamant_perfect"]
+  local left = comp and Compbuild.toComp(comp, -1) or nil
+  return Bossrush.new(Palette, VW, VH, host, {
+    run = host.run,
+    left = left,
+    bossKey = "brasier",
+    seed = SEED + 900,
+    instantScore = true,
+  })
 end
 
 -- GRIMOIRE : codex persistant en deux colonnes. Pour la capture : onglet BESTIAIRE, entrée de haut tier
@@ -445,9 +475,9 @@ end
 local M = {}
 
 -- Liste des noms de scènes capturables (ordre stable, pour --shoot=all et les messages d'erreur).
-M.names = { "menu", "build", "combat", "combat_react", "summary", "relicpick", "runevent", "runover", "grimoire", "grimoire_glossary", "grimoire_relics",
+M.names = { "menu", "build", "combat", "combat_react", "summary", "relicpick", "runevent", "runover", "bossrush", "grimoire", "grimoire_glossary", "grimoire_relics",
   "grimoire_bestiary",
-  "gallery", "designsystem", "build_relic_hover", "build_freeze", "system", "settings",
+  "gallery", "designsystem", "build_relic_hover", "build_aura_hover", "build_freeze", "system", "settings",
   "anim_attack", "anim_death", "anim_hurt",
   "combat_commander",
   "commander_empty", "commander_filled", "commander_hover", "commander_offer", "commander_refuse",

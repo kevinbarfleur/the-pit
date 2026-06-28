@@ -15,6 +15,7 @@ local VISIBLE = {
   combat = true,
   relicpick = true,
   runover = true,
+  bossrush = true,
 }
 
 local function ptIn(px, py, r)

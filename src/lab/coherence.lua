@@ -17,9 +17,9 @@ for _, id in ipairs(FAMILIES) do FAMILY_SET[id] = true end
 
 local LEVEL_COPIES = { 1, 3, 9 }
 local DEFAULT_COST = 3
-local DEFAULT_VARIANT = "baseline"
+local DEFAULT_VARIANT = Economy.liveProfileId or "baseline"
 local ECON_ALIASES = {
-  current = "baseline",
+  current = Economy.liveProfileId or "baseline",
   sap_like = "sap_cost",
   curved_income = "early_curve",
 }

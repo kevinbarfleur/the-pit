@@ -36,7 +36,11 @@ local SFX = require("src.audio.sfx")         -- SON (Oniric grave) : BIND d'une 
 local RelicCard = require("src.ui.relic_card") -- MOLÉCULE carte de relique (fond + icône animée + nom + effet + flavor)
 local CardGlossary = require("src.ui.card_glossary")
 local Relics = require("src.data.relics")    -- pour le PALIER de nature (band -> couleur de carte Argent/Or/Prismatique)
+local RelicGen = require("src.gen.relicgen")
+local Rarity = require("src.gen.rarity")
+local MonsterCard = require("src.render.monstercard")
 local Units = require("src.data.units")
+local UnitResolver = require("src.core.unit_resolver")
 local Mutations = require("src.run.mutations")
 local MechanicsText = require("src.ui.mechanics_text")
 local RunState = require("src.run.state")    -- pour DECLINE_RELIC_GOLD (or accordé au refus)
@@ -71,6 +75,7 @@ local CARD_TOP = 196               -- haut de la bande de cartes (sous l'en-têt
 local BIND_W, BIND_H = 320, 60     -- BIND THE FRAGMENT (Button primary)
 local DECLINE_W, DECLINE_GAP = 168, 24 -- REFUSE (Button eco) à DROITE du BIND, même ligne
 local FOOTER_BOTTOM = 696          -- la ligne de boutons s'ancre au-dessus de ce bord (safe zone)
+local EVENT_REWARD_ART_H = 68
 
 local REWARD_COLOR = {
   relic = C.gold,
@@ -134,6 +139,12 @@ local function rewardDetail(reward)
   return ""
 end
 
+local function rewardHasArt(reward)
+  reward = reward or {}
+  return (reward.kind == "relic" and reward.id and Relics[reward.id])
+    or (reward.kind == "unit" and reward.id and Units[reward.id])
+end
+
 local function eventChoiceOpts(choice, eventId)
   local reward = choice and choice.reward or {}
   local label = tx(choice.labelKey, choice.id and choice.id:gsub("_", " "):upper() or T("relicpick.choose"))
@@ -158,9 +169,35 @@ local function measureEventCard(w, opts)
   h = h + (labelF and labelF:getHeight() or 14) + 18
   h = h + wrapLines(bodyF, opts.body, bodyW) * (bodyF and bodyF:getHeight() or 16) + 18
   h = h + 20
+  if rewardHasArt(opts.reward) then h = h + EVENT_REWARD_ART_H + 10 end
   h = h + wrapLines(rewardF, opts.rewardTitle, bodyW) * (rewardF and rewardF:getHeight() or 18) + 8
   h = h + wrapLines(detailF, opts.rewardDetail, bodyW) * (detailF and detailF:getHeight() or 14) + 24
   return math.max(300, h)
+end
+
+local function drawRewardArt(view, palette, reward, x, y, w, h, t)
+  if not rewardHasArt(reward) then return 0 end
+  local boxW = math.min(132, w)
+  local bx = math.floor(x + (w - boxW) / 2)
+  Draw.rect(bx, y, boxW, h, C.stone900, C.iron, 1)
+  if reward.kind == "relic" then
+    local baked = RelicGen.cached(reward.id, palette)
+    if baked and baked.image and love.graphics then
+      local s = math.min((boxW - 18) / baked.w, (h - 12) / baked.h)
+      love.graphics.setColor(1, 1, 1, 1)
+      love.graphics.draw(baked.image,
+        math.floor(bx + boxW / 2 - baked.w * s / 2),
+        math.floor(y + h / 2 - baked.h * s / 2), 0, s, s)
+    else
+      Badge.diamond(bx + boxW / 2, y + h / 2, 9, C.gold, C.brass, C.brassS)
+    end
+  elseif reward.kind == "unit" then
+    local rank = (Units[reward.id] and Units[reward.id].rank) or 1
+    MonsterCard.drawCardPortrait(view, palette, reward.id, nil,
+      { x = bx + 4, y = y + 4, w = boxW - 8, h = h - 8 },
+      rank, Rarity.frame(rank), rank >= 4, t)
+  end
+  return h
 end
 
 function Relicpick.new(palette, vw, vh, host, payload)
@@ -256,7 +293,7 @@ function Relicpick:drawWorld() end
 -- Une carte de relique PROPRE : la MOLÉCULE RelicCard (fond Panel + gemme de famille + nom + effet + flavor)
 -- en état "identified" (ou "selected" = liseré doré d'accent pour l'offre choisie), avec l'ARTEFACT baké
 -- posé en COEUR (dans la gemme = son écrin). Survol (sans sélection) = léger liseré laiton (affordance).
-function Relicpick:drawCard(i)
+function Relicpick:drawCard(i, view)
   local card = self.cards[i]
   local sel = (self.sel == i)
   local opts = self.cardOpts[i]
@@ -276,6 +313,9 @@ function Relicpick:drawCard(i)
     y = y + Draw.textWrap(opts.body, x, y, w, C.ink2, bodyF, "left") + 18
     Dividers.text(card.x + card.w / 2, y, w, T("runevent.reward_header"), 2)
     y = y + 24
+    if rewardHasArt(opts.reward) then
+      y = y + drawRewardArt(view, self.palette, opts.reward, x, y, w, EVENT_REWARD_ART_H, self.t / 60) + 10
+    end
     Draw.textWrap(opts.rewardTitle, x, y, w, opts.accent or C.gold, rewardF, "left")
     y = y + wrapLines(rewardF, opts.rewardTitle, w) * (rewardF and rewardF:getHeight() or 18) + 8
     Draw.textWrap(opts.rewardDetail, x, y, w, C.ink2, detailF, "left")
@@ -328,12 +368,25 @@ function Relicpick:drawOverlay(view)
   Dividers.brass(Draw.W / 2, self.eventMode and 182 or 168, 360)
 
   -- ── CARTES PROPRES (RelicCard) ──
-  for i = 1, #self.cards do self:drawCard(i) end
+  for i = 1, #self.cards do self:drawCard(i, view) end
   do
-    local gi = (not self.eventMode) and (self.hover or self.sel) or nil
+    local gi = self.hover or self.sel
     if gi and self.cards[gi] and self.choices[gi] then
-      CardGlossary.drawRelic(view, self.cards[gi], self.choices[gi], self.t / 60,
-        { force = self.forceKeywordGlossary, scroll = self.tagGlossaryScroll or 0 })
+      if self.eventMode then
+        local reward = self.choices[gi].reward or {}
+        if reward.kind == "relic" and reward.id then
+          CardGlossary.drawRelic(view, self.cards[gi], reward.id, self.t / 60,
+            { force = self.forceKeywordGlossary, scroll = self.tagGlossaryScroll or 0 })
+        elseif reward.kind == "unit" and reward.id then
+          local level = UnitResolver.clampLevel(reward.level or 1)
+          CardGlossary.drawMonster(view, self.cards[gi], reward.id, self.t / 60,
+            { unit = UnitResolver.unitForLevel(reward.id, level), force = self.forceKeywordGlossary,
+              scroll = self.tagGlossaryScroll or 0 })
+        end
+      elseif not self.eventMode then
+        CardGlossary.drawRelic(view, self.cards[gi], self.choices[gi], self.t / 60,
+          { force = self.forceKeywordGlossary, scroll = self.tagGlossaryScroll or 0 })
+      end
     end
   end
 

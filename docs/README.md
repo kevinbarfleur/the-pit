@@ -34,6 +34,8 @@ Pour une session agent:
   bossrush post-win et scoring.
 - `research/run-events-reward-loop.md` - events de run, recompenses
   explicites, garde-fous sur les mutations.
+- `research/playtest-v1-finalization-roadmap.md` - roadmap de transfert du
+  chantier final V1 jouable, economie live, PVE bossrush et validations.
 - `inspiration/batodex/README.md` - donnees mecaniques Batodex normalisees
   pour inspiration creature/trinket/item, a charger seulement quand necessaire.
 

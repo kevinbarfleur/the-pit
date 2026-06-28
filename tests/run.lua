@@ -38,9 +38,21 @@ local ok, err = pcall(function()
     assert(r.relicFromLevelThisRound == false, "Lot 5 : startRound rearme la recompense de level-up")
   end
 
-  -- ── Profils d'economie opt-in : le comportement par defaut reste identique, mais le simulateur peut
-  -- tester des variantes sans muter les constantes live.
+  -- ── Profils d'economie : le comportement par defaut est le profil live courant,
+  -- tandis que l'ancien modele reste disponible via "baseline" pour comparaison.
   do
+    local live = RunState.new(100)
+    assert(live.economy.id == "sap_cost_pair_completion_tiered_reroll",
+      "profil eco live: SAP cost + pair completion + tiered reroll")
+    live.shopTier = 3
+    assert(live:currentRerollCost() == 2, "profil live: reroll tier 3 coute 2")
+
+    local legacy = RunState.new(100, { economy = "baseline" })
+    local legacyFull = 0
+    for _, o in ipairs(legacy.shop) do legacyFull = legacyFull + o.cost end
+    assert(legacy.economy.id == "baseline" and legacyFull == 5,
+      "profil baseline explicite: ancien tier-1 complet = 5 gold")
+
     local sap = RunState.new(101, { economy = "sap_cost" })
     assert(sap.economy.id == "sap_cost", "profil eco: id sap_cost")
     local full = 0
@@ -83,6 +95,28 @@ local ok, err = pcall(function()
     assert(xp:currentBuyXpCost() == 5 and xp:currentBuyXpAmount() == 2, "profil custom XP: cout/montant BUY XP surcharges")
     assert(xp:buyXp() and xp.gold == 5 and xp.shopTier == 1 and xp.shopXp == 2, "profil custom XP: premier achat reste sous seuil")
     assert(xp:buyXp() and xp.gold == 0 and xp.shopTier == 2 and xp.shopXp == 1, "profil custom XP: deuxieme achat franchit T1 avec trop-plein")
+  end
+
+  -- ── Support de complétion de paire : quand le build possède deux copies
+  -- niveau 1, le profil live peut injecter une troisième copie dans la boutique.
+  do
+    local ps = RunState.new(202606281, {
+      economy = { id = "test_pair_support", pairCompletionSupport = { maxPerRound = 1, minRound = 1 } },
+    })
+    ps.shop = {
+      { id = "husk", cost = 1, sold = false },
+      { id = "rot_hound", cost = 1, sold = false },
+      { id = "bore_worm", cost = 1, sold = false },
+      { id = "marauder", cost = 1, sold = false },
+      { id = "templar", cost = 1, sold = false },
+    }
+    local okSupport, id, slot, replaced = ps:applyPairCompletionSupport({ "spore_tick" }, "test")
+    assert(okSupport and id == "spore_tick" and slot == 5 and replaced == "templar",
+      "pair support: injecte une troisieme copie dans le dernier slot libre")
+    assert(ps.shop[5].support == "pair_completion" and ps.shop[5].replacedId == "templar",
+      "pair support: marque l'offre supportee")
+    assert(ps:applyPairCompletionSupport({ "spore_tick" }, "test") == false,
+      "pair support: une seule injection par round")
   end
 
   -- ── DÉTERMINISME : même seed + mêmes actions -> état strictement identique ──
@@ -442,7 +476,7 @@ local ok, err = pcall(function()
       assert(rp.gold == GR + 3, "paupers_boon : +3 or/round (got " .. rp.gold .. ")")
       -- vente PLEINE (grave_robbers_cut) : remboursement = coût plein (sellFrac 1.0 ; base = 50%).
       local rs = RunState.new(7); rs.relics = { { id = "grave_robbers_cut" } }
-      assert(rs:sellRefund("gravewarden") == Units["gravewarden"].cost, "grave_robbers_cut : remboursement plein")
+      assert(rs:sellRefund("gravewarden") == rs:unitCost("gravewarden"), "grave_robbers_cut : remboursement plein")
       -- or SUR VICTOIRE (tithe_bowl) : +2 DIFFÉRÉ au round suivant (pas immédiat).
       local rt = RunState.new(7); rt.relics = { { id = "tithe_bowl" } }
       rt:resolve(true); rt:startRound()

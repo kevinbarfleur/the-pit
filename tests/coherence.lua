@@ -109,7 +109,8 @@ local ok, err = pcall(function()
   local curved = Coherence.shopPressure("early_curve")
   local tiered = Coherence.shopPressure("tiered_reroll")
   assert(cur[1].fullShopCostRatio == 0.5, "baseline tier-1 shop costs half of 10g")
-  assert(Coherence.shopPressure("current")[1].profile == "baseline", "legacy current alias resolves to baseline")
+  assert(Coherence.shopPressure("current")[1].profile == "sap_cost_pair_completion_tiered_reroll",
+    "current alias resolves to the live economy profile")
   assert(sap[1].fullShopCostRatio == 1.0, "SAP-like tier-1 shop consumes the full 10g")
   assert(curved[1].fullShopCostRatio > cur[1].fullShopCostRatio,
     "curved income increases early pressure while preserving cost=rank")

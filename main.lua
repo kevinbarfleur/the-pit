@@ -11,6 +11,7 @@ local Palette = require("src.core.palette")
 local Build = require("src.scenes.build")
 local Combat = require("src.scenes.combat")
 local Runover = require("src.scenes.runover")
+local BossrushScene = require("src.scenes.bossrush")
 local Gallery = require("src.scenes.gallery")
 local Relicons = require("src.scenes.relicons")
 local Menu = require("src.scenes.menu")
@@ -52,7 +53,7 @@ local function bleedMode(name)
   if name == "menu" then return "menu" end
   if name == "combat" then return "combat" end
   if name == "relicpick" then return "relic" end
-  if name == "runover" then return "runover" end
+  if name == "runover" or name == "bossrush" then return "runover" end
   if name == "grimoire" or name == "designsystem" then return "grimoire" end
   return "build"
 end
@@ -107,7 +108,7 @@ end
 -- plateau est conservé de round en round) ; combat et runover sont recréés à chaque entrée.
 local host = { scene = nil, name = nil, build = nil, run = nil, overlay = nil, suspended = nil, musicEnabled = true, systemHover = false }
 
-local RUN_SCENES = { build = true, combat = true, relicpick = true, runover = true }
+local RUN_SCENES = { build = true, combat = true, relicpick = true, runover = true, bossrush = true }
 
 local function runIsOver()
   return host.run and host.run.isOver and host.run:isOver()
@@ -204,6 +205,8 @@ function host.goto(name, payload)
     host.scene = Combat.new(Palette, VW, VH, host, payload)
   elseif name == "runover" then
     host.scene = Runover.new(Palette, VW, VH, host, payload)
+  elseif name == "bossrush" then
+    host.scene = BossrushScene.new(Palette, VW, VH, host, payload)
   elseif name == "relicpick" then
     host.scene = Relicpick.new(Palette, VW, VH, host, payload)
   elseif name == "gallery" then
@@ -256,6 +259,11 @@ function host.goto(name, payload)
   setMusicScene(name)
 end
 
+local function startNextBuildRound(source)
+  host.run:startRound()
+  if host.build and host.build.applyShopSupport then host.build:applyShopSupport(source or "round") end
+end
+
 -- Fin d'un combat : la méta de run résout l'issue (vies/victoires/streaks), puis ouvre le round
 -- suivant (retour build, plateau PERSISTANT) — ou l'écran de fin de run si le run est conclu.
 function host.finishCombat(win)
@@ -294,7 +302,7 @@ function host.finishCombat(win)
     local choices = host.run:rollRelicChoices(3)
     if #choices > 0 then host.goto("relicpick", { choices = choices }); return end
   end
-  host.run:startRound()
+  startNextBuildRound("round")
   host.goto("build")
 end
 
@@ -319,7 +327,7 @@ function host.finishRelicPick(id)
   Grimoire.learn(id)
   local midRound = host._relicMidRound
   host._relicMidRound = nil
-  if not midRound then host.run:startRound() end
+  if not midRound then startNextBuildRound("round") end
   host.goto("build")
 end
 
@@ -331,7 +339,7 @@ end
 function host.finishRelicPickDecline()
   local midRound = host._relicMidRound
   host._relicMidRound = nil
-  if not midRound then host.run:startRound() end
+  if not midRound then startNextBuildRound("round") end
   host.run:declineRelic()
   host.goto("build")
 end
@@ -344,8 +352,15 @@ function host.finishRunEventPick(choiceIndex)
     local ok = EventRewards.apply(host.run, host.build, choice.reward, { deferGold = true })
     if ok and choice.reward.kind == "relic" and choice.reward.id then Grimoire.learn(choice.reward.id) end
   end
-  host.run:startRound()
+  startNextBuildRound("round")
   host.goto("build")
+end
+
+function host.startBossrush(payload)
+  payload = payload or {}
+  payload.run = payload.run or host.run
+  payload.build = payload.build or host.build
+  host.goto("bossrush", payload)
 end
 
 -- Démarre une run neuve : nouvel état seedé (boutique/seeds de combat dérivés) + plateau remis à zéro.

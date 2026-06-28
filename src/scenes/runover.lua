@@ -35,9 +35,9 @@ Runover.__index = Runover
 -- au-dessus, un filet laiton, puis le CTA. self.panel = l'enveloppe (compat test + ancrage) ; self.cta = le rect.
 local BANNER_W, BANNER_H = 760, 196 -- large : le mot long « THE PIT KEEPS YOU » (Jacquard) respire sans déborder
 local DIV_GAP = 30                  -- air entre la bannière et le filet/CTA (respiration des séparateurs)
-local CTA_W, CTA_H = 320, 60
+local CTA_W, CTA_H, CTA_GAP = 320, 60, 24
 
-local function ptIn(px, py, r) return px >= r.x and px <= r.x + r.w and py >= r.y and py <= r.y + r.h end
+local function ptIn(px, py, r) return r and px >= r.x and px <= r.x + r.w and py >= r.y and py <= r.y + r.h end
 
 function Runover.new(palette, vw, vh, host, payload)
   payload = payload or {}
@@ -60,11 +60,14 @@ function Runover.new(palette, vw, vh, host, payload)
   self.bx = math.floor(cx - BANNER_W / 2)
   self.by = top
   self.divY = top + bannerH + math.floor(DIV_GAP / 2)
-  self.cta = {
-    x = math.floor(cx - CTA_W / 2),
-    y = top + bannerH + DIV_GAP,
-    w = CTA_W, h = CTA_H,
-  }
+  local ctaY = top + bannerH + DIV_GAP
+  if self.result == "win" then
+    self.cta = { x = math.floor(cx - CTA_W - CTA_GAP / 2), y = ctaY, w = CTA_W, h = CTA_H }
+    self.alt = { x = math.floor(cx + CTA_GAP / 2), y = ctaY, w = CTA_W, h = CTA_H }
+  else
+    self.cta = { x = math.floor(cx - CTA_W / 2), y = ctaY, w = CTA_W, h = CTA_H }
+    self.alt = nil
+  end
   -- Enveloppe (compat : le test lit self.panel) : l'aire englobant le bloc verdict+CTA. Pas un cadre dessiné
   -- (le verdict est porté par la BANNIÈRE), juste un repère d'ancrage/hit-test.
   self.panel = { x = self.bx, y = self.by, w = BANNER_W, h = totalH }
@@ -78,6 +81,7 @@ function Runover:update(frameDt)
   self.ambient:update(frameDt)
   Feel.update(frameDt) -- avance le JUICE du CTA (survol/press) ; aucune action différée en file ici
   Feel.hover("runover.again", ptIn(self.mx, self.my, self.cta))
+  Feel.hover("runover.claim", ptIn(self.mx, self.my, self.alt))
 end
 
 function Runover:drawBack(view)
@@ -124,10 +128,15 @@ function Runover:drawOverlay(view)
   -- ── 2) Filet laiton propre (Dividers.brass) entre le verdict et l'appel à redescendre. ──
   Dividers.brass(math.floor(Draw.W / 2), self.divY, 280)
 
-  -- ── 3) CTA PRIMARY « DESCEND AGAIN » (sang + yeux) avec le JUICE propre (survol/press). ──
-  Button.draw(self.cta.x, self.cta.y, self.cta.w, self.cta.h, "primary", T("runover.descend"),
+  -- ── 3) CTA. Victoire : descendre plus bas vers le bossrush ; défaite : relancer. ──
+  local ctaKey = won and "runover.descend_further" or "runover.descend"
+  Button.draw(self.cta.x, self.cta.y, self.cta.w, self.cta.h, "primary", T(ctaKey),
     { hover = self.ctaHover, feel = Feel.state("runover.again"), id = "runover.again",
       mouse = { mx = self.mx, my = self.my }, t = tt })
+  if self.alt then
+    Button.draw(self.alt.x, self.alt.y, self.alt.w, self.alt.h, "secondary", T("runover.claim_victory"),
+      { hover = self.altHover, feel = Feel.state("runover.claim"), id = "runover.claim" })
+  end
 
   Overlay.popContent() -- fin de l'enrobage du groupe (back-ease)
   -- FADE-UP : wash sombre par-dessus, alpha = (1-anim)·force, qui s'efface à l'entrée -> le verdict « remonte
@@ -141,7 +150,9 @@ function Runover:mousemoved(vx, vy)
   local dx, dy = vx * 4, vy * 4
   self.mx, self.my = dx, dy
   self.ctaHover = ptIn(dx, dy, self.cta)
+  self.altHover = ptIn(dx, dy, self.alt)
   Feel.hover("runover.again", self.ctaHover)
+  Feel.hover("runover.claim", self.altHover)
 end
 
 -- ⭐ Pointer-DOWN sur le CTA : ACTION DIFFÉRÉE (Feel, bible §4) -> press visible (squash + flash + braise)
@@ -152,7 +163,12 @@ function Runover:mousepressed(vx, vy, button)
   local dx, dy = vx * 4, vy * 4
   self.mx, self.my = dx, dy
   if ptIn(dx, dy, self.cta) then
-    Feel.press("runover.again", function() self.host.newRun() end, { delay = Feel.CTA_DELAY })
+    Feel.press("runover.again", function()
+      if self.result == "win" and self.host.startBossrush then self.host.startBossrush()
+      else self.host.newRun() end
+    end, { delay = Feel.CTA_DELAY })
+  elseif ptIn(dx, dy, self.alt) then
+    Feel.press("runover.claim", function() self.host.newRun() end)
   end
 end
 
@@ -160,6 +176,10 @@ function Runover:mousereleased() end
 
 function Runover:keypressed(key)
   if key == "r" then Feel.press("runover.again"); self.host.newRun() end
+  if (key == "space" or key == "b") and self.result == "win" and self.host.startBossrush then
+    Feel.press("runover.again")
+    self.host.startBossrush()
+  end
 end
 
 return Runover

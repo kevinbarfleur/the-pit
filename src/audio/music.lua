@@ -56,6 +56,7 @@ local SCENE_TRACK = {
   combat       = "arming-the-squad",
   relicpick    = "arming-the-squad",
   runover      = "arming-the-squad",
+  bossrush     = "arming-the-squad",
 }
 
 -- ════════════════════ PROFIL DE COUCHE PAR-SCÈNE (couches de combat) ════════════════════
