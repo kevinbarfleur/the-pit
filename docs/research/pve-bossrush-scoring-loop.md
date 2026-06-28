@@ -260,3 +260,20 @@ Current warning examples:
   improved score/run through stronger final boards, while baseline entered
   slightly more often. Current read: the boss side is readable enough for lab
   iteration; the product blocker is still run access and final-board quality.
+- The generated-opponent panel
+  `runs/long-2026-06-28b/bossrush-run-n10` compared `baseline`,
+  `pair_completion_light`, and `sap_cost_pair_completion` after the level-up
+  roster pass, with events enabled and `PIT_OPPGEN_LEVEL_MULT=2`. Overall
+  postgame entry rose to `59.3%`, boss clear was `100%`, survival was `99.2%`,
+  and full score-window survival was `87.1%`. The top score/run line was
+  `pair_completion_light + committed_rot_bleed_rat_core_deep_reroll_plan`
+  (`24,235.9` score/run, `90%` entry). `sap_cost_pair_completion` had a cleaner
+  `100%` entry on the same policy but slightly lower score/run (`22,442.2`).
+  Current read: bossrush is now useful as a scoring lab, but current
+  abomination generals are not a gating problem once a run enters; the next PVE
+  tuning pass should make boss families differentiate score/survival more
+  sharply instead of only measuring access to postgame.
+- In that same panel, every boss had `100%` general clear. `ossuaire` and
+  `vermine` had `0%` boss kill rate while `brasier` and `ruche` reached about
+  `20%`. This is a useful split if kill rate becomes a secondary metric, but
+  the scoring fantasy should still be damage-count first.

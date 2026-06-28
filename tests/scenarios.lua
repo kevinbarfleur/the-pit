@@ -136,6 +136,12 @@ local ok, err = pcall(function()
         and body:find('"relics":["grave_cap"]', 1, true)
         and body:find('"commander":"clot_mender"', 1, true),
         "mode economy : PIT_PLAN_TARGET_SPECS accepte relics+commander dans oracle")
+      assert(body:find('"summary"', 1, true)
+        and body:find('"profile_rows"', 1, true)
+        and body:find('"policy_rows_top"', 1, true)
+        and body:find('"policy_rows_bottom"', 1, true)
+        and body:find('"target_rows"', 1, true),
+        "mode economy : resume compact profils/policies/cibles reporte")
     elseif m == "pacing" then
       assert(body:find('"duration_fit"', 1, true),
         "mode pacing : score de fit duration reporte")
@@ -173,6 +179,8 @@ local ok, err = pcall(function()
         "mode bossrush_run : taux d'entree postgame reporte")
       assert(body:find('"economy_policy"', 1, true),
         "mode bossrush_run : matrice economie/politique reportee")
+      assert(body:find('"opponent_mode"', 1, true),
+        "mode bossrush_run : configuration adversaire run reportee")
     end
   end
   print("  scenarios : SMOKE OK (13 modes tournent via le driver + ecrivent un rapport JSON ; garde-fous god-roll tenus)")

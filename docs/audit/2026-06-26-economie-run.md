@@ -1216,6 +1216,53 @@ Metrics recommandees :
 - `plan_access.support_access` : offres/picks de reliques, fenetres/placements
   de commandants, split focused/generic, et timing par rapport aux seuils de
   couverture du plan.
+- `summary.profile_rows`, `summary.policy_rows_top`,
+  `summary.policy_rows_bottom`, `summary.target_rows` : lecture compacte du
+  mode economie. Ces lignes sont aussi ecrites dans `ref-economy.json`, ce qui
+  permet a un agent de comparer profils/policies/cibles sans charger tout le
+  `plan_access` detaille.
+
+## Dernier panel utile
+
+Panel `runs/long-2026-06-28b/economy-summary-n32` :
+
+- adversaires generes avec `PIT_OPPGEN_LEVEL_MULT=2`;
+- events actifs, unite event ciblee en `policy_missing_copy`, cap `1`;
+- economies comparees : `baseline`, `pair_completion_light`, `sap_cost`,
+  `sap_cost_pair_completion`;
+- policies : broad plans + rot/bleed + cross bleed/rot.
+
+Resultat economie :
+
+- `baseline` : `44.9%` completion, `8.77` wins, `90.5%` full-shop afford,
+  `52.5%` desired-buy-all, `70.4%` merge-per-pair, `7.10` gold leftover.
+- `pair_completion_light` : `57.0%` completion, `9.27` wins, full-shop afford
+  stable (`90.9%`), desired-buy-all `62.0%`, merge-per-pair `95.7%`,
+  leftover `5.71`.
+- `sap_cost` : `37.9%` completion, `8.64` wins, full-shop afford tombe a
+  `52.8%`, desired-buy-all `56.3%`, merge-per-pair `68.0%`, leftover `5.34`.
+- `sap_cost_pair_completion` : `53.9%` completion, `9.10` wins, full-shop
+  afford `52.2%`, desired-buy-all `67.3%`, merge-per-pair `95.3%`,
+  leftover `3.27`.
+
+Lecture :
+
+- `pair_completion_light` est actuellement le meilleur levier pour soutenir les
+  level-ups sans rendre l'early encore plus gratuit : il augmente les merges et
+  la completion sans changer le cout des unites.
+- `sap_cost` cree enfin une pression d'achat claire, mais sans support de
+  paires il baisse trop la completion dans ce panel.
+- `sap_cost_pair_completion` est le candidat le plus interessant pour une
+  economie plus tendue : vraie pression d'or, moins de gold perdu, et niveau de
+  merge comparable au pity baseline. A tester avec plus de runs avant une
+  decision live.
+- Les lignes `committed_rot_bleed_rat_core_deep_reroll_plan` dominent encore
+  les policies (`96.9%` completion sous `pair_completion_light`, `93.8%` sous
+  `sap_cost_pair_completion`). C'est coherent avec l'objectif de low-rank
+  reroll, mais il faut verifier que ce n'est pas le seul plan naturel fort.
+- Les plans `cross_bleed_rot` restent peu accessibles (`6.3%` a `25%`
+  completion selon economie/policy dans les bottom rows). La barriere est
+  surtout une couverture de cible basse, pas un manque d'or pur.
 
 Policies minimales :
 

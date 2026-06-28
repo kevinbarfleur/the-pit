@@ -23,6 +23,20 @@ end
 
 local COMMANDER_MODE = Common.env("PIT_COMMANDER_MODE") or "auto"
 local RUN_EVENTS = Common.envBool("PIT_RUN_EVENTS", false)
+local RUN_EVENT_MUTATIONS = Common.envBool("PIT_RUN_EVENT_MUTATIONS", false)
+local EVENT_UNIT_TARGETING = Common.env("PIT_EVENT_UNIT_TARGETING")
+local EVENT_UNIT_PICK_CAP = Common.envNumber("PIT_EVENT_UNIT_PICK_CAP", nil)
+local EVENT_MUTATION_PICK_CAP = Common.envNumber("PIT_EVENT_MUTATION_PICK_CAP", nil)
+local EVENT_UNIT_RELIC_MARGIN = Common.envNumber("PIT_EVENT_UNIT_RELIC_MARGIN", nil)
+local OPPONENT_MODE = Common.env("PIT_OPPONENT_MODE") or "static"
+assert(OPPONENT_MODE == "static" or OPPONENT_MODE == "generated",
+  "PIT_OPPONENT_MODE doit etre static ou generated")
+local OPPONENT_PRESSURE = {
+  roundBonus = Common.envNumber("PIT_OPPGEN_ROUND_BONUS", 0),
+  tierBonus = Common.envNumber("PIT_OPPGEN_TIER_BONUS", 0),
+  sizeBonus = Common.envNumber("PIT_OPPGEN_SIZE_BONUS", 0),
+  levelMult = Common.envNumber("PIT_OPPGEN_LEVEL_MULT", 1),
+}
 local ELIGIBILITY = Common.env("PIT_BOSSRUSH_RUN_ELIGIBILITY") or "completed"
 assert(ELIGIBILITY == "completed" or ELIGIBILITY == "all",
   "PIT_BOSSRUSH_RUN_ELIGIBILITY doit valoir completed ou all")
@@ -171,6 +185,13 @@ for run = 1, N do
         economy = econ,
         commanderMode = COMMANDER_MODE,
         runEvents = RUN_EVENTS,
+        runEventMutations = RUN_EVENT_MUTATIONS,
+        eventUnitTargeting = EVENT_UNIT_TARGETING,
+        eventUnitPickCap = EVENT_UNIT_PICK_CAP,
+        eventUnitRelicMargin = EVENT_UNIT_RELIC_MARGIN,
+        eventMutationPickCap = EVENT_MUTATION_PICK_CAP,
+        opponentMode = OPPONENT_MODE,
+        opponentPressure = OPPONENT_PRESSURE,
       })
       local finalBoard = traj.finalSupportedBoard or traj.finalBoard
       local enters = eligible(traj) and hasBoard(finalBoard)
@@ -340,6 +361,13 @@ local payload = {
     abominations = Common.env("PIT_ABOMINATIONS"),
     commander_mode = COMMANDER_MODE,
     run_events = RUN_EVENTS,
+    run_event_mutations = RUN_EVENT_MUTATIONS,
+    event_unit_targeting = EVENT_UNIT_TARGETING,
+    event_unit_pick_cap = EVENT_UNIT_PICK_CAP,
+    event_mutation_pick_cap = EVENT_MUTATION_PICK_CAP,
+    event_unit_relic_margin = EVENT_UNIT_RELIC_MARGIN,
+    opponent_mode = OPPONENT_MODE,
+    oppgen_pressure = OPPONENT_PRESSURE,
     eligibility = ELIGIBILITY,
     score_seconds = SCORE_SECONDS,
     boss_hp_mult = BOSS_OPTS.hpMult,

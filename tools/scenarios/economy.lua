@@ -1787,6 +1787,176 @@ for _, variant in ipairs(VARIANTS) do
     p.avg_leftover_gold))
 end
 
+local function limitRows(rows, limit)
+  local out = {}
+  for i = 1, math.min(limit or #rows, #rows) do out[i] = rows[i] end
+  return out
+end
+
+local function profileSummaryRow(variant)
+  local p = profiles[variant.key]
+  return {
+    economy_variant = variant.key,
+    economy = p.economy,
+    bench_size = p.bench_size,
+    label = p.label,
+    completion = p.completion,
+    avg_wins = p.avg_wins,
+    avg_rounds = p.avg_rounds,
+    combat_winrate = p.combat_winrate,
+    avg_full_shop_ratio = p.avg_full_shop_ratio,
+    full_shop_afford_rate = p.full_shop_afford_rate,
+    early_full_shop_afford_rate = p.early_full_shop_afford_rate,
+    desired_buy_all_rate = p.desired_buy_all_rate,
+    desired_gold_afford_rate = p.desired_gold_afford_rate,
+    desired_slot_limited_rate = p.desired_slot_limited_rate,
+    desired_bench4_buy_all_rate = p.desired_bench4_buy_all_rate,
+    desired_bench4_space_limited_rate = p.desired_bench4_space_limited_rate,
+    archetype_commitment_rate = p.archetype_commitment_rate,
+    avg_archetype_commit_round = p.avg_archetype_commit_round,
+    merge_per_pair_buy = p.merge_per_pair_buy,
+    pair_buys_per_run = p.pair_buys_per_run,
+    merge_buys_per_run = p.merge_buys_per_run,
+    gold_pressure = p.gold_pressure,
+    avg_leftover_gold = p.avg_leftover_gold,
+    event_unit_progress_rate = p.event_unit_progress_rate,
+    event_mutations_per_run = p.event_mutations_per_run,
+  }
+end
+
+local function policySummaryRow(economyVariant, policyName, p)
+  return {
+    economy_variant = economyVariant,
+    policy = policyName,
+    runs = p.runs,
+    completion = p.completion,
+    avg_wins = p.avg_wins,
+    avg_rounds = p.avg_rounds,
+    combat_winrate = p.combat_winrate,
+    desired_buy_all_rate = p.desired_buy_all_rate,
+    desired_gold_afford_rate = p.desired_gold_afford_rate,
+    desired_slot_limited_rate = p.desired_slot_limited_rate,
+    archetype_commitment_rate = p.archetype_commitment_rate,
+    merge_per_pair_buy = p.merge_per_pair_buy,
+    gold_pressure = p.gold_pressure,
+    avg_leftover_gold = p.avg_leftover_gold,
+    xp_gate_blocks_per_run = p.xp_gate_blocks_per_run,
+    avg_xp_gate_unit_coverage = p.avg_xp_gate_unit_coverage,
+    avg_xp_gate_level_coverage = p.avg_xp_gate_level_coverage,
+    event_unit_progress_rate = p.event_unit_progress_rate,
+  }
+end
+
+local function supportSummaryLite(support)
+  support = support or {}
+  local relics = support.relics or {}
+  local commanders = support.commanders or {}
+  local timing = support.timing or {}
+  return {
+    relic_focused_offer_run_rate = relics.focused_offer_run_rate or 0,
+    relic_focused_pick_run_rate = relics.focused_pick_run_rate or 0,
+    relic_focused_pick_gap = relics.focused_pick_gap or 0,
+    relic_missed_focused_pick_per_run = relics.missed_focused_pick_per_run or 0,
+    commander_focused_candidate_run_rate = commanders.focused_candidate_run_rate or 0,
+    commander_focused_placement_run_rate = commanders.focused_placement_run_rate or 0,
+    commander_focused_placement_gap = commanders.focused_placement_gap or 0,
+    commander_missed_focused_placement_per_run = commanders.missed_focused_placement_per_run or 0,
+    focused_support_seen_run_rate = timing.focused_support_seen_run_rate or 0,
+    focused_support_used_run_rate = timing.focused_support_used_run_rate or 0,
+    focused_support_win_delta = timing.focused_support_win_delta or 0,
+    focused_support_win_delta_observed = timing.focused_support_win_delta_observed == true,
+  }
+end
+
+local function targetSummaryRow(economyVariant, target, p)
+  local access = (p.plan_access or {})[target.id]
+  if not access then return nil end
+  local oracle = access.oracle or {}
+  return {
+    economy_variant = economyVariant,
+    target = target.id,
+    source = access.source,
+    target_gold = access.target_gold,
+    oracle_forced_winrate = oracle.forced_winrate,
+    oracle_avg_seconds = oracle.avg_seconds,
+    oracle_coherence = oracle.coherence,
+    complete_rate = access.complete_rate,
+    held_complete_rate = access.held_complete_rate,
+    ever_held_complete_rate = access.ever_held_complete_rate,
+    avg_final_held_level_coverage = access.avg_final_held_level_coverage,
+    avg_peak_held_level_coverage = access.avg_peak_held_level_coverage,
+    avg_peak_held_round = access.avg_peak_held_round,
+    promising_lost_rate = access.promising_lost_rate,
+    undeployed_complete_rate = access.undeployed_complete_rate,
+    avg_wins = access.avg_wins,
+    completion = access.completion,
+    support = supportSummaryLite(access.support_summary),
+  }
+end
+
+local function compactSummary()
+  local profileRows, policyRows, targetRows = {}, {}, {}
+  for _, variant in ipairs(VARIANTS) do
+    profileRows[#profileRows + 1] = profileSummaryRow(variant)
+
+    local names = {}
+    for name in pairs(byPolicy[variant.key] or {}) do names[#names + 1] = name end
+    table.sort(names)
+    for _, name in ipairs(names) do
+      policyRows[#policyRows + 1] = policySummaryRow(variant.key, name, byPolicy[variant.key][name])
+    end
+
+    for _, target in ipairs(PLAN_TARGETS) do
+      local row = targetSummaryRow(variant.key, target, profiles[variant.key])
+      if row then targetRows[#targetRows + 1] = row end
+    end
+  end
+
+  table.sort(policyRows, function(a, b)
+    if a.completion ~= b.completion then return a.completion > b.completion end
+    if a.avg_wins ~= b.avg_wins then return a.avg_wins > b.avg_wins end
+    if a.combat_winrate ~= b.combat_winrate then return a.combat_winrate > b.combat_winrate end
+    if a.economy_variant ~= b.economy_variant then return a.economy_variant < b.economy_variant end
+    return a.policy < b.policy
+  end)
+  local bottomPolicyRows = {}
+  for i = #policyRows, 1, -1 do bottomPolicyRows[#bottomPolicyRows + 1] = policyRows[i] end
+
+  table.sort(targetRows, function(a, b)
+    if a.held_complete_rate ~= b.held_complete_rate then return a.held_complete_rate > b.held_complete_rate end
+    if a.avg_peak_held_level_coverage ~= b.avg_peak_held_level_coverage then
+      return a.avg_peak_held_level_coverage > b.avg_peak_held_level_coverage
+    end
+    if a.economy_variant ~= b.economy_variant then return a.economy_variant < b.economy_variant end
+    return a.target < b.target
+  end)
+
+  return {
+    runs_per_policy_profile = N,
+    config = {
+      hp_mult = HPM,
+      commander_mode = COMMANDER_MODE,
+      run_events = RUN_EVENTS,
+      event_unit_targeting = EVENT_UNIT_TARGETING,
+      event_unit_pick_cap = EVENT_UNIT_PICK_CAP,
+      policies = Common.env("PIT_POLICIES"),
+      economy_profiles = Common.env("PIT_ECON_PROFILES"),
+      bench_sizes = Common.env("PIT_BENCH_SIZES"),
+      bench_caps = Common.env("PIT_BENCH_CAPS"),
+      plan_targets = Common.env("PIT_PLAN_TARGETS"),
+      plan_target_specs = Common.env("PIT_PLAN_TARGET_SPECS"),
+      opponent_mode = OPPONENT_MODE,
+      oppgen_pressure = OPPONENT_PRESSURE,
+    },
+    profile_rows = profileRows,
+    policy_rows_top = limitRows(policyRows, 16),
+    policy_rows_bottom = limitRows(bottomPolicyRows, 16),
+    target_rows = limitRows(targetRows, 24),
+  }
+end
+
+local compact = compactSummary()
+
 local payload = {
   mode = "economy",
   runs_per_policy_profile = N,
@@ -1810,88 +1980,8 @@ local payload = {
   profiles = profiles,
   by_cohort = byCohort,
   by_policy = byPolicy,
+  summary = compact,
 }
 
-local summary = { runs_per_policy_profile = N, profiles = {} }
-for _, variant in ipairs(VARIANTS) do
-  local profileId = variant.key
-  local p = profiles[profileId]
-  summary.profiles[profileId] = {
-    economy = p.economy,
-    bench_size = p.bench_size,
-    completion = p.completion,
-    avg_wins = p.avg_wins,
-    avg_full_shop_ratio = p.avg_full_shop_ratio,
-    full_shop_afford_rate = p.full_shop_afford_rate,
-    early_full_shop_afford_rate = p.early_full_shop_afford_rate,
-    desired_buy_all_rate = p.desired_buy_all_rate,
-    desired_gold_afford_rate = p.desired_gold_afford_rate,
-    desired_slot_limited_rate = p.desired_slot_limited_rate,
-    desired_bench4_buy_all_rate = p.desired_bench4_buy_all_rate,
-    desired_bench4_space_limited_rate = p.desired_bench4_space_limited_rate,
-    archetype_commitment_rate = p.archetype_commitment_rate,
-    avg_archetype_commit_round = p.avg_archetype_commit_round,
-    avg_leftover_gold = p.avg_leftover_gold,
-    gold_pressure = p.gold_pressure,
-    sells_per_run = p.sells_per_run,
-    sell_gold_per_run = p.sell_gold_per_run,
-    bench_sells_per_run = p.bench_sells_per_run,
-    board_sells_per_run = p.board_sells_per_run,
-    pair_buys_per_run = p.pair_buys_per_run,
-    merge_buys_per_run = p.merge_buys_per_run,
-    merge_per_pair_buy = p.merge_per_pair_buy,
-    merge_lifecycle = {
-      resolve_rate = p.merge_lifecycle.resolve_rate,
-      exact_pairs = p.merge_lifecycle.exact_pairs,
-      exact_resolved = p.merge_lifecycle.exact_resolved,
-      exact_resolve_rate = p.merge_lifecycle.exact_resolve_rate,
-      avg_rounds_to_merge = p.merge_lifecycle.avg_rounds_to_merge,
-      unresolved = p.merge_lifecycle.unresolved,
-      watch = p.merge_lifecycle.watch,
-    },
-    unit_merge_watch = p.unit_merge_watch,
-    commander_placements_per_run = p.commander_placements_per_run,
-    relic_picks_per_run = p.relic_picks_per_run,
-    event_picks_per_run = p.event_picks_per_run,
-    event_relics_per_run = p.event_relics_per_run,
-    event_units_per_run = p.event_units_per_run,
-    event_unit_progress_rate = p.event_unit_progress_rate,
-    event_unit_single_rate = p.event_unit_single_rate,
-    event_unit_pair_rate = p.event_unit_pair_rate,
-    event_unit_merge_rate = p.event_unit_merge_rate,
-    event_unit_bench_rate = p.event_unit_bench_rate,
-    event_unit_board_rate = p.event_unit_board_rate,
-    event_unit_failures_per_run = p.event_unit_failures_per_run,
-    event_unit_failure_rate = p.event_unit_failure_rate,
-    event_gold_per_run = p.event_gold_per_run,
-    event_shop_xp_per_run = p.event_shop_xp_per_run,
-    event_shop_tier_ups_per_run = p.event_shop_tier_ups_per_run,
-    plan_access = p.plan_access,
-    plan_support_watch = p.plan_support_watch,
-    cohorts = {
-      broad_naive = byCohort[profileId].broad_naive and {
-        avg_wins = byCohort[profileId].broad_naive.avg_wins,
-        desired_buy_all_rate = byCohort[profileId].broad_naive.desired_buy_all_rate,
-        desired_slot_limited_rate = byCohort[profileId].broad_naive.desired_slot_limited_rate,
-      } or nil,
-      broad_prune = byCohort[profileId].broad_prune and {
-        avg_wins = byCohort[profileId].broad_prune.avg_wins,
-        desired_buy_all_rate = byCohort[profileId].broad_prune.desired_buy_all_rate,
-        desired_slot_limited_rate = byCohort[profileId].broad_prune.desired_slot_limited_rate,
-        sells_per_run = byCohort[profileId].broad_prune.sells_per_run,
-      } or nil,
-      broad_plan = byCohort[profileId].broad_plan and {
-        avg_wins = byCohort[profileId].broad_plan.avg_wins,
-        desired_buy_all_rate = byCohort[profileId].broad_plan.desired_buy_all_rate,
-        desired_slot_limited_rate = byCohort[profileId].broad_plan.desired_slot_limited_rate,
-        sells_per_run = byCohort[profileId].broad_plan.sells_per_run,
-        board_sells_per_run = byCohort[profileId].broad_plan.board_sells_per_run,
-        pair_buys_per_run = byCohort[profileId].broad_plan.pair_buys_per_run,
-        merge_buys_per_run = byCohort[profileId].broad_plan.merge_buys_per_run,
-      } or nil,
-    },
-  }
-end
-
-local path = Common.writeReport("economy", payload, { refSummary = summary })
+local path = Common.writeReport("economy", payload, { refSummary = compact })
 print("=> ecrit " .. path .. " (+ runs/report-ref.json)")

@@ -2741,11 +2741,41 @@ Next implementation targets:
      actual tuned data values (`15%` and `14%`). Read: mechanical-diversity debt
      is no longer the next bottleneck; continue with sim/economy/coherence
      evidence before changing more creature data. Short generated validation
-     stayed stable: TTK avg `519` ticks, no unit >2 sigma outlier, afflictions
-     still `25.5%` of damage, and coherence buckets slope from `41.4%`
-     low-coh winrate to `75.7%` high-coh winrate (`corr=0.314`).
-3. Use the new `plan_support_watch` rows in the next economy/bossrush panels to
-   separate "support never offered", "support offered but not picked", and
-   "support picked but plan still inaccessible".
-4. Start massive simulation only after the generator can intentionally produce
+   stayed stable: TTK avg `519` ticks, no unit >2 sigma outlier, afflictions
+   still `25.5%` of damage, and coherence buckets slope from `41.4%`
+   low-coh winrate to `75.7%` high-coh winrate (`corr=0.314`).
+- economy/bossrush connected panel after the level-up pass:
+  `tools/sim.lua economy` now writes a compact `summary` with
+  `profile_rows`, `policy_rows_top`, `policy_rows_bottom`, and `target_rows`.
+  This same compact view is the `ref-economy.json` payload, so future agents can
+  compare profiles without loading the full multi-MB `plan_access` block.
+  Panel `runs/long-2026-06-28b/economy-summary-n32` confirms:
+  `pair_completion_light` raises completion (`44.9% -> 57.0%`) and
+  merge-per-pair (`70.4% -> 95.7%`) without increasing full-shop affordability;
+  `sap_cost` creates real pressure but under-completes alone (`37.9%`);
+  `sap_cost_pair_completion` is the best candidate for a tense economy
+  (`53.9%` completion, `95.3%` merge-per-pair, `3.27` leftover gold). The
+  rot/bleed rat-core deep-reroll line is now extremely successful
+  (`96.9%` completion under `pair_completion_light`, `93.8%` under
+  `sap_cost_pair_completion`), which may be intended low-rank reroll identity
+  but must be compared against other natural plans.
+- `tools/sim.lua bossrush_run` now accepts the same generated-opponent and event
+  knobs as the economy scenario (`PIT_OPPONENT_MODE`, `PIT_OPPGEN_*`,
+  `PIT_EVENT_UNIT_TARGETING`, unit caps, mutation caps, relic margin). Panel
+  `runs/long-2026-06-28b/bossrush-run-n10` used generated opponents with
+  `levelMult=2` and events enabled. It reached `59.3%` postgame entry,
+  `100%` general clear, `99.2%` survival, and `87.1%` full scoring-window
+  survival. Top score/run was `pair_completion_light +
+  committed_rot_bleed_rat_core_deep_reroll_plan` (`24,235.9`), with
+  `sap_cost_pair_completion` close behind on the same policy (`22,442.2`) and
+  better entry (`100%`). Read: bossrush is now a useful score lab, but the
+  current abomination frontlines are not yet a meaningful gate once a run
+  enters. Next PVE work should differentiate boss families and scoring identity,
+  not just improve access.
+3. Use the new compact economy summary first, and only drill into full
+   `plan_access` / `support_access` when a row shows a concrete anomaly.
+4. Use `plan_support_watch` rows in the next economy/bossrush panels to separate
+   "support never offered", "support offered but not picked", and "support
+   picked but plan still inaccessible".
+5. Start massive simulation only after the generator can intentionally produce
    coherent, semi-coherent, and incoherent teams.
