@@ -41,6 +41,8 @@ Current reward kinds:
   `minTier` floor for stronger ceremonies.
 - `unit`: a concrete monster id and level. Event units can be level 1 or rare
   level 2, never level 3.
+- `mutation`: lab opt-in only. Materialized only when the driver can attach the
+  mutation to an exact existing copy target.
 - `gold`: direct run gold.
 - `shop_xp`: direct shop XP.
 - `shop_tier_up`: direct shop tier bump.
@@ -267,6 +269,8 @@ Current code coverage:
   drag/drop, stow, and merge;
 - snapshots encode/decode mutations backward-compatibly;
 - lab unit rewards can already carry a mutation in copy state.
+- `PIT_RUN_EVENT_MUTATIONS=1` enables mutation lanes in economy reports without
+  activating them by default.
 
 Current merge rule:
 
@@ -287,6 +291,21 @@ This is promising, but live event activation is still phase 2. Before adding a
 mutation lane to the 8 active events, the lab must test targeting, reward EV,
 card/tooltip display, and policy valuation so it does not become another relic
 opportunity-cost trap.
+
+First opt-in panel (`N=64`, `pair_completion_light`, `rot_bleed_rat_core`,
+gated + deep-reroll policies) says exactly that:
+
+- uncapped mutation preference: completion `31.2%`, wins `8.91`, event relics
+  `1.35/run`, event units `0.52/run`, mutations `1.02/run`;
+- `PIT_EVENT_MUTATION_PICK_CAP=1`: completion still `31.2%`, wins `8.91`,
+  event relics `1.64/run`, event units `0.58/run`, mutations `0.66/run`;
+- no mutation failure occurred, so the system plumbing is safe. The issue is
+  reward opportunity cost, not application failure.
+
+Current read: mutation lanes are mechanically viable and flavorful, but too
+tempting for exact reroll plans unless they are rarer, lower-valued by policy,
+or attached to special events that do not replace the main build-defining relic
+lane.
 
 ## Event Product Step
 

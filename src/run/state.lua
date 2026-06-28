@@ -20,6 +20,7 @@ local Units = require("src.data.units")
 local Relics = require("src.data.relics")
 local RunEvents = require("src.data.run_events")
 local Economy = require("src.run.economy")
+local Mutations = require("src.run.mutations")
 
 local RunState = {}
 RunState.__index = RunState
@@ -606,10 +607,34 @@ local function rollEventUnitReward(self, spec, opts)
   }
 end
 
+local function rollEventMutationReward(self, spec, opts)
+  local targetFn = opts and opts.mutationTarget
+  if not targetFn then return nil end
+  local target = targetFn(spec)
+  if not target then return nil end
+  local choices = Mutations.normalize(spec.mutations or spec.mutation or spec.id)
+  if not choices then choices = Mutations.order end
+  if #choices == 0 then return nil end
+  local mutationId = choices[self.rng:random(1, #choices)]
+  if not Mutations.byId[mutationId] then return nil end
+  return {
+    kind = "mutation",
+    id = mutationId,
+    target = {
+      copyId = target.copyId,
+      where = target.where,
+      slot = target.slot,
+      unitId = target.id,
+      level = target.level,
+    },
+  }
+end
+
 local function materializeEventReward(self, spec, usedRelics, opts)
   spec = spec or {}
   if spec.kind == "relic" then return rollEventRelicReward(self, spec, usedRelics) end
   if spec.kind == "unit" then return rollEventUnitReward(self, spec, opts) end
+  if spec.kind == "mutation" then return rollEventMutationReward(self, spec, opts) end
   if spec.kind == "gold" then
     return { kind = "gold", amount = math.max(0, spec.amount or 0) }
   end
@@ -669,7 +694,7 @@ function RunState:rollRunEvent(opts)
 end
 
 -- Applique uniquement les recompenses qui vivent au niveau RunState. Les unites
--- et futures mutations sont externalisees : elles doivent passer par Build afin
+-- et mutations d'instance sont externalisees : elles doivent passer par Build afin
 -- de respecter banc, plateau, fusions, snapshots et UI.
 function RunState:applyRunEventReward(reward)
   reward = copyReward(reward)

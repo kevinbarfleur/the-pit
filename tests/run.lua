@@ -568,11 +568,11 @@ local ok, err = pcall(function()
   end
 
   -- ── RUN EVENTS : couche experimentale du marchand tous les 3 combats. Les rencontres sont thematiques, mais
-  -- les rewards sont materialises explicitement (pas de surprise cachee). Les mutations restent hors pool actif
-  -- tant que le modele d'instance n'est pas proprement cable. ──
+  -- les rewards sont materialises explicitement (pas de surprise cachee). Les mutations peuvent exister en data,
+  -- mais ne se materialisent qu'en opt-in avec une cible d'instance explicite. ──
   do
     assert(#RunEvents.order <= RunEvents.MAX_ACTIVE, "run events : 8 max actifs")
-    local allowed = { relic = true, unit = true, gold = true, shop_xp = true, shop_tier_up = true }
+    local allowed = { relic = true, unit = true, mutation = true, gold = true, shop_xp = true, shop_tier_up = true }
     for _, id in ipairs(RunEvents.order) do
       local ev = RunEvents.events[id]
       assert(ev and ev.id == id, "run events : id declare dans events")
@@ -581,8 +581,8 @@ local ok, err = pcall(function()
       for _, choice in ipairs(ev.choices) do
         local kind = choice.reward and choice.reward.kind
         assert(allowed[kind], "run events : reward actif supporte (" .. tostring(kind) .. ")")
-        assert(kind ~= "mutation", "run events : pas de mutation active avant modele d'instance")
-        if kind == "relic" then relicChoices = relicChoices + 1 else nonRelicChoices = nonRelicChoices + 1 end
+        if kind == "relic" then relicChoices = relicChoices + 1
+        elseif kind ~= "mutation" then nonRelicChoices = nonRelicChoices + 1 end
         if kind == "unit" then
           assert((choice.reward.level or 1) <= 2, "run events : aucune unite niveau 3 offerte")
         end
@@ -632,6 +632,25 @@ local ok, err = pcall(function()
     for _, c in ipairs((fev and fev.choices) or {}) do
       assert(c.reward.kind ~= "unit", "run events : filtre optionnel peut retirer une lane unite")
     end
+
+    local mutated = RunState.new(60607)
+    mutated.wins, mutated.losses = 2, 1
+    local mutationExclude = {}
+    for _, id in ipairs(RunEvents.order) do
+      if id ~= "wounded_thing" then mutationExclude[id] = true end
+    end
+    local mev = mutated:rollRunEvent({
+      exclude = mutationExclude,
+      mutationTarget = function()
+        return { copyId = 42, where = "board", slot = 5, id = "marauder", level = 2 }
+      end,
+    })
+    local mutationReward
+    for _, c in ipairs((mev and mev.choices) or {}) do
+      if c.reward and c.reward.kind == "mutation" then mutationReward = c.reward end
+    end
+    assert(mutationReward and mutationReward.id == "blood_fed" and mutationReward.target.copyId == 42,
+      "run events : lane mutation opt-in materialise une cible explicite")
 
     local r = RunState.new(6061)
     r.wins, r.losses = 3, 1

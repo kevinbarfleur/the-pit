@@ -32,6 +32,7 @@ E.events = {
       { id = "crack_the_warm_egg", reward = { kind = "unit", rankMin = 1, rankMax = 2, level = 1 } },
       { id = "take_the_twin", reward = { kind = "unit", rankMin = 1, rankMax = 1, level = 2 } },
       { id = "boil_the_shell", reward = { kind = "relic" } },
+      { id = "let_it_echo", reward = { kind = "mutation", mutation = "echo_touched", rankMin = 1, rankMax = 3 } },
     },
   },
 
@@ -72,6 +73,7 @@ E.events = {
       { id = "bind_its_chain", reward = { kind = "relic" } },
       { id = "feed_it_blood", reward = { kind = "unit", rankMin = 1, rankMax = 1, level = 2 } },
       { id = "harvest_the_chain", reward = { kind = "relic" } },
+      { id = "let_it_bite", reward = { kind = "mutation", mutation = "blood_fed", rankMin = 1, rankMax = 3 } },
     },
   },
 
@@ -82,6 +84,7 @@ E.events = {
       { id = "lower_the_hook", reward = { kind = "relic", minTier = "mid" } },
       { id = "drink_the_heat", reward = { kind = "shop_xp", amount = 5 } },
       { id = "sell_the_ashes", reward = { kind = "gold", amount = 8 } },
+      { id = "swallow_the_ember", reward = { kind = "mutation", mutation = "quickened", rankMin = 1, rankMax = 4 } },
     },
   },
 

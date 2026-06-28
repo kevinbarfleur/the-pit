@@ -14,6 +14,7 @@
 
 local Units = require("src.data.units")
 local Coherence = require("src.lab.coherence")
+local Mutations = require("src.run.mutations")
 
 local Policies = {}
 
@@ -206,6 +207,20 @@ local function runEventRewardScore(drv, reward, opts)
     if opts.supportWant and wants(opts.supportWant, id) then score = score + 45 end
     if opts.want and wants(opts.want, id) then score = score + 120 end
     if opts.coreWant and wants(opts.coreWant, id) then score = score + 180 end
+    return score
+  elseif kind == "mutation" then
+    if drv and drv.eventMutationPickCap ~= nil
+      and ((drv.metrics and drv.metrics.eventMutations) or 0) >= drv.eventMutationPickCap then
+      return -500
+    end
+    local def = Mutations.byId[reward.id]
+    if not def then return -500 end
+    local t = reward.target or {}
+    local score = 150 + (def.priority or 0)
+    if t.where == "board" then score = score + 70 end
+    if t.level and t.level >= 2 then score = score + 40 end
+    if opts.coreWant and wants(opts.coreWant, t.unitId) then score = score + 120 end
+    if opts.want and wants(opts.want, t.unitId) then score = score + 80 end
     return score
   elseif kind == "gold" then
     local amount = reward.amount or 0

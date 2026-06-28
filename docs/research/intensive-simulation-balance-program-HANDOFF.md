@@ -2574,6 +2574,13 @@ Next implementation targets:
      lab unit rewards can carry them in copy state. They are still not active
      in the 8 live run events until targeting, EV, card/tooltip display, and
      policy valuation are tested.
+     Opt-in lab update: `PIT_RUN_EVENT_MUTATIONS=1` materializes mutation
+     choices only when the driver can attach an exact copy target. In the first
+     N=64 rot/bleed panel, uncapped mutation preference reached `1.02`
+     mutations/run but dropped event relics to `1.35/run` and completion to
+     `31.2%`; `PIT_EVENT_MUTATION_PICK_CAP=1` improved relics to `1.64/run`
+     but completion stayed `31.2%`. Read: plumbing is safe (`0` mutation
+     failures), but live mutation lanes still need rarity/policy/value tuning.
    - event-unit diagnostics:
      `Rundriver` now classifies unit rewards as single, pair-completer, or
      merge-completer, and records whether the granted copy lands on bench or

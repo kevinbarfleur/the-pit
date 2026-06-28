@@ -18,6 +18,7 @@ local Compcost = require("src.lab.compcost")
 local Palette = require("src.core.palette")
 local Units = require("src.data.units")
 local Pacing = require("src.run.pacing")
+local Mutations = require("src.run.mutations")
 
 local Rundriver = {}
 Rundriver.__index = Rundriver
@@ -41,8 +42,10 @@ function Rundriver.new(seed, opts)
     fatigue = (opts.fatigue ~= nil) and opts.fatigue or pacing.fatigue,
     commanderMode = opts.commanderMode or "ignore", -- lab-only policy: ignore | decline | auto
     runEvents = opts.runEvents == true, -- lab-only experiment: replace merchant relics with thematic run events
+    runEventMutations = opts.runEventMutations == true, -- lab-only: materialize mutation lanes with exact copy targets
     eventUnitTargeting = opts.eventUnitTargeting, -- nil | "policy" | "missing_copy" | "policy_missing_copy"; lab-only event unit materialization experiment
     eventUnitPickCap = opts.eventUnitPickCap, -- lab-only: max successful event unit rewards per run before preferring relics
+    eventMutationPickCap = opts.eventMutationPickCap, -- lab-only: max successful mutation rewards per run before preferring relics
     compMutator = opts.compMutator, -- lab-only overlay appliqué aux deux camps avant Match.run (pacing, probes)
     leftMutator = opts.leftMutator, -- lab-only overlay appliqué au joueur seulement (candidate balance)
     rightMutator = opts.rightMutator, -- lab-only overlay appliqué à l'adversaire seulement
@@ -70,6 +73,7 @@ function Rundriver.new(seed, opts)
       eventPicks = 0, eventRelics = 0, eventUnits = 0, eventUnitFailures = 0,
       eventUnitSingles = 0, eventUnitPairCompleters = 0, eventUnitMergeCompleters = 0,
       eventUnitToBench = 0, eventUnitToBoard = 0,
+      eventMutations = 0, eventMutationFailures = 0,
       eventGold = 0, eventShopXp = 0, eventShopTierUps = 0,
     },
   }, Rundriver)
@@ -89,6 +93,7 @@ local METRIC_KEYS = {
   "eventPicks", "eventRelics", "eventUnits", "eventUnitFailures",
   "eventUnitSingles", "eventUnitPairCompleters", "eventUnitMergeCompleters",
   "eventUnitToBench", "eventUnitToBoard",
+  "eventMutations", "eventMutationFailures",
   "eventGold", "eventShopXp", "eventShopTierUps",
 }
 
@@ -781,7 +786,7 @@ end
 
 function Rundriver:runEventRollOptions()
   local mode = self.eventUnitTargeting
-  if not mode then return nil end
+  if not mode and not self.runEventMutations then return nil end
   local policy = self.policy
   local opts = {}
   if mode == "missing_copy" or mode == "policy_missing_copy" then
@@ -795,8 +800,37 @@ function Rundriver:runEventRollOptions()
       return policy:runEventUnitPriority(self, id, rewardSpec)
     end
   end
-  if not opts.unitFilter and not opts.unitPriority then return nil end
+  if self.runEventMutations then
+    opts.mutationTarget = function(rewardSpec)
+      return self:bestMutationTarget(rewardSpec)
+    end
+  end
+  if not opts.unitFilter and not opts.unitPriority and not opts.mutationTarget then return nil end
   return opts
+end
+
+function Rundriver:bestMutationTarget(spec)
+  if not self.runEventMutations then return nil end
+  self:_ensureCopyIds()
+  spec = spec or {}
+  local minRank = math.max(1, math.min(5, spec.rank or spec.rankMin or 1))
+  local maxRank = math.max(minRank, math.min(5, spec.rank or spec.rankMax or 5))
+  local best, bestScore
+  local function consider(where, slot, sr)
+    if not sr or (sr.mutations and #sr.mutations > 0) then return end
+    local u = Units[sr.id]
+    local rank = u and (u.rank or 1) or 1
+    if rank < minRank or rank > maxRank then return end
+    local level = sr.level or 1
+    local score = ((where == "board") and 1000 or 0) + level * 120 + rank * 12 + (u and (u.dmg or 0) or 0)
+    if not bestScore or score > bestScore or (score == bestScore and slot < best.slot) then
+      bestScore = score
+      best = { copyId = sr.copyId, where = where, slot = slot, id = sr.id, level = level }
+    end
+  end
+  for i = 1, 9 do consider("board", i, self.build.slotRigs[i]) end
+  for i = 1, #(self.build.benchSlots or {}) do consider("bench", i, self.build.bench[i]) end
+  return best
 end
 
 function Rundriver:grantUnitReward(reward)
@@ -840,9 +874,42 @@ function Rundriver:grantUnitReward(reward)
   return true
 end
 
+function Rundriver:grantMutationReward(reward)
+  reward = reward or {}
+  local mutationId = reward.id or reward.mutation
+  if not Mutations.byId[mutationId] then
+    self:_metric("eventMutationFailures", 1)
+    return false
+  end
+  local target = reward.target or {}
+  local loc = target.copyId and self:copyLocation(target.copyId) or nil
+  if not loc and target.where and target.slot then loc = { where = target.where, slot = target.slot } end
+  local sr
+  if loc and loc.where == "board" then sr = self.build.slotRigs[loc.slot]
+  elseif loc and loc.where == "bench" then sr = self.build.bench[loc.slot] end
+  if not sr or (target.copyId and sr.copyId ~= target.copyId) or (sr.mutations and #sr.mutations > 0) then
+    self:_metric("eventMutationFailures", 1)
+    self:_event({ type = "run_event_reward_failed", reason = "bad_mutation_target", kind = "mutation", id = mutationId })
+    return false
+  end
+  sr.mutations = Mutations.clone({ mutationId })
+  self:_metric("eventMutations", 1)
+  self:_event({
+    type = "mutation_reward",
+    id = mutationId,
+    targetId = sr.id,
+    level = sr.level or 1,
+    copyId = sr.copyId,
+    where = loc and loc.where or nil,
+    slot = loc and loc.slot or nil,
+  })
+  return true
+end
+
 function Rundriver:applyRunEventReward(reward)
   reward = reward or {}
   if reward.kind == "unit" then return self:grantUnitReward(reward) end
+  if reward.kind == "mutation" then return self:grantMutationReward(reward) end
   local beforeGold, beforeXp, beforeTier, beforeRelics = self.run.gold, self.run.shopXp, self.run.shopTier, #self.run.relics
   local ok = self.run:applyRunEventReward(reward)
   if not ok then

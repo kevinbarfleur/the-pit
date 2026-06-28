@@ -282,6 +282,17 @@ local ok, err = pcall(function()
   local mutationCopies = mutationRewardDrv:copyState()
   assert(mutationCopies[1] and mutationCopies[1].mutations and mutationCopies[1].mutations[1] == "blood_fed",
     "events: mutation d'unite reward persiste dans le copyState")
+  local eventMutationDrv = Rundriver.new(2026063207, { recordEvents = true, runEventMutations = true })
+  eventMutationDrv.build:placeId(5, "marauder", 2)
+  local mutationTarget = eventMutationDrv:bestMutationTarget({ rankMin = 1, rankMax = 2 })
+  assert(mutationTarget and mutationTarget.id == "marauder" and mutationTarget.copyId,
+    "events: mutation opt-in cible une copie existante explicite")
+  assert(eventMutationDrv:grantMutationReward({ kind = "mutation", id = "echo_touched", target = mutationTarget }),
+    "events: mutation reward appliquee a la copie ciblee")
+  assert(eventMutationDrv.build.slotRigs[5].mutations[1] == "echo_touched",
+    "events: mutation reward persiste sur l'occurrence du board")
+  assert(eventMutationDrv:metricSnapshot().eventMutations == 1,
+    "events: mutation reward est diagnostiquee")
   local pairRewardDrv = Rundriver.new(2026063204, { recordEvents = true })
   pairRewardDrv.build:placeId(5, "marauder", 1)
   assert(pairRewardDrv:grantUnitReward({ kind = "unit", id = "marauder", level = 1 }),

@@ -22,8 +22,10 @@ local ORACLE_PACING = Pacing.arenaOptions()
 if HPM ~= nil then ORACLE_PACING.hpMult = HPM end
 local COMMANDER_MODE = Common.env("PIT_COMMANDER_MODE") or "ignore"
 local RUN_EVENTS = Common.envBool("PIT_RUN_EVENTS", false)
+local RUN_EVENT_MUTATIONS = Common.envBool("PIT_RUN_EVENT_MUTATIONS", false)
 local EVENT_UNIT_TARGETING = Common.env("PIT_EVENT_UNIT_TARGETING")
 local EVENT_UNIT_PICK_CAP = Common.envNumber("PIT_EVENT_UNIT_PICK_CAP", nil)
+local EVENT_MUTATION_PICK_CAP = Common.envNumber("PIT_EVENT_MUTATION_PICK_CAP", nil)
 -- Extra holding capacity beyond the real board+bench capacity used by Rundriver.
 -- Cap 0 is the current gameplay model; cap 4 answers "what if the player had 4 more reserve slots?"
 local BENCH_CAPS = Common.envNumberList("PIT_BENCH_CAPS", { 0, 2, 4, 6 })
@@ -220,6 +222,7 @@ local function newAgg()
     eventPicks = 0, eventRelics = 0, eventUnits = 0, eventUnitFailures = 0,
     eventUnitSingles = 0, eventUnitPairCompleters = 0, eventUnitMergeCompleters = 0,
     eventUnitToBench = 0, eventUnitToBoard = 0,
+    eventMutations = 0, eventMutationFailures = 0,
     eventGold = 0, eventShopXp = 0, eventShopTierUps = 0,
     slotDeclines = 0, slotAccepts = 0,
     xpGateBlocks = 0, xpGateObserved = 0, xpGateUnitCoverage = 0, xpGateLevelCoverage = 0,
@@ -1403,6 +1406,8 @@ local function addRun(a, traj)
   a.eventUnitMergeCompleters = a.eventUnitMergeCompleters + ((traj.metrics and traj.metrics.eventUnitMergeCompleters) or 0)
   a.eventUnitToBench = a.eventUnitToBench + ((traj.metrics and traj.metrics.eventUnitToBench) or 0)
   a.eventUnitToBoard = a.eventUnitToBoard + ((traj.metrics and traj.metrics.eventUnitToBoard) or 0)
+  a.eventMutations = a.eventMutations + ((traj.metrics and traj.metrics.eventMutations) or 0)
+  a.eventMutationFailures = a.eventMutationFailures + ((traj.metrics and traj.metrics.eventMutationFailures) or 0)
   a.eventGold = a.eventGold + ((traj.metrics and traj.metrics.eventGold) or 0)
   a.eventShopXp = a.eventShopXp + ((traj.metrics and traj.metrics.eventShopXp) or 0)
   a.eventShopTierUps = a.eventShopTierUps + ((traj.metrics and traj.metrics.eventShopTierUps) or 0)
@@ -1617,6 +1622,8 @@ local function finish(a)
       and ((a.eventUnitPairCompleters + a.eventUnitMergeCompleters) / a.eventUnits) or 0,
     event_unit_bench_rate = (a.eventUnits > 0) and (a.eventUnitToBench / a.eventUnits) or 0,
     event_unit_board_rate = (a.eventUnits > 0) and (a.eventUnitToBoard / a.eventUnits) or 0,
+    event_mutations_per_run = (a.runs > 0) and (a.eventMutations / a.runs) or 0,
+    event_mutation_failures_per_run = (a.runs > 0) and (a.eventMutationFailures / a.runs) or 0,
     event_gold_per_run = (a.runs > 0) and (a.eventGold / a.runs) or 0,
     event_shop_xp_per_run = (a.runs > 0) and (a.eventShopXp / a.runs) or 0,
     event_shop_tier_ups_per_run = (a.runs > 0) and (a.eventShopTierUps / a.runs) or 0,
@@ -1663,8 +1670,10 @@ for run = 1, N do
         benchSize = variant.benchSize,
         commanderMode = COMMANDER_MODE,
         runEvents = RUN_EVENTS,
+        runEventMutations = RUN_EVENT_MUTATIONS,
         eventUnitTargeting = EVENT_UNIT_TARGETING,
         eventUnitPickCap = EVENT_UNIT_PICK_CAP,
+        eventMutationPickCap = EVENT_MUTATION_PICK_CAP,
         recordBoards = #PLAN_TARGETS > 0,
         recordEvents = #PLAN_TARGETS > 0,
       })
