@@ -2883,6 +2883,25 @@ Next implementation targets:
   lines now show the canonical `Growth` tag. The Poison no-cap command wording
   also no longer prints the misleading `+0s` duration when there is no duration
   bonus.
+- post-wording candidate panels:
+  `runs/long-2026-06-28e/economy-post-wording-n128` reran the current candidate
+  (`sap_cost_pair_completion_tiered_reroll`, generated opponents
+  `levelMult=2.25`, events, commander auto) at `N=128`. Aggregate completion is
+  `51.7%`, `9.04` wins, `93.6%` merge-per-pair, `2.92` leftover. By policy:
+  `greedy_plan` and `econ_plan` both sit at `77%` completion; `tall_dense_plan`
+  at `51%`; `committed_rot_bleed_rat_core_no_xp_plan` at `50%`;
+  `committed_rot_bleed_rat_core_deep_reroll_plan` at `69%`; the two constrained
+  cross bleed/rot plans are still low (`20%` and `18%`). Read: the candidate is
+  viable and no longer makes the deep-reroll line globally dominant, but the
+  rat-core policies still end with `99-100%` low-rank duplicate saturation when
+  they succeed, so structural homogeneity remains a separate watch item.
+  `runs/long-2026-06-28e/bossrush-run-post-wording-n16` kept the current PVE
+  stress (`boss hp x2`, `boss cd x0.5`) alive: `greedy_plan`/`econ_plan` enter
+  at `94%` and score about `28.4k` per run (`30.3k` per entry), deep-reroll
+  enters at `75%` and scores `22.7k` per run (`30.3k` per entry), while
+  `tall_dense_plan` is weak in postgame (`31%` entry, `4.96k` per run). Boss
+  spread is differentiated: `ossuaire` is the survival wall (`51%` survival,
+  `0%` kill), while `brasier`/`kraken` are high-score/high-kill checks.
 3. Use the new compact economy summary first, and only drill into full
    `plan_access` / `support_access` when a row shows a concrete anomaly.
 4. Use `plan_support_watch` rows in the next economy/bossrush panels to separate
