@@ -953,11 +953,12 @@ Ajout batch autonomie (`runs/long-2026-06-27b`) :
   `PIT_OPPGEN_SIZE_BONUS=1` est brutal (`27.7%` avec level x1.5, `16.1%` avec
   tier+1/level x2). Lecture : calibrer d'abord le niveau adverse, pas la taille.
 - Audit diversite mecanique : `tools/sim.lua mechanics` mesure le roster par
-  axes d'effets. Apres les passes Batodex/SAP, etat courant : `110` unites,
-  `33` unites L1 encore en affliction simple (`30.0%`), `12` low-variety
-  (`10.9%`), `56` unites avec level-up authored (`50.9%`) et `22` clutch
-  level 3 (`20.0%`). Cela confirme que le probleme se reduit sans transformer
-  tout le roster en cartes complexes.
+  axes d'effets. Apres les passes Batodex/SAP et redesign-first level-ups,
+  etat courant : `110` unites, `33` unites L1 encore en affliction simple
+  (`30.0%`), `0` low-variety (`0.0%`), `68` unites avec level-up authored
+  (`61.8%`) et `28` clutch level 3 (`25.5%`). La dette "capacite qui ne
+  progresse pas" est resorbee pour le roster actuel; les prochaines decisions
+  doivent venir des simulations, pas d'un batch de diversite mecanique.
 - Mise a jour funnel acquisition : `plan_access.acquisition_funnel` detaille les
   offres vues, l'or, la place, les achats, paires/fusions, ventes et le premier
   round vu par unite cible. Sur

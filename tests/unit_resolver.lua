@@ -138,6 +138,21 @@ local ok, err = pcall(function()
       "necro_leech L3 strengthens rot amputation")
   end
 
+  do
+    local witch3 = Resolver.effectsFor("witch", 3)[1]
+    local mimic3 = Resolver.effectsFor("mimic_spawn", 3)[1]
+    local crown3 = Resolver.effectsFor("hollow_crown", 3)[1]
+    local krakenCmd3 = Resolver.commandBonusFor("deep_kraken", 3)
+    assert(witch3 and witch3.params.spread and witch3.params.dps == 3,
+      "witch L3 gains a poison spread clutch")
+    assert(mimic3 and mimic3.params.who == "neighbors",
+      "mimic_spawn L3 upgrades from ahead-only mimicry to neighbor mimicry")
+    assert(crown3 and crown3.params.frac == 0.30,
+      "hollow_crown L3 strengthens aura amplification")
+    assert(krakenCmd3 and krakenCmd3.params.value == 0.20,
+      "deep_kraken L3 command scales the unfused-beast payoff")
+  end
+
   -- grant_team command bonuses can now scale by commander level.
   do
     local b = fresh()

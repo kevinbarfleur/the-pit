@@ -898,4 +898,192 @@ return {
       commandBonus = { params = { value = 0.10 } },
     },
   },
+
+  -- Remaining redesign-first pass: keep level-1 cards readable, but make
+  -- every lingering low-variety unit's ability path matter when duplicated.
+  witch = {
+    [2] = {
+      effects = {
+        [1] = { params = { dps = 3, dur = 180 } },
+      },
+      commandBonus = { params = { value = 0.20 } },
+    },
+    [3] = {
+      clutch = true,
+      effects = {
+        [1] = { params = { dps = 3, dur = 210, spread = { dps = 1, dur = 120 } } },
+      },
+      commandBonus = { params = { value = 0.22 } },
+    },
+  },
+
+  plague_doctor = {
+    [2] = {
+      effects = {
+        [1] = { params = { value = 4 } },
+        [2] = { params = { maxStacks = 5 } },
+      },
+      commandBonus = { params = { value = 4 } },
+    },
+    [3] = {
+      clutch = true,
+      effects = {
+        [1] = { params = { value = 5 } },
+        [2] = { params = { threshold = 0.55, maxStacks = 6 } },
+      },
+      commandBonus = { params = { value = 5 } },
+    },
+  },
+
+  venom_censer = {
+    [2] = {
+      effects = {
+        [1] = { params = { dps = 3, igniteBurst = { dps = 11, dur = 160 } } },
+      },
+      commandBonus = { params = { value = 0.24 } },
+    },
+    [3] = {
+      transformative = true,
+      effects = {
+        [1] = { params = { dps = 3, dur = 210, igniteAt = 4, igniteBurst = { dps = 12, dur = 180 } } },
+      },
+      commandBonus = { params = { value = 0.26 } },
+    },
+  },
+
+  wither_bloom = {
+    [2] = {
+      effects = {
+        [1] = { params = { base = 3, capDps = 11 } },
+        [2] = { params = { slowPct = 0.18 } },
+        [3] = { params = { weaken = 0.12 } },
+      },
+      commandBonus = { params = { value = 0.34 } },
+    },
+    [3] = {
+      transformative = true,
+      effects = {
+        [1] = { params = { base = 3, growth = 2, capDps = 12, maxHpFrac = 0.18 } },
+        [2] = { params = { slowPct = 0.20 } },
+        [3] = { params = { weaken = 0.15 } },
+      },
+      commandBonus = { params = { value = 0.38 } },
+    },
+  },
+
+  gravewarden = {
+    [2] = {
+      effects = {
+        [1] = { params = { value = 6 } },
+      },
+      commandBonus = { params = { value = 0.22 } },
+    },
+    [3] = {
+      effects = {
+        [1] = { params = { value = 8 } },
+      },
+      commandBonus = { params = { value = 0.25 } },
+    },
+  },
+
+  ink_horror = {
+    [2] = {
+      effects = {
+        [1] = { params = { dps = 4, dur = 180 } },
+      },
+      commandBonus = { params = { value = 0.18 } },
+    },
+    [3] = {
+      clutch = true,
+      effects = {
+        [1] = { params = { dps = 4, dur = 210, weaken = 0.06 } },
+      },
+      commandBonus = { params = { value = 0.20 } },
+    },
+  },
+
+  deep_kraken = {
+    [2] = {
+      effects = {
+        [1] = { params = { dps = 5, dur = 220 } },
+      },
+      commandBonus = { params = { value = 0.17 } },
+    },
+    [3] = {
+      transformative = true,
+      effects = {
+        [1] = { params = { dps = 6, dur = 240, weaken = 0.08 } },
+      },
+      commandBonus = { params = { value = 0.20 } },
+    },
+  },
+
+  carrion_choir = {
+    [2] = {
+      effects = {
+        [1] = { params = { value = 3, cap = 12 } },
+      },
+      commandBonus = { params = { value = 0.09 } },
+    },
+    [3] = {
+      clutch = true,
+      effects = {
+        [1] = { params = { value = 4, cap = 16 } },
+      },
+      commandBonus = { params = { value = 0.11 } },
+    },
+  },
+
+  bone_harvest = {
+    [2] = {
+      effects = {
+        [1] = { params = { value = 5, cap = 18 } },
+      },
+      commandBonus = { params = { value = 3 } },
+    },
+    [3] = {
+      clutch = true,
+      effects = {
+        [1] = { params = { value = 6, cap = 24 } },
+      },
+      commandBonus = { params = { value = 4 } },
+    },
+  },
+
+  mimic_spawn = {
+    [2] = {
+      commandBonus = { params = { value = 0.06 } },
+    },
+    [3] = {
+      clutch = true,
+      effects = {
+        [1] = { params = { who = "neighbors" } },
+      },
+      commandBonus = { params = { value = 0.07 } },
+    },
+  },
+
+  echo_flesh = {
+    [2] = {
+      commandBonus = { params = { value = 0.12 } },
+    },
+    [3] = {
+      commandBonus = { params = { value = 0.14 } },
+    },
+  },
+
+  hollow_crown = {
+    [2] = {
+      effects = {
+        [1] = { params = { frac = 0.25 } },
+      },
+      commandBonus = { params = { value = 0.12 } },
+    },
+    [3] = {
+      effects = {
+        [1] = { params = { frac = 0.30 } },
+      },
+      commandBonus = { params = { value = 0.14 } },
+    },
+  },
 }

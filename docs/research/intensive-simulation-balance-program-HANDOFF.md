@@ -2726,15 +2726,26 @@ Next implementation targets:
      base identities (`kiln_warden`, `bloodletter`, `tendon_render`,
      `vein_splitter`, `plague_bearer`, `acid_maw`, `patient_worm`,
      `hollow_gut`, `stormlord`, `dynamo_priest`, `arc_warden`,
-     `storm_anchor`). New audit: `33/110` simple-affliction L1 units (`30.0%`),
-     `12/110` low-variety units (`10.9%`), `56/110` authored level-up units
-     (`50.9%`), and `22/110` level-3 clutch units (`20.0%`). Short generated
-     batch showed no unit >2 sigma outlier, and coherence buckets still slope
-     upward (`41.4%` low-coh winrate to `72.6%` high-coh winrate).
+     `storm_anchor`). That audit was `33/110` simple-affliction L1 units
+     (`30.0%`), `12/110` low-variety units (`10.9%`), `56/110` authored
+     level-up units (`50.9%`), and `22/110` level-3 clutch units (`20.0%`).
+   - redesign-first level-up cleanup:
+     the remaining low-variety list (`witch`, `plague_doctor`, `venom_censer`,
+     `wither_bloom`, `gravewarden`, `ink_horror`, `deep_kraken`,
+     `carrion_choir`, `bone_harvest`, `mimic_spawn`, `echo_flesh`,
+     `hollow_crown`) now has authored ability progression without changing
+     their level-1 readability. The new audit is `33/110` simple-affliction L1
+     units (`30.0%`), `0/110` low-variety units (`0.0%`), `68/110` authored
+     level-up units (`61.8%`), and `28/110` level-3 clutch units (`25.5%`).
+     `deep_kraken` and `galvanizer` command text was also corrected to match
+     actual tuned data values (`15%` and `14%`). Read: mechanical-diversity debt
+     is no longer the next bottleneck; continue with sim/economy/coherence
+     evidence before changing more creature data. Short generated validation
+     stayed stable: TTK avg `519` ticks, no unit >2 sigma outlier, afflictions
+     still `25.5%` of damage, and coherence buckets slope from `41.4%`
+     low-coh winrate to `75.7%` high-coh winrate (`corr=0.314`).
 3. Use the new `plan_support_watch` rows in the next economy/bossrush panels to
    separate "support never offered", "support offered but not picked", and
    "support picked but plan still inaccessible".
-4. Expand authored level-ups beyond the initial 37 units before drawing broad
-   balance conclusions.
-5. Start massive simulation only after the generator can intentionally produce
+4. Start massive simulation only after the generator can intentionally produce
    coherent, semi-coherent, and incoherent teams.
