@@ -380,6 +380,33 @@ local function unitSummary(units)
   return out
 end
 
+local function targetUnitSet(target)
+  local set = {}
+  for _, u in ipairs((target and target.units) or {}) do
+    if u.id then set[u.id] = true end
+  end
+  return set
+end
+
+local function filterMergeEvents(list, targetIds)
+  local out = {}
+  for _, ev in ipairs(list or {}) do
+    if ev.id and targetIds[ev.id] then out[#out + 1] = ev end
+  end
+  return out
+end
+
+local function targetMergeTrajectory(traj, target)
+  local targetIds = targetUnitSet(target)
+  return {
+    pairEvents = filterMergeEvents(traj.pairEvents, targetIds),
+    mergeEvents = filterMergeEvents(traj.mergeEvents, targetIds),
+    exactMergeEvents = filterMergeEvents(traj.exactMergeEvents, targetIds),
+    rounds = traj.rounds,
+    finalCopies = traj.finalCopies,
+  }
+end
+
 local function planCoverage(board, target)
   local have = unitSummary(board and board.units or {})
   local want = unitSummary(target and target.units or {})
@@ -1287,6 +1314,7 @@ local function addPlanAccess(a, traj)
         lossThresholds = newLossThresholdMap(),
         funnel = newFunnelAgg(),
         support = newSupportAccessAgg(target),
+        targetMergeLifecycle = Common.mergeLifecycleAgg(),
         finalGoldRatio = 0,
         wins = 0, completeWins = 0,
         completions = 0, completeCompletions = 0,
@@ -1298,6 +1326,7 @@ local function addPlanAccess(a, traj)
     local path = planTrajectory(traj, target, cov, heldCov)
     local funnel = planFunnel(traj, target)
     local support = planSupportAccess(traj, target, path)
+    Common.addMergeLifecycle(rec.targetMergeLifecycle, targetMergeTrajectory(traj, target))
     rec.runs = rec.runs + 1
     rec.unitCoverage = rec.unitCoverage + cov.unit_coverage
     rec.levelCoverage = rec.levelCoverage + cov.level_coverage
@@ -1447,6 +1476,7 @@ local function finish(a)
       acquisition_funnel = finishFunnel(rec.funnel, rec.runs),
       support_access = supportAccess,
       support_summary = summarizeSupportAccess(supportAccess),
+      target_merge_lifecycle = Common.finishMergeLifecycle(rec.targetMergeLifecycle),
       avg_final_gold_ratio = (rec.runs > 0) and (rec.finalGoldRatio / rec.runs) or 0,
       avg_wins = (rec.runs > 0) and (rec.wins / rec.runs) or 0,
       avg_wins_when_complete = (rec.complete > 0) and (rec.completeWins / rec.complete) or 0,

@@ -2492,6 +2492,23 @@ Next implementation targets:
      `0%` post-win entry in this small sample. This keeps the earlier bossrush
      lesson intact: current PvE scoring is still primarily access-gated by run
      completion and final-board quality, not by boss-side tuning.
+   - Target-specific merge lifecycle:
+     the economy report now writes `target_merge_lifecycle` inside each
+     `plan_access.<target>` row. This filters pair/merge lifecycle metrics to
+     the actual units of the tracked plan, instead of mixing target copies with
+     temporary support pairs. This matters because the global lifecycle can
+     show high `offered_policy_skipped` from non-core pairs, while the target
+     funnel itself is already buying almost every relevant offer.
+   - Target merge read:
+     `runs/long-2026-06-27u/rat-reroll-target-merge-n24` reproduces the
+     deployment panel with the new filtered lifecycle. On the best current
+     `pair_completion_light + committed_rot_bleed_rat_core_gated_plan` line,
+     target pairs resolve at `94.79%`; only `10` target pairs remain
+     unresolved across 24 runs. Of those unresolved target pairs, `70%` never
+     saw the third copy again after the pair existed and `30%` were offered but
+     skipped by policy. This confirms the remaining blocker is mostly
+     third-copy availability/timing for target copies, with a smaller
+     target-priority edge case, not generic support access.
    Remaining additions:
    - use `rot_bleed_rat_core` as the baseline reroll target for the next
      balance pass, but investigate cheap mid-board outliers before nerfing it;
