@@ -1404,7 +1404,9 @@ function Build:mousepressed(vx, vy, button)
     -- INSPECTION FIGÉE : seul FIGHT agit (lance le combat fourni) ; aucune mutation (boutique/drag/reshape/grant).
     if inRect(vx, vy, self.button) and self.lockedFight then
       local f = self.lockedFight
-      self.host.goto("combat", { left = f.left, right = f.right, seed = f.seed, enemyKey = f.enemyKey or "exhibition", onFinish = f.onFinish })
+      Feel.press("build.combat", function()
+        self.host.goto("combat", { left = f.left, right = f.right, seed = f.seed, enemyKey = f.enemyKey or "exhibition", onFinish = f.onFinish })
+      end, { delay = Feel.CTA_DELAY })
     end
     return
   end
@@ -1412,7 +1414,10 @@ function Build:mousepressed(vx, vy, button)
   -- on GÈLE toute interaction de mutation — surtout COMBAT (changement de scène destructif) — pour que l'user
   -- VOIE l'explosion entière sans la couper ni enchaîner une 2e fusion qui compliquerait le différé de la pop-up.
   -- Court (~1-1,5 s). Le bouton COMBAT est aussi grisé visuellement (drawOverlay : disabled). RENDER pur.
-  if self:levelUpActive() then return end
+  if self:levelUpActive() then
+    if inRect(vx, vy, self.button) then SFX.play("error") end
+    return
+  end
   local run = self.host.run
   -- rect REROLL fidèle à l'état du grant (ligne pleine / scindée) AVANT le hit-test (mousepressed peut être
   -- appelé sans update, ex. tests headless).
@@ -1420,7 +1425,12 @@ function Build:mousepressed(vx, vy, button)
   -- Boutons de forme (barre sigil) — EN PAUSE (sigils désactivés : on ne joue que le carré).
   if not Board.SIGILS_PAUSED then
     local sk = self:shapeBtnAt(vx, vy)
-    if sk then self.shapeIdx = sk; self.board:setShape(Shapes.order[sk]); self:computeLayout(); return end
+    if sk then
+      Feel.press("build.shape." .. sk)
+      self.shapeIdx = sk; self.board:setShape(Shapes.order[sk]); self:computeLayout()
+      SFX.play("pop")
+      return
+    end
   end
   -- COMBAT : ⭐ ACTION DIFFÉRÉE (Feel) -> les YEUX du CTA réagissent au clic (squash + flash) AVANT la bascule
   -- de scène (~160 ms), pour qu'on SENTE le clic. Le test e2e mûrit l'action via Build:update avant d'asserter.
@@ -1429,36 +1439,59 @@ function Build:mousepressed(vx, vy, button)
     -- Grant en attente : REFUSER prioritaire (son rect cohabite avec la moitié REROLL) ; sinon ACCEPTER
     -- (clic sur une case verrouillée). Puis REROLL.
     if run.pendingSlotGrant then
-      if inRect(vx, vy, self.declineBtn) then Feel.press("build.decline"); run:declineSlotGrant(); return end
+      if inRect(vx, vy, self.declineBtn) then
+        Feel.press("build.decline")
+        if run:declineSlotGrant() then SFX.play("coin") else SFX.play("error") end
+        return
+      end
       local lc = self:lockedCellAt(vx, vy)
       if lc then
-        if run:acceptSlotGrant() then self.board:openCell(lc); self:unlockFx(lc) end -- ACHAT/DÉBLOCAGE : petite explosion pixel + punch + son « unlock »
+        if run:acceptSlotGrant() then
+          self.board:openCell(lc)
+          self:unlockFx(lc) -- ACHAT/DÉBLOCAGE : petite explosion pixel + punch + son « unlock »
+        else
+          SFX.play("error")
+        end
         return
       end
     end
     -- C3 — OFFRE DE PIÉDESTAL (minimal fonctionnel ; polish/prompt dédié = ui-artisan) : pendant l'offre, un
     -- clic sur la zone du piédestal l'ACCEPTE (le piédestal apparaît) ; un clic sur REFUSER le décline (+or).
     if run.pendingCommanderGrant then
-      if self.declineBtn and inRect(vx, vy, self.declineBtn) then Feel.press("build.decline"); run:declineCommanderGrant(); return end
-      if self.commanderRect and inRect(vx, vy, self.commanderRect) then run:acceptCommanderGrant(); return end
+      if self.declineBtn and inRect(vx, vy, self.declineBtn) then
+        Feel.press("build.decline")
+        if run:declineCommanderGrant() then SFX.play("coin") else SFX.play("error") end
+        return
+      end
+      if self.commanderRect and inRect(vx, vy, self.commanderRect) then
+        Feel.press("build.commander.accept")
+        if run:acceptCommanderGrant() then SFX.play("unlock") else SFX.play("error") end
+        return
+      end
     end
     -- BUY XP : achète de l'XP de boutique si abordable (NE re-tire PAS la boutique : les nouvelles cotes
     -- s'appliquent au prochain reroll/round -> préserve l'arbitrage XP-vs-reroll-vs-unités).
     -- BUY XP / REROLL : feedback de press IMMÉDIAT (Feel.press sans action) + action TOUT DE SUITE (l'e2e
     -- headless asserte l'or débité juste après le clic -> on ne diffère PAS ces actions de boutique).
-    if inRect(vx, vy, self.raiseBtn) then Feel.press("build.raise"); if run:canBuyXp() then run:buyXp(); SFX.play("coin") end; return end -- LEVEL/XP : pièce (achat d'XP)
+    if inRect(vx, vy, self.raiseBtn) then
+      Feel.press("build.raise")
+      if run:canBuyXp() and run:buyXp() then SFX.play("coin") else SFX.play("error") end
+      return
+    end -- LEVEL/XP : pièce (achat d'XP)
     if inRect(vx, vy, self.rerollBtn) then
       Feel.press("build.reroll")
       if run:reroll() then
         self:applyShopSupport("reroll")
         SFX.play("pop")
+      else
+        SFX.play("error")
       end
       return
     end -- REROLL : « pop » (les offres se re-tirent)
     local fi = self:shopFreezeAt(vx, vy)
     if fi then
       Feel.press("build.freeze." .. fi)
-      if run:freezeOffer(fi) then SFX.play("pop") end
+      if run:freezeOffer(fi) then SFX.play("pop") else SFX.play("error") end
       return
     end
     local oi = self:shopAt(vx, vy)
@@ -1469,6 +1502,8 @@ function Build:mousepressed(vx, vy, button)
         self.drag.fromShop, self.drag.pressX, self.drag.pressY = oi, vx, vy
         self:beginDrag(nil) -- offre neuve : pas de ressort source -> démarre sous le curseur (lift immédiat)
         SFX.play("pickup") -- DRAG : on saisit une offre (achat confirmé au lâcher -> coin)
+      else
+        SFX.play("error")
       end
       return
     end
@@ -1519,6 +1554,7 @@ function Build:mousereleased(vx, vy, button)
     if not canCommand(d.id) then -- refus : l'unité non-chef RETOURNE à son origine (jamais de crash/perte).
       self.cmdShake = 0.32 -- C4 : SECOUSSE de refus (la case clignote sang) ; décroît dans update.
       Feel.press("build.commander.refuse") -- petit feedback de press (squash/flash) au point de refus
+      SFX.play("error")
       self:returnDrag(d)
       return
     end
@@ -1574,7 +1610,11 @@ function Build:mousereleased(vx, vy, button)
       -- level-up auto si tout est plein (retour user 2026-06). Un DRAG raté (lâché loin, ex. case verrouillée/
       -- occupée) ne fait RIEN (comportement historique préservé -> le test « pas d'achat sur case verrouillée »).
       local moved = d.pressX and ((vx - d.pressX) * (vx - d.pressX) + (vy - d.pressY) * (vy - d.pressY)) or 1e9
-      if moved <= 36 then self:autoBuy(d.fromShop) end
+      if moved <= 36 then
+        if not self:autoBuy(d.fromShop) then SFX.play("error") end
+      else
+        SFX.play("error")
+      end
     end
     return
   end

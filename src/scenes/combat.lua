@@ -206,8 +206,8 @@ function Combat:update(frameDt)
     self:_step(frameDt)
     if self.arena.over then break end
   end
-  -- SON (RENDER pur) : 1 cue de coup lourd + 1 cue de mort par FRAME (le renderer a agrégé tous les events de
-  -- ces `steps`). Hors du loop -> jamais multiplié par SKIP/2×. No-op headless ; ne touche pas la SIM.
+  -- SON (RENDER pur) : accents de famille + coup lourd + mort, agrégés à 1/frame par le renderer. Hors du loop
+  -- -> jamais multiplié par SKIP/2×. No-op headless ; ne touche pas la SIM.
   self.renderer:flushAudio()
   if self.arena.over then self.skipping = false end
   if self.arena.over then

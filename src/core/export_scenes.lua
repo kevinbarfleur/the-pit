@@ -218,6 +218,58 @@ function Builders.combat(host)
   return Combat.new(Palette, VW, VH, host, { left = left, right = right, enemyKey = b:encounterKeyFor(#enc.units), seed = 7 })
 end
 
+-- COMBAT_IMPACTS : planche de validation des signatures d'impact (attaque/saignement/poison/choc/brûlure/
+-- pourriture). Injecte UNIQUEMENT des transients RENDER dans ArenaDraw puis gèle la scène : aucune SIM touchée.
+function Builders.combat_impacts(host)
+  local cs = Builders.combat(host)
+  for _ = 1, 10 do cs:update(1.0) end
+  local units = {}
+  for _, u in ipairs(cs.arena.units) do
+    if u.alive and not u.isCommander then units[#units + 1] = u end
+  end
+  local causes = { "attack", "bleed", "poison", "shock", "burn", "rot" }
+  local values = { 13, 9, 7, 11, 8, 6 }
+  for i, cause in ipairs(causes) do
+    local target = units[i] or units[#units]
+    local source = units[#units - i + 1] or units[1]
+    if target then
+      if source then cs.renderer:emitAttackMotion(source, target) end
+      cs.renderer:emitDamageFx({ target = target, source = source, cause = cause }, values[i])
+      cs.renderer:spawnDamageNumber({ target = target, source = source, cause = cause }, values[i])
+      cs.renderer:emitHurtMotion(source, target)
+    end
+  end
+  for _ = 1, 6 do cs.renderer:update(1.0, cs.t) end
+  cs.update = function() end
+  return cs
+end
+
+-- COMBAT_NUMBERS_STACK : stress test de lisibilité des dégâts. Force plusieurs nombres sur une même cible
+-- et une cible voisine pour vérifier le layout anti-superposition sans attendre une situation rare en combat.
+function Builders.combat_numbers_stack(host)
+  local cs = Builders.combat(host)
+  for _ = 1, 10 do cs:update(1.0) end
+  local targets, source = {}, nil
+  for _, u in ipairs(cs.arena.units) do
+    if u.alive and not u.isCommander then
+      if u.team == "left" then targets[#targets + 1] = u else source = source or u end
+    end
+  end
+  local primary = targets[2] or targets[1]
+  local secondary = targets[3] or targets[1]
+  local causes = { "attack", "poison", "poison", "poison", "burn", "burn", "shock", "bleed" }
+  local values = { 18, 3, 4, 5, 4, 6, 9, 7 }
+  for i, cause in ipairs(causes) do
+    local target = (i <= 6) and primary or secondary
+    if target then
+      cs.renderer:spawnDamageNumber({ target = target, source = source, cause = cause }, values[i])
+    end
+  end
+  for _ = 1, 8 do cs.renderer:update(1, cs.t) end
+  cs.update = function() end
+  return cs
+end
+
 -- C4 — COMBAT AVEC COMMANDANT (revue : le chef VISIBLE en retrait + AUCUNE barre de vie). Identique à
 -- Builders.combat, mais on couronne un galvanizer côté JOUEUR avant le bake -> le commandant entre au comp
 -- (isCommander/untargetable) et arena_draw le replace en VIRTUEL derrière la formation (commanderCombatPos).
@@ -475,7 +527,7 @@ end
 local M = {}
 
 -- Liste des noms de scènes capturables (ordre stable, pour --shoot=all et les messages d'erreur).
-M.names = { "menu", "build", "combat", "combat_react", "summary", "relicpick", "runevent", "runover", "bossrush", "grimoire", "grimoire_glossary", "grimoire_relics",
+M.names = { "menu", "build", "combat", "combat_impacts", "combat_numbers_stack", "combat_react", "summary", "relicpick", "runevent", "runover", "bossrush", "grimoire", "grimoire_glossary", "grimoire_relics",
   "grimoire_bestiary",
   "gallery", "designsystem", "build_relic_hover", "build_aura_hover", "build_freeze", "system", "settings",
   "anim_attack", "anim_death", "anim_hurt",
