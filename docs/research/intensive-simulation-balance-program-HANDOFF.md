@@ -2838,29 +2838,28 @@ Next implementation targets:
   and 3 deltas scale these hooks slightly, so the ability upgrade is not only
   raw HP/DMG or the main affliction value. The wording in `src/i18n/en.lua` was
   updated to use canonical terms (`Burn`, `Bleed`, `Poison`, `Shock`, `Haste`,
-  `Empower`). Audit after the pass: `27/110` simple-affliction L1 units
-  (`24.5%`, down from `33/110`), rank-2 simple-affliction count `7/32`
-  (down from `13/32`), support axes `48` (up from `42`), position axes `38`
-  (up from `32`), directional axes `9` (up from `5`), and low-variety remains
-  `0%`. Targeted validation passed `tests/auras.lua`, `tests/tags.lua`,
-  `tests/unit_resolver.lua`, and `tools/sim.lua mechanics`. A small N=32
-  economy guard under `sap_cost_pair_completion_tiered_reroll` +
+  `Empower`). With the corrected mechanics classifier below, audit after the
+  pass is `11/110` truly basic simple-affliction L1 units (`10.0%`), with
+  rank-2 basic count `5/32`; support axes `48`, position axes `38`,
+  directional axes `9`, and low-variety remains `0%`. Targeted validation
+  passed `tests/auras.lua`, `tests/tags.lua`, `tests/unit_resolver.lua`, and
+  `tools/sim.lua mechanics`. A small N=32 economy guard under
+  `sap_cost_pair_completion_tiered_reroll` +
   generated opponents `levelMult=2.25` remained in the expected band:
   aggregate completion `54.9%`, `9.17` wins, `95.5%` merge-per-pair,
   `2.51` leftover. Top low-rank duplicate pressure is still driven mainly by
   `carrion_pecker`/`gnaw_rat`, not by the six adjusted units.
 - mechanics report prioritization:
-  `tools/scenarios/mechanics.lua` now splits `simple_affliction_l1` into
+  `tools/scenarios/mechanics.lua` now reads resolved fact `values` as well as
+  raw `params`, classifies parameter-level twists (`spread`, `ignite`,
+  `shieldEat`, `chain`, `transfer`, `persist`, `weaken`, etc.), and only marks
+  a unit as `simple_affliction_l1` when it has exactly one basic affliction
+  with no support/position/payoff/twist axis. It also splits that debt into
   low-rank, mid-rank, and high-rank buckets and exposes
-  `simple_affliction_priority` for the next design pass. Current read after the
-  rank-2 bridge pass: `27` simple L1 units remain, split as `11` low-rank,
-  `5` mid-rank, and `11` high-rank (`10.0%` of the full roster). The priority
-  list is now the right next creature-design input instead of the raw global
-  simple-affliction count. First priority rows are `necro_leech`,
-  `kiln_warden`, `bloodletter`, `tendon_render`, `vein_splitter`,
-  `plague_bearer`, `acid_maw`, `patient_worm`, `hollow_gut`, `venom_censer`,
-  `wither_bloom`, `stormlord`, `dynamo_priest`, `arc_warden`,
-  `storm_anchor`, and `deep_kraken`.
+  `simple_affliction_priority` for the next design pass. Current read:
+  `11` simple L1 units remain, split as `8` low-rank, `2` mid-rank, and `1`
+  high-rank (`deep_kraken`). The next creature-design input is therefore much
+  narrower: `vein_splitter`, `stormlord`, and `deep_kraken`.
 3. Use the new compact economy summary first, and only drill into full
    `plan_access` / `support_access` when a row shows a concrete anomaly.
 4. Use `plan_support_watch` rows in the next economy/bossrush panels to separate

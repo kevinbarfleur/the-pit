@@ -64,7 +64,7 @@ end
 local function classifyEffect(effect, axes)
   if not effect then return end
   local op = effect.op
-  local p = effect.params or {}
+  local p = effect.params or effect.values or {}
   local target = effect.target
 
   if AFFLICTION_OP[op] or p.family or p.from or p.to then add(axes, "affliction") end
@@ -79,9 +79,18 @@ local function classifyEffect(effect, axes)
   if RELATIVE_TARGET[target] then add(axes, "position") end
   if target == "ahead" or target == "behind" or target == "above" or target == "below" then add(axes, "directional") end
   if op == "percent_hp_strike" or op == "strip_shield" or op == "execute" then add(axes, "anti_tank") end
+  if p.shieldEat or p.maxHpFrac then add(axes, "anti_tank") end
   if op == "spread_burn_on_death" or op == "spread_rot" or p.spread then add(axes, "propagation") end
+  if op == "shock" and (p.chain or p.transfer) then add(axes, "propagation") end
   if op == "convert_to_rot" or op == "convert_dot" or p.igniteAt or p.igniteBurst then add(axes, "conversion") end
   if p.aggravateMult then add(axes, "amplifier") end
+  if p.weaken or p.slowScalesMissingHp then add(axes, "control") end
+  if p.refresh or p.decayPct or p.mode or p.passiveRamp or p.amputateHealsMe
+    or p.chain or p.transfer or p.persist or p.igniteAt or p.igniteBurst
+    or p.spread or p.shieldEat or p.aggravateMult or p.weaken
+    or p.slowScalesMissingHp then
+    add(axes, "twist")
+  end
 end
 
 local function effectSet(id, level, opts)
@@ -107,6 +116,7 @@ end
 
 local function isSimpleAfflictionOnly(effects)
   if effects.count == 0 then return false end
+  if effects.count ~= 1 then return false end
   for op in pairs(effects.ops) do
     if not BASIC_AFFLICTION[op] then return false end
   end
@@ -117,6 +127,11 @@ local function isSimpleAfflictionOnly(effects)
     and not has(effects.axes, "mimicry")
     and not has(effects.axes, "type_synergy")
     and not has(effects.axes, "anti_tank")
+    and not has(effects.axes, "amplifier")
+    and not has(effects.axes, "control")
+    and not has(effects.axes, "conversion")
+    and not has(effects.axes, "propagation")
+    and not has(effects.axes, "twist")
 end
 
 local function isLowVariety(row)
