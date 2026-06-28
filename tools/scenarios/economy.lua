@@ -876,33 +876,52 @@ local function planSupportAccess(traj, target, path)
   local firstFocusedRelicOffer, firstFocusedRelicPick
   local firstFocusedCommanderCandidate, firstFocusedCommanderPlacement
 
+  local function noteRelicOffer(relicId, round, rowState)
+    local info = catalog.relics[relicId]
+    if not info then return end
+    noteRelicSupport(out, relicId, "offer", round)
+    if info.support_class == "focused" then
+      focusedRelicOffer, rowState.offer = true, true
+      out.relics.focusedOffers = out.relics.focusedOffers + 1
+      if not firstFocusedRelicOffer then firstFocusedRelicOffer = round end
+    end
+  end
+
+  local function noteRelicPick(relicId, round, rowState)
+    local info = catalog.relics[relicId]
+    if not info then return end
+    noteRelicSupport(out, relicId, "pick", round)
+    if info.support_class == "focused" then
+      focusedRelicPick, rowState.pick = true, true
+      out.relics.focusedPicks = out.relics.focusedPicks + 1
+      if not firstFocusedRelicPick then firstFocusedRelicPick = round end
+    end
+  end
+
   for _, rd in ipairs(traj.rounds or {}) do
     local round = rd.round or 0
     local rowFocusedRelicOffer, rowFocusedRelicPick = false, false
     local rowFocusedCommanderCandidate, rowFocusedCommanderPlacement = false, false
+    local rowRelics = { offer = false, pick = false }
 
     for _, ev in ipairs(rd.events or {}) do
       if ev.type == "relic_offer" then
         for _, relicId in ipairs(ev.choices or {}) do
-          local info = catalog.relics[relicId]
-          if info then
-            noteRelicSupport(out, relicId, "offer", round)
-            if info.support_class == "focused" then
-              focusedRelicOffer, rowFocusedRelicOffer = true, true
-              out.relics.focusedOffers = out.relics.focusedOffers + 1
-              if not firstFocusedRelicOffer then firstFocusedRelicOffer = round end
-            end
+          noteRelicOffer(relicId, round, rowRelics)
+        end
+      elseif ev.type == "run_event_offer" then
+        for _, choice in ipairs(ev.choices or {}) do
+          local reward = choice.reward or {}
+          if reward.kind == "relic" then
+            noteRelicOffer(reward.id, round, rowRelics)
           end
         end
       elseif ev.type == "relic_pick" then
-        local info = catalog.relics[ev.id]
-        if info then
-          noteRelicSupport(out, ev.id, "pick", round)
-          if info.support_class == "focused" then
-            focusedRelicPick, rowFocusedRelicPick = true, true
-            out.relics.focusedPicks = out.relics.focusedPicks + 1
-            if not firstFocusedRelicPick then firstFocusedRelicPick = round end
-          end
+        noteRelicPick(ev.id, round, rowRelics)
+      elseif ev.type == "run_event_pick" then
+        local reward = ev.reward or {}
+        if reward.kind == "relic" and ev.applied ~= false then
+          noteRelicPick(reward.id, round, rowRelics)
         end
       elseif ev.type == "commander_window" then
         for _, c in ipairs(ev.candidates or {}) do
@@ -928,6 +947,8 @@ local function planSupportAccess(traj, target, path)
         end
       end
     end
+    rowFocusedRelicOffer = rowRelics.offer
+    rowFocusedRelicPick = rowRelics.pick
 
     if rowFocusedRelicOffer and not rowFocusedRelicPick then out.relics.missedFocusedPick = out.relics.missedFocusedPick + 1 end
     if rowFocusedCommanderCandidate and not rowFocusedCommanderPlacement then
