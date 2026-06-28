@@ -2,8 +2,9 @@
 
 Date: 2026-06-28
 
-Status: active experimental spec. The first code increment is in the deterministic
-run/lab layer, not yet the final live UI.
+Status: active gameplay increment. The deterministic run/lab layer exists, and
+the live every-3-combats merchant window now routes through a run-event surface
+with explicit rewards. Mutation lanes remain lab-only.
 
 ## Intent
 
@@ -29,7 +30,11 @@ Implemented files:
 
 - `src/data/run_events.lua`
 - `src/run/state.lua`
+- `src/run/event_rewards.lua`
+- `src/scenes/relicpick.lua`
+- `main.lua`
 - `src/lab/rundriver.lua`
+- `src/core/export_scenes.lua`
 - `tests/run.lua`
 - `tests/lab.lua`
 
@@ -54,6 +59,23 @@ relic offer so historical balance reports remain comparable. With
 `PIT_RUN_EVENTS=1`, that merchant window becomes a run event. This is
 intentional: milestones were already a structured payoff, while the merchant was
 the flatter part of the loop.
+
+Live routing now differs from the lab default: the normal post-combat
+every-3-combats acquisition window first tries to materialize a run event. If no
+event can expose at least one clean choice, it falls back to the old relic
+offer. Victory milestones at wins 3 and 6 and level-up rewards remain pure
+relic ceremonies for now.
+
+Live reward application rules:
+
+- relics are granted and learned by the Grimoire as before;
+- units are only offered when the current board or bench can receive them
+  cleanly, then they are stowed and normal merge logic runs;
+- gold is deferred through `_pendingGold` so the SAP-style next-round gold reset
+  does not erase the event reward;
+- shop XP and shop tier are applied before the next shop roll;
+- mutation choices are not materialized live because no `mutationTarget` is
+  passed to `RunState:rollRunEvent`.
 
 ## Simulation Contract
 
@@ -309,15 +331,15 @@ lane.
 
 ## Event Product Step
 
-The intended product step is to replace the flat recurring relic merchant with
-small cryptic scenes at the same acquisition cadence. This is a presentation
-change and a reward-routing change, not a hidden-choice system:
+The first product pass replaces the flat recurring relic merchant with small
+cryptic scenes at the same acquisition cadence. This is a presentation change
+and a reward-routing change, not a hidden-choice system:
 
 1. The event setup can be grim and oblique.
 2. Each choice must expose the concrete reward before selection.
 3. Reward lanes may include relics, level-1 units, rare level-2 units, gold,
    shop XP, or shop tier.
-4. Mutated units are a later opt-in profile, not part of the first live pass.
+4. Mutated units are a lab opt-in profile, not part of the first live pass.
 5. Eight active events remain the cap until the EV and exact-board impact are
    measured at larger sample sizes.
 
@@ -325,7 +347,7 @@ The mutation fantasy is still valuable because it creates memorable rare
 offers: a low-rank monster with `echo_touched`, a mid-rank monster with
 `blood_fed`, etc. The safe roadmap is:
 
-- first, ship events without mutations;
+- first, ship events without mutations; done for the live /3-combats channel;
 - second, implement persistent unit instances with `mutations[]`;
 - third, add a lab-only event mutation profile;
 - fourth, run merge, bench, UI, tooltip, snapshot, bossrush, and economy panels

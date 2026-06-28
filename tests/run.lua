@@ -9,6 +9,8 @@ love = require("tests.mock_love")
 local RunState = require("src.run.state")
 local Units = require("src.data.units")
 local RunEvents = require("src.data.run_events")
+local EventRewards = require("src.run.event_rewards")
+local I18n = require("src.core.i18n")
 
 local function shopIds(r)
   local t = {}
@@ -577,10 +579,16 @@ local ok, err = pcall(function()
       local ev = RunEvents.events[id]
       assert(ev and ev.id == id, "run events : id declare dans events")
       assert(ev.choices and #ev.choices >= 2, "run events : au moins 2 choix pour " .. id)
+      assert(I18n.has("runevent." .. id .. ".title"), "run events : title i18n pour " .. id)
+      assert(I18n.has("runevent." .. id .. ".body"), "run events : body i18n pour " .. id)
       local relicChoices, nonRelicChoices = 0, 0
       for _, choice in ipairs(ev.choices) do
         local kind = choice.reward and choice.reward.kind
         assert(allowed[kind], "run events : reward actif supporte (" .. tostring(kind) .. ")")
+        assert(I18n.has("runevent." .. id .. ".choice." .. choice.id .. ".label"),
+          "run events : label i18n pour " .. id .. "/" .. choice.id)
+        assert(I18n.has("runevent." .. id .. ".choice." .. choice.id .. ".body"),
+          "run events : body i18n pour " .. id .. "/" .. choice.id)
         if kind == "relic" then relicChoices = relicChoices + 1
         elseif kind ~= "mutation" then nonRelicChoices = nonRelicChoices + 1 end
         if kind == "unit" then
@@ -651,6 +659,29 @@ local ok, err = pcall(function()
     end
     assert(mutationReward and mutationReward.id == "blood_fed" and mutationReward.target.copyId == 42,
       "run events : lane mutation opt-in materialise une cible explicite")
+
+    local fakeBuild = {
+      bench = {},
+      slotRigs = {},
+      board = { slots = {} },
+      benchCapacity = function() return 1 end,
+    }
+    for i = 1, 9 do fakeBuild.board.slots[i] = { unlocked = i <= 3 } end
+    assert(EventRewards.canGrantUnit(fakeBuild, "marauder", 1),
+      "run events live : une unite est proposable si un slot libre existe")
+    fakeBuild.bench[1] = { id = "skeleton", level = 1 }
+    fakeBuild.slotRigs[1], fakeBuild.slotRigs[2], fakeBuild.slotRigs[3] =
+      { id = "marauder" }, { id = "bandit" }, { id = "demon" }
+    assert(not EventRewards.canGrantUnit(fakeBuild, "marauder", 1),
+      "run events live : pas de choix unite si aucun slot ne peut recevoir proprement")
+
+    local goldRewardRun = RunState.new(60608)
+    goldRewardRun.gold = 0
+    assert(EventRewards.apply(goldRewardRun, nil, { kind = "gold", amount = 6 }, { deferGold = true }),
+      "run events live : l'or post-combat peut etre differe")
+    goldRewardRun:startRound()
+    assert(goldRewardRun.gold == RunState.GOLD_PER_ROUND + 6,
+      "run events live : l'or differe arrive dans la prochaine build phase")
 
     local r = RunState.new(6061)
     r.wins, r.losses = 3, 1

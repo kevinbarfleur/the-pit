@@ -22,6 +22,7 @@ local DesignSystem = require("src.scenes.designsystem") -- STORYBOOK in-engine :
 local SystemMenu = require("src.ui.system_menu") -- MENU SYSTÈME GLOBAL : pause/settings/confirmations
 local SystemButton = require("src.ui.system_button") -- BOUTON GLOBAL visible vers pause/settings
 local RunState = require("src.run.state")
+local EventRewards = require("src.run.event_rewards")
 local ChronicleOverlay = require("src.render.chronicle_overlay") -- LA CHRONIQUE : overlay modal (journal de combat)
 local PostFX = require("src.render.postfx") -- SURCOUCHE CAUCHEMARDESQUE : post-fx RENDER-pur par-dessus l'UI nette ([F9])
 local Grimoire = require("src.core.grimoire")
@@ -278,11 +279,18 @@ function host.finishCombat(win)
     local choices = host.run:rollRelicChoices(3, { minTier = "mid" })
     if #choices > 0 then host.goto("relicpick", { choices = choices, milestone = true }); return end
   end
-  -- Acquisition : un MARCHAND passe tous les 3 COMBATS (victoire OU défaite), pas toutes les 3 victoires
-  -- (PRD progression-economy §5.1) -> ~5-6 offres/run, densité de choix build-shaping. Écran 1-parmi-3
-  -- (« A Fragment Surfaces »). Si le pool est épuisé (#choices == 0), on saute directement au round suivant.
+  -- Acquisition : tous les 3 COMBATS, le vieux marchand de reliques devient une rencontre thematique.
+  -- Le texte peut etre cryptique, mais chaque choix affiche un reward explicite. Les lanes d'unite sont
+  -- filtrees si le build ne peut pas les recevoir proprement ; les mutations restent hors live par defaut.
+  -- Fallback relique: si aucun event n'a de choix materialisable, l'ancien 1-parmi-3 reste disponible.
   local combats = host.run.wins + host.run.losses
   if combats % 3 == 0 then
+    local event = host.run:rollRunEvent(EventRewards.rollOptions(host.build))
+    if event and #(event.choices or {}) > 0 then
+      host._pendingRunEvent = event
+      host.goto("relicpick", { event = event })
+      return
+    end
     local choices = host.run:rollRelicChoices(3)
     if #choices > 0 then host.goto("relicpick", { choices = choices }); return end
   end
@@ -325,6 +333,18 @@ function host.finishRelicPickDecline()
   host._relicMidRound = nil
   if not midRound then host.run:startRound() end
   host.run:declineRelic()
+  host.goto("build")
+end
+
+function host.finishRunEventPick(choiceIndex)
+  local event = host._pendingRunEvent
+  local choice = event and event.choices and event.choices[choiceIndex or 1]
+  host._pendingRunEvent = nil
+  if choice and choice.reward then
+    local ok = EventRewards.apply(host.run, host.build, choice.reward, { deferGold = true })
+    if ok and choice.reward.kind == "relic" and choice.reward.id then Grimoire.learn(choice.reward.id) end
+  end
+  host.run:startRound()
   host.goto("build")
 end
 

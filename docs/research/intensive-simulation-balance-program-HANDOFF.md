@@ -2581,6 +2581,13 @@ Next implementation targets:
      `31.2%`; `PIT_EVENT_MUTATION_PICK_CAP=1` improved relics to `1.64/run`
      but completion stayed `31.2%`. Read: plumbing is safe (`0` mutation
      failures), but live mutation lanes still need rarity/policy/value tuning.
+     Live product update: the every-3-combats merchant window now attempts a
+     cryptic run event first, using `src/run/event_rewards.lua` to apply
+     explicit rewards. Victory milestones and level-up rewards remain pure
+     relic ceremonies. Live event units are filtered out unless board/bench
+     space can receive them cleanly; event gold is deferred through
+     `_pendingGold` so it survives the next-round gold reset. Mutations still
+     do not materialize live because no mutation target is passed by `main.lua`.
    - event-unit diagnostics:
      `Rundriver` now classifies unit rewards as single, pair-completer, or
      merge-completer, and records whether the granted copy lands on bench or

@@ -10,6 +10,7 @@
 
 local Palette  = require("src.core.palette")
 local RunState = require("src.run.state")
+local RunEvents = require("src.data.run_events")
 local OppGen   = require("src.data.oppgen") -- A4 : adversaire généré scalé (capture combat)
 
 local Build     = require("src.scenes.build")
@@ -294,6 +295,16 @@ function Builders.relicpick(host)
   return Relicpick.new(Palette, VW, VH, host, { choices = choices, midRound = true })
 end
 
+-- RUNEVENT : remplace le marchand post-combat par une rencontre thematique a rewards explicites.
+function Builders.runevent(host)
+  host.run = RunState.new(SEED)
+  host.run.wins, host.run.losses = 2, 1
+  local exclude = {}
+  for _, id in ipairs(RunEvents.order) do if id ~= "hollow_carcass" then exclude[id] = true end end
+  local event = host.run:rollRunEvent({ exclude = exclude })
+  return Relicpick.new(Palette, VW, VH, host, { event = event })
+end
+
 -- BUILD_RELIC_HOVER : board peuplé + 3 reliques au HUD + curseur posé sur une miniature -> POP-UP de la
 -- carte de relique ANIMÉE (RelicCard avec icône RelicAnim). Prouve au screenshot la pop-up de survol HUD.
 -- On choisit 3 reliques de PALIERS variés (Argent/Or/Prismatique) pour montrer la couleur de carte, et on
@@ -434,7 +445,7 @@ end
 local M = {}
 
 -- Liste des noms de scènes capturables (ordre stable, pour --shoot=all et les messages d'erreur).
-M.names = { "menu", "build", "combat", "combat_react", "summary", "relicpick", "runover", "grimoire", "grimoire_glossary", "grimoire_relics",
+M.names = { "menu", "build", "combat", "combat_react", "summary", "relicpick", "runevent", "runover", "grimoire", "grimoire_glossary", "grimoire_relics",
   "grimoire_bestiary",
   "gallery", "designsystem", "build_relic_hover", "build_freeze", "system", "settings",
   "anim_attack", "anim_death", "anim_hurt",
