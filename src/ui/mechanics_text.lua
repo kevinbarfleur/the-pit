@@ -186,7 +186,13 @@ local function addGrantTeamLines(out, params)
   if p.burnNoDecay then out[#out + 1] = T("mech.grant.burn_no_decay", { burn = kw("burn") }) end
   if p.bleedNoExpire then out[#out + 1] = T("mech.grant.bleed_no_expire", { bleed = kw("bleed") }) end
   if p.poisonNoCap or p.poisonDurBonus then
-    out[#out + 1] = T("mech.grant.poison_no_cap", { poison = kw("poison"), dur = p.poisonDurBonus and secs(p.poisonDurBonus) or "0" })
+    if p.poisonNoCap and p.poisonDurBonus then
+      out[#out + 1] = T("mech.grant.poison_no_cap", { poison = kw("poison"), dur = secs(p.poisonDurBonus) })
+    elseif p.poisonNoCap then
+      out[#out + 1] = T("mech.grant.poison_no_cap_base", { poison = kw("poison") })
+    else
+      out[#out + 1] = T("mech.grant.poison_duration", { poison = kw("poison"), dur = secs(p.poisonDurBonus) })
+    end
   end
   if p.shockChain then out[#out + 1] = T("mech.grant.shock_chain", { shock = kw("shock"), propagation = kw("propagation"), value = number(p.shockChain) }) end
   if p.rotEnemies then
@@ -302,7 +308,7 @@ function MechanicsText.effectLines(effect, opts)
   elseif op == "summon" then
     out[#out + 1] = T("mech.summon", { summon = kw("summon"), token = T("unit." .. tostring(p.token) .. ".name") })
   elseif op == "scavenge_on_ally_death" then
-    out[#out + 1] = T("mech.scavenge", { faint = kw("faint"), value = number(p.value), stat = tostring(p.stat or "stat"), cap = number(p.cap) })
+    out[#out + 1] = T("mech.scavenge", { growth = kw("growth"), value = number(p.value), stat = tostring(p.stat or "stat"), cap = number(p.cap) })
   elseif op == "repeat_ability" then
     out[#out + 1] = T("mech.repeat_ability", { mimicry = kw("mimicry"), target = targetText(p.who == "ahead" and "ahead" or "neighbors") })
   elseif op == "amplify_auras" then

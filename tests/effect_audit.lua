@@ -6,6 +6,7 @@ love = require("tests.mock_love")
 
 local Resolver = require("src.core.unit_resolver")
 local Tags = require("src.core.tags")
+local MechanicsText = require("src.ui.mechanics_text")
 local Units = require("src.data.units")
 local Whispers = require("src.data.whispers")
 
@@ -20,6 +21,47 @@ end
 
 local function starts(s, prefix)
   return tostring(s or ""):sub(1, #prefix) == prefix
+end
+
+local function setOf(list)
+  local out = {}
+  for _, id in ipairs(list or {}) do out[id] = true end
+  return out
+end
+
+local function lineTags(lines)
+  local out = {}
+  for _, line in ipairs(lines or {}) do
+    for id in tostring(line):gmatch("%[([%w_]+)|") do out[id] = true end
+  end
+  return out
+end
+
+local function hasSpecificType(tags)
+  for id in pairs(tags or {}) do
+    if starts(id, "type_") then return true end
+  end
+  return false
+end
+
+local function allowedMissingTextTag(tag, got)
+  if tag == "aura" or tag == "shield" or tag == "faint" then return true end
+  if tag == "type" and hasSpecificType(got) then return true end
+  return false
+end
+
+local function assertGeneratedTextMatchesFact(id, level, index, effect)
+  local want = setOf(Tags.forEffect(effect))
+  local lines = MechanicsText.effectLines(effect)
+  local got = lineTags(lines)
+  local label = id .. " L" .. level .. " effect#" .. index .. " " .. tostring(effect and effect.op)
+
+  for tag in pairs(want) do
+    assert(got[tag] or allowedMissingTextTag(tag, got), label .. " generated text misses tag: " .. tag)
+  end
+  for tag in pairs(got) do
+    assert(want[tag], label .. " generated text has inactive tag: " .. tag)
+  end
 end
 
 local function assertNoWhisperLeak(id, tags)
@@ -55,6 +97,10 @@ local ok, err = pcall(function()
           local utility = fact.values.weaken or fact.values.slowPct or fact.values.aggravateMult
           assert(utility, "0-dps affliction must carry utility wording hook: " .. id .. ":" .. fact.op)
         end
+      end
+
+      for idx, effect in ipairs(resolved.effects or {}) do
+        assertGeneratedTextMatchesFact(id, level, idx, effect)
       end
 
       for _, tag in ipairs(tags) do

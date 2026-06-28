@@ -50,7 +50,10 @@ local ok, err = pcall(function()
   local normalAbyss = Tags.forUnit("abyss_maw")
   assert(not has(normalAbyss, "commander"), "normal card hides commander tag")
   local commander = Tags.forUnit("abyss_maw", { context = "commander" })
-  assert(has(commander, "commander") and has(commander, "type"), "command context -> commander + type target")
+  assert(has(commander, "commander") and has(commander, "type") and has(commander, "type_abyss"),
+    "command context -> commander + specific type target")
+  local fleshTarget = Tags.forEffect({ trigger = "combat_start", op = "aura_stat", target = "type:flesh", params = { stat = "atkInc", value = 0.1 } })
+  assert(has(fleshTarget, "type") and has(fleshTarget, "type_flesh"), "type:flesh target exposes generic and specific type tags")
 
   local sporeNormal = Tags.forUnit("spore_tick")
   local sporeCommand = Tags.forUnit("spore_tick", { context = "commander" })

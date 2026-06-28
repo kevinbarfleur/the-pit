@@ -2873,6 +2873,16 @@ Next implementation targets:
   `sap_cost_pair_completion_tiered_reroll` + generated opponents
   `levelMult=2.25` stayed unchanged at `54.9%` completion, `9.17` wins,
   `95.5%` merge-per-pair, `2.51` leftover.
+- semantic wording guard:
+  `tests/effect_audit.lua` now verifies that every generated unit effect line
+  exposes the active mechanical tags derived from `Tags.forEffect`, with only
+  explicit structural exceptions (`Aura`, `Shield`, `Faint`, and generic
+  `Type` when a specific `Flesh/Bone/Arcane/Abyss/Order` tag is shown). This
+  caught two small readability issues: `type:*` auras now expose both generic
+  and specific type tags at fact level, and scavenge/stat-gain-on-ally-death
+  lines now show the canonical `Growth` tag. The Poison no-cap command wording
+  also no longer prints the misleading `+0s` duration when there is no duration
+  bonus.
 3. Use the new compact economy summary first, and only drill into full
    `plan_access` / `support_access` when a row shows a concrete anomaly.
 4. Use `plan_support_watch` rows in the next economy/bossrush panels to separate
