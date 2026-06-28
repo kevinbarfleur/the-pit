@@ -2902,6 +2902,18 @@ Next implementation targets:
   `tall_dense_plan` is weak in postgame (`31%` entry, `4.96k` per run). Boss
   spread is differentiated: `ossuaire` is the survival wall (`51%` survival,
   `0%` kill), while `brasier`/`kraken` are high-score/high-kill checks.
+- mutation lane caution:
+  `runs/long-2026-06-28e/economy-mutation-cap1-n96` tested opt-in event
+  mutations with `PIT_RUN_EVENT_MUTATIONS=1` and `PIT_EVENT_MUTATION_PICK_CAP=1`.
+  Aggregate economy completion rose to `56.0%` with `0.47` mutations/run, but
+  the same N=12 bossrush comparison is worse than no-mutation: no-mutation
+  `greedy_plan`/`econ_plan` enter at `91.7%` and score `28.2k`/`28.1k` per run,
+  while mutation-cap1 drops to `75.0%`/`83.3%` and `22.3k`/`24.9k`. Deep-reroll
+  also drops (`23.1k -> 19.4k` per run). Read: mutation plumbing is safe and
+  potentially interesting, but it currently steals too much postgame quality
+  from relic/event opportunity cost. Keep mutations lab-only until the reward
+  policy can value them contextually or make them rarer/more explicitly
+  build-defining.
 3. Use the new compact economy summary first, and only drill into full
    `plan_access` / `support_access` when a row shows a concrete anomaly.
 4. Use `plan_support_watch` rows in the next economy/bossrush panels to separate
