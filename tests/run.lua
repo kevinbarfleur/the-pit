@@ -577,14 +577,18 @@ local ok, err = pcall(function()
       local ev = RunEvents.events[id]
       assert(ev and ev.id == id, "run events : id declare dans events")
       assert(ev.choices and #ev.choices >= 2, "run events : au moins 2 choix pour " .. id)
+      local relicChoices, nonRelicChoices = 0, 0
       for _, choice in ipairs(ev.choices) do
         local kind = choice.reward and choice.reward.kind
         assert(allowed[kind], "run events : reward actif supporte (" .. tostring(kind) .. ")")
         assert(kind ~= "mutation", "run events : pas de mutation active avant modele d'instance")
+        if kind == "relic" then relicChoices = relicChoices + 1 else nonRelicChoices = nonRelicChoices + 1 end
         if kind == "unit" then
           assert((choice.reward.level or 1) <= 2, "run events : aucune unite niveau 3 offerte")
         end
       end
+      assert(relicChoices >= 1, "run events : chaque event garde au moins une lane relique")
+      assert(nonRelicChoices >= 1, "run events : chaque event garde au moins une lane non-relique")
     end
 
     local function eventSig(seed)

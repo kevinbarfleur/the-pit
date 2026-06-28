@@ -31,7 +31,7 @@ E.events = {
     choices = {
       { id = "crack_the_warm_egg", reward = { kind = "unit", rankMin = 1, rankMax = 2, level = 1 } },
       { id = "take_the_twin", reward = { kind = "unit", rankMin = 1, rankMax = 1, level = 2 } },
-      { id = "boil_the_shell", reward = { kind = "shop_xp", amount = 4 } },
+      { id = "boil_the_shell", reward = { kind = "relic" } },
     },
   },
 
@@ -41,7 +41,7 @@ E.events = {
     choices = {
       { id = "buy_the_fragment", reward = { kind = "relic" } },
       { id = "pocket_the_change", reward = { kind = "gold", amount = 6 } },
-      { id = "read_the_tide_marks", reward = { kind = "shop_xp", amount = 3 } },
+      { id = "read_the_tide_marks", reward = { kind = "relic" } },
     },
   },
 
@@ -60,7 +60,7 @@ E.events = {
     minWins = 2,
     choices = {
       { id = "force_the_hinge", reward = { kind = "shop_tier_up", amount = 1 } },
-      { id = "copy_the_glyphs", reward = { kind = "shop_xp", amount = 6 } },
+      { id = "copy_the_glyphs", reward = { kind = "relic" } },
       { id = "pluck_the_lock", reward = { kind = "relic" } },
     },
   },
@@ -69,7 +69,7 @@ E.events = {
     id = "wounded_thing",
     minCombats = 3,
     choices = {
-      { id = "bind_its_chain", reward = { kind = "unit", rankMin = 1, rankMax = 2, level = 1 } },
+      { id = "bind_its_chain", reward = { kind = "relic" } },
       { id = "feed_it_blood", reward = { kind = "unit", rankMin = 1, rankMax = 1, level = 2 } },
       { id = "harvest_the_chain", reward = { kind = "relic" } },
     },

@@ -90,36 +90,35 @@ These should be correlated with:
 - economy pressure;
 - bossrush entry and score.
 
-Latest panel after policy scoring (`N=128`, `rot_bleed_rat_core`,
+Latest panel after relic-lane density tuning (`N=128`, `rot_bleed_rat_core`,
 `pair_completion_light`, `PIT_RUN_EVENTS=1`):
 
-- completion stayed neutral/slightly positive vs relic merchant baseline:
-  `32.8%` with events vs `32.0%` baseline;
-- event choices averaged `2.88` picks/run;
+- completion stayed mildly positive vs relic merchant baseline:
+  `33.2%` with events vs `32.0%` baseline;
+- event choices averaged `2.86` picks/run;
 - event rewards shifted toward explicit plan/power rewards:
-  `1.87` relics/run, `0.86` units/run, `0.35` gold/run,
-  `0.47` shop XP/run;
-- focused relic access became visible and mostly acted on:
-  `63.7%` focused offer run-rate, `61.7%` focused pick run-rate;
+  `2.11` relics/run, `0.70` units/run, `0.41` gold/run;
+- focused relic access improved:
+  `70.3%` focused offer run-rate, `69.5%` focused pick run-rate;
 - exact target-board completion is still worse than the classic relic merchant
-  path: `0.0%` board complete / `0.4%` held complete with events vs `1.2%` /
+  path: `0.4%` board complete / `0.8%` held complete with events vs `1.2%` /
   `2.0%` baseline.
 
 Bossrush-run check (`N=32`, same policies/economy, completed runs only) shows
-the same tradeoff:
+that the denser event relic lanes can now beat the baseline in postgame scoring:
 
 - baseline score damage per run: `7261`;
-- events score damage per run: `6579`;
+- events score damage per run: `7846`;
 - baseline score per entry: `24458`;
-- events score per entry: `23391`.
+- events score per entry: `25107`.
 
-Interpretation: the event loop is promising for variety and does not currently
-break run completion, but it is not yet EV-positive for optimized plans. The
-main suspected cost is dilution of focused relic density plus extra unit-space
-pressure. Next tuning should either increase the quality of event relic lanes,
-give plan-aware events a clearer "take the focused relic" route, or make unit
-rewards less likely to compete with exact reroll-board completion unless they
-are actual target/core units.
+Interpretation: every event should keep at least one relic lane and one
+non-relic lane. That preserves the user-facing event fantasy while keeping
+enough build-definer density for optimized plans. The remaining cost is exact
+reroll-board completion: events are now healthy for run completion and PvE
+scoring, but still slightly worse when the metric is "assemble this exact
+target board." Next tuning should focus on unit-space pressure and maybe a
+future "core unit only" reward filter before implementing the live UI.
 
 ## Mutation Decision
 
