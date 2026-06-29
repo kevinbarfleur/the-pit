@@ -200,6 +200,7 @@ end
 
 function InfluencePanel.draw(view, cardBox, data, opts)
   if not (view and cardBox and data) then return nil end
+  opts = opts or {}
   local fonts = {
     head = Theme.label(9),
     section = Theme.label(8),
@@ -207,7 +208,7 @@ function InfluencePanel.draw(view, cardBox, data, opts)
     small = Theme.label(8),
     body = Theme.body(11),
   }
-  local w = (opts and opts.w) or W
+  local w = opts.w or W
   local innerW = w - PAD * 2
   local h, contentH = measure(data, fonts, innerW)
   local x, y = InfluencePanel.anchor(cardBox, h, { w = w })
@@ -220,8 +221,13 @@ function InfluencePanel.draw(view, cardBox, data, opts)
   if subtitle then Draw.textR(subtitle, x + w - PAD, cy, C.ink4, fonts.small) end
   cy = cy + fonts.head:getHeight() + 8
 
+  local viewportY = cy
+  local viewportH = h - (viewportY - y) - PAD
+  local maxScroll = math.max(0, contentH - h)
+  local scroll = clamp(opts.scroll or 0, 0, maxScroll)
   local old = love.graphics.getScissor and { love.graphics.getScissor() } or nil
-  Draw.scissor(view, x + 2, cy, w - 4, h - (cy - y) - PAD)
+  Draw.scissor(view, x + 2, viewportY, w - 4, viewportH)
+  cy = cy - scroll
   local any = false
   for _, sec in ipairs(data.sections or {}) do
     if sec.rows and #sec.rows > 0 then
@@ -239,11 +245,16 @@ function InfluencePanel.draw(view, cardBox, data, opts)
     Draw.textWrap(T("ui.influence_none"), cx, cy, innerW, C.ink4, fonts.body)
   end
   if old and old[1] then love.graphics.setScissor(old[1], old[2], old[3], old[4]) else love.graphics.setScissor() end
-  if contentH > h then
-    local barH = math.max(18, math.floor((h - PAD * 2) * (h / contentH)))
-    Draw.rect(x + w - 5, y + PAD + 20, 2, barH, C.brassD)
+  if maxScroll > 0 then
+    local trackX = x + w - 6
+    local trackY = viewportY + 2
+    local trackH = math.max(18, viewportH - 4)
+    local barH = math.max(18, math.floor(trackH * (viewportH / (viewportH + maxScroll))))
+    local barY = trackY + math.floor((trackH - barH) * (scroll / maxScroll) + 0.5)
+    Draw.rect(trackX, trackY, 2, trackH, { C.iron[1], C.iron[2], C.iron[3], 0.55 })
+    Draw.rect(trackX - 1, barY, 4, barH, C.brassD)
   end
-  return { x = x, y = y, w = w, h = h }
+  return { x = x, y = y, w = w, h = h, scroll = scroll, maxScroll = maxScroll, contentH = contentH }
 end
 
 return InfluencePanel

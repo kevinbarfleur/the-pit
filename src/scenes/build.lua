@@ -1401,6 +1401,15 @@ function Build:mousemoved(vx, vy)
   if self.drag and self.drag.d then Drag.move(self.drag.d, vx, vy + 9) end
 end
 
+function Build:wheelmoved(_, dy)
+  if self.forceNetworkInspect or ctrlHeld() then return end
+  local si = self:slotAt(self.mx, self.my)
+  if not (si and self.slotRigs[si]) then return end
+  self.influenceScroll = self.influenceScroll or {}
+  self.influenceScroll[si] = math.max(0, (self.influenceScroll[si] or 0) - (dy or 0) * 36)
+  return true
+end
+
 function Build:mousepressed(vx, vy, button)
   if button ~= 1 then return end
   self.mx, self.my = vx, vy
@@ -4053,7 +4062,11 @@ function Build:influenceDataForSlot(slot)
 end
 
 function Build:drawBoardInspectorExtra(cardBox, slot)
-  return InfluencePanel.draw(self.view, cardBox, self:influenceDataForSlot(slot))
+  self.influenceScroll = self.influenceScroll or {}
+  local box = InfluencePanel.draw(self.view, cardBox, self:influenceDataForSlot(slot),
+    { scroll = self.influenceScroll[slot] or 0 })
+  if box then self.influenceScroll[slot] = box.scroll or 0 end
+  return box
 end
 
 -- Infobulle de relique (survol de la rangée) = Panel propre (même langage que src/scenes/relicpick.lua) :

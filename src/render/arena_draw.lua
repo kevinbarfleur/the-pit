@@ -228,7 +228,7 @@ function ArenaDraw.new(arena, palette)
   self:rebuild()
   -- Abonnements au bus de l'arène (la sim émet, le render réagit). Chaque évènement pilote À LA FOIS le Rig
   -- baké (6 main) ET l'état d'anim critter (générés) — un seul est ensuite dessiné par unité selon Critter.has.
-  arena.bus:on("spawned", function() self:rebuild() end)
+  arena.bus:on("spawned", function() self:rebuild({ preserve = true }) end)
   arena.bus:on("attack", function(u)
     Rig.trigger(self:rigFor(u), "attack")
     self:setAnim(u, "atk") -- B.1b : armé seulement si pas déjà en hurt/death (priorité ; cf. setAnim)
@@ -343,13 +343,25 @@ function ArenaDraw:setAnim(u, state)
 end
 
 -- (Re)construit les rigs à partir des unités courantes (initial + respawn de la démo).
-function ArenaDraw:rebuild()
-  self.rigs = {}; self.anim = {}; self.dead = {}; self.dmgNumbers = {}; self.impacts = {}
-  self.hitRings = {}; self.hitParts = {}; self.hitStreaks = {}; self.hitBolts = {}; self.hitBubbles = {}
-  self.hitShapes = {}; self.bodyMotion = {}
-  self.shake = { x = 0, y = 0, mag = 0 }; self.flash = {}; self.deathFx = {}; self.dparts = {}
-  if self.fx then self.fx:reset() end
-  for _, u in ipairs(self.arena.units) do self:rigFor(u) end
+function ArenaDraw:rebuild(opts)
+  opts = opts or {}
+  local oldRigs = opts.preserve and self.rigs or nil
+  local oldAnim = opts.preserve and self.anim or nil
+  local oldDead = opts.preserve and self.dead or nil
+  self.rigs, self.anim, self.dead = {}, {}, {}
+  if not opts.preserve then
+    self.dmgNumbers = {}; self.impacts = {}
+    self.hitRings = {}; self.hitParts = {}; self.hitStreaks = {}; self.hitBolts = {}; self.hitBubbles = {}
+    self.hitShapes = {}; self.bodyMotion = {}
+    self.shake = { x = 0, y = 0, mag = 0 }; self.flash = {}; self.deathFx = {}; self.dparts = {}
+    if self.fx then self.fx:reset() end
+  end
+  for _, u in ipairs(self.arena.units) do
+    if oldRigs and oldRigs[u] then self.rigs[u] = oldRigs[u] end
+    if oldAnim and oldAnim[u] then self.anim[u] = oldAnim[u] end
+    if oldDead and oldDead[u] then self.dead[u] = oldDead[u] end
+    self:rigFor(u)
+  end
 end
 
 function ArenaDraw:fxRand(salt)

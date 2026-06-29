@@ -267,6 +267,16 @@ end
 -- espace DESIGN -> on convertit ×4 ICI (comme relicpick/runover). self.mx/self.my sont donc en DESIGN.
 function Combat:mousemoved(vx, vy) self.mx, self.my = vx * 4, vy * 4 end
 
+function Combat:wheelmoved(_, dy)
+  if self.arena.over and self.arena.overAge >= 20 then return end
+  if self.forceNetworkInspect or ctrlHeld() then return end
+  local u = self:unitAt(self.mx, self.my)
+  if not u then return end
+  self.influenceScroll = self.influenceScroll or {}
+  self.influenceScroll[u] = math.max(0, (self.influenceScroll[u] or 0) - (dy or 0) * 36)
+  return true
+end
+
 function Combat:unitAt(mx, my)
   local vx, vy = (mx or self.mx) / 4, (my or self.my) / 4
   local best, bestD
@@ -404,7 +414,10 @@ function Combat:drawCombatTooltip(view)
   Draw.begin(view)
   local box = MonsterCard.draw(view, self.palette, u.id, self.mx, self.my, self.t / 60,
     { keywordHint = true, networkHint = true, unit = unit, level = level })
-  local sidecar = box and InfluencePanel.draw(view, box, self:combatInfluenceData(u))
+  self.influenceScroll = self.influenceScroll or {}
+  local sidecar = box and InfluencePanel.draw(view, box, self:combatInfluenceData(u),
+    { scroll = self.influenceScroll[u] or 0 })
+  if sidecar then self.influenceScroll[u] = sidecar.scroll or 0 end
   local showKeywords = love and love.keyboard and love.keyboard.isDown and love.keyboard.isDown("lshift", "rshift")
   if box and showKeywords then
     CardGlossary.drawMonster(view, InfluencePanel.union(box, sidecar), u.id, self.t / 60,

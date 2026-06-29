@@ -16,6 +16,7 @@ local MechanicsText = require("src.ui.mechanics_text")
 local Units = require("src.data.units")
 local Forge = require("src.ui.forge")
 local Layout = require("src.ui.layout")
+local InfluencePanel = require("src.ui.influence_panel")
 
 local ok, err = pcall(function()
   -- ── Theme.state : vocabulaire d'état complet + repli sur idle ──
@@ -145,6 +146,19 @@ local ok, err = pcall(function()
   local cbox = TagGlossary.draw(nil, { x = 900, y = 40, w = 248, h = 300 }, "spore_tick", 0,
     { tagOpts = { context = "commander" } })
   assert(cbox and cbox.w > 0 and cbox.h > 0, "TagGlossary.draw : command context smoke")
+  do
+    local rows = {}
+    for i = 1, 24 do
+      rows[i] = { kind = (i % 2 == 0) and "guard" or "growth", value = "+" .. i .. "%", source = "source " .. i, detail = "detail" }
+    end
+    local box = InfluencePanel.draw({ sx = 1, sy = 1, ox = 0, oy = 0 }, { x = 900, y = 40, w = 248, h = 300 }, {
+      title = "Influences",
+      subtitle = "Test",
+      sections = { { title = "Many", rows = rows } },
+    }, { scroll = 9999 })
+    assert(box and box.maxScroll and box.maxScroll > 0, "InfluencePanel.draw : contenu scrollable detecte")
+    assert(box.scroll == box.maxScroll, "InfluencePanel.draw : scroll clamp au max")
+  end
 
   -- ── Icône bakée (mock : image stub mais dimensions reelles de la grille) ──
   local ic = Keywords.icon("burn")
