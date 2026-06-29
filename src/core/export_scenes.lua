@@ -52,21 +52,18 @@ local function makeBuild(host)
   return b
 end
 
--- C4 — BUILD avec PIÉDESTAL pour juger le rendu du commandant (états vide/rempli/offre/survol portée). `mode`
+-- C4 — BUILD avec PIÉDESTAL pour juger le rendu du commandant (états vide/rempli/survol portée). `mode`
 -- pilote l'état du socle ; `hoverPed`/`hoverUnit` simulent un survol (curseur posé) ; `dragNonChief` simule un
 -- drag de refus. Réutilise makeBuild (board peuplé) -> on voit le board ET le socle dans la même capture.
 local function makeCommanderBuild(host, mode, opts)
   opts = opts or {}
   local b = makeBuild(host)
   local run = host.run
-  if mode == "offer" then
-    run.pendingCommanderGrant = true -- offre en attente (socle pulse en or, CTA « clique pour accepter »)
-  else
-    run.commanderUnlocked = true     -- piédestal débloqué (vide ou rempli)
-    if mode == "filled" or mode == "hover" then
-      -- galvanizer (Le Roi des Rats : commandBonus tier:1) -> sa portée éclaire les unités RANG-1 du board.
-      b.commanderSlot = { id = "galvanizer", level = 1, char = b:newRig("galvanizer") }
-    end
+  run.pendingCommanderGrant = false -- plus d'offre timée : le piédestal est always-on en live.
+  run.commanderUnlocked = true
+  if mode == "filled" or mode == "hover" then
+    -- galvanizer (Le Roi des Rats : commandBonus tier:1) -> sa portée éclaire les unités RANG-1 du board.
+    b.commanderSlot = { id = "galvanizer", level = 1, char = b:newRig("galvanizer") }
   end
   -- survol simulé : pose le curseur sur la NICHE (commanderRect, VIRTUEL). Le warm-up animera la pulsation.
   if mode == "hover" or mode == "offer" then
@@ -115,7 +112,7 @@ end
 function Builders.commander_empty(host)  return makeCommanderBuild(host, "empty") end
 function Builders.commander_filled(host) return makeCommanderBuild(host, "filled") end
 function Builders.commander_hover(host)  return makeCommanderBuild(host, "hover") end
-function Builders.commander_offer(host)  return makeCommanderBuild(host, "offer") end
+function Builders.commander_offer(host)  return makeCommanderBuild(host, "offer") end -- legacy alias : empty hovered.
 function Builders.commander_refuse(host) return makeCommanderBuild(host, "empty", { dragNonChief = true }) end
 
 function Builders.commander_spore_keywords(host)
@@ -514,22 +511,46 @@ function Builders.runover(host)
   return Runover.new(Palette, VW, VH, host, { result = "win", run = host.run })
 end
 
-local function makeBossrushShot(host, bossKey)
+local function makeBossrushShot(host, bossKey, opts)
+  opts = opts or {}
   host.run = RunState.new(SEED)
   host.run.wins = RunState.WIN_TARGET
   local Comps = require("src.data.compositions")
   local Compbuild = require("src.lab.compbuild")
   local comp = Comps.byId["poison_diamant_perfect"]
   local left = comp and Compbuild.toComp(comp, -1) or nil
-  return Bossrush.new(Palette, VW, VH, host, {
+  local scene = Bossrush.new(Palette, VW, VH, host, {
     run = host.run,
     left = left,
     bossKey = bossKey or "brasier",
     seed = SEED + 900,
+    instantScore = opts.instantScore,
+    scoreTicks = opts.scoreTicks,
+    tickCap = opts.tickCap,
   })
+  if opts.finalScore and scene.result then
+    scene.shownScore = scene.result.boss_score_damage or 0
+    scene.scorePlayed = true
+  end
+  return scene
 end
 
 function Builders.bossrush(host) return makeBossrushShot(host, "brasier") end
+function Builders.bossrush_scoring(host)
+  local scene = makeBossrushShot(host, "brasier")
+  local guard = 0
+  while scene and not scene.result and guard < 1800 do
+    scene:update(1)
+    guard = guard + 1
+    if scene.scoreStartTick and (scene.scoreElapsed or 0) >= 150 and (scene.scoreDamage or 0) > 0 then break end
+  end
+  if scene then
+    scene.paused = true
+    scene.skipping = false
+  end
+  return scene
+end
+function Builders.bossrush_result(host) return makeBossrushShot(host, "brasier", { instantScore = true, finalScore = true }) end
 function Builders.bossrush_brasier(host) return makeBossrushShot(host, "brasier") end
 function Builders.bossrush_leviathan(host) return makeBossrushShot(host, "leviathan") end
 function Builders.bossrush_regard(host) return makeBossrushShot(host, "regard") end
@@ -652,7 +673,7 @@ end
 local M = {}
 
 -- Liste des noms de scènes capturables (ordre stable, pour --shoot=all et les messages d'erreur).
-M.names = { "menu", "build", "combat", "combat_hover_inspect", "combat_murmur_inspect", "combat_network_focus", "combat_network_all", "combat_impacts", "combat_numbers_stack", "combat_react", "summary", "relicpick", "runevent", "runevent_brood", "runevent_economy", "runevent_shop_tier", "runevent_unit_glossary", "runover", "playground", "playground_boss", "bossrush", "bossrush_brasier",
+M.names = { "menu", "build", "combat", "combat_hover_inspect", "combat_murmur_inspect", "combat_network_focus", "combat_network_all", "combat_impacts", "combat_numbers_stack", "combat_react", "summary", "relicpick", "runevent", "runevent_brood", "runevent_economy", "runevent_shop_tier", "runevent_unit_glossary", "runover", "playground", "playground_boss", "bossrush", "bossrush_scoring", "bossrush_result", "bossrush_brasier",
   "bossrush_leviathan", "bossrush_regard", "bossrush_ossuaire", "bossrush_kraken", "bossrush_idole",
   "bossrush_ruche", "bossrush_floraison", "bossrush_devoreur", "bossrush_vermine",
   "grimoire", "grimoire_glossary", "grimoire_relics",

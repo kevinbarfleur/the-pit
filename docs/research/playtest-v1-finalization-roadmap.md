@@ -1,9 +1,9 @@
 # Playtest V1 Finalization Roadmap
 
 Date: 2026-06-28
-Last updated: 2026-06-29
-Latest checkpoint: 2026-06-29 17:41 CEST
-Status: pivoting from micro-balance to playable vertical-slice completion; aura/influence sidecar now implemented across build and combat inspection, Proving Ground now includes murmur showcase cases, and live economy, contextual run-event unit rewards, run-event docs resynced with live/lab behavior, readable bossrush score surface, reward/event card art, export coverage, bossrush i18n/general-state fixes, pacing/economy diagnostics, early-short-fight attribution, plan-position diagnostics, plan-aware policy placement, Ossuaire boss tuning, broad visual export, post-combat event routing, and level-aware ability scaling are validated headless.
+Last updated: 2026-06-30
+Latest checkpoint: 2026-06-30 01:01 CEST
+Status: pivoting from micro-balance to playable vertical-slice completion; aura/influence sidecar now implemented across build and combat inspection, Proving Ground now includes murmur showcase cases and live bossrush WATCH coverage, and live economy, contextual run-event unit rewards, run-event docs resynced with live/lab behavior, readable live bossrush combat/result surfaces, reward/event card art, export coverage, bossrush i18n/general-state fixes, pacing/economy diagnostics, early-short-fight attribution, plan-position diagnostics, plan-aware policy placement, Ossuaire boss tuning, broad visual export, post-combat event routing, and level-aware ability scaling are validated headless/capture.
 
 This note is the continuity document for the current large balance/simulation
 workstream. Keep it updated whenever a meaningful decision, implementation, or
@@ -1020,18 +1020,26 @@ Decision:
 
 ### 1. Upgrade Bossrush Presentation
 
-Status: done for V1 score-screen scope.
+Status: done for V1 live-combat/result scope.
 
 Implemented:
 
 - show the selected abomination and its three generals more explicitly;
 - expose clear phases: generals alive, scoring window open, score window closed.
+- live bossrush now uses compact top/bottom chrome instead of large side panels
+  over the arena: phase state on the left, abomination HP centered, score window
+  on the right, generals/score-window/controls in the bottom band;
+- the bossrush result screen is now a cleaner three-column report: abomination
+  cell, animated score card, and scoring-source breakdown, with a separate phase
+  rail below;
+- Proving Ground WATCH for boss scenarios already routes through the real
+  `bossrush` scene, so the live combat presentation applies there too.
 
 Deferred:
 
-- decide after playtest whether an animated bossrush combat spectator is needed;
-- if animated, reuse `Combat`/`ArenaDraw` patterns instead of building a second
-  combat renderer.
+- decide after playtest whether the Proving Ground boss preview panel also needs
+  a richer static abomination illustration; the live WATCH path is already the
+  product surface.
 
 Acceptance:
 
@@ -1041,7 +1049,7 @@ Acceptance:
 
 ### 2. Add Score Feel Pass
 
-Status: done for V1 score-screen scope.
+Status: done for V1 live-combat/result scope.
 
 Implemented:
 
@@ -1049,18 +1057,33 @@ Implemented:
 - milestone pulses;
 - reuse existing `Juice`, `SFX`, damage numbers, and arena events;
 - avoid a second feel stack.
+- live scoring now listens to boss damage during the scoring window and triggers
+  score/meter juice, ladder sounds, trauma, and small hitstop on larger bursts;
+- export coverage includes `bossrush_scoring`, a pinned capture that advances
+  the live scene into the score window for visual review;
+- export coverage includes `bossrush_result`, a pinned static result capture.
 
 Deferred:
 
-- damage-number style effects can be reused later only if a real spectator mode
-  is added. The instant score surface now uses Juice/SFX without adding a second
-  feedback stack.
+- keep score feel based on the shared combat/arena feedback stack. Do not add a
+  second bespoke bossrush-only hit-number renderer.
 
 Acceptance:
 
 - boss scoring feels visibly different from ordinary combat;
 - large bursts create stronger feedback;
 - reduced-motion/accessibility remains possible through existing systems.
+
+Latest visual checkpoint:
+
+- captured and inspected
+  `love . --shoot=bossrush --shoot-size=1280x720`;
+- captured and inspected
+  `love . --shoot=bossrush_scoring --shoot-size=1280x720`;
+- captured and inspected
+  `love . --shoot=bossrush_result --shoot-size=1280x720`;
+- captured and inspected
+  `love . --shoot=playground_boss --shoot-size=1280x720`.
 
 ### 3. Playtest Safety Pass
 

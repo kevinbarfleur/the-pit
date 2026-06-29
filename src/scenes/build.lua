@@ -343,28 +343,22 @@ function Build:computeLayout()
   self.commanderRect = { x = pedX, y = pedY, w = PED_W, h = PED_H }
 end
 
--- La case de commandant est-elle AFFICHÉE (donc droppable) ? = débloquée OU offre en cours. C'est la clé du fix
--- d'interaction (retour user) : pendant l'OFFRE (round 3), la case est visible mais `commanderUnlocked` est encore
--- false -> si `commanderAt` se basait sur `commanderUnlocked` seul, le drop tombait dans le fallback VENTE et
--- l'unité était PERDUE. On rend la case active dès qu'elle est VISIBLE ; déposer une unité dessus auto-accepte.
+-- La case de commandant est toujours affichée/droppable : le commandement est
+-- une affordance de base, pas un unlock de run.
 function Build:commanderCellShown()
-  if self:commanderUnlocked() then return true end
-  local run = self.host and self.host.run
-  return run and run.pendingCommanderGrant == true
+  return self.commanderRect ~= nil
 end
 
--- La case du commandant sous le curseur (espace virtuel) -> true si la drop-zone est touchée. Active dès que la
--- case est AFFICHÉE (déverrouillée OU offre en cours) -> jamais de drop qui retombe en vente pendant l'offre.
+-- La case du commandant sous le curseur (espace virtuel) -> true si la drop-zone est touchée.
 function Build:commanderAt(px, py)
   if not self:commanderCellShown() then return false end
   return self.commanderRect and inRect(px, py, self.commanderRect)
 end
 
--- Le commandant est-il débloqué cette run ? (sandbox sans run : toujours débloqué pour les tests/lab.)
+-- Le commandant est toujours débloqué ; on garde la fonction comme point
+-- d'entrée unique pour les vieux appels build/lab.
 function Build:commanderUnlocked()
-  local run = self.host and self.host.run
-  if not run then return true end
-  return run.commanderUnlocked == true
+  return true
 end
 
 -- Une unité peut-elle COMMANDER ? (porte un `commandBonus`). Sert au refus visuel (drop d'un non-chef).
@@ -1468,8 +1462,8 @@ function Build:mousepressed(vx, vy, button)
         return
       end
     end
-    -- C3 — OFFRE DE PIÉDESTAL (minimal fonctionnel ; polish/prompt dédié = ui-artisan) : pendant l'offre, un
-    -- clic sur la zone du piédestal l'ACCEPTE (le piédestal apparaît) ; un clic sur REFUSER le décline (+or).
+    -- Compat legacy : l'ancien flux pouvait laisser une offre de piédestal en attente.
+    -- En live, RunState ne crée plus cette offre ; le slot est visible dès le round 1.
     if run.pendingCommanderGrant then
       if self.declineBtn and inRect(vx, vy, self.declineBtn) then
         Feel.press("build.decline")
@@ -1559,7 +1553,7 @@ function Build:mousereleased(vx, vy, button)
   local run = self.host.run
   local si = self:slotAt(vx, vy)    -- case PLATEAU sous le curseur
   local bi = self:benchAt(vx, vy)   -- slot BANC sous le curseur
-  local onPed = self:commanderAt(vx, vy) -- C3 : drop sur le PIÉDESTAL (débloqué uniquement)
+  local onPed = self:commanderAt(vx, vy) -- drop sur le PIÉDESTAL toujours disponible
 
   -- ── C3 — DROP SUR LA CASE DU COMMANDANT (promotion en commandant) ─────────────────────────────────
   -- Une seule unité au commandant ; seuls les porteurs de `commandBonus` y sont admis (refus propre sinon).
@@ -1571,9 +1565,7 @@ function Build:mousereleased(vx, vy, button)
       self:returnDrag(d)
       return
     end
-    -- FIX d'interaction (retour user) : déposer une unité-chef sur la case PENDANT l'offre = AUTO-ACCEPTE le grant
-    -- AVANT de placer (plus de clic séparé requis ; plus jamais de vente accidentelle). Si l'offre n'est pas en
-    -- cours (cas refusé/déjà accepté), acceptCommanderGrant est no-op -> aucun effet de bord sur l'éco/les tests.
+    -- Compat legacy : si une ancienne run a encore pendingCommanderGrant, le drop la consomme avant de placer.
     if run and run.pendingCommanderGrant and not run.commanderUnlocked then
       run:acceptCommanderGrant()
     end
@@ -2778,8 +2770,7 @@ function Build:drawBack(view)
   end
 
   -- C4 — CASE DU COMMANDANT (case SIMPLE, src/ui/commandercell.lua) : DISTINCTE du graphe, AUCUNE arête vers le
-  -- board. Visible quand débloquée OU pendant l'offre (la case apparaît au round 3 ; déposer une unité dessus
-  -- l'auto-accepte). Le FOND de la case + le header « COMMANDER » se dessinent ICI, DERRIÈRE le rig du commandant
+  -- board. Visible dès le début de la run. Le FOND de la case + le header « COMMANDER » se dessinent ICI, DERRIÈRE le rig du commandant
   -- (rendu dans la case par drawWorld) ; le hint « vide » et l'étiquette de portée au drag vivent en overlay.
   local pedOffer = run and run.pendingCommanderGrant
   if not self.locked and self.pedRect and self:commanderCellShown() then
@@ -2997,7 +2988,7 @@ function Build:drawWorld()
   end
   -- C4 — RIG DU COMMANDANT dans la case : box-fit dans la case simple (un cran plus grand qu'un troupier ->
   -- le chef est un peu plus imposant), pieds calés au bas, AVEC une légère respiration (lift). Visible seulement
-  -- si la case est remplie (commanderSlot existe = grant accepté). Le décor (case + header) = drawBack.
+  -- si la case est remplie (commanderSlot existe). Le décor (case + header) = drawBack.
   if self.commanderSlot and self.commanderRect and self:commanderUnlocked() then
     local sr = self.commanderSlot
     local r = self.commanderRect

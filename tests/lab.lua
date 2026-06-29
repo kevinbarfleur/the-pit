@@ -361,7 +361,6 @@ local ok, err = pcall(function()
   assert(#pressuredOpp > #normalOpp, "rundriver: opponentPressure sizeBonus augmente la taille generee")
   local function commanderEventRun()
     local d = Rundriver.new(20260633, { recordEvents = true, commanderMode = "auto" })
-    d.run.pendingCommanderGrant = true
     d.build:placeId(5, "skeleton", 1)
     d.build.bench[1] = { id = "witch", level = 1, char = d.build:newRig("witch") }
     d:resolveCommanderMode()
@@ -374,7 +373,6 @@ local ok, err = pcall(function()
   assert(findEvent(commanderA.events, "commander_place").id == windowA.candidates[1].id,
     "events: commander_place trace le candidat pose")
   local commanderIgnore = Rundriver.new(20260634, { recordEvents = true, commanderMode = "ignore" })
-  commanderIgnore.run.pendingCommanderGrant = true
   commanderIgnore.build:placeId(5, "skeleton", 1)
   assert(commanderIgnore:resolveCommanderMode() == nil and not findEvent(commanderIgnore.events, "commander_place"),
     "events: commanderMode ignore ne pose pas de commandant")

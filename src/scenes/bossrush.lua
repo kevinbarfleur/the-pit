@@ -30,6 +30,10 @@ Scene.__index = Scene
 
 local PANEL_W, PANEL_H = 1080, 390
 local BTN_W, BTN_H, BTN_GAP = 250, 52, 22
+local RESULT_W, RESULT_H = 1040, 536
+local RESULT_CARD_H = 292
+local LIVE_TOP_H = 92
+local LIVE_BOTTOM_Y = 612
 local CAUSE_ORDER = { "attack", "cleave", "shock", "burn", "poison", "rot", "bleed", "thorns", "reflect", "fatigue" }
 local NO_FATIGUE = { start = 999999, base = 0, ramp = 0 }
 
@@ -298,10 +302,12 @@ function Scene.new(palette, vw, vh, host, payload)
     nightmareBg = NightmareBG.new(seed + 77),
     mx = -100,
     my = -100,
-    shownScore = payload.instantScore and result and (result.boss_score_damage or 0) or 0,
+    shownScore = 0,
+    liveShownScore = 0,
     scorePlayed = false,
     scoreFxMilestone = 0,
     scoreFxBucket = 0,
+    liveScoreFxBucket = 0,
   }, Scene)
   local cx = math.floor(Draw.W / 2)
   self.panel = { x = math.floor(cx - PANEL_W / 2), y = 222, w = PANEL_W, h = PANEL_H }
@@ -317,6 +323,7 @@ function Scene.new(palette, vw, vh, host, payload)
         if self.scoreActive then
           self.scoreDamage = self.scoreDamage + ev.hp
           self.scoreDamageByCause[cause] = (self.scoreDamageByCause[cause] or 0) + ev.hp
+          self:_onScoreDamage(ev.hp, self.scoreDamage, cause)
         end
       end
     end)
@@ -362,10 +369,40 @@ function Scene:_finishLive()
   recordResult(self.run, self.result)
   self.skipping = false
   self.shownScore = 0
+  self.liveShownScore = self.scoreDamage or 0
   self.scorePlayed = false
   self.scoreFxMilestone = 0
   self.scoreFxBucket = 0
+  self.liveScoreFxBucket = 0
   self._anim = nil
+end
+
+function Scene:_onScoreDamage(gain, total, _cause)
+  gain = gain or 0
+  total = total or 0
+  local boss = bossUnit(self.arena)
+  local maxHp = (boss and boss.maxHp) or (self.abom and self.abom.boss and self.abom.boss.hp) or 0
+  local bucketSize = math.max(70, maxHp / 32)
+  local bucket = math.floor(total / bucketSize)
+  if bucket <= (self.liveScoreFxBucket or 0) then return end
+  self.liveScoreFxBucket = bucket
+  if bucket == 1 then SFX.ladder(true) else SFX.ladder(false) end
+  local weight = math.min(1, gain / 120)
+  Juice.juice_up("bossrush.live_score", 0.09 + 0.12 * weight)
+  Juice.juice_up("bossrush.live_meter", 0.06 + 0.06 * weight)
+  Juice.addTrauma(0.010 + 0.025 * weight)
+  if gain >= 80 then
+    SFX.play("thud", { vol = 0.28, pitch = 0.86 })
+    Juice.freeze(0.012)
+  end
+end
+
+function Scene:_updateLiveScore(frameDt)
+  local target = self.scoreDamage or 0
+  local dt = (frameDt or 1) / 60
+  local k = 1 - math.exp(-dt / 0.18)
+  self.liveShownScore = (self.liveShownScore or 0) + (target - (self.liveShownScore or 0)) * k
+  if math.abs((self.liveShownScore or 0) - target) < 0.7 then self.liveShownScore = target end
 end
 
 function Scene:_step(frameDt)
@@ -380,6 +417,8 @@ function Scene:_step(frameDt)
     SFX.ladder(true)
     SFX.play("success", { vol = 0.42, pitch = 0.82 })
     Juice.juice_up("bossrush.phase", 0.14)
+    Juice.juice_up("bossrush.live_score", 0.18)
+    Juice.juice_up("bossrush.live_meter", 0.12)
     Juice.addTrauma(0.018)
   elseif self.scoreStartTick and self.t >= self.scoreStartTick then
     self.scoreElapsed = math.min(self.scoreTicks, self.scoreElapsed + frameDt)
@@ -450,6 +489,7 @@ function Scene:update(frameDt)
     return
   end
 
+  self:_updateLiveScore(frameDt)
   if self.paused then return end
   local steps = self.skipping and 240 or (self.speed or 1)
   for _ = 1, steps do
@@ -472,6 +512,14 @@ end
 
 local function yn(v)
   return T(v and "bossrush.yes" or "bossrush.no")
+end
+
+local function int(v)
+  return tostring(math.floor((v or 0) + 0.5))
+end
+
+local function oneDecimal(v)
+  return tostring(math.floor((v or 0) * 10 + 0.5) / 10)
 end
 
 local function drawMetric(x, y, labelKey, value)
@@ -683,111 +731,227 @@ local function drawCauseChip(x, y, w, cause, amount)
   Draw.textR(tostring(math.floor((amount or 0) + 0.5)), x + w - 10, y + 7, C.ink, Theme.value(10))
 end
 
-local function drawLiveEncounter(x, y, w, h, abom, snap, accent)
+local function livePanel(x, y, w, h, accent)
   local C = Theme.c
-  Draw.rect(x, y, w, h, { C.stone900[1], C.stone900[2], C.stone900[3], 0.62 }, C.brassD, 1)
-  Draw.rect(x, y, 4, h, accent)
-  Draw.textTrackedL(T("bossrush.encounter_title"), x + 14, y + 13, C.ink4, Theme.labelSmall(8), 1.2)
-  Draw.textTrackedL(T("bossrush.threats"), x + 14, y + 45, C.ink5, Theme.labelSmall(8), 1.0)
-  local tx = x + 14
-  local threats = collectThreats(abom)
-  for i = 1, math.min(3, #threats) do
-    local tag = threats[i]
-    local tw = drawTag(tx, y + 64, tag.label, tag.color, 86)
-    tx = tx + tw + 8
-  end
-  if #threats == 0 then
-    Draw.text(T("bossrush.no_threats"), x + 14, y + 66, C.ink5, Theme.labelSmall(9))
-  end
-  local gy = y + 106
+  local ix, iy, iw, ih = Panel.draw(x, y, w, h, {
+    solid = true,
+    border = C.brassD,
+    fill1 = C.stone850,
+    fill2 = C.stone900,
+  })
+  if accent then Draw.rect(ix, iy, 3, ih, accent) end
+  return ix, iy, iw, ih
+end
+
+local function drawLiveGeneralsStrip(x, y, w, h, abom, snap, accent)
+  local C = Theme.c
+  local ix, iy, iw = livePanel(x, y, w, h, accent)
+  Draw.textTrackedL(T("bossrush.live_generals"), ix + 14, iy + 10, C.ink4, Theme.labelSmall(8), 1.1)
+  local cellW, gap = math.floor((iw - 44) / 3), 10
   for i = 1, 3 do
-    drawGeneralRow(x + 14, gy + (i - 1) * 36, w - 28, i, abom and abom.generals and abom.generals[i],
-      snap.generals and snap.generals[i], snap.cleared_blockers)
+    local spec = abom and abom.generals and abom.generals[i] or nil
+    local state = snap.generals and snap.generals[i]
+    local label, col = primaryThreat(spec)
+    local cleared = snap.cleared_blockers or (state and not state.alive)
+    local bx = ix + 14 + (i - 1) * (cellW + gap)
+    local by = iy + 34
+    Draw.rect(bx, by, cellW, 32, { C.stone900[1], C.stone900[2], C.stone900[3], 0.62 }, cleared and C.iron or col, 1)
+    Draw.rect(bx, by, 3, 32, cleared and C.ink5 or col)
+    Draw.textTrackedL(T("bossrush.general_n", { n = i }), bx + 10, by + 7, cleared and C.ink5 or C.ink2, Theme.labelSmall(8), 0.8)
+    Draw.textR(cleared and T("bossrush.general_broken") or label, bx + cellW - 8, by + 7, cleared and C.ink5 or col, Theme.labelSmall(8))
   end
 end
 
 local function drawLiveScore(x, y, w, self, snap, accent)
   local C = Theme.c
   local open = self.scoreStartTick ~= nil
-  local phaseKey = open and "bossrush.live_score_open" or "bossrush.live_break"
-  Draw.rect(x, y, w, 152, { C.stone900[1], C.stone900[2], C.stone900[3], 0.70 }, C.brassD, 1)
-  Draw.rect(x, y, 4, 152, open and accent or C.bloodL)
-  Draw.textTrackedL(T("bossrush.live_phase"), x + 14, y + 12, C.ink5, Theme.labelSmall(8), 1.1)
-  Draw.text(T(phaseKey), x + 14, y + 30, open and accent or C.bloodL, Theme.subhead(16))
+  local ix, iy, iw = livePanel(x, y, w, 74, open and accent or C.bloodL)
+  Draw.textTrackedL(T("bossrush.metric_damage"), ix + 14, iy + 10, C.ink5, Theme.labelSmall(8), 1.1)
+  Draw.text(T(open and "bossrush.live_score_open" or "bossrush.phase_locked"), ix + 14, iy + 28, open and accent or C.ink4, Theme.labelSmall(9))
 
   local secondsLeft = math.max(0, (self.scoreTicks - (self.scoreElapsed or 0)) / 60)
   local barPct = open and clamp01((self.scoreElapsed or 0) / self.scoreTicks) or 0
-  Draw.text(T("bossrush.metric_damage"), x + 14, y + 62, C.ink4, Theme.labelSmall(9))
-  Draw.textR(tostring(math.floor((self.scoreDamage or 0) + 0.5)), x + w - 14, y + 54, C.ink, Theme.value(22))
-  Draw.rect(x + 14, y + 94, w - 28, 10, { C.stone800[1], C.stone800[2], C.stone800[3], 0.82 }, C.iron, 1)
-  if barPct > 0 then Draw.rect(x + 15, y + 95, math.floor((w - 30) * barPct), 8, accent) end
-  Draw.text(T("bossrush.live_timer", { s = string.format("%.1f", secondsLeft) }), x + 14, y + 116, C.ink3, Theme.labelSmall(9))
-  local dps = math.floor((snap.boss_score_dps or 0) * 10 + 0.5) / 10
-  Draw.textR(T("bossrush.metric_dps") .. " " .. tostring(dps), x + w - 14, y + 116, C.ink3, Theme.labelSmall(9))
+  local sc = Juice.scale("bossrush.live_score")
+  love.graphics.push()
+  love.graphics.translate(ix + iw - 74, iy + 34)
+  love.graphics.scale(sc, sc)
+  Draw.textR(int(self.liveShownScore or self.scoreDamage or 0), 58, -12, C.ink, Theme.value(26))
+  love.graphics.pop()
+  Draw.rect(ix + 14, iy + 58, iw - 28, 7, { C.stone800[1], C.stone800[2], C.stone800[3], 0.82 }, C.iron, 1)
+  local meterSc = Juice.scale("bossrush.live_meter")
+  local fillW = math.floor((iw - 30) * barPct)
+  if fillW > 0 then
+    local cx = ix + 15 + fillW / 2
+    love.graphics.push()
+    love.graphics.translate(cx, iy + 61)
+    love.graphics.scale(meterSc, 1)
+    Draw.rect(-fillW / 2, -3, fillW, 5, accent)
+    love.graphics.pop()
+  end
+  local timerText = open and T("bossrush.live_timer", { s = string.format("%.1f", secondsLeft) })
+    or T("bossrush.live_window_locked")
+  Draw.text(timerText, ix + 14, iy + 40, C.ink3, Theme.labelSmall(8))
+  if open then
+    local dps = math.floor((snap.boss_score_dps or 0) * 10 + 0.5) / 10
+    Draw.text(T("bossrush.live_dps", { dps = tostring(dps) }), ix + 102, iy + 40, C.ink3, Theme.labelSmall(8))
+  end
 end
 
-function Scene:_drawControls()
+function Scene:_drawControls(x, y)
   local C = Theme.c
-  local f = Theme.label(9)
-  local y = Draw.H - 17
-  Draw.rect(0, Draw.H - 34, Draw.W, 1, { C.brassS[1], C.brassS[2], C.brassS[3], 0.1 })
-  Draw.text(T("bossrush.live_controls"), 18, y - 5, C.ink4, f)
+  local f = Theme.labelSmall(8)
+  x = x or (Draw.W - 364)
+  y = y or (Draw.H - 42)
+  Draw.textTrackedL(T("bossrush.live_controls_short"), x, y - 18, C.ink5, f, 0.9)
   local segs = {
-    { id = "pause", label = self.paused and T("ui.resume") or T("ui.pause"), on = self.paused },
-    { id = "spd1", label = "1×", on = (self.speed == 1) and not self.skipping },
-    { id = "spd2", label = "2×", on = (self.speed == 2) and not self.skipping },
-    { id = "skip", label = T("ui.speed_skip"), on = self.skipping },
+    { id = "pause", label = self.paused and T("ui.resume") or T("ui.pause"), on = self.paused, w = 96 },
+    { id = "spd1", label = "1x", on = (self.speed == 1) and not self.skipping, w = 52 },
+    { id = "spd2", label = "2x", on = (self.speed == 2) and not self.skipping, w = 52 },
+    { id = "skip", label = T("ui.speed_skip"), on = self.skipping, w = 88 },
   }
-  local totalW = 0
-  for _, s in ipairs(segs) do s.w = f:getWidth(s.label) + 24; totalW = totalW + s.w end
-  local sx = Draw.W - 18 - totalW
+  local sx = x
   for _, s in ipairs(segs) do
-    local r = { x = sx, y = y - 11, w = s.w, h = 22 }
+    local r = { x = sx, y = y, w = s.w, h = 30 }
     local hot = ptIn(self.mx, self.my, r)
-    Draw.rect(sx, r.y, s.w, 22,
-      s.on and { 0x7a / 255, 0x1d / 255, 0x16 / 255, 1 } or { 0x10 / 255, 0x0d / 255, 0x16 / 255, 1 },
-      C.iron, 1)
-    Draw.textC(s.label, sx + s.w / 2, y - 5, s.on and C.ctaText or (hot and C.ink2 or C.ink3), f)
+    Button.draw(r.x, r.y, r.w, r.h, s.on and "eco" or "secondary", s.label, {
+      hover = hot,
+      feel = Feel.state("bossrush." .. s.id),
+      id = "bossrush." .. s.id,
+    })
     if s.id == "pause" then self._btnPause = r
     elseif s.id == "spd1" then self._btnSpd1 = r
     elseif s.id == "spd2" then self._btnSpd2 = r
     else self._btnSkip = r end
-    sx = sx + s.w
+    sx = sx + s.w + 8
   end
 end
 
 function Scene:drawLiveOverlay(view)
   local C = Theme.c
-  local tt = self.t / 60
   local snap = self:_liveSnapshot()
   local abom = self.abom
   local accent = colorFromAccent(abom and abom.accent, C.brassS)
   local boss = bossUnit(self.arena)
 
+  -- Les overlays de combat (noms, barres, nombres) passent SOUS le chrome bossrush.
+  if self.renderer then self.renderer:drawOverlay(view) end
+
   Draw.begin(view)
-  Draw.rect(0, 0, Draw.W, 86, { 0x05 / 255, 0x03 / 255, 0x08 / 255, 0.72 })
-  Draw.rect(0, 85, Draw.W, 1, { C.brassS[1], C.brassS[2], C.brassS[3], 0.26 })
+  -- Header compact : phase a gauche, boss au centre, score live a droite.
+  Draw.rect(0, 0, Draw.W, LIVE_TOP_H, { C.void[1], C.void[2], C.void[3], 0.76 })
+  Draw.rect(0, LIVE_TOP_H - 1, Draw.W, 1, { C.brassS[1], C.brassS[2], C.brassS[3], 0.24 })
+
+  local phaseOpen = self.scoreStartTick ~= nil
+  local phaseCol = phaseOpen and accent or C.bloodL
+  local phaseX, phaseY, phaseW = 24, 18, 260
+  local pix, piy, piw = livePanel(phaseX, phaseY, phaseW, 54, phaseCol)
+  Draw.textTrackedL(T("bossrush.live_phase"), pix + 12, piy + 8, C.ink5, Theme.labelSmall(8), 1.0)
+  Draw.text(T(phaseOpen and "bossrush.live_score_open" or "bossrush.live_break"), pix + 12, piy + 26, phaseCol, Theme.subhead(13))
+
   Draw.textTrackedC(T("bossrush.word"), Draw.W / 2, 12, C.ink4, Theme.labelSmall(9), 1.7)
-  Draw.textC(bossDisplayName(snap), Draw.W / 2, 28, C.ink, Theme.subhead(22))
+  Draw.textC(bossDisplayName(snap), Draw.W / 2, 30, C.ink, Theme.subhead(21))
 
   local hpFrac = boss and boss.maxHp and boss.maxHp > 0 and math.max(0, boss.hp / boss.maxHp) or 0
-  local bx, by, bw, bh = 430, 61, 420, 10
+  local bx, by, bw, bh = 410, 62, 460, 9
   Draw.bar(bx, by, bw, bh, hpFrac, C.bloodL, C.stone900, C.iron)
   local hpText = boss and T("bossrush.hp_left", {
     hp = math.floor((boss.hp or 0) + 0.5),
     max = math.floor((boss.maxHp or 0) + 0.5),
   }) or T("bossrush.no_boss")
-  Draw.textC(hpText, bx + bw / 2, by + 14, C.ink3, Theme.labelSmall(9))
+  Draw.textC(hpText, bx + bw / 2, by + 13, C.ink3, Theme.labelSmall(8))
 
-  drawLiveEncounter(22, 112, 300, 250, abom, snap, accent)
-  -- Le boss occupe visuellement 2x2 cases cote ennemi. Le panneau live reste
-  -- compact pour ne pas recouvrir son corps pendant le scoring.
-  drawLiveScore(Draw.W - 260, 112, 238, self, snap, accent)
+  drawLiveScore(Draw.W - 380, 18, 292, self, snap, accent)
 
-  self:_drawControls()
+  -- Bande basse : etat des generaux + score window + controles. Elle reste sous le plateau de combat.
+  Draw.rect(0, LIVE_BOTTOM_Y - 1, Draw.W, 1, { C.brassS[1], C.brassS[2], C.brassS[3], 0.16 })
+  Draw.rect(0, LIVE_BOTTOM_Y, Draw.W, Draw.H - LIVE_BOTTOM_Y, { C.void[1], C.void[2], C.void[3], 0.64 })
+  drawLiveGeneralsStrip(24, LIVE_BOTTOM_Y + 14, 520, 70, abom, snap, accent)
+
+  local sx, sy, sw = 566, LIVE_BOTTOM_Y + 14, 294
+  local six, siy, siw = livePanel(sx, sy, sw, 70, accent)
+  Draw.textTrackedL(T("bossrush.live_window"), six + 14, siy + 10, C.ink5, Theme.labelSmall(8), 1.0)
+  local pct = clamp01((self.scoreElapsed or 0) / math.max(1, self.scoreTicks))
+  Draw.bar(six + 14, siy + 34, siw - 28, 8, pct, accent, C.stone900, C.iron)
+  local windowText = self.scoreStartTick and
+    T("bossrush.live_timer", { s = string.format("%.1f", math.max(0, (self.scoreTicks - (self.scoreElapsed or 0)) / 60)) })
+    or T("bossrush.live_window_locked")
+  Draw.textC(windowText, six + siw / 2, siy + 49, C.ink3, Theme.labelSmall(8))
+
+  self:_drawControls(900, LIVE_BOTTOM_Y + 34)
   Draw.finish()
+end
 
-  self.renderer:drawOverlay(view)
+local function drawResultMetric(x, y, w, h, labelKey, value, accent)
+  local C = Theme.c
+  Draw.rect(x, y, w, h, { C.stone900[1], C.stone900[2], C.stone900[3], 0.62 }, C.brassD, 1)
+  Draw.rect(x, y, 3, h, accent)
+  Draw.textTrackedC(T(labelKey), x + w / 2, y + 8, C.ink5, Theme.labelSmall(8), 0.9)
+  Draw.textC(value, x + w / 2, y + 28, C.ink, Theme.value(15))
+end
+
+local function drawResultBossCard(x, y, w, h, abom, r, accent, t)
+  local C = Theme.c
+  local ix, iy, iw, ih = Panel.draw(x, y, w, h, { solid = true, accent = accent, fill1 = C.stone850, fill2 = C.stone900 })
+  Draw.textTrackedC(T("bossrush.word"), ix + iw / 2, iy + 12, C.ink5, Theme.labelSmall(8), 1.2)
+  Draw.textC(bossDisplayName(r), ix + iw / 2, iy + 30, C.ink, Theme.subhead(15))
+  drawBossSeal(ix + 26, iy + 58, iw - 52, 132, abom, accent, t)
+  local hpFrac = math.max(0, math.min(1, r.boss_hp_frac or 0))
+  Draw.textTrackedL(T("bossrush.boss_hp"), ix + 22, iy + ih - 62, C.ink5, Theme.labelSmall(8), 0.9)
+  Draw.bar(ix + 22, iy + ih - 39, iw - 44, 9, 1 - hpFrac, C.bloodL, C.stone900, C.iron)
+  Draw.textC(T("bossrush.hp_left", {
+    hp = math.floor((r.boss_hp_remaining or 0) + 0.5),
+    max = math.floor((r.boss_hp_max or 0) + 0.5),
+  }), ix + iw / 2, iy + ih - 24, C.ink3, Theme.labelSmall(8))
+end
+
+local function drawResultScoreCard(x, y, w, h, r, shownScore, accent)
+  local C = Theme.c
+  local ix, iy, iw, ih = Panel.draw(x, y, w, h, { solid = true, accent = accent, fill1 = C.stone800, fill2 = C.stone900 })
+  local sc = Juice.scale("bossrush.score")
+  Draw.textTrackedC(T("bossrush.metric_damage"), ix + iw / 2, iy + 18, C.ink5, Theme.labelSmall(9), 1.3)
+  love.graphics.push()
+  love.graphics.translate(ix + iw / 2, iy + 76)
+  love.graphics.scale(sc, sc)
+  Draw.textC(int(shownScore), 0, -30, C.gold, Theme.value(42))
+  love.graphics.pop()
+  Dividers.brass(ix + iw / 2, iy + 118, iw - 80)
+  local dps = math.floor((r.boss_score_dps or 0) * 10 + 0.5) / 10
+  drawResultMetric(ix + 18, iy + 140, 116, 56, "bossrush.metric_dps", tostring(dps), accent)
+  drawResultMetric(ix + 148, iy + 140, 116, 56, "bossrush.metric_window", yn(r.survived_score_window), accent)
+  drawResultMetric(ix + 278, iy + 140, iw - 296, 56, "bossrush.metric_survived", yn(r.survived), accent)
+  local clear = T("bossrush.seconds", { s = oneDecimal(r.clear_seconds or 0) })
+  Draw.textTrackedC(T("bossrush.metric_clear"), ix + iw / 2, iy + ih - 42, C.ink5, Theme.labelSmall(8), 0.9)
+  Draw.textC(clear, ix + iw / 2, iy + ih - 24, C.ink3, Theme.labelSmall(10))
+end
+
+local function drawResultSources(x, y, w, h, r, accent)
+  local C = Theme.c
+  local ix, iy, iw = Panel.draw(x, y, w, h, { solid = true, accent = accent, fill1 = C.stone850, fill2 = C.stone900 })
+  Dividers.text(ix + iw / 2, iy + 12, iw - 36, T("bossrush.causes"))
+  local map = r.score_damage_by_cause or {}
+  local rows, total = {}, 0
+  for _, cause in ipairs(CAUSE_ORDER) do
+    local amount = map[cause] or 0
+    if amount > 0 then
+      rows[#rows + 1] = { cause = cause, amount = amount }
+      total = total + amount
+    end
+  end
+  if #rows == 0 then
+    Draw.textWrap(T("bossrush.no_score_causes"), ix + 22, iy + 52, iw - 44, C.ink4, Theme.body(12), "center")
+    return
+  end
+  table.sort(rows, function(a, b) return a.amount > b.amount end)
+  for i = 1, math.min(5, #rows) do
+    local row = rows[i]
+    local cy = iy + 48 + (i - 1) * 32
+    local col = causeColor(row.cause)
+    Draw.textTrackedL(string.upper(causeLabel(row.cause)), ix + 22, cy + 2, col, Theme.labelSmall(8), 0.7)
+    Draw.textR(int(row.amount), ix + iw - 22, cy + 2, C.ink, Theme.value(10))
+    local barW = iw - 148
+    Draw.rect(ix + 22, cy + 20, barW, 6, { C.stone900[1], C.stone900[2], C.stone900[3], 0.8 }, C.iron, 1)
+    Draw.rect(ix + 23, cy + 21, math.floor((barW - 2) * math.min(1, row.amount / math.max(1, total))), 4, col)
+  end
 end
 
 function Scene:drawOverlay(view)
@@ -807,51 +971,19 @@ function Scene:drawOverlay(view)
   Draw.rect(0, 0, Draw.W, Draw.H, { 0.015, 0.01, 0.025, 0.58 * anim })
   Overlay.pushContent(Draw.W / 2, Draw.H / 2, anim)
 
-  local scoreText = T("bossrush.score", { score = math.floor(self.shownScore + 0.5) })
-  Banner.draw(170, 46, 940, "ascension", T("bossrush.word"), {
-    subtitle = bossDisplayName(r),
-    score = scoreText,
-    hint = T("bossrush.kicker"),
-    t = tt,
-    h = 174,
-  })
+  local px = math.floor((Draw.W - RESULT_W) / 2)
+  local py = 62
+  Panel.draw(px, py, RESULT_W, RESULT_H, { solid = true, accent = C.brass, fill1 = C.stone800, fill2 = C.stone900 })
+  Draw.textTrackedC(T("bossrush.result_title"), Draw.W / 2, py + 26, C.ink4, Theme.labelSmall(10), 1.6)
+  Draw.textC(bossDisplayName(r), Draw.W / 2, py + 48, C.ink, Theme.subhead(23))
+  Dividers.brass(Draw.W / 2, py + 84, RESULT_W - 120)
 
-  local p = self.panel
-  Panel.draw(p.x, p.y, p.w, p.h, { solid = true, accent = C.brass })
-  Dividers.text(p.x + p.w / 2, p.y + 22, p.w - 72, T("bossrush.result_title"))
+  drawResultBossCard(px + 28, py + 112, 284, RESULT_CARD_H, abom, r, accent, tt)
+  drawResultScoreCard(px + 336, py + 112, 396, RESULT_CARD_H, r, self.shownScore, accent)
+  drawResultSources(px + 756, py + 112, 256, RESULT_CARD_H, r, accent)
 
-  local leftX, leftY, leftW = p.x + 36, p.y + 50, 318
-  local rightX, rightY = leftX + leftW + 36, p.y + 50
-  local rightW = p.x + p.w - rightX - 36
-  drawEncounter(leftX, leftY, leftW, p.h - 78, abom, r, accent, tt)
-  drawPhaseRail(rightX, rightY, rightW, r, accent)
-  drawScoreBlock(rightX, rightY + 94, rightW, r, self.shownScore, accent)
-
-  local hpFrac = math.max(0, math.min(1, r.boss_hp_frac or 0))
-  local barX, barY, barW, barH = rightX, rightY + 248, rightW, 13
-  Draw.text(T("bossrush.boss_hp"), barX, barY - 22, C.ink4, Theme.labelSmall(9))
-  Draw.bar(barX, barY, barW, barH, 1 - hpFrac, C.bloodL, C.stone900, C.iron)
-  Draw.textC(T("bossrush.hp_left", {
-    hp = math.floor((r.boss_hp_remaining or 0) + 0.5),
-    max = math.floor((r.boss_hp_max or 0) + 0.5),
-  }), barX + barW / 2, barY + 22, C.ink3, Theme.labelSmall(9))
-
-  local cy = rightY + 276
-  Draw.text(T("bossrush.causes"), rightX, cy, C.ink4, Theme.labelSmall(9))
-  local map = r.score_damage_by_cause or {}
-  local x = rightX
-  local wrote = 0
-  for _, cause in ipairs(CAUSE_ORDER) do
-    local amount = map[cause] or 0
-    if amount > 0 and wrote < 4 then
-      drawCauseChip(x, cy + 21, 142, cause, amount)
-      x = x + 154
-      wrote = wrote + 1
-    end
-  end
-  if wrote == 0 then
-    Draw.text(T("bossrush.no_score_causes"), x, cy + 24, C.ink5, Theme.labelSmall(10))
-  end
+  local phaseY = py + RESULT_H - 96
+  drawPhaseRail(px + 28, phaseY, RESULT_W - 56, r, accent)
 
   Button.draw(self.btnNew.x, self.btnNew.y, self.btnNew.w, self.btnNew.h, "primary",
     T(hasReturnPayload(self) and "bossrush.back_pg" or "bossrush.new_run"), {

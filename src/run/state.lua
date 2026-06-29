@@ -54,12 +54,13 @@ local SLOT_GRANT_ROUNDS = { [2] = true, [3] = true, [4] = true, [5] = true, [6] 
 local MAX_GRANTS        = MAX_SLOTS - START_SLOTS -- 6 offres au total (3 -> 9)
 local SLOT_DECLINE_GOLD = 3      -- or reçu en refusant un slot (≈ le prix d'1 unité ; PLACEHOLDER tunable)
 
--- ── PIÉDESTAL DU COMMANDANT (C3, cf. docs/research/commanders-plan.md §3.3) — calque exact du grant de slot.
--- Offert UNE SEULE fois à un jalon de run (placeholder COMMANDER_GRANT_ROUND). Accepter = le piédestal apparaît
--- (vide ; à couronner par drag-drop). Refuser = +COMMANDER_DECLINE_GOLD or, piédestal jamais débloqué cette run
--- (jeu sans commandant viable, SAP le prouve). Découplé de la capacité de slots : c'est un emplacement HORS graphe.
-local COMMANDER_GRANT_ROUND  = 3 -- jalon d'offre (placeholder ; aligné sur la cadence des slots)
-local COMMANDER_DECLINE_GOLD = 4 -- or reçu en refusant le piédestal (placeholder tunable)
+-- ── PIÉDESTAL DU COMMANDANT (décision 2026-06-29) ─────────────────────────────
+-- Le commandement est une affordance de base : le slot est visible et droppable
+-- dès le début d'une run. L'ancien grant round 3 rendait la présence du slot
+-- intermittente et illisible pour le joueur. Les champs pending/accept/decline
+-- restent comme compatibilité de save/API, mais ne créent plus d'offre active.
+local COMMANDER_GRANT_ROUND  = 0 -- legacy exposé aux anciens tests/outils ; inactif
+local COMMANDER_DECLINE_GOLD = 0 -- plus de refus payant : le piédestal est acquis
 
 -- ── NIVEAU DE BOUTIQUE (PRD progression-economy §3, modèle TFT : XP passive + achetée) ──
 -- La boutique a un tier 1->5 et une BARRE D'XP vers le suivant. On gagne de l'XP de DEUX façons :
@@ -138,9 +139,9 @@ function RunState.new(seed, opts)
     slots = START_SLOTS,           -- capacité du plateau (cases qu'on PEUT ouvrir) ; croît par grants timés
     pendingSlotGrant = false,      -- une offre de slot attend une décision (accepter/refuser) ce round
     slotGrantsResolved = 0,        -- nb d'offres déjà tranchées (accept OU refus) ; plafonné à MAX_GRANTS
-    pendingCommanderGrant = false, -- C3 : l'offre de piédestal attend une décision ce round (calque du slot)
-    commanderUnlocked = false,     -- C3 : le piédestal est-il débloqué (accepté) cette run
-    commanderGrantOffered = false, -- C3 : l'offre a-t-elle déjà été présentée (offre UNIQUE par run)
+    pendingCommanderGrant = false, -- legacy : plus d'offre de piédestal en live
+    commanderUnlocked = true,      -- le piédestal est disponible dès le round 1
+    commanderGrantOffered = true,  -- legacy : empêche toute réapparition d'offre
     winStreak = 0,
     lossStreak = 0,
     shopTier = START_TIER,         -- niveau de boutique (1->5) : gate QUELS rangs apparaissent (cotes ODDS)
@@ -241,10 +242,8 @@ function RunState:startRound()
   if SLOT_GRANT_ROUNDS[self.round] and self.slotGrantsResolved < MAX_GRANTS then
     self.pendingSlotGrant = true
   end
-  -- C3 : offre UNIQUE du piédestal à COMMANDER_GRANT_ROUND (calque du slot). N'utilise PAS self.rng -> suite RNG inchangée.
-  if self.round == COMMANDER_GRANT_ROUND and not self.commanderGrantOffered and not self.commanderUnlocked then
-    self.pendingCommanderGrant = true
-  end
+  -- Le piédestal du commandant est toujours disponible ; aucune offre timée.
+  self.pendingCommanderGrant = false
   -- XP PASSIVE de boutique (TFT-style) : +PASSIVE_XP_PER_ROUND, mais SEULEMENT à partir du round 2 — le
   -- round 1 est le DÉPART (aucun temps écoulé) -> un run frais est proprement tier 1 / xp 0. La cascade de
   -- tier est gérée par addShopXp. N'utilise PAS self.rng -> la suite RNG (offres/seeds) est inchangée.
@@ -274,25 +273,24 @@ function RunState:declineSlotGrant()
   return true
 end
 
--- ── PIÉDESTAL DU COMMANDANT (C3) : calque exact du grant de slot. Offre UNIQUE par run. ──
-function RunState:canGrantCommander() return self.pendingCommanderGrant end
+-- ── PIÉDESTAL DU COMMANDANT : toujours disponible. Ces méthodes restent pour les
+-- vieux appels UI/lab mais n'ouvrent plus de décision économique.
+function RunState:canGrantCommander() return false end
 
--- ACCEPTE le piédestal : il apparaît (vide), à couronner par drag-drop. Offre consommée.
 function RunState:acceptCommanderGrant()
-  if not self.pendingCommanderGrant then return false end
+  local hadPending = self.pendingCommanderGrant == true
   self.commanderUnlocked = true
   self.pendingCommanderGrant = false
   self.commanderGrantOffered = true
-  return true
+  return hadPending
 end
 
--- REFUSE le piédestal : +COMMANDER_DECLINE_GOLD or, jamais débloqué cette run (renoncé définitivement).
 function RunState:declineCommanderGrant()
-  if not self.pendingCommanderGrant then return false end
-  self.gold = self.gold + Economy.declineGold(self.economy, "commander")
+  local hadPending = self.pendingCommanderGrant == true
+  self.commanderUnlocked = true
   self.pendingCommanderGrant = false
   self.commanderGrantOffered = true
-  return true
+  return hadPending
 end
 
 -- ── NIVEAU DE BOUTIQUE (cotes par tier). On monte par l'XP (passive + achetée), pas en payant le tier. ──
