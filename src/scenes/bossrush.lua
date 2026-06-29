@@ -8,6 +8,7 @@ local Bossrush = require("src.lab.bossrush")
 local Abominations = require("src.data.abominations")
 local Arena = require("src.combat.arena")
 local ArenaDraw = require("src.render.arena_draw")
+local AbominationSprite = require("src.render.abomination_sprite")
 local Pacing = require("src.run.pacing")
 local Ambient = require("src.fx.ambient")
 local NightmareBG = require("src.fx.nightmare_bg")
@@ -552,173 +553,6 @@ local function drawTag(x, y, label, color, w)
   return w
 end
 
-local function blend(a, b, t)
-  return {
-    (a[1] or 0) * (1 - t) + (b[1] or 0) * t,
-    (a[2] or 0) * (1 - t) + (b[2] or 0) * t,
-    (a[3] or 0) * (1 - t) + (b[3] or 0) * t,
-    1,
-  }
-end
-
-local function drawEye(cx, cy, r, accent, t)
-  local C = Theme.c
-  Draw.setColor(C.stone900, 0.96)
-  love.graphics.circle("fill", cx, cy, r + 4, 18)
-  Draw.setColor(C.ink3, 0.75)
-  love.graphics.ellipse("fill", cx, cy, r + 2, r * 0.72, 22)
-  Draw.setColor(accent, 0.88)
-  love.graphics.ellipse("fill", cx, cy, r, r * 0.54, 22)
-  Draw.setColor(C.stone900, 0.92)
-  love.graphics.circle("fill", cx + math.sin((t or 0) * 1.8) * 2, cy, math.max(2, r * 0.34), 12)
-  Draw.setColor(C.ink, 0.82)
-  love.graphics.circle("fill", cx - r * 0.22, cy - r * 0.18, math.max(1.5, r * 0.16), 8)
-end
-
-local function drawTentacle(cx, cy, ang, len, amp, width, color, t)
-  local pts = {}
-  for i = 0, 7 do
-    local q = i / 7
-    local wob = math.sin(q * 4.1 + (t or 0) * 1.5 + ang * 2.0) * amp * q
-    pts[#pts + 1] = cx + math.cos(ang) * len * q + math.cos(ang + math.pi / 2) * wob
-    pts[#pts + 1] = cy + math.sin(ang) * len * q + math.sin(ang + math.pi / 2) * wob
-  end
-  love.graphics.setLineWidth(width)
-  Draw.setColor(color, 0.78)
-  love.graphics.line(pts)
-  love.graphics.setLineWidth(1)
-end
-
-local function drawToothRing(cx, cy, r, accent)
-  local C = Theme.c
-  Draw.setColor(C.stone900, 0.95)
-  love.graphics.circle("fill", cx, cy, r + 3, 24)
-  Draw.setColor(accent, 0.22)
-  love.graphics.circle("line", cx, cy, r + 1, 24)
-  for i = 1, 14 do
-    local a = (i / 14) * math.pi * 2
-    local x1, y1 = cx + math.cos(a) * (r - 1), cy + math.sin(a) * (r - 1)
-    local x2, y2 = cx + math.cos(a) * (r - 6), cy + math.sin(a) * (r - 6)
-    Draw.setColor(C.ink3, 0.86)
-    love.graphics.polygon("fill", x1, y1, x2 - math.sin(a) * 2, y2 + math.cos(a) * 2,
-      x2 + math.sin(a) * 2, y2 - math.cos(a) * 2)
-  end
-  Draw.setColor(C.stone900, 0.88)
-  love.graphics.circle("fill", cx, cy, math.max(4, r - 12), 18)
-end
-
-local function drawAbominationAvatar(cx, cy, size, abom, accent, t)
-  local C = Theme.c
-  local key = abom and abom.key or ""
-  local theme = abom and abom.theme or ""
-  local base = blend(accent, C.ink, 0.30)
-  local shadow = blend(accent, C.stone900, 0.58)
-  local pale = blend(accent, C.ink, 0.62)
-  local s = size / 72
-  local bob = math.sin((t or 0) * 1.2) * 1.5
-  love.graphics.push()
-  love.graphics.translate(cx, cy + bob)
-  love.graphics.scale(s, s)
-  love.graphics.translate(-cx, -cy)
-
-  if key == "kraken" or theme == "sea" then
-    for i = -4, 4 do
-      drawTentacle(cx, cy + 8, math.pi / 2 + i * 0.22, 38 + math.abs(i) * 5, 8, 5 - math.min(3, math.abs(i)), shadow, t)
-    end
-    Draw.setColor(base, 0.92)
-    love.graphics.ellipse("fill", cx, cy - 14, 28, 24, 28)
-    drawEye(cx - 9, cy - 10, 8, accent, t)
-    drawEye(cx + 9, cy - 10, 8, accent, (t or 0) + 0.4)
-    drawToothRing(cx, cy + 6, 10, accent)
-  elseif key == "regard" or theme == "eye" then
-    Draw.setColor(shadow, 0.94)
-    love.graphics.ellipse("fill", cx, cy, 34, 39, 30)
-    for i = 1, 14 do
-      local a = i / 14 * math.pi * 2 + (t or 0) * 0.08
-      drawEye(cx + math.cos(a) * 24, cy + math.sin(a) * 24, 4, accent, (t or 0) + i)
-    end
-    drawEye(cx, cy - 2, 15, accent, t)
-  elseif key == "ossuaire" or theme == "bone" then
-    Draw.setColor(pale, 0.88)
-    love.graphics.ellipse("fill", cx, cy - 18, 19, 16, 18)
-    Draw.setColor(C.stone900, 0.92)
-    love.graphics.circle("fill", cx - 7, cy - 18, 4, 10)
-    love.graphics.circle("fill", cx + 7, cy - 18, 4, 10)
-    Draw.setColor(pale, 0.82)
-    love.graphics.line(cx - 18, cy - 31, cx - 30, cy - 48, cx - 26, cy - 29)
-    love.graphics.line(cx + 18, cy - 31, cx + 30, cy - 48, cx + 26, cy - 29)
-    love.graphics.setLineWidth(3)
-    love.graphics.line(cx, cy - 4, cx, cy + 26)
-    for i = 0, 4 do
-      local yy = cy + i * 6
-      love.graphics.line(cx, yy, cx - (18 - i * 2), yy + 5)
-      love.graphics.line(cx, yy, cx + (18 - i * 2), yy + 5)
-    end
-    love.graphics.setLineWidth(1)
-    drawEye(cx, cy + 25, 6, accent, t)
-  elseif key == "idole" or theme == "sacred" then
-    Draw.setColor(accent, 0.42)
-    love.graphics.ellipse("line", cx, cy - 29, 31, 14, 36)
-    Draw.setColor(base, 0.94)
-    love.graphics.rectangle("fill", cx - 19, cy - 18, 38, 45)
-    Draw.setColor(shadow, 0.96)
-    love.graphics.rectangle("fill", cx - 13, cy - 11, 26, 31)
-    drawEye(cx, cy + 2, 8, accent, t)
-    Draw.setColor(pale, 0.82)
-    love.graphics.rectangle("fill", cx - 26, cy - 13, 8, 30)
-    love.graphics.rectangle("fill", cx + 18, cy - 13, 8, 30)
-  elseif key == "brasier" or theme == "burn" then
-    Draw.setColor(shadow, 0.96)
-    love.graphics.ellipse("fill", cx, cy + 8, 27, 24, 24)
-    Draw.setColor(accent, 0.88)
-    love.graphics.polygon("fill", cx, cy - 41, cx - 13, cy - 2, cx + 13, cy - 2)
-    love.graphics.polygon("fill", cx - 18, cy - 31, cx - 28, cy + 2, cx - 7, cy - 5)
-    love.graphics.polygon("fill", cx + 18, cy - 31, cx + 28, cy + 2, cx + 7, cy - 5)
-    drawEye(cx, cy + 5, 15, accent, t)
-  elseif key == "floraison" or theme == "mycelium" then
-    Draw.setColor(shadow, 0.94)
-    love.graphics.ellipse("fill", cx, cy + 13, 23, 25, 24)
-    for i, dx in ipairs({ -26, -12, 0, 14, 27 }) do
-      local hh = (i == 3) and 18 or 11
-      Draw.setColor(base, 0.92)
-      love.graphics.rectangle("fill", cx + dx - 3, cy - 7 - hh * 0.25, 6, 24)
-      Draw.setColor(accent, 0.86)
-      love.graphics.ellipse("fill", cx + dx, cy - 10 - hh, 15, 8, 18)
-    end
-    drawEye(cx - 7, cy + 10, 5, accent, t)
-    drawEye(cx + 8, cy + 7, 5, accent, (t or 0) + 0.5)
-  elseif key == "devoreur" or theme == "void" then
-    drawToothRing(cx, cy, 31, accent)
-    for i = 1, 8 do
-      local a = i / 8 * math.pi * 2 + 0.18
-      drawTentacle(cx + math.cos(a) * 25, cy + math.sin(a) * 25, a, 20, 5, 3, shadow, t)
-    end
-    drawEye(cx, cy, 7, accent, t)
-  elseif key == "vermine" or theme == "worm" then
-    local pts = { { -28, 25 }, { -16, 13 }, { -5, 4 }, { 8, -7 }, { 21, -20 } }
-    for i = 1, #pts do
-      local p = pts[i]
-      Draw.setColor(i % 2 == 0 and base or shadow, 0.94)
-      love.graphics.ellipse("fill", cx + p[1], cy + p[2], 15 - i, 11 - i * 0.5, 18)
-      Draw.setColor(C.stone900, 0.65)
-      love.graphics.line(cx + p[1] - 10, cy + p[2], cx + p[1] + 10, cy + p[2])
-    end
-    drawToothRing(cx + 24, cy - 22, 11, accent)
-  else
-    for i = -3, 3 do
-      drawTentacle(cx, cy + 5, math.pi / 2 + i * 0.28, 32 + math.abs(i) * 5, 7, 4, shadow, t)
-    end
-    Draw.setColor(base, 0.92)
-    love.graphics.ellipse("fill", cx, cy + 6, 33, 27, 28)
-    drawEye(cx - 10, cy, 5, accent, t)
-    drawEye(cx + 10, cy, 5, accent, (t or 0) + 0.5)
-    drawEye(cx, cy - 8, 8, accent, t)
-  end
-
-  love.graphics.pop()
-  Draw.reset()
-end
-
 local function drawBossSeal(x, y, w, h, abom, accent, t)
   local C = Theme.c
   Draw.rect(x, y, w, h, { C.stone900[1], C.stone900[2], C.stone900[3], 0.74 }, C.iron, 2)
@@ -739,7 +573,7 @@ local function drawBossSeal(x, y, w, h, abom, accent, t)
     love.graphics.line(cx + math.cos(a) * r1, cy + math.sin(a) * r1,
       cx + math.cos(a) * r2, cy + math.sin(a) * r2)
   end
-  drawAbominationAvatar(cx, cy + 2, h * 0.56, abom, accent, t)
+  AbominationSprite.drawBossIcon(abom and abom.key or "leviathan", cx, cy + 2, w * 0.34, h * 0.72, 0.94)
   love.graphics.setLineWidth(1)
   Draw.textTrackedC(T("bossrush.boss_role"), cx, y + 12, C.ink5, Theme.labelSmall(8), 1.6)
   local family = string.upper(tostring((abom and abom.theme) or "-"))
