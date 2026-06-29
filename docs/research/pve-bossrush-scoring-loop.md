@@ -6,6 +6,25 @@ Status: active product/design spec. This document promotes the bossrush lab
 prototype into a future gameplay loop. The historical balance details remain in
 `intensive-simulation-balance-program-HANDOFF.md`.
 
+## Current V1 Read
+
+Latest authority for the playable V1 checkpoint is
+`docs/research/playtest-v1-finalization-roadmap.md`.
+
+As of 2026-06-29:
+
+- the post-win `Descend Further` route and instant bossrush score surface are
+  implemented and usable for playtest;
+- abomination avatars, translated names, general blocker state, source chips,
+  and score feel are present at score-screen scope;
+- the current live stress profile is `PIT_BOSSRUSH_HP_MULT=2` and
+  `PIT_BOSSRUSH_CD_MULT=0.5`;
+- `ossuaire` was softened from a survival outlier into the defensive/low-kill
+  boss: latest generated-opponent N=48 read is about `74.5%` survival,
+  `66.8%` full-window, and `7.7%` boss-kill;
+- do not flatten boss identities before playtest. Use the old warnings below
+  as history, not as fresher decisions than the roadmap.
+
 ## Purpose
 
 The Pit should not end the moment a build finally becomes satisfying.

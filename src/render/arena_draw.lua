@@ -29,6 +29,9 @@ local T = require("src.core.i18n").t
 -- et rig partagent l'espace VIRTUEL (u.x,u.y) et le scale -> bascule sans déplacement ni resize. Le ×4 natif est
 -- appliqué par le transform externe (main.lua / export.shoot, scene.nativeWorld), pas ici. cf. primgen.lua:2504.
 local WORLD_FIT = require("src.gen.primgen").WORLD_FIT
+local COMBAT_UNIT_SCALE = 0.36 -- mirror build board SLOT_SCALE so combat no longer zooms creatures up
+local COMBAT_RIG_SCALE = COMBAT_UNIT_SCALE / WORLD_FIT
+local COMBAT_SLOT_W, COMBAT_SLOT_H = 20, 22
 
 -- Durées des RÉACTIONS critter, en FRAMES (l'horloge de combat = frames @60fps ; le proto les donne en SECONDES :
 -- ATK 1.05s / HURT 0.45s / DEATH 1.2s + DEAD_HOLD 0.7s — cf. docs/generation/generateur-bestiaire.html l.930).
@@ -846,7 +849,7 @@ end
 -- forme qu'il affronte). Reconstruit depuis la position de l'unité (zéro dépendance au plateau/sigil) : on
 -- n'affiche que les cases OCCUPÉES — les cases VIDES du sigil demanderaient de router la shape jusqu'ici.
 function ArenaDraw:drawGrid()
-  local W, H = 28, 30 -- ~ pas de la grille (Place CELL=30) -> les cases se jointoient en grille lisible
+  local W, H = COMBAT_SLOT_W, COMBAT_SLOT_H
   love.graphics.setLineStyle("rough")
   love.graphics.setLineWidth(1)
   for _, u in ipairs(self.arena.units) do
@@ -955,7 +958,7 @@ end
 -- où un monstre vient de mourir. Même boîte que drawGrid (W,H/pas de Place) pour rester aligné aux slots.
 function ArenaDraw:drawDeathFx()
   local C = Theme.c
-  local W, H = 28, 30
+  local W, H = COMBAT_SLOT_W, COMBAT_SLOT_H
   love.graphics.setLineStyle("rough")
   for _, d in ipairs(self.deathFx) do
     local p = d.age / DEATH_CELL_DUR
@@ -1221,11 +1224,11 @@ function ArenaDraw:drawCritter(u, rig)
   -- Idle/atk/hurt : applique le fondu de mort `rig.alpha` (une unité tombée AVANT d'avoir reçu l'event death, ou
   -- dont l'anim death est retombée, s'efface). En death, alpha=1 est déjà posé ci-dessus (désagrégation autonome).
   if opts.alpha == nil then opts.alpha = rig.alpha or 1 end
-  -- ANCRAGE : pieds (grille 32,57) sur (u.x, u.y), échelle WORLD_FIT = MÊME empreinte que le Rig baké (pivot 32,58).
+  -- ANCRAGE : pieds (grille 32,57) sur (u.x, u.y), scale aligne sur la taille du board build.
   -- t en SECONDES (self.t est en frames @60fps -> /60) pour l'idle/yeux de critter. facing = SENS D'ÉQUIPE (wantDir :
   -- joueur=+1 regarde à droite / adverse=-1 regarde à gauche) NORMALISÉ par le sens inhérent de la créature
   -- (facingFor) -> tout le monde se fait face quel que soit le faceDir natif de l'unité.
-  Critter.drawAt(nil, u.id, u.x, u.y, WORLD_FIT, (self.t or 0) / 60, Critter.facingFor(u.id, u.facing or 1), opts)
+  Critter.drawAt(nil, u.id, u.x, u.y, COMBAT_UNIT_SCALE, (self.t or 0) / 60, Critter.facingFor(u.id, u.facing or 1), opts)
 end
 
 function ArenaDraw:drawUnitWithMotion(u, drawFn)
@@ -1278,9 +1281,14 @@ function ArenaDraw:draw(showBones)
     else
       -- 6 créatures DESSINÉES-MAIN : chemin Rig baké INCHANGÉ + flash blanc additif (re-tracé du rig touché).
       self:drawUnitWithMotion(u, function()
+        love.graphics.push()
+        love.graphics.translate(u.x, u.y)
+        love.graphics.scale(COMBAT_RIG_SCALE, COMBAT_RIG_SCALE)
+        love.graphics.translate(-u.x, -u.y)
         Rig.draw(rig)
         local fa = self.flash[u]
         if fa then self:drawRigFlash(rig, 1 - fa / FLASH_DUR) end
+        love.graphics.pop()
       end)
     end
   end

@@ -26,8 +26,91 @@ local Rundriver = {}
 Rundriver.__index = Rundriver
 Rundriver.DEFAULT_BENCH_SIZE = Build.DEFAULT_BENCH_SIZE
 Rundriver.MAX_BENCH_SIZE = Build.MAX_BENCH_SIZE
+local FPS = 60
 
 local STUB_GOTO = function() end
+
+local AFFLICTION_OPS = {
+  poison = true, burn = true, bleed = true, rot = true, shock = true,
+  aura_grant_bleed = true, aura_poison_dps = true, aura_burn_dps = true,
+  aura_rot_growth = true, grant_affliction_if_absent = true,
+}
+
+local AURA_OPS = {
+  aura_stat = true, grant_team = true, shield_aura = true,
+  aura_grant_bleed = true, aura_poison_dps = true, aura_burn_dps = true,
+  aura_rot_growth = true,
+}
+
+local BURST_OPS = {
+  bonus_first = true, execute = true, cleave = true, percent_hp_strike = true,
+  strip_shield = true, grant_vuln = true,
+}
+
+local function compactEffectStats(effects)
+  local out = { total = 0, afflictions = 0, auras = 0, burst = 0, support = 0 }
+  for _, e in ipairs(effects or {}) do
+    local op = e and e.op
+    local params = e and e.params or {}
+    out.total = out.total + 1
+    if AFFLICTION_OPS[op] then out.afflictions = out.afflictions + 1 end
+    if AURA_OPS[op] then out.auras = out.auras + 1 end
+    if BURST_OPS[op] then out.burst = out.burst + 1 end
+    if params and (params.multicast or params.teamExecute or params.markEnemiesVuln or params.pierceHeal) then
+      out.burst = out.burst + 1
+    end
+    if op == "regen" or op == "lifesteal" or op == "heal_on_kill" or op == "shield_caster"
+      or op == "thorns" or op == "purge" then
+      out.support = out.support + 1
+    end
+  end
+  return out
+end
+
+local function compactCompSignature(comp)
+  local parts = {}
+  for _, s in ipairs(comp or {}) do
+    parts[#parts + 1] = tostring(s.id or "?") .. ":L" .. tostring(s.level or 1)
+  end
+  table.sort(parts)
+  return table.concat(parts, "+")
+end
+
+local function compactCompStats(comp, hpMult, cooldownMult)
+  local out = {
+    units = 0, hp = 0, dmg = 0, directDps = 0,
+    minCdSeconds = 0, avgCdSeconds = 0,
+    maxLevel = 0, level2Plus = 0,
+    effects = 0, afflictions = 0, auras = 0, burst = 0, support = 0,
+  }
+  local cdSum, minCd
+  for _, s in ipairs(comp or {}) do
+    out.units = out.units + 1
+    local hp = math.floor(((s.hp or 0) * (hpMult or 1)) + 0.5)
+    local dmg = tonumber(s.dmg) or 0
+    local cd = math.max(1, math.floor(((s.cd or 1) * (cooldownMult or 1)) + 0.5))
+    local cdSeconds = cd / FPS
+    local level = s.level or 1
+    out.hp = out.hp + hp
+    out.dmg = out.dmg + dmg
+    out.directDps = out.directDps + (dmg / cdSeconds)
+    cdSum = (cdSum or 0) + cdSeconds
+    minCd = minCd and math.min(minCd, cdSeconds) or cdSeconds
+    out.maxLevel = math.max(out.maxLevel, level)
+    if level >= 2 then out.level2Plus = out.level2Plus + 1 end
+    local es = compactEffectStats(s.effects or ((Units[s.id] or {}).effects))
+    out.effects = out.effects + es.total
+    out.afflictions = out.afflictions + es.afflictions
+    out.auras = out.auras + es.auras
+    out.burst = out.burst + es.burst
+    out.support = out.support + es.support
+  end
+  if out.units > 0 then
+    out.avgCdSeconds = cdSum / out.units
+    out.minCdSeconds = minCd or 0
+  end
+  return out
+end
 
 function Rundriver.new(seed, opts)
   opts = opts or {}
@@ -38,6 +121,7 @@ function Rundriver.new(seed, opts)
   if opts.sigil then build.board:setShape(opts.sigil); build:computeLayout() end
   local self = setmetatable({
     run = run, build = build, host = host, opts = opts,
+    policy = opts.policy,
     tickCap = opts.tickCap or 8000,
     hpMult = (opts.hpMult ~= nil) and opts.hpMult or pacing.hpMult, -- live by default; scenario opts may override
     cooldownMult = (opts.cooldownMult ~= nil) and opts.cooldownMult or pacing.cooldownMult,
@@ -787,10 +871,10 @@ function Rundriver:opponent(seed)
       levelMult = self.opponentPressure.levelMult,
     })
     enc.key = self.build:encounterKeyFor(#enc.units)
-    return self.build:buildRightComp(enc, 0), enc.key
+    return self.build:buildRightComp(enc, 0), enc.key, enc.signature
   end
   local enc, bump = self.build:pickEncounter()
-  return self.build:buildRightComp(enc, bump), enc.key
+  return self.build:buildRightComp(enc, bump), enc.key, enc.signature
 end
 
 function Rundriver:_mutateComp(comp, side)
@@ -806,16 +890,25 @@ end
 
 function Rundriver:runEventRollOptions()
   local mode = self.eventUnitTargeting
-  if not mode and not self.runEventMutations then return nil end
   local policy = self.policy
-  local opts = {}
   local function modeHas(part)
     return type(mode) == "string" and mode:find(part, 1, true) ~= nil
   end
+  local opts = EventRewards.rollOptions(self.build)
   if modeHas("missing_copy") then
+    local previousFilter = opts.unitFilter
     opts.unitFilter = function(id, rewardSpec)
+      if previousFilter and not previousFilter(id, rewardSpec) then return false end
       local level = math.max(1, math.min(2, (rewardSpec and rewardSpec.level) or 1))
       return self:copyCount(id, level) > 0
+    end
+  end
+  if modeHas("target_missing") then
+    local previousFilter = opts.unitFilter
+    opts.unitFilter = function(id, rewardSpec)
+      if previousFilter and not previousFilter(id, rewardSpec) then return false end
+      if not (policy and policy.runEventUnitIsMissingTarget) then return false end
+      return policy:runEventUnitIsMissingTarget(self, id, rewardSpec)
     end
   end
   if modeHas("space") then
@@ -827,8 +920,9 @@ function Rundriver:runEventRollOptions()
     end
   end
   if (mode == "policy" or modeHas("policy")) and policy and policy.runEventUnitPriority then
+    local previousPriority = opts.unitPriority
     opts.unitPriority = function(id, rewardSpec)
-      return policy:runEventUnitPriority(self, id, rewardSpec)
+      return (previousPriority and previousPriority(id, rewardSpec) or 0) + (policy:runEventUnitPriority(self, id, rewardSpec) or 0)
     end
   end
   if self.runEventMutations then
@@ -975,7 +1069,7 @@ function Rundriver:fight()
   self.run:applyRelics(left) -- reliques : effet RÉEL sur la compo joueur (comme au build)
   self:_mutateComp(left, "left")
   local seed = self.run:nextCombatSeed()
-  local right, enemyKey = self:opponent(seed)
+  local right, enemyKey, enemySignature = self:opponent(seed)
   self:_mutateComp(right, "right")
   local res = Match.run(left, right, seed, {
     tickCap = self.tickCap,
@@ -984,6 +1078,11 @@ function Rundriver:fight()
     fatigue = self.fatigue,
   })
   res.enemyKey = enemyKey
+  res.enemySignature = enemySignature
+  res.leftSignature = compactCompSignature(left)
+  res.rightSignature = compactCompSignature(right)
+  res.leftStats = compactCompStats(left, self.hpMult, self.cooldownMult)
+  res.rightStats = compactCompStats(right, self.hpMult, self.cooldownMult)
   self.lastResult = res
 
   self.run:resolve(res.win)
@@ -1199,6 +1298,11 @@ function Rundriver.run(seed, policy, opts)
       economy = econ, commitment = commitment,
       win = fr.result and fr.result.win, decided = fr.result and fr.result.decided,
       ticks = fr.result and fr.result.ticks, enemyKey = fr.result and fr.result.enemyKey,
+      enemySignature = fr.result and fr.result.enemySignature,
+      leftSignature = fr.result and fr.result.leftSignature,
+      rightSignature = fr.result and fr.result.rightSignature,
+      leftStats = fr.result and fr.result.leftStats,
+      rightStats = fr.result and fr.result.rightStats,
     }
     if drv.recordBoards then
       row.board = boardAfterBuild

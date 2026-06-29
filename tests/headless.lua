@@ -352,25 +352,43 @@ local ok, err = pcall(function()
     print("  routing : ecran de fin (CHRONICLE/CONTINUE) -> openChronicle / finishCombat OK")
   end
 
-  -- CADENCE DU MARCHAND (Lot 4) : un écran de relique tous les 3 COMBATS (victoire OU défaite), pas toutes
-  -- les 3 victoires. On rejoue le routage exact de main.lua:host.finishCombat sur un VRAI RunState (le seul
-  -- bout non testé du host ; les scènes sont stubbées) -> on observe la transition demandée à chaque combat.
+  -- CADENCE DES RECOMPENSES POST-COMBAT : milestone de relique aux 3/6 victoires, sinon rencontre thématique
+  -- tous les 3 COMBATS (victoire OU défaite), pas toutes les 3 victoires. On rejoue le routage exact de
+  -- main.lua:host.finishCombat sur un VRAI RunState ; les scènes sont stubbées, mais les rewards d'events
+  -- passent par un vrai Build pour couvrir l'application live (unités/reliques/or/xp).
   do
     local RunState = require("src.run.state")
-    -- Mini-host = copie fidèle du routage de main.lua : marchand tous les 3 combats (sinon round suivant) +
-    -- récompense de level-up MID-ROUND (Lot 5 §5.2) + ordre de refus (Task 0). Les scènes sont stubbées.
+    local EventRewards = require("src.run.event_rewards")
+
+    -- Mini-host = copie fidèle du routage de main.lua : milestone 3/6 wins, events tous les 3 combats
+    -- (fallback relique), récompense de level-up MID-ROUND (Lot 5 §5.2) + ordre de refus (Task 0).
     local function makeHost(seed)
       local h = { route = nil, payload = nil, run = RunState.new(seed), midRound = nil }
       function h.goto(name, payload) h.route = name; h.payload = payload end
+      h.build = Build.new(Palette, 320, 180, h)
+      local function startNextBuildRound(source)
+        h.run:startRound()
+        if h.build.applyShopSupport then h.build:applyShopSupport(source or "round") end
+      end
       function h.finishCombat(win)
         h.run:resolve(win)
         if h.run:isOver() then h.goto("runover"); return end
+        if win and (h.run.wins == 3 or h.run.wins == 6) then
+          local choices = h.run:rollRelicChoices(3, { minTier = "mid" })
+          if #choices > 0 then h.goto("relicpick", { choices = choices, milestone = true }); return end
+        end
         local combats = h.run.wins + h.run.losses
         if combats % 3 == 0 then
+          local event = h.run:rollRunEvent(EventRewards.rollOptions(h.build))
+          if event and #(event.choices or {}) > 0 then
+            h._pendingRunEvent = event
+            h.goto("relicpick", { event = event })
+            return
+          end
           local choices = h.run:rollRelicChoices(3)
           if #choices > 0 then h.goto("relicpick", { choices = choices }); return end
         end
-        h.run:startRound(); h.goto("build")
+        startNextBuildRound("round"); h.goto("build")
       end
       -- Lot 5 : offre de level-up MID-ROUND (pas de startRound -> board/boutique/or préservés). Pool vide -> no-op.
       function h.offerLevelUpRelic()
@@ -380,26 +398,38 @@ local ok, err = pcall(function()
       function h.finishRelicPick(id)
         h.run:grantRelic(id)
         local mid = h.midRound; h.midRound = nil
-        if not mid then h.run:startRound() end
+        if not mid then startNextBuildRound("round") end
         h.goto("build")
       end
       -- Refus : MID-ROUND -> declineRelic sans startRound (le +or persiste) ; POST-COMBAT -> startRound D'ABORD
       -- puis declineRelic (Task 0 : le +or se pose PAR-DESSUS le budget SAP frais, sinon écrasé par le reset).
       function h.finishRelicPickDecline()
         local mid = h.midRound; h.midRound = nil
-        if not mid then h.run:startRound() end
+        if not mid then startNextBuildRound("round") end
         h.run:declineRelic(); h.goto("build")
+      end
+      function h.finishRunEventPick(choiceIndex)
+        local event = h._pendingRunEvent
+        local choice = event and event.choices and event.choices[choiceIndex or 1]
+        h._pendingRunEvent = nil
+        if choice and choice.reward then
+          assert(EventRewards.apply(h.run, h.build, choice.reward, { deferGold = true }),
+            "event reward should be applicable in host test")
+        end
+        startNextBuildRound("round")
+        h.goto("build")
       end
       return h
     end
 
-    -- (a) DÉFAITES uniquement : le marchand passe quand même au 3e combat (combat 3 = défaite).
+    -- (a) DÉFAITES uniquement : une rencontre thématique passe quand même au 3e combat (combat 3 = défaite).
     do
       local h = makeHost(13)
       h.finishCombat(false); assert(h.route == "build", "combat 1 (defaite) : pas de relique")
       h.finishCombat(false); assert(h.route == "build", "combat 2 (defaite) : pas de relique")
-      h.finishCombat(false); assert(h.route == "relicpick", "combat 3 (defaite) : MARCHAND (cadence par combat, pas par victoire)")
-      assert(h.payload and #h.payload.choices == 3, "marchand : offre 1-parmi-3")
+      h.finishCombat(false); assert(h.route == "relicpick", "combat 3 (defaite) : EVENT (cadence par combat, pas par victoire)")
+      assert(h.payload and h.payload.event and #h.payload.event.choices >= 1,
+        "event post-combat : rencontre thematique avec rewards explicites")
     end
 
     -- (b) MIX victoire/défaite : c'est bien le 3e COMBAT (W,L,W) qui déclenche, pas la 3e victoire.
@@ -407,25 +437,52 @@ local ok, err = pcall(function()
       local h = makeHost(21)
       h.finishCombat(true);  assert(h.route == "build", "combat 1 (victoire) : pas de relique")
       h.finishCombat(false); assert(h.route == "build", "combat 2 (defaite) : pas de relique")
-      h.finishCombat(true);  assert(h.route == "relicpick", "combat 3 (victoire) : MARCHAND au 3e combat (W/L mele)")
+      h.finishCombat(true);  assert(h.route == "relicpick", "combat 3 (victoire) : EVENT au 3e combat (W/L mele)")
+      assert(h.payload.event, "combat 3 W/L/W : l'event remplace le vieux marchand si materialisable")
     end
 
-    -- (c) REFUS POST-COMBAT (Task 0) : le routage enchaîne round suivant -> build SANS relique. Le +or du
+    -- (c) 3e VICTOIRE : le milestone garanti de relique prend le creneau avant l'event thematique.
+    do
+      local h = makeHost(23)
+      h.finishCombat(true); h.finishCombat(true); h.finishCombat(true)
+      assert(h.route == "relicpick" and h.payload and h.payload.milestone,
+        "combat 3 avec 3 victoires : milestone relique prioritaire sur l'event")
+      assert(h.payload.choices and #h.payload.choices == 3, "milestone : offre 1-parmi-3")
+    end
+
+    -- (d) APPLICATION EVENT : une unité niveau 2 matérialisée par une rencontre est rangée dans le Build,
+    -- puis le host passe au round suivant sans écran vide.
+    do
+      local h = makeHost(44)
+      local round0 = h.run.round
+      h._pendingRunEvent = {
+        id = "headless_unit_event",
+        choices = {
+          { id = "unit", reward = { kind = "unit", id = "husk", level = 2 } },
+        },
+      }
+      h.finishRunEventPick(1)
+      assert(h.route == "build" and h.run.round == round0 + 1, "event unit : choix -> round suivant -> build")
+      assert(h.build.bench[1] and h.build.bench[1].id == "husk" and h.build.bench[1].level == 2,
+        "event unit : creature niveau 2 rangee dans le build")
+    end
+
+    -- (e) REFUS POST-COMBAT (Task 0) : le routage enchaîne round suivant -> build SANS relique. Le +or du
     -- refus doit PERSISTER : startRound re-tire le budget SAP frais PUIS declineRelic pose +DECLINE par-dessus
     -- -> le joueur entre en build avec GOLD_PER_ROUND + streak + DECLINE_RELIC_GOLD (l'ancien ordre l'écrasait).
     do
       local h = makeHost(34)
-      h.finishCombat(false); h.finishCombat(false); h.finishCombat(false) -- 3 défaites -> marchand (lossStreak 3)
-      assert(h.route == "relicpick", "combat 3 : marchand present")
+      h.finishCombat(true); h.finishCombat(true); h.finishCombat(true) -- 3 victoires -> milestone relicpick
+      assert(h.route == "relicpick" and h.payload.milestone, "combat 3 : milestone present")
       local n0, round0 = #h.run.relics, h.run.round
-      local streak = 2 -- 3 défaites consécutives -> lossStreak 3 -> bonus de série +2 (cf. streakBonus, cap 3)
+      local streak = 2 -- 3 victoires consécutives -> winStreak 3 -> bonus de série +2 (cf. streakBonus, cap 3)
       h.finishRelicPickDecline()
       assert(#h.run.relics == n0, "refus : aucune relique acquise")
       assert(h.run.round == round0 + 1 and h.route == "build", "refus : round suivant -> retour build")
       assert(h.run.gold == RunState.GOLD_PER_ROUND + streak + RunState.DECLINE_RELIC_GOLD,
         "refus post-combat (Task 0) : budget SAP frais + streak + DECLINE_RELIC_GOLD (le +or persiste)")
     end
-    print("  cadence relique : marchand tous les 3 combats (win/lose) + refus post-combat persiste (Task 0) OK")
+    print("  cadence post-combat : milestone 3/6W + events /3 combats + application reward + refus OK")
   end
 
   -- E2E (entrées SOURIS SYNTHÉTIQUES) en MODE RUN : on rejoue le vrai flux BOUTIQUE (achat = drag

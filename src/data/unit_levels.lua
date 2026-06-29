@@ -1090,6 +1090,55 @@ return {
     },
   },
 
+  siege_breaker = {
+    [2] = {
+      effects = {
+        [1] = { params = { frac = 0.55 } },
+        [2] = { params = { frac = 0.55 } },
+      },
+      commandBonus = { params = { stripEnemyShield = 0.55 } },
+    },
+    [3] = {
+      effects = {
+        [1] = { params = { frac = 0.60 } },
+        [2] = { params = { frac = 0.60 } },
+      },
+      commandBonus = { params = { stripEnemyShield = 0.60 } },
+    },
+  },
+
+  wallbreaker = {
+    [2] = {
+      effects = {
+        [1] = { params = { frac = 0.45 } },
+        [2] = { params = { frac = 0.09, cap = 14 } },
+      },
+      commandBonus = { params = { stripEnemyShield = 0.35 } },
+    },
+    [3] = {
+      effects = {
+        [1] = { params = { frac = 0.50 } },
+        [2] = { params = { frac = 0.10, cap = 16 } },
+      },
+      commandBonus = { params = { stripEnemyShield = 0.40 } },
+    },
+  },
+
+  reaper_shade = {
+    [2] = {
+      effects = {
+        [1] = { params = { teamExecute = { threshold = 0.25, bonus = 0.35 } } },
+      },
+      commandBonus = { params = { teamExecute = { threshold = 0.25, bonus = 0.45 } } },
+    },
+    [3] = {
+      effects = {
+        [1] = { params = { teamExecute = { threshold = 0.25, bonus = 0.40 } } },
+      },
+      commandBonus = { params = { teamExecute = { threshold = 0.25, bonus = 0.50 } } },
+    },
+  },
+
   hollow_crown = {
     [2] = {
       effects = {

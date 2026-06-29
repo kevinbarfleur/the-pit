@@ -16,6 +16,15 @@ local N = require("tools.scenarios.argn")(20)
 local BASE_SEED = 1460000
 local COMMANDER_MODE = Common.env("PIT_COMMANDER_MODE") or "ignore"
 local RUN_EVENTS = Common.envBool("PIT_RUN_EVENTS", false)
+local OPPONENT_MODE = Common.env("PIT_OPPONENT_MODE") or "static"
+assert(OPPONENT_MODE == "static" or OPPONENT_MODE == "generated",
+  "PIT_OPPONENT_MODE doit etre static ou generated")
+local OPPONENT_PRESSURE = {
+  roundBonus = Common.envNumber("PIT_OPPGEN_ROUND_BONUS", 0),
+  tierBonus = Common.envNumber("PIT_OPPGEN_TIER_BONUS", 0),
+  sizeBonus = Common.envNumber("PIT_OPPGEN_SIZE_BONUS", 0),
+  levelMult = Common.envNumber("PIT_OPPGEN_LEVEL_MULT", 1),
+}
 
 local DEFAULT_ECONOMIES = { "baseline", "sap_cost", "early_curve" }
 local ECONOMY_ORDER = Common.envCsvAny({ "PIT_SWEEP_ECONOMIES", "PIT_ECON_PROFILES" }) or DEFAULT_ECONOMIES
@@ -57,6 +66,9 @@ local function newAgg(fatigueStart)
     archetypeRuns = 0, archetypeCommitted = 0, archetypeCommitRoundSum = 0,
     mergeLifecycle = Common.mergeLifecycleAgg(),
     duration = Common.durationSet(fatigueStart),
+    earlyByEnemy = Common.durationByKeyAgg(fatigueStart),
+    earlyByEnemySignature = Common.durationByKeyAgg(fatigueStart),
+    earlyShortFight = Common.earlyShortFightAgg(),
   }
 end
 
@@ -111,6 +123,9 @@ local function addRun(a, traj)
     a.commanderDeclines = a.commanderDeclines + (e.commanderDeclines or 0)
     a.commanderPlacements = a.commanderPlacements + (e.commanderPlacements or 0)
     Common.addRoundDuration(a.duration, rd)
+    Common.addEarlyDurationByKey(a.earlyByEnemy, rd, rd.enemyKey)
+    Common.addEarlyDurationByKey(a.earlyByEnemySignature, rd, rd.enemySignature)
+    Common.addEarlyShortFight(a.earlyShortFight, rd)
   end
 end
 
@@ -119,6 +134,9 @@ local function finish(a)
   local mergeLifecycle = Common.finishMergeLifecycle(a.mergeLifecycle)
   local duration = Common.finishDurationSet(a.duration)
   local durationFit = Common.durationFit(duration)
+  local earlyByEnemy = Common.finishDurationByKey(a.earlyByEnemy, 10)
+  local earlyByEnemySignature = Common.finishDurationByKey(a.earlyByEnemySignature, 10)
+  local earlyShortFight = Common.finishEarlyShortFight(a.earlyShortFight, 10)
   return {
     runs = a.runs,
     completion = (a.runs > 0) and (a.completions / a.runs) or 0,
@@ -155,6 +173,11 @@ local function finish(a)
     duration = duration,
     duration_fit = durationFit,
     duration_fit_score = durationFit.score,
+    early_by_enemy = earlyByEnemy.by_key,
+    early_by_enemy_top = earlyByEnemy.top,
+    early_by_enemy_signature = earlyByEnemySignature.by_key,
+    early_by_enemy_signature_top = earlyByEnemySignature.top,
+    early_short_fight_diagnostics = earlyShortFight,
   }
 end
 
@@ -180,6 +203,8 @@ for run = 1, N do
           economy = econ,
           commanderMode = COMMANDER_MODE,
           runEvents = RUN_EVENTS,
+          opponentMode = OPPONENT_MODE,
+          opponentPressure = OPPONENT_PRESSURE,
           hpMult = pace.hpMult,
           cooldownMult = pace.cdMult,
           fatigue = Common.fatigueOptions(pace.fatigueStart, pace.fatigueBase, pace.fatigueRamp),
@@ -220,6 +245,9 @@ for _, econ in ipairs(ECONOMY_ORDER) do
       relic_picks_per_run = row.relic_picks_per_run,
       early_avg_seconds = row.duration.early.avg_seconds,
       early_under_5s_rate = row.duration.early.under_5s_rate,
+      early_by_enemy_top = row.early_by_enemy_top,
+      early_by_enemy_signature_top = row.early_by_enemy_signature_top,
+      early_short_fight_diagnostics = row.early_short_fight_diagnostics,
       p50_seconds = row.duration.all.p50_seconds,
       p90_seconds = row.duration.all.p90_seconds,
       fatigue_touch_rate = row.duration.all.fatigue_touch_rate,
@@ -354,6 +382,8 @@ local payload = {
     policies = Common.env("PIT_POLICIES"),
     commander_mode = COMMANDER_MODE,
     run_events = RUN_EVENTS,
+    opponent_mode = OPPONENT_MODE,
+    oppgen_pressure = OPPONENT_PRESSURE,
     economy_profiles = Common.envAny({ "PIT_SWEEP_ECONOMIES", "PIT_ECON_PROFILES" }),
     pace_ids = Common.envAny({ "PIT_SWEEP_PACES", "PIT_PACE_IDS" }),
     pace_profiles = Common.envAny({ "PIT_SWEEP_PACE_PROFILES", "PIT_PACE_PROFILES" }),

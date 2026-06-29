@@ -103,6 +103,27 @@ local function rightBlockersAlive(arena)
   end)
 end
 
+local function generalStates(arena, abom)
+  local out = {}
+  for i, spec in ipairs((abom and abom.generals) or {}) do
+    local found = nil
+    for _, u in ipairs(arena.units or {}) do
+      if u.team == "right" and u.spec and u.spec.role == "general"
+        and (u.id == spec.id or u.spec.id == spec.id) then
+        found = u
+        break
+      end
+    end
+    out[i] = {
+      id = spec.id,
+      alive = found and found.alive or false,
+      hp = found and found.hp or 0,
+      maxHp = found and found.maxHp or (spec.hp or 0),
+    }
+  end
+  return out
+end
+
 local function sortedCauseMap(t)
   local out = {}
   for k, v in pairs(t or {}) do out[k] = v end
@@ -195,6 +216,7 @@ function Bossrush.run(leftComp, abomKey, seed, opts)
     boss_hp_max = bossMax,
     boss_hp_frac = (bossMax > 0) and (bossHp / bossMax) or 0,
     boss_killed = boss ~= nil and not boss.alive,
+    generals = generalStates(arena, abom),
     damage_by_cause = sortedCauseMap(byCause),
     score_damage_by_cause = sortedCauseMap(scoreByCause),
   }

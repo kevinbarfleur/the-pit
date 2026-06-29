@@ -157,6 +157,9 @@ luajit tests/ui.lua
 echo "== viewport (responsive : safe-area 16:9 + fond cover) =="
 luajit tests/viewport.lua
 
+echo "== export-scenes (captures --shoot : noms + builders + coverage boss/events) =="
+luajit tests/export_scenes.lua
+
 if command -v luacheck >/dev/null 2>&1; then
   echo "== luacheck =="
   luacheck src main.lua conf.lua --codes

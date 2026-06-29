@@ -23,7 +23,7 @@ local Abominations = require("src.data.abominations")
 local Effects = require("src.effects.engine")
 
 local ARCH = {}; for _, a in ipairs(Compositions.archetypes) do ARCH[a] = true end
-local VARIANTS = { perfect = true, missing_minor = true, missing_clutch = true, wall = true, baseline = true, amp = true }
+local VARIANTS = { perfect = true, missing_minor = true, missing_clutch = true, wall = true, baseline = true, amp = true, murmur = true }
 
 local ok, err = pcall(function()
   -- 1) INTÉGRITÉ DU CATALOGUE
@@ -418,12 +418,52 @@ local ok, err = pcall(function()
     "events: missing_copy garde une unite deja detenue au meme niveau")
   assert(not missingOpts.unitFilter("skeleton", { level = 2 }),
     "events: missing_copy retire les singles sans copie")
+  local missingTargetPlan = Policies.committed_unit_set_plan("test_target_missing_event", "rot", "carre", {
+    "clot_mender", "gnaw_rat",
+  }, {
+    targetComp = "rot_bleed_rat_core",
+    targetLevels = { clot_mender = 2, gnaw_rat = 3 },
+  })
+  local missingTargetDrv = Rundriver.new(2026063405, {
+    eventUnitTargeting = "policy_target_missing",
+    policy = missingTargetPlan,
+  })
+  missingTargetDrv.run.slots = 6
+  missingTargetDrv.build.board:ensureOpen(6)
+  missingTargetDrv.build:placeId(1, "gnaw_rat", 3)
+  local missingTargetOpts = missingTargetDrv:runEventRollOptions()
+  assert(missingTargetOpts and missingTargetOpts.unitFilter,
+    "events: target_missing expose un filtre de pieces de plan manquantes")
+  assert(missingTargetOpts.unitFilter("clot_mender", { level = 2 }),
+    "events: target_missing accepte une piece cible pas encore couverte")
+  assert(not missingTargetOpts.unitFilter("gnaw_rat", { level = 2 }),
+    "events: target_missing refuse une piece deja couverte au niveau cible")
+  assert(not missingTargetOpts.unitFilter("skeleton", { level = 2 }),
+    "events: target_missing refuse les unites hors plan")
   local cmdPick = focusedPlan:chooseCommanderCandidate(nil, {
     { where = "bench", slot = 1, id = "gash_fiend", level = 1 },
     { where = "bench", slot = 2, id = "rot_hound", level = 1 },
   })
   assert(cmdPick and cmdPick.id == "rot_hound",
     "policy plan: choisit le commandant qui amplifie le coeur du plan")
+  local slotPlan = Policies.committed_unit_set_plan("test_slot_arrange", "rot", "carre", {
+    "clot_mender", "gnaw_rat",
+  }, {
+    targetComp = "rot_bleed_rat_core",
+    targetLevels = { clot_mender = 2, gnaw_rat = 3 },
+  })
+  local slotDrv = Rundriver.new(2026063410, {})
+  slotDrv.run.gold = 0
+  slotDrv.run.slots = 6
+  slotDrv.build.board:ensureOpen(6)
+  for i = 1, #slotDrv.run.shop do slotDrv.run.shop[i].sold = true end
+  slotDrv.build:placeId(1, "clot_mender", 2)
+  slotDrv.build:placeId(5, "gnaw_rat", 3)
+  local slotDecision = slotPlan:act(slotDrv)
+  assert(slotDecision.slotArranges and slotDecision.slotArranges > 0
+    and slotDrv.build.slotRigs[5] and slotDrv.build.slotRigs[5].id == "clot_mender"
+    and slotDrv.build.slotRigs[1] and slotDrv.build.slotRigs[1].id == "gnaw_rat",
+    "policy plan: replace les pieces coeur dans les slots cibles de la comp")
   local spacePlan = Policies.committed_unit_set_plan("test_core_space", "rot", "carre", {
     "marrow_drinker",
   }, { supportArchetypes = { rot = true, bleed = true } })

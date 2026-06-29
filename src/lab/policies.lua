@@ -13,6 +13,7 @@
 -- parlants (greedy / econ / tall_dense / committed / random).
 
 local Units = require("src.data.units")
+local Compositions = require("src.data.compositions")
 local Coherence = require("src.lab.coherence")
 local Mutations = require("src.run.mutations")
 
@@ -45,8 +46,35 @@ end
 
 local function targetUnitsFromIds(unitIds, opts)
   local levels = opts and opts.targetLevels or {}
+  local slots = opts and opts.targetSlots or {}
   local out = {}
-  for _, id in ipairs(unitIds or {}) do out[#out + 1] = { id = id, level = levels[id] or 1 } end
+  for _, id in ipairs(unitIds or {}) do out[#out + 1] = { id = id, level = levels[id] or 1, slot = slots[id] } end
+  return out
+end
+
+local function compById(id)
+  for _, comp in ipairs(Compositions.list or {}) do
+    if comp.id == id then return comp end
+  end
+  return nil
+end
+
+local function targetUnitsFromComp(compId, unitIds, opts)
+  unitIds = unitIds or {}
+  local comp = compById(compId)
+  if not comp then return targetUnitsFromIds(unitIds, opts) end
+  local levels = opts and opts.targetLevels or {}
+  local allowed, seen, out = {}, {}, {}
+  for _, id in ipairs(unitIds or {}) do allowed[id] = true end
+  for _, u in ipairs(comp.units or {}) do
+    if u.id and (allowed[u.id] or #unitIds == 0) then
+      out[#out + 1] = { id = u.id, level = levels[u.id] or u.level or 1, slot = u.slot }
+      seen[u.id] = true
+    end
+  end
+  for _, id in ipairs(unitIds or {}) do
+    if not seen[id] then out[#out + 1] = { id = id, level = levels[id] or 1 } end
+  end
   return out
 end
 
@@ -148,6 +176,7 @@ local function copyCounts(drv)
     local key = sr.id .. "\0" .. (sr.level or 1)
     counts[key] = (counts[key] or 0) + 1
   end
+  if not (drv and drv.build) then return counts end
   for i = 1, 9 do add(drv.build.slotRigs[i]) end
   for i = 1, #(drv.build.benchSlots or {}) do add(drv.build.bench[i]) end
   return counts
@@ -158,7 +187,7 @@ local function sameLevelCount(counts, id, level)
 end
 
 local function heldLevelSum(drv, id)
-  if not (drv and id) then return 0 end
+  if not (drv and drv.build and id) then return 0 end
   local n = 0
   for i = 1, 9 do
     local sr = drv.build.slotRigs[i]
@@ -177,6 +206,13 @@ local function rewardTargetLevel(targetUnits, id)
     if u.id == id then n = n + (u.level or 1) end
   end
   return n
+end
+
+local function targetMissingLevel(drv, targetUnits, id)
+  local targetLevel = rewardTargetLevel(targetUnits, id)
+  if targetLevel <= 0 then return 0, 0 end
+  local held = heldLevelSum(drv, id)
+  return math.max(0, targetLevel - held), targetLevel
 end
 
 local function runEventRewardScore(drv, reward, opts)
@@ -293,8 +329,10 @@ local function targetCoverage(drv, targetUnits)
     rec.count = rec.count + 1
     rec.levels = rec.levels + (sr.level or 1)
   end
-  for i = 1, 9 do addHave(drv.build.slotRigs[i]) end
-  for i = 1, #(drv.build.benchSlots or {}) do addHave(drv.build.bench[i]) end
+  if drv and drv.build then
+    for i = 1, 9 do addHave(drv.build.slotRigs[i]) end
+    for i = 1, #(drv.build.benchSlots or {}) do addHave(drv.build.bench[i]) end
+  end
   for _, u in ipairs(targetUnits or {}) do
     if u.id then
       local rec = want[u.id]
@@ -320,6 +358,18 @@ local function targetCoverage(drv, targetUnits)
     levelCoverage = levelCoverage,
     complete = unitCoverage >= 1 and levelCoverage >= 1,
   }
+end
+
+local function targetSaturationActive(drv, targetUnits, opts, cov)
+  opts = opts or {}
+  if opts.targetSaturationAfter == false then return false, cov or targetCoverage(drv, targetUnits) end
+  cov = cov or targetCoverage(drv, targetUnits)
+  if (cov.targetUnits or 0) <= 0 then return false, cov end
+  local minLevel = opts.targetSaturationAfter
+  if minLevel == nil then minLevel = 0.65 end
+  local minBoard = opts.targetSaturationMinBoard or 5
+  local placed = (drv and drv.build and drv.build.placedCount) and drv.build:placedCount() or 0
+  return (cov.levelCoverage or 0) >= minLevel and placed >= minBoard, cov
 end
 
 local function xpGateAllows(drv, targetUnits, gate)
@@ -405,6 +455,18 @@ local function offerPlanValue(drv, offer, opts, counts)
   local rank = unitRank(id)
   local copies = sameLevelCount(counts, id, 1)
   local value = rank * 10 + (offer.cost or rank) * 2
+  local missing, targetLevel = targetMissingLevel(drv, opts.targetUnits, id)
+  if targetLevel > 0 then
+    if missing > 0 then
+      value = value + 180 + missing * 70 + targetLevel * 12
+    elseif copies >= 2 and opts.allowSaturatedMergeCompleter ~= false then
+      value = value + 55
+    elseif opts.targetSaturationActive == false then
+      value = value + 20 + targetLevel * 4
+    else
+      value = value - (opts.targetSaturationPenalty or 120)
+    end
+  end
   if copies >= 2 then value = value + 85
   elseif copies == 1 then value = value + 35 end
   if opts.want and wants(opts.want, id, offer) then value = value + 32 end
@@ -579,6 +641,87 @@ local function deployTargetBench(drv, targetUnits, opts)
     if willSwap then swaps = swaps + 1 end
   end
   return deployed, swaps
+end
+
+local function targetSlotEntries(targetUnits)
+  local out = {}
+  for order, u in ipairs(targetUnits or {}) do
+    if u.id and u.slot then
+      out[#out + 1] = { id = u.id, slot = u.slot, level = u.level or 1, order = order }
+    end
+  end
+  table.sort(out, function(a, b)
+    return a.order < b.order
+  end)
+  return out
+end
+
+local function targetSlotSatisfied(drv, need)
+  local sr = drv and drv.build and drv.build.slotRigs[need.slot] or nil
+  return sr and sr.id == need.id and (sr.level or 1) >= (need.level or 1)
+end
+
+local function isSatisfiedTargetSlot(targetUnits, slot, sr)
+  if not sr then return false end
+  for _, need in ipairs(targetUnits or {}) do
+    if need.slot == slot and need.id == sr.id and (sr.level or 1) >= (need.level or 1) then
+      return true
+    end
+  end
+  return false
+end
+
+local function targetSlotCandidate(drv, targetUnits, need)
+  local best, bestScore
+  local function consider(where, slot, sr)
+    if not sr or sr.id ~= need.id then return end
+    if where == "board" and slot == need.slot then return end
+    if where == "board" and isSatisfiedTargetSlot(targetUnits, slot, sr) then return end
+    local level = sr.level or 1
+    local score = level * 200 + unitRank(sr.id) * 10
+    if level >= (need.level or 1) then score = score + 1000 end
+    if where == "board" then score = score + 20 end
+    local whereRank = (where == "board") and 1 or 2
+    local bestWhereRank = best and ((best.where == "board") and 1 or 2) or 99
+    if not bestScore or score > bestScore or (score == bestScore and whereRank < bestWhereRank)
+      or (score == bestScore and whereRank == bestWhereRank and slot < best.slot) then
+      best = { where = where, slot = slot, id = sr.id, level = level }
+      bestScore = score
+    end
+  end
+  for i = 1, 9 do consider("board", i, drv.build.slotRigs[i]) end
+  for i = 1, #(drv.build.benchSlots or {}) do consider("bench", i, drv.build.bench[i]) end
+  return best
+end
+
+local function arrangeTargetSlots(drv, targetUnits, opts)
+  opts = opts or {}
+  local entries = targetSlotEntries(targetUnits)
+  if #entries == 0 then return 0 end
+  local moves = 0
+  local maxMoves = opts.maxMoves or 9
+  for _ = 1, maxMoves do
+    local moved = false
+    for _, need in ipairs(entries) do
+      local bs = drv.build.board.slots[need.slot]
+      if bs and bs.unlocked and not targetSlotSatisfied(drv, need) then
+        local c = targetSlotCandidate(drv, targetUnits, need)
+        local ok = false
+        if c and c.where == "board" then
+          ok = drv:move(c.slot, need.slot)
+        elseif c and c.where == "bench" then
+          ok = drv:moveBenchToBoard(c.slot, need.slot)
+        end
+        if ok then
+          moves = moves + 1
+          moved = true
+          break
+        end
+      end
+    end
+    if not moved then break end
+  end
+  return moves
 end
 
 local function benchSellPlan(drv, opts)
@@ -1039,15 +1182,20 @@ function Policies.committed_archetype_plan_with(archetype, sigil, opts)
     end
     return rank
   end
-  local function planOpts()
+  local function planOpts(drv, want)
+    local saturation = targetSaturationActive(drv, targetUnits, opts)
     return {
       protectWanted = true,
-      keepWant = opts.keepWant,
+      keepWant = opts.keepWant or want,
       coreWant = opts.coreWant,
       allowBoardPrune = true,
       minBoard = 3,
       boardPruneMargin = opts.boardPruneMargin or 4,
       churnMinScore = 0,
+      targetUnits = targetUnits,
+      targetSaturationActive = saturation,
+      allowSaturatedMergeCompleter = opts.allowSaturatedMergeCompleter,
+      targetSaturationPenalty = opts.targetSaturationPenalty,
     }
   end
   local function currentWant(self, drv)
@@ -1062,9 +1210,10 @@ function Policies.committed_archetype_plan_with(archetype, sigil, opts)
       local want = currentWant(self, drv)
       return smartDesiredShop(drv, want, {
         want = want,
-        keepWant = opts.keepWant,
+        keepWant = opts.keepWant or want,
         coreWant = opts.coreWant,
         protectWanted = true,
+        targetUnits = targetUnits,
       }, drv.run.pendingSlotGrant and 1 or 0)
     end,
     commitment = function(self, drv)
@@ -1093,17 +1242,17 @@ function Policies.committed_archetype_plan_with(archetype, sigil, opts)
         xpBuys = xpBuys + 1
       end
       if opts.xpCoverageGate and not xpGateCoverage then xpGateCoverage = targetCoverage(drv, targetUnits) end
-      local plannedBought, sold, boardSold = buyMatchingPlanned(drv, want, planOpts())
+      local plannedBought, sold, boardSold = buyMatchingPlanned(drv, want, planOpts(drv, want))
       bought = bought + plannedBought
       local rerolls = 0
-      local reserveOpts = planOpts()
+      local reserveOpts = planOpts(drv, want)
       reserveOpts.want = want
       local maxRerolls = opts.maxRerollsPerRound or 2
       while (drv:hasBuySpace() or #benchPruneCandidates(drv, reserveOpts) > 0) and drv.run:canReroll() and rerolls < maxRerolls do
         sold = sold + pruneBenchToReserve(drv, reserveOpts, 1)
         if not drv:reroll() then break end
         rerolls = rerolls + 1
-        local b, s, bs = buyMatchingPlanned(drv, want, planOpts())
+        local b, s, bs = buyMatchingPlanned(drv, want, planOpts(drv, want))
         bought = bought + b
         sold = sold + s
         boardSold = boardSold + bs
@@ -1113,12 +1262,16 @@ function Policies.committed_archetype_plan_with(archetype, sigil, opts)
         coreWant = opts.coreWant,
         maxMoves = opts.maxDeployMovesPerRound or 3,
       })
+      local slotArranges = arrangeTargetSlots(drv, targetUnits, {
+        maxMoves = opts.maxSlotArrangeMovesPerRound or 9,
+      })
       ensureNonEmpty(drv)
       return {
         archetype = self.archetype, bought = bought, sold = sold, boardSold = boardSold,
         rerolls = rerolls, xpBuys = xpBuys,
         deployed = (deployed > 0) and deployed or nil,
         boardSwaps = (boardSwaps > 0) and boardSwaps or nil,
+        slotArranges = (slotArranges > 0) and slotArranges or nil,
         xpGateBlocked = xpGateBlocked or nil,
         xpGateUnitCoverage = xpGateCoverage and xpGateCoverage.unitCoverage or nil,
         xpGateLevelCoverage = xpGateCoverage and xpGateCoverage.levelCoverage or nil,
@@ -1153,6 +1306,10 @@ function Policies.committed_archetype_plan_with(archetype, sigil, opts)
         coreWant = opts.coreWant,
       })
     end,
+    runEventUnitIsMissingTarget = function(_, drv, id, _rewardSpec)
+      local targetLevel = rewardTargetLevel(targetUnits, id)
+      return targetLevel > 0 and heldLevelSum(drv, id) < targetLevel
+    end,
     chooseCommanderCandidate = function(_, _, candidates)
       local best, bestScore
       for _, c in ipairs(candidates or {}) do
@@ -1186,21 +1343,31 @@ function Policies.committed_unit_set_plan(name, archetype, sigil, unitIds, opts)
     return wanted[id] == true or supports[Policies.archetypeOf(id)] == true
   end
   local commitWant = function(id) return wanted[id] == true end
-  local targetUnits = opts.targetUnits or targetUnitsFromIds(unitIds, opts)
-  local wantForDriver
-  if opts.supportUntilLevelCoverage then
-    wantForDriver = function(drv)
-      local cov = targetCoverage(drv, targetUnits)
-      local allowSupport = (cov.levelCoverage or 0) < opts.supportUntilLevelCoverage
+  local targetUnits = opts.targetUnits or (opts.targetComp and targetUnitsFromComp(opts.targetComp, unitIds, opts))
+    or targetUnitsFromIds(unitIds, opts)
+  local targetLevels = targetLevelMap(targetUnits)
+  local function wantForDriver(drv)
+    local cov = targetCoverage(drv, targetUnits)
+    local saturation = targetSaturationActive(drv, targetUnits, opts, cov)
+    local allowSupport = true
+    if opts.supportUntilLevelCoverage then
+      allowSupport = (cov.levelCoverage or 0) < opts.supportUntilLevelCoverage
         or drv.build:placedCount() < (opts.supportMinBoard or 4)
-      local counts = opts.supportPairsAfterGate and copyCounts(drv) or nil
-      return function(id, offer)
-        if wanted[id] == true then return true end
-        if supports[Policies.archetypeOf(id)] ~= true then return false end
-        if allowSupport then return true end
-        if counts and sameLevelCount(counts, id, 1) >= 1 then return true end
+    end
+    local counts = copyCounts(drv)
+    return function(id, offer)
+      if wanted[id] == true then
+        local targetLevel = targetLevels[id] or 0
+        if targetLevel <= 0 then return true end
+        if not saturation then return true end
+        if heldLevelSum(drv, id) < targetLevel then return true end
+        if opts.allowSaturatedMergeCompleter ~= false and sameLevelCount(counts, id, 1) >= 2 then return true end
         return false
       end
+      if supports[Policies.archetypeOf(id)] ~= true then return false end
+      if allowSupport then return true end
+      if opts.supportPairsAfterGate and sameLevelCount(counts, id, 1) >= 1 then return true end
+      return false
     end
   end
   return Policies.committed_archetype_plan_with(archetype, sigil, {
@@ -1215,8 +1382,14 @@ function Policies.committed_unit_set_plan(name, archetype, sigil, unitIds, opts)
     boardPruneMargin = opts.boardPruneMargin,
     maxXpBuysPerRound = opts.maxXpBuysPerRound,
     maxRerollsPerRound = opts.maxRerollsPerRound,
+    maxDeployMovesPerRound = opts.maxDeployMovesPerRound,
+    maxSlotArrangeMovesPerRound = opts.maxSlotArrangeMovesPerRound,
     rankSchedule = opts.rankSchedule,
     xpCoverageGate = opts.xpCoverageGate,
+    targetSaturationPenalty = opts.targetSaturationPenalty,
+    targetSaturationAfter = opts.targetSaturationAfter,
+    targetSaturationMinBoard = opts.targetSaturationMinBoard,
+    allowSaturatedMergeCompleter = opts.allowSaturatedMergeCompleter,
   })
 end
 
@@ -1324,6 +1497,7 @@ function Policies.analysisSet(rng)
     "clot_mender", "razorkin", "gash_fiend",
     "rot_hound", "carrion_pecker", "gnaw_rat",
   }, {
+    targetComp = "rot_bleed_rat_core",
     supportArchetypes = { rot = true, bleed = true },
     minRank = 3,
     maxXpBuysPerRound = 2,
@@ -1337,6 +1511,7 @@ function Policies.analysisSet(rng)
     "clot_mender", "razorkin", "gash_fiend",
     "rot_hound", "carrion_pecker", "gnaw_rat",
   }, {
+    targetComp = "rot_bleed_rat_core",
     supportArchetypes = { rot = true, bleed = true },
     supportUntilLevelCoverage = 0.50,
     supportMinBoard = 4,
@@ -1352,6 +1527,7 @@ function Policies.analysisSet(rng)
     "clot_mender", "razorkin", "gash_fiend",
     "rot_hound", "carrion_pecker", "gnaw_rat",
   }, {
+    targetComp = "rot_bleed_rat_core",
     supportArchetypes = { rot = true, bleed = true },
     supportUntilLevelCoverage = 0.60,
     supportMinBoard = 4,
@@ -1367,12 +1543,17 @@ function Policies.analysisSet(rng)
     "clot_mender", "razorkin", "gash_fiend",
     "rot_hound", "carrion_pecker", "gnaw_rat",
   }, {
+    targetComp = "rot_bleed_rat_core",
     supportArchetypes = { rot = true, bleed = true },
-    supportUntilLevelCoverage = 0.60,
+    supportUntilLevelCoverage = 0.75,
     supportMinBoard = 4,
+    supportPairsAfterGate = true,
     minRank = 3,
-    maxXpBuysPerRound = 0,
+    maxXpBuysPerRound = 1,
+    xpCoverageGate = { holdRank = 3, minUnitCoverage = 0.45, minLevelCoverage = 0.40 },
     maxRerollsPerRound = 5,
+    targetSaturationAfter = 0.65,
+    targetSaturationMinBoard = 5,
     targetLevels = {
       clot_mender = 2, razorkin = 2, gash_fiend = 2,
       rot_hound = 3, carrion_pecker = 3, gnaw_rat = 3,

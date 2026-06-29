@@ -607,7 +607,12 @@ end
 local function planCoverage(board, target)
   local have = unitSummary(board and board.units or {})
   local want = unitSummary(target and target.units or {})
+  local bySlot = {}
+  for _, u in ipairs(board and board.units or {}) do
+    if u.slot then bySlot[u.slot] = u end
+  end
   local targetUnits, hitUnits, targetLevels, hitLevels = 0, 0, 0, 0
+  local targetSlots, hitSlots, hitSlotLevels = 0, 0, 0
   for id, need in pairs(want) do
     local got = have[id] or { count = 0, levels = 0 }
     targetUnits = targetUnits + need.count
@@ -615,12 +620,27 @@ local function planCoverage(board, target)
     hitUnits = hitUnits + math.min(got.count, need.count)
     hitLevels = hitLevels + math.min(got.levels, need.levels)
   end
+  for _, need in ipairs(target and target.units or {}) do
+    if need.slot then
+      targetSlots = targetSlots + 1
+      local got = bySlot[need.slot]
+      if got and got.id == need.id then
+        hitSlots = hitSlots + 1
+        hitSlotLevels = hitSlotLevels + math.min(got.level or 1, need.level or 1)
+      end
+    end
+  end
   local unitCoverage = (targetUnits > 0) and (hitUnits / targetUnits) or 0
   local levelCoverage = (targetLevels > 0) and (hitLevels / targetLevels) or 0
+  local slotCoverage = (targetSlots > 0) and (hitSlots / targetSlots) or 0
+  local slotLevelCoverage = (targetLevels > 0) and (hitSlotLevels / targetLevels) or 0
   return {
     unit_coverage = unitCoverage,
     level_coverage = levelCoverage,
+    slot_coverage = slotCoverage,
+    slot_level_coverage = slotLevelCoverage,
     complete = unitCoverage >= 1 and levelCoverage >= 1,
+    position_complete = (targetSlots > 0) and slotCoverage >= 1 and slotLevelCoverage >= 1,
   }
 end
 
@@ -1438,7 +1458,7 @@ end
 
 local function planTrajectory(traj, target, finalBoardCov, finalHeldCov)
   local bestBoard, bestHeld = nil, nil
-  local everBoardComplete, everHeldComplete = false, false
+  local everBoardComplete, everHeldComplete, everBoardPositionComplete = false, false, false
   local firstBoard, firstHeld = {}, {}
   local combatBands = newCombatBands()
   local lossThresholds = newLossThresholdMap()
@@ -1449,6 +1469,7 @@ local function planTrajectory(traj, target, finalBoardCov, finalHeldCov)
       boardCov = planCoverage(rd.board, target)
       boardCov.round = round
       if boardCov.complete then everBoardComplete = true end
+      if boardCov.position_complete then everBoardPositionComplete = true end
       firstThresholdsFor(boardCov, round, firstBoard)
       if betterCoverage(boardCov, bestBoard) then bestBoard = boardCov end
     end
@@ -1489,6 +1510,7 @@ local function planTrajectory(traj, target, finalBoardCov, finalHeldCov)
     round = 0,
   }
   everBoardComplete = everBoardComplete or finalBoardCov.complete
+  everBoardPositionComplete = everBoardPositionComplete or finalBoardCov.position_complete
   everHeldComplete = everHeldComplete or finalHeldCov.complete
   local heldDrop = math.max(0, (bestHeld.level_coverage or 0) - (finalHeldCov.level_coverage or 0))
   local boardDrop = math.max(0, (bestBoard.level_coverage or 0) - (finalBoardCov.level_coverage or 0))
@@ -1496,6 +1518,7 @@ local function planTrajectory(traj, target, finalBoardCov, finalHeldCov)
     best_board = bestBoard,
     best_held = bestHeld,
     ever_board_complete = everBoardComplete,
+    ever_board_position_complete = everBoardPositionComplete,
     ever_held_complete = everHeldComplete,
     held_drop_from_peak = heldDrop,
     board_drop_from_peak = boardDrop,
@@ -1519,11 +1542,13 @@ local function addPlanAccess(a, traj)
         source = target.source,
         target_gold = (target.cost and target.cost.gold) or 0,
         runs = 0, complete = 0, heldComplete = 0,
-        everBoardComplete = 0, everHeldComplete = 0,
+        positionComplete = 0, everBoardComplete = 0, everBoardPositionComplete = 0, everHeldComplete = 0,
         promisingLost = 0, undeployedComplete = 0,
         unitCoverage = 0, levelCoverage = 0,
+        slotCoverage = 0, slotLevelCoverage = 0,
         heldUnitCoverage = 0, heldLevelCoverage = 0,
         peakBoardUnitCoverage = 0, peakBoardLevelCoverage = 0, peakBoardRound = 0,
+        peakBoardSlotCoverage = 0, peakBoardSlotLevelCoverage = 0,
         peakHeldUnitCoverage = 0, peakHeldLevelCoverage = 0, peakHeldRound = 0,
         heldDropFromPeak = 0, boardDropFromPeak = 0,
         firstBoard = newThresholdMap(),
@@ -1548,10 +1573,14 @@ local function addPlanAccess(a, traj)
     rec.runs = rec.runs + 1
     rec.unitCoverage = rec.unitCoverage + cov.unit_coverage
     rec.levelCoverage = rec.levelCoverage + cov.level_coverage
+    rec.slotCoverage = rec.slotCoverage + (cov.slot_coverage or 0)
+    rec.slotLevelCoverage = rec.slotLevelCoverage + (cov.slot_level_coverage or 0)
     rec.heldUnitCoverage = rec.heldUnitCoverage + heldCov.unit_coverage
     rec.heldLevelCoverage = rec.heldLevelCoverage + heldCov.level_coverage
     rec.peakBoardUnitCoverage = rec.peakBoardUnitCoverage + (path.best_board.unit_coverage or 0)
     rec.peakBoardLevelCoverage = rec.peakBoardLevelCoverage + (path.best_board.level_coverage or 0)
+    rec.peakBoardSlotCoverage = rec.peakBoardSlotCoverage + (path.best_board.slot_coverage or 0)
+    rec.peakBoardSlotLevelCoverage = rec.peakBoardSlotLevelCoverage + (path.best_board.slot_level_coverage or 0)
     rec.peakBoardRound = rec.peakBoardRound + (path.best_board.round or 0)
     rec.peakHeldUnitCoverage = rec.peakHeldUnitCoverage + (path.best_held.unit_coverage or 0)
     rec.peakHeldLevelCoverage = rec.peakHeldLevelCoverage + (path.best_held.level_coverage or 0)
@@ -1569,6 +1598,7 @@ local function addPlanAccess(a, traj)
     if traj.result == "win" then rec.completions = rec.completions + 1 end
     if heldCov.complete then rec.heldComplete = rec.heldComplete + 1 end
     if path.ever_board_complete then rec.everBoardComplete = rec.everBoardComplete + 1 end
+    if path.ever_board_position_complete then rec.everBoardPositionComplete = rec.everBoardPositionComplete + 1 end
     if path.ever_held_complete then rec.everHeldComplete = rec.everHeldComplete + 1 end
     if path.promising_lost then rec.promisingLost = rec.promisingLost + 1 end
     if path.undeployed_complete then rec.undeployedComplete = rec.undeployedComplete + 1 end
@@ -1577,6 +1607,7 @@ local function addPlanAccess(a, traj)
       rec.completeWins = rec.completeWins + (traj.wins or 0)
       if traj.result == "win" then rec.completeCompletions = rec.completeCompletions + 1 end
     end
+    if cov.position_complete then rec.positionComplete = rec.positionComplete + 1 end
   end
 end
 
@@ -1686,15 +1717,21 @@ local function finish(a)
       oracle = PLAN_ORACLES[id],
       runs = rec.runs,
       complete_rate = (rec.runs > 0) and (rec.complete / rec.runs) or 0,
+      position_complete_rate = (rec.runs > 0) and (rec.positionComplete / rec.runs) or 0,
       avg_unit_coverage = (rec.runs > 0) and (rec.unitCoverage / rec.runs) or 0,
       avg_level_coverage = (rec.runs > 0) and (rec.levelCoverage / rec.runs) or 0,
+      avg_board_slot_coverage = (rec.runs > 0) and (rec.slotCoverage / rec.runs) or 0,
+      avg_board_slot_level_coverage = (rec.runs > 0) and (rec.slotLevelCoverage / rec.runs) or 0,
       held_complete_rate = (rec.runs > 0) and (rec.heldComplete / rec.runs) or 0,
       ever_board_complete_rate = (rec.runs > 0) and (rec.everBoardComplete / rec.runs) or 0,
+      ever_board_position_complete_rate = (rec.runs > 0) and (rec.everBoardPositionComplete / rec.runs) or 0,
       ever_held_complete_rate = (rec.runs > 0) and (rec.everHeldComplete / rec.runs) or 0,
       avg_final_held_unit_coverage = (rec.runs > 0) and (rec.heldUnitCoverage / rec.runs) or 0,
       avg_final_held_level_coverage = (rec.runs > 0) and (rec.heldLevelCoverage / rec.runs) or 0,
       avg_peak_board_unit_coverage = (rec.runs > 0) and (rec.peakBoardUnitCoverage / rec.runs) or 0,
       avg_peak_board_level_coverage = (rec.runs > 0) and (rec.peakBoardLevelCoverage / rec.runs) or 0,
+      avg_peak_board_slot_coverage = (rec.runs > 0) and (rec.peakBoardSlotCoverage / rec.runs) or 0,
+      avg_peak_board_slot_level_coverage = (rec.runs > 0) and (rec.peakBoardSlotLevelCoverage / rec.runs) or 0,
       avg_peak_board_round = (rec.runs > 0) and (rec.peakBoardRound / rec.runs) or 0,
       avg_peak_held_unit_coverage = (rec.runs > 0) and (rec.peakHeldUnitCoverage / rec.runs) or 0,
       avg_peak_held_level_coverage = (rec.runs > 0) and (rec.peakHeldLevelCoverage / rec.runs) or 0,
@@ -2010,6 +2047,16 @@ local function targetSummaryRow(economyVariant, target, p)
   local access = (p.plan_access or {})[target.id]
   if not access then return nil end
   local oracle = access.oracle or {}
+  local firstHeld = access.first_held_level_round or {}
+  local bands = access.combat_by_board_level_band or {}
+  local function threshold(key, field)
+    local row = firstHeld[key] or {}
+    return row[field] or 0
+  end
+  local function bandWinrate(key)
+    local row = bands[key] or {}
+    return row.winrate or 0
+  end
   return {
     economy_variant = economyVariant,
     target = target.id,
@@ -2019,11 +2066,26 @@ local function targetSummaryRow(economyVariant, target, p)
     oracle_avg_seconds = oracle.avg_seconds,
     oracle_coherence = oracle.coherence,
     complete_rate = access.complete_rate,
+    position_complete_rate = access.position_complete_rate,
     held_complete_rate = access.held_complete_rate,
     ever_held_complete_rate = access.ever_held_complete_rate,
+    ever_board_position_complete_rate = access.ever_board_position_complete_rate,
+    avg_board_slot_coverage = access.avg_board_slot_coverage,
+    avg_board_slot_level_coverage = access.avg_board_slot_level_coverage,
     avg_final_held_level_coverage = access.avg_final_held_level_coverage,
+    avg_peak_board_slot_coverage = access.avg_peak_board_slot_coverage,
+    avg_peak_board_slot_level_coverage = access.avg_peak_board_slot_level_coverage,
     avg_peak_held_level_coverage = access.avg_peak_held_level_coverage,
     avg_peak_held_round = access.avg_peak_held_round,
+    held_level_50_hit_rate = threshold("50", "hit_rate"),
+    held_level_50_avg_round = threshold("50", "avg_round_when_hit"),
+    held_level_75_hit_rate = threshold("75", "hit_rate"),
+    held_level_75_avg_round = threshold("75", "avg_round_when_hit"),
+    held_level_100_hit_rate = threshold("100", "hit_rate"),
+    held_level_100_avg_round = threshold("100", "avg_round_when_hit"),
+    board_p50_74_winrate = bandWinrate("p50_74"),
+    board_p75_99_winrate = bandWinrate("p75_99"),
+    board_p100_winrate = bandWinrate("p100"),
     promising_lost_rate = access.promising_lost_rate,
     undeployed_complete_rate = access.undeployed_complete_rate,
     avg_wins = access.avg_wins,

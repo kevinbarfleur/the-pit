@@ -2,9 +2,32 @@
 
 Date: 2026-06-28
 
-Status: active gameplay increment. The deterministic run/lab layer exists, and
-the live every-3-combats merchant window now routes through a run-event surface
-with explicit rewards. Mutation lanes remain lab-only.
+Status: active gameplay increment. The deterministic run/lab layer exists, the
+live every-3-combats merchant window routes through a run-event surface with
+explicit rewards, and live unit rewards now use contextual targeting so they
+usually reinforce the current build instead of producing loose inventory.
+Mutation lanes remain lab-only.
+
+## Current V1 Read
+
+Latest authority for the playable V1 checkpoint is
+`docs/research/playtest-v1-finalization-roadmap.md`.
+
+As of 2026-06-29:
+
+- live events are product-facing and replace the flat recurring acquisition
+  surface when they can expose clean choices;
+- reward cards now show actual generated art for relics, units, gold, shop XP,
+  shop tier, and the future mutation lane;
+- event monster rewards participate in the shared monster-card and Shift
+  glossary system at their resolved reward level;
+- unit reward materialization is context-aware by default: owned copies,
+  matching unit ids, archetypes, types, and families are preferred before loose
+  off-plan units;
+- mutation rewards remain lab-only despite having safe plumbing, because the
+  latest balance read says they are still an opportunity-cost/reward-EV risk;
+- keep event count small and keep at least one clear relic lane in event
+  design until larger generated-opponent panels prove another reward contract.
 
 ## Intent
 
@@ -70,7 +93,8 @@ Live reward application rules:
 
 - relics are granted and learned by the Grimoire as before;
 - units are only offered when the current board or bench can receive them
-  cleanly, then they are stowed and normal merge logic runs;
+  cleanly, then they are materialized through a contextual priority function,
+  stowed, and normal merge logic runs;
 - gold is deferred through `_pendingGold` so the SAP-style next-round gold reset
   does not erase the event reward;
 - shop XP and shop tier are applied before the next shop roll;
@@ -79,13 +103,19 @@ Live reward application rules:
 
 Simulation alignment:
 
-- `PIT_EVENT_UNIT_TARGETING=space` applies the same board/bench capacity filter
-  used by the live event surface.
-- `policy_space` combines policy scoring with the live capacity filter.
-- `policy_space_missing_copy` combines policy scoring, live capacity, and the
-  copy-chain filter used to test missing-copy unit rewards.
-- The default lab event path remains unchanged for historical comparisons; use
-  one of the `space` modes when a panel is meant to mirror live product rules.
+- With `PIT_RUN_EVENTS=1`, the default lab event path now uses the same
+  live-style capacity filter and contextual unit priority as the product
+  surface. This is the default for new product-facing panels.
+- `PIT_EVENT_UNIT_TARGETING=space` is now mostly a legacy/safety spelling for
+  the live capacity filter. It should not be treated as the only product-aligned
+  mode anymore.
+- `PIT_EVENT_UNIT_TARGETING=policy` adds policy target scoring on top of live
+  contextual priority instead of replacing it.
+- `PIT_EVENT_UNIT_TARGETING=missing_copy` constrains unit materialization to
+  useful owned copy chains while preserving the live capacity filter.
+- `policy_space`, `policy_missing_copy`, and related older spellings remain
+  useful for comparing historical panels, but new reads should state whether
+  they are testing product default, policy pressure, or missing-copy rescue.
 
 ## Simulation Contract
 
@@ -315,6 +345,38 @@ Interpretation: run events are not a pacing problem. Their current tuning
 problem is acquisition texture: relic density, target-unit usefulness, and
 whether exact reroll plans lose too much best-of-3 relic access.
 
+Latest contextual live/default checkpoint after aligning `Rundriver` with
+`EventRewards.rollOptions(build)`:
+
+- command:
+  `PIT_SCEN_OUT=runs/autonomy-v1-2026-06-29/plan-realization-rot-bleed-rat-live-context-events-n32 PIT_ECON_PROFILES=sap_cost_pair_completion_tiered_reroll PIT_POLICIES=greedy_plan,econ_plan,committed_rot_bleed_rat_core_deep_reroll_plan,committed_rot_bleed_rat_core_no_xp_plan PIT_PLAN_TARGETS=rot_bleed_rat_core PIT_OPPONENT_MODE=generated PIT_OPPGEN_LEVEL_MULT=2.25 PIT_RUN_EVENTS=1 PIT_COMMANDER_MODE=auto luajit tools/sim.lua economy 32`
+- global completion improved to `58.6%`, with `9.27` average wins;
+- event unit rewards became much more relevant: `0.71` units/run,
+  `89.0%` unit progress, and `0%` unit failure;
+- exact target realization did not become solved: `rot_bleed_rat_core` still
+  had `0%` strict completion, `46.9%` held-50 threshold, `16.4%` held-75
+  threshold, `0.8%` held-100 threshold, and about `30.7%` board slot-level
+  coverage.
+
+Broader economy/context checkpoint:
+
+- command:
+  `PIT_SCEN_OUT=runs/autonomy-v1-2026-06-29/economy-live-context-targeted-n48 PIT_ECON_PROFILES=baseline,sap_cost_pair_completion_tiered_reroll PIT_POLICIES=greedy_plan,econ_plan,committed_rot_bleed_rat_core_deep_reroll_plan PIT_OPPONENT_MODE=generated PIT_OPPGEN_LEVEL_MULT=2.25 PIT_RUN_EVENTS=1 PIT_COMMANDER_MODE=auto luajit tools/sim.lua economy 48`
+- baseline: completion `41.0%`, average wins `9.15`, full-shop affordability
+  `94.7%`, merge-per-pair `72.2%`, leftover `8.39`;
+- live candidate: completion `61.8%`, average wins `9.34`, full-shop
+  affordability `62.2%`, merge-per-pair `94.3%`, leftover `3.49`;
+- live event units in that broader panel: `0.48` units/run, `78.3%` progress,
+  and `0%` failure.
+
+Interpretation: contextual unit rewards are now the correct default. They fix
+the "event unit is random clutter" problem, but they mainly help copies and
+archetypes already in motion. They do not guarantee rare mid-rank support
+access by themselves. For exact aura comps, the next design question is whether
+V1 wants deliberate mid-rank support-access events, looser target definitions,
+or simply accepts that six-piece exact plans are aspirational rather than
+routine.
+
 ## Mutation Decision
 
 Do not implement monster mutations as a quick stat table on the side. The safe
@@ -423,21 +485,18 @@ offers: a low-rank monster with `echo_touched`, a mid-rank monster with
 
 1. Keep `PIT_RUN_EVENTS=1` in paired economy/bossrush panels while tuning the
    main balance loop.
-2. Tune event reward EV now that policy choice is no longer option-1 biased.
-3. Add policy diagnostics for "event unit was useful" vs "event unit caused
-   churn" before changing reward weights.
-4. Add target-filtering experiments for unit lanes before increasing their
-   frequency.
-5. Test a capped target-filter policy that preserves relic density before
-   considering stronger live event-unit weighting.
-6. Keep `policy_space_missing_copy` as the current quality floor for special
-   unit events, but do not make it a broad replacement for relic choices.
-7. Re-run the most important reward-EV panels with
-   `PIT_OPPONENT_MODE=generated` before treating old late static-oracle losses
-   as balance truth. First rot/bleed core comparison: static `31.2%` run
-   completion vs generated `89.8%`, while exact target completion remains low;
-   tune live EV from generated panels, keep static panels as stress tests.
-   Use `PIT_OPPGEN_*` pressure knobs when generated opponents are too soft.
-8. Use `--shoot=runevent` after visual changes to the event picker.
-9. Continue mutation panels behind the opt-in lab profile before enabling
+2. Treat contextual unit rewards as the new product default. Do not go back to
+   broad random unit materialization unless a specific event intentionally wants
+   a risky/off-plan monster.
+3. Tune event reward EV from generated-opponent panels, not old static-oracle
+   stress panels. Keep static panels only as a harsh regression check.
+4. Decide whether the V1 event contract should include a rare mid-rank support
+   access lane. This is the cleanest next lever for exact aura comps, but it is
+   a real balance decision and should be tested before live activation.
+5. Keep missing-copy rescue as the quality floor for special unit events, but do
+   not make it a broad replacement for relic choices.
+6. Preserve relic density. Unit lanes should feel like special spikes, not like
+   a constant tax on build-defining relic offers.
+7. Use `--shoot=runevent` after visual changes to the event picker.
+8. Continue mutation panels behind the opt-in lab profile before enabling
    mutated event units in the live run loop.

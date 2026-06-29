@@ -292,7 +292,9 @@ function Common.finishDurationBucket(bucket)
     p10_seconds = p10 / Common.FPS,
     p50_seconds = p50 / Common.FPS,
     p90_seconds = p90 / Common.FPS,
+    under_5s_count = bucket.under5,
     under_5s_rate = (bucket.n > 0) and (bucket.under5 / bucket.n) or 0,
+    fatigue_touch_count = bucket.fatigue,
     fatigue_touch_rate = (bucket.n > 0) and (bucket.fatigue / bucket.n) or 0,
     fatigue_start_seconds = (bucket.fatigueStart or Common.DEFAULT_FATIGUE_START) / Common.FPS,
   }
@@ -320,6 +322,201 @@ function Common.finishDurationSet(set)
     early = Common.finishDurationBucket(set.early),
     mid = Common.finishDurationBucket(set.mid),
     late = Common.finishDurationBucket(set.late),
+  }
+end
+
+function Common.durationByKeyAgg(fatigueStart)
+  return { fatigueStart = fatigueStart or Common.DEFAULT_FATIGUE_START, buckets = {} }
+end
+
+function Common.addEarlyDurationByKey(agg, rd, key)
+  if not (agg and rd and rd.ticks and (rd.round or 0) <= 3) then return end
+  key = tostring(key or rd.enemyKey or "unknown")
+  local row = agg.buckets[key]
+  if not row then
+    row = { duration = Common.durationBucket(agg.fatigueStart), wins = 0, total = 0 }
+    agg.buckets[key] = row
+  end
+  row.total = row.total + 1
+  if rd.win then row.wins = row.wins + 1 end
+  Common.addDuration(row.duration, rd.ticks)
+end
+
+function Common.finishDurationByKey(agg, limit)
+  local byKey, rows = {}, {}
+  for key, row in pairs((agg and agg.buckets) or {}) do
+    local d = Common.finishDurationBucket(row.duration)
+    d.combat_winrate = ((row.total or 0) > 0) and ((row.wins or 0) / row.total) or 0
+    byKey[key] = d
+    rows[#rows + 1] = {
+      key = key,
+      samples = d.samples,
+      avg_seconds = d.avg_seconds,
+      p10_seconds = d.p10_seconds,
+      p50_seconds = d.p50_seconds,
+      p90_seconds = d.p90_seconds,
+      under_5s_count = d.under_5s_count,
+      under_5s_rate = d.under_5s_rate,
+      combat_winrate = d.combat_winrate,
+    }
+  end
+  table.sort(rows, function(a, b)
+    if a.under_5s_count ~= b.under_5s_count then return a.under_5s_count > b.under_5s_count end
+    if a.under_5s_rate ~= b.under_5s_rate then return a.under_5s_rate > b.under_5s_rate end
+    if a.samples ~= b.samples then return a.samples > b.samples end
+    return a.key < b.key
+  end)
+  if limit and #rows > limit then
+    local trimmed = {}
+    for i = 1, limit do trimmed[i] = rows[i] end
+    rows = trimmed
+  end
+  return { by_key = byKey, top = rows }
+end
+
+function Common.earlyShortFightAgg()
+  return {
+    early = 0,
+    short = 0,
+    causes = {},
+    buckets = {},
+  }
+end
+
+local function shortFightCause(rd)
+  local left = rd and rd.leftStats or {}
+  local right = rd and rd.rightStats or {}
+  local leftUnits, rightUnits = left.units or 0, right.units or 0
+  local leftHp, rightHp = left.hp or 0, right.hp or 0
+  local leftDps, rightDps = left.directDps or 0, right.directDps or 0
+  if rd and rd.win == false and rightHp > 0 and leftHp > 0 and (rightDps / math.max(1, leftHp)) >= 0.18 then
+    return "enemy_direct_dps_over_player_hp"
+  end
+  if rightUnits <= 2 then return "small_enemy_team" end
+  if (leftUnits - rightUnits) >= 2 then return "player_unit_count_gap" end
+  if rightHp > 0 and (leftDps / math.max(1, rightHp)) >= 0.18 then
+    return "player_direct_dps_over_enemy_hp"
+  end
+  if (left.burst or 0) > 0 or (left.maxLevel or 1) >= 2 then
+    return "player_burst_or_level_spike"
+  end
+  if rightHp > 0 and rightHp <= 70 then return "low_enemy_hp_pool" end
+  return "mixed"
+end
+
+local function addStatSums(dst, prefix, stats)
+  stats = stats or {}
+  dst[prefix .. "_units"] = (dst[prefix .. "_units"] or 0) + (stats.units or 0)
+  dst[prefix .. "_hp"] = (dst[prefix .. "_hp"] or 0) + (stats.hp or 0)
+  dst[prefix .. "_direct_dps"] = (dst[prefix .. "_direct_dps"] or 0) + (stats.directDps or 0)
+  dst[prefix .. "_avg_cd_seconds"] = (dst[prefix .. "_avg_cd_seconds"] or 0) + (stats.avgCdSeconds or 0)
+  dst[prefix .. "_burst"] = (dst[prefix .. "_burst"] or 0) + (stats.burst or 0)
+  dst[prefix .. "_auras"] = (dst[prefix .. "_auras"] or 0) + (stats.auras or 0)
+  dst[prefix .. "_afflictions"] = (dst[prefix .. "_afflictions"] or 0) + (stats.afflictions or 0)
+end
+
+function Common.addEarlyShortFight(agg, rd)
+  if not (agg and rd and rd.ticks and (rd.round or 0) <= 3) then return end
+  agg.early = agg.early + 1
+  local key = tostring(rd.enemySignature or rd.rightSignature or rd.enemyKey or "unknown")
+  local row = agg.buckets[key]
+  if not row then
+    row = {
+      key = key,
+      samples = 0,
+      short = 0,
+      wins = 0,
+      shortTicks = 0,
+      shortestTicks = nil,
+      causes = {},
+    }
+    agg.buckets[key] = row
+  end
+  row.samples = row.samples + 1
+  if rd.ticks >= 5 * Common.FPS then return end
+  agg.short = agg.short + 1
+  row.short = row.short + 1
+  row.shortTicks = row.shortTicks + rd.ticks
+  row.shortestTicks = row.shortestTicks and math.min(row.shortestTicks, rd.ticks) or rd.ticks
+  if rd.win then row.wins = row.wins + 1 end
+  addStatSums(row, "player", rd.leftStats)
+  addStatSums(row, "enemy", rd.rightStats)
+  local cause = shortFightCause(rd)
+  row.causes[cause] = (row.causes[cause] or 0) + 1
+  agg.causes[cause] = (agg.causes[cause] or 0) + 1
+end
+
+local function compactCauseRows(causes, total)
+  local rows = {}
+  for cause, count in pairs(causes or {}) do
+    rows[#rows + 1] = {
+      cause = cause,
+      count = count,
+      rate = (total and total > 0) and (count / total) or 0,
+    }
+  end
+  table.sort(rows, function(a, b)
+    if a.count ~= b.count then return a.count > b.count end
+    return a.cause < b.cause
+  end)
+  return rows
+end
+
+local function topCause(causes)
+  local rows = compactCauseRows(causes, 1)
+  return rows[1] and rows[1].cause or "none"
+end
+
+local function avg(row, key)
+  return ((row.short or 0) > 0) and ((row[key] or 0) / row.short) or 0
+end
+
+function Common.finishEarlyShortFight(agg, limit)
+  agg = agg or Common.earlyShortFightAgg()
+  local rows = {}
+  for key, row in pairs(agg.buckets or {}) do
+    if (row.short or 0) > 0 then
+      rows[#rows + 1] = {
+        key = key,
+        samples = row.samples,
+        short_count = row.short,
+        short_rate = (row.samples > 0) and (row.short / row.samples) or 0,
+        avg_short_seconds = (row.short > 0) and (row.shortTicks / row.short / Common.FPS) or 0,
+        shortest_seconds = (row.shortestTicks or 0) / Common.FPS,
+        player_winrate = (row.short > 0) and (row.wins / row.short) or 0,
+        likely_cause = topCause(row.causes),
+        cause_rows = compactCauseRows(row.causes, row.short),
+        avg_player_units = avg(row, "player_units"),
+        avg_enemy_units = avg(row, "enemy_units"),
+        avg_player_hp = avg(row, "player_hp"),
+        avg_enemy_hp = avg(row, "enemy_hp"),
+        avg_player_direct_dps = avg(row, "player_direct_dps"),
+        avg_enemy_direct_dps = avg(row, "enemy_direct_dps"),
+        avg_player_cd_seconds = avg(row, "player_avg_cd_seconds"),
+        avg_enemy_cd_seconds = avg(row, "enemy_avg_cd_seconds"),
+        avg_player_burst_cues = avg(row, "player_burst"),
+        avg_player_auras = avg(row, "player_auras"),
+        avg_player_afflictions = avg(row, "player_afflictions"),
+      }
+    end
+  end
+  table.sort(rows, function(a, b)
+    if a.short_count ~= b.short_count then return a.short_count > b.short_count end
+    if a.short_rate ~= b.short_rate then return a.short_rate > b.short_rate end
+    if a.avg_short_seconds ~= b.avg_short_seconds then return a.avg_short_seconds < b.avg_short_seconds end
+    return a.key < b.key
+  end)
+  if limit and #rows > limit then
+    local trimmed = {}
+    for i = 1, limit do trimmed[i] = rows[i] end
+    rows = trimmed
+  end
+  return {
+    early_samples = agg.early or 0,
+    short_count = agg.short or 0,
+    short_rate = ((agg.early or 0) > 0) and ((agg.short or 0) / agg.early) or 0,
+    cause_rows = compactCauseRows(agg.causes, agg.short),
+    top_signatures = rows,
   }
 end
 

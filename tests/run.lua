@@ -709,6 +709,29 @@ local ok, err = pcall(function()
     assert(not EventRewards.canGrantUnit(fakeBuild, "marauder", 1),
       "run events live : pas de choix unite si aucun slot ne peut recevoir proprement")
 
+    local contextBuild = {
+      bench = {},
+      slotRigs = { [1] = { id = "rot_hound", level = 1 } },
+      board = { slots = {} },
+      benchCapacity = function() return 2 end,
+    }
+    for i = 1, 9 do contextBuild.board.slots[i] = { unlocked = i <= 3 } end
+    local contextualRun = RunState.new(60609)
+    contextualRun.wins, contextualRun.losses = 2, 1
+    local contextExclude = {}
+    for _, id in ipairs(RunEvents.order) do
+      if id ~= "bone_choir" then contextExclude[id] = true end
+    end
+    local contextOpts = EventRewards.rollOptions(contextBuild)
+    contextOpts.exclude = contextExclude
+    local cev = contextualRun:rollRunEvent(contextOpts)
+    local contextReward
+    for _, c in ipairs((cev and cev.choices) or {}) do
+      if c.reward and c.reward.kind == "unit" then contextReward = c.reward end
+    end
+    assert(contextReward and contextReward.id == "rot_hound" and contextReward.targeted,
+      "run events live : les rewards unite privilegient les copies deja possedees")
+
     local goldRewardRun = RunState.new(60608)
     goldRewardRun.gold = 0
     assert(EventRewards.apply(goldRewardRun, nil, { kind = "gold", amount = 6 }, { deferGold = true }),

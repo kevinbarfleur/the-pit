@@ -97,6 +97,34 @@ local ok, err = pcall(function()
     assert(mar and mar.shield == 11, "shieldbearer L2 shield = 11, not double-scaled")
   end
 
+  -- Units without authored level patches still need their power-bearing
+  -- ability values to grow. Otherwise only HP/DMG would scale, which makes
+  -- level-ups feel fake for affliction/support pieces.
+  do
+    local l3 = Resolver.effectsFor("leech_thorn", 3)
+    local bleed = effectByOp({ effects = l3 }, "bleed")
+    assert(bleed and bleed.levelScaled and bleed.params.dps == 6 and bleed.params.slowPct == 0.10,
+      "generic level scaling: leech_thorn L3 bleed dps scales, slowPct stays stable")
+  end
+
+  do
+    local b = fresh()
+    b:placeId(5, "leech_thorn", 3)
+    local spec = compById(b:buildComp(-1), "leech_thorn")
+    local bleed = effectByOp(spec, "bleed")
+    assert(bleed and bleed.params.dps == 6,
+      "buildComp materializes generic scaled level effects, not raw level-1 effects")
+  end
+
+  do
+    local b = fresh()
+    b:placeId(5, "templar", 3)
+    b:placeId(2, "marauder", 1)
+    local mar = compById(b:buildComp(-1), "marauder")
+    assert(mar and math.abs((mar.dmgReduce or 0) - 0.36) < 1e-9,
+      "generic level scaling: templar L3 aura_stat value scales once, not twice")
+  end
+
   do
     local b = fresh()
     b:placeId(5, "miasma_acolyte", 2)
@@ -171,6 +199,14 @@ local ok, err = pcall(function()
     local comp = Snapshot.toComp(snap, 1)
     local poison = effectByOp(comp[1], "poison")
     assert(poison and poison.params.spread, "snapshot toComp materializes authored level effects")
+  end
+
+  do
+    local snap = Snapshot.capture({ { id = "leech_thorn", level = 3, col = 1, row = 1 } }, "carre", 8)
+    local comp = Snapshot.toComp(snap, 1)
+    local bleed = effectByOp(comp[1], "bleed")
+    assert(bleed and bleed.params.dps == 6,
+      "snapshot toComp materializes generic scaled level effects")
   end
 
   print("  unit_resolver : stats shared / level effects / build + command + snapshot propagation OK")

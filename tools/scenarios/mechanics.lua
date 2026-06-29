@@ -138,10 +138,18 @@ local function isLowVariety(row)
   return row.effect_count > 0 and #row.board_axes <= 1 and row.level_authored == false
 end
 
+local function hasLevelProgression(effects)
+  for _, fact in ipairs((effects and effects.facts) or {}) do
+    if fact.levelAuthored or fact.levelScaled then return true end
+  end
+  return false
+end
+
 local rows = {}
 local summary = {
   units = 0,
   authored_level_units = 0,
+  level_effect_progression_units = 0,
   level3_clutch_units = 0,
   simple_affliction_l1 = 0,
   low_variety_units = 0,
@@ -155,6 +163,7 @@ local summary = {
 }
 
 local simpleIds, lowVarietyIds, noLevelIds, noEffectIds = {}, {}, {}, {}
+local noEffectProgressionIds = {}
 local simpleLowRankIds, simpleMidRankIds, simpleHighRankIds = {}, {}, {}
 local simplePriorityIds = {}
 
@@ -162,6 +171,8 @@ for _, id in ipairs(Units.order) do
   local u = Units[id]
   local l1 = effectSet(id, 1)
   local command = effectSet(id, 1, { context = "commander" })
+  local l3 = effectSet(id, 3)
+  local command3 = effectSet(id, 3, { context = "commander" })
   local tags = Tags.forUnit(id)
   local axes = {}
   for k in pairs(l1.axes) do axes[k] = true end
@@ -186,6 +197,7 @@ for _, id in ipairs(Units.order) do
     targets = list(l1.targets),
     tags = tags,
     level_authored = levelAuthored,
+    level_effect_progression = hasLevelProgression(l3) or hasLevelProgression(command3),
     level3_clutch = clutch3,
     simple_affliction_l1 = isSimpleAfflictionOnly(l1),
   }
@@ -203,6 +215,11 @@ for _, id in ipairs(Units.order) do
 
   summary.units = summary.units + 1
   if row.level_authored then summary.authored_level_units = summary.authored_level_units + 1 else noLevelIds[#noLevelIds + 1] = id end
+  if row.level_effect_progression then
+    summary.level_effect_progression_units = summary.level_effect_progression_units + 1
+  else
+    noEffectProgressionIds[#noEffectProgressionIds + 1] = id
+  end
   if row.level3_clutch then summary.level3_clutch_units = summary.level3_clutch_units + 1 end
   if row.simple_affliction_l1 then
     summary.simple_affliction_l1 = summary.simple_affliction_l1 + 1
@@ -230,6 +247,7 @@ for _, id in ipairs(Units.order) do
 end
 
 summary.authored_level_rate = summary.authored_level_units / summary.units
+summary.level_effect_progression_rate = summary.level_effect_progression_units / summary.units
 summary.level3_clutch_rate = summary.level3_clutch_units / summary.units
 summary.simple_affliction_l1_rate = summary.simple_affliction_l1 / summary.units
 summary.low_variety_rate = summary.low_variety_units / summary.units
@@ -247,6 +265,7 @@ local recommendations = {
   simple_affliction_l1_high_rank = simpleHighRankIds,
   simple_affliction_priority = simplePriorityIds,
   no_authored_level = noLevelIds,
+  no_effect_progression = noEffectProgressionIds,
   no_board_effect = noEffectIds,
   target_next_axes = {
     "position",
@@ -268,6 +287,7 @@ local payload = {
 local refSummary = {
   units = summary.units,
   authored_level_rate = summary.authored_level_rate,
+  level_effect_progression_rate = summary.level_effect_progression_rate,
   level3_clutch_rate = summary.level3_clutch_rate,
   simple_affliction_l1_rate = summary.simple_affliction_l1_rate,
   simple_affliction_l1_low_rank = summary.simple_affliction_l1_low_rank,
@@ -283,9 +303,10 @@ local refSummary = {
 
 local path = Common.writeReport("mechanics", payload, { refSummary = refSummary })
 print(string.format("== P13 MECHANIC DIVERSITY : %d units ==", summary.units))
-print(string.format("simple affliction L1 %.1f%% / low-variety %.1f%% / authored level %.1f%% / L3 clutch %.1f%%",
+print(string.format("simple affliction L1 %.1f%% / low-variety %.1f%% / authored level %.1f%% / effect progression %.1f%% / L3 clutch %.1f%%",
   summary.simple_affliction_l1_rate * 100,
   summary.low_variety_rate * 100,
   summary.authored_level_rate * 100,
+  summary.level_effect_progression_rate * 100,
   summary.level3_clutch_rate * 100))
 print("=> ecrit " .. path .. " (+ runs/report-ref.json)")

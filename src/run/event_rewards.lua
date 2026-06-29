@@ -15,6 +15,74 @@ local function unitLevel(reward)
   return math.max(1, math.min(2, (reward and reward.level) or 1))
 end
 
+local function unitArchetype(id)
+  local u = Units[id]
+  if not u then return "bruiser" end
+  if u.taunt or (u.aggro and u.aggro >= 40) then return "tank" end
+  for _, e in ipairs(u.effects or {}) do
+    local op = e.op or ""
+    if op == "poison" then return "poison" end
+    if op == "burn" then return "burn" end
+    if op == "bleed" then return "bleed" end
+    if op == "rot" or op == "convert_to_rot" then return "rot" end
+    if op == "shock" then return "shock" end
+    if op == "regen" then return "tank" end
+    if op:find("aura_", 1, true) then
+      if op:find("burn", 1, true) then return "burn" end
+      if op:find("poison", 1, true) then return "poison" end
+      if op:find("bleed", 1, true) then return "bleed" end
+      if op:find("rot", 1, true) then return "rot" end
+    end
+  end
+  return "bruiser"
+end
+
+local function buildUnitContext(build)
+  local ctx = { ids = {}, levels = {}, archetypes = {}, types = {}, families = {}, total = 0 }
+  local function add(sr)
+    if not sr or not sr.id then return end
+    local u = Units[sr.id]
+    local level = sr.level or 1
+    ctx.total = ctx.total + 1
+    ctx.ids[sr.id] = (ctx.ids[sr.id] or 0) + 1
+    ctx.levels[sr.id .. "\0" .. tostring(level)] = (ctx.levels[sr.id .. "\0" .. tostring(level)] or 0) + 1
+    local arch = unitArchetype(sr.id)
+    ctx.archetypes[arch] = (ctx.archetypes[arch] or 0) + 1
+    if u and u.type then ctx.types[u.type] = (ctx.types[u.type] or 0) + 1 end
+    if u and u.family then ctx.families[u.family] = (ctx.families[u.family] or 0) + 1 end
+  end
+  if build then
+    for i = 1, 9 do add(build.slotRigs and build.slotRigs[i]) end
+    local cap = (build.benchCapacity and build:benchCapacity()) or #(build.bench or {})
+    for i = 1, cap do add(build.bench and build.bench[i]) end
+  end
+  return ctx
+end
+
+local function contextualUnitPriority(build)
+  local ctx = buildUnitContext(build)
+  if (ctx.total or 0) <= 0 then return nil end
+  return function(id, rewardSpec)
+    local u = Units[id]
+    if not u then return 0 end
+    local level = unitLevel(rewardSpec)
+    local sameLevel = ctx.levels[id .. "\0" .. tostring(level)] or 0
+    local sameId = ctx.ids[id] or 0
+    local score = 0
+    if sameLevel >= 2 then score = score + 1200
+    elseif sameLevel == 1 then score = score + 650
+    elseif sameId > 0 then score = score + 280 end
+    local arch = unitArchetype(id)
+    local archCount = ctx.archetypes[arch] or 0
+    if arch ~= "bruiser" then score = score + archCount * 120
+    else score = score + archCount * 35 end
+    if u.type then score = score + (ctx.types[u.type] or 0) * 22 end
+    if u.family then score = score + (ctx.families[u.family] or 0) * 14 end
+    score = score + (u.rank or 1) * 4
+    return score
+  end
+end
+
 function EventRewards.canGrantUnit(build, id, level)
   if not (build and Units[id]) then return false end
   level = math.max(1, math.min(2, level or 1))
@@ -58,6 +126,14 @@ function EventRewards.rollOptions(build, opts)
   out.unitFilter = function(id, rewardSpec)
     if opts.unitFilter and not opts.unitFilter(id, rewardSpec) then return false end
     return EventRewards.canGrantUnit(build, id, unitLevel(rewardSpec))
+  end
+  local contextPriority = (opts.contextualUnits == false) and nil or contextualUnitPriority(build)
+  if contextPriority or opts.unitPriority then
+    out.unitPriority = function(id, rewardSpec)
+      local score = contextPriority and contextPriority(id, rewardSpec) or 0
+      if opts.unitPriority then score = score + (opts.unitPriority(id, rewardSpec) or 0) end
+      return score
+    end
   end
   if opts.mutations then
     out.mutationTarget = function(rewardSpec)

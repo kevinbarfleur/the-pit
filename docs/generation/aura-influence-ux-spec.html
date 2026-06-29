@@ -1,0 +1,1349 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>The Pit - Aura & Influence UX Spec</title>
+  <style>
+    :root {
+      --bg: #08060a;
+      --panel: #141018;
+      --panel2: #1c1624;
+      --line: #3b3144;
+      --ink: #efe3cf;
+      --muted: #9b8d7d;
+      --gold: #d3a94f;
+      --blood: #d64e4e;
+      --poison: #9ce03a;
+      --burn: #ff8744;
+      --bleed: #f04c74;
+      --rot: #bd78d8;
+      --shield: #8fb3c9;
+      --haste: #e0c96b;
+      --stone: #211a28;
+      --slot: #100d15;
+      --slot2: #211827;
+      --bad: #ff5a36;
+      --good: #78d7a7;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at 18% 8%, rgba(86, 42, 36, .24), transparent 32rem),
+        radial-gradient(circle at 78% 18%, rgba(52, 35, 88, .2), transparent 34rem),
+        linear-gradient(180deg, #050408 0%, var(--bg) 40%, #030205 100%);
+      color: var(--ink);
+      font: 16px/1.5 Georgia, "Times New Roman", serif;
+    }
+
+    .page {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 42px 28px 80px;
+    }
+
+    h1, h2, h3, .kicker, .tag, .label {
+      font-family: "Courier New", monospace;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: clamp(30px, 4vw, 56px);
+      line-height: 1;
+      text-shadow: 2px 0 #244a66, -1px 0 #803d26;
+    }
+
+    h2 {
+      margin: 48px 0 18px;
+      color: var(--gold);
+      font-size: 22px;
+    }
+
+    h3 {
+      margin: 0 0 10px;
+      color: #dfc384;
+      font-size: 15px;
+    }
+
+    p { margin: 0 0 14px; }
+    ul { margin: 10px 0 0 20px; padding: 0; }
+    li { margin: 7px 0; }
+    strong { color: #fff4d7; }
+
+    .intro {
+      color: var(--muted);
+      max-width: 880px;
+      font-size: 18px;
+    }
+
+    .kicker {
+      color: var(--gold);
+      font-size: 12px;
+      margin-bottom: 14px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(12, 1fr);
+      gap: 18px;
+    }
+
+    .card {
+      background: linear-gradient(180deg, rgba(31, 24, 38, .96), rgba(12, 9, 16, .98));
+      border: 1px solid #3b2f43;
+      box-shadow: inset 0 0 0 1px rgba(211, 169, 79, .08), 0 22px 55px rgba(0, 0, 0, .38);
+      padding: 20px;
+    }
+
+    .span-4 { grid-column: span 4; }
+    .span-5 { grid-column: span 5; }
+    .span-6 { grid-column: span 6; }
+    .span-7 { grid-column: span 7; }
+    .span-8 { grid-column: span 8; }
+    .span-12 { grid-column: span 12; }
+
+    .note {
+      border-left: 3px solid var(--gold);
+      padding: 12px 14px;
+      background: rgba(211, 169, 79, .06);
+      color: #dbcaa4;
+    }
+
+    .bad {
+      border-left-color: var(--bad);
+      background: rgba(255, 90, 54, .07);
+    }
+
+    .good {
+      border-left-color: var(--good);
+      background: rgba(120, 215, 167, .07);
+    }
+
+    .mock {
+      position: relative;
+      min-height: 430px;
+      overflow: hidden;
+      border: 1px solid #403348;
+      background:
+        radial-gradient(circle at 55% 34%, rgba(129, 45, 73, .22), transparent 180px),
+        radial-gradient(circle at 40% 55%, rgba(37, 56, 126, .18), transparent 220px),
+        #050409;
+    }
+
+    .board {
+      position: absolute;
+      width: 300px;
+      height: 300px;
+      left: 50%;
+      top: 52%;
+      transform: translate(-50%, -50%);
+    }
+
+    .slot {
+      position: absolute;
+      width: 72px;
+      height: 72px;
+      border: 2px solid #5f5368;
+      background: linear-gradient(180deg, var(--slot2), var(--slot));
+      box-shadow: inset 0 0 18px rgba(0,0,0,.7), 0 0 14px rgba(98, 80, 116, .16);
+    }
+
+    .slot.unit::after {
+      content: "";
+      position: absolute;
+      inset: 15px 20px;
+      border-radius: 50% 50% 45% 45%;
+      background: radial-gradient(circle at 45% 25%, #ecd59b 0 5px, #6b6b50 6px 15px, #34283e 16px 28px);
+      box-shadow: 0 8px 0 rgba(0,0,0,.25);
+    }
+
+    .slot .name {
+      position: absolute;
+      left: 4px;
+      right: 4px;
+      bottom: -21px;
+      color: #786f7d;
+      font: 10px "Courier New", monospace;
+      text-align: center;
+      text-transform: uppercase;
+    }
+
+    .s1 { left: 0; top: 0; }
+    .s2 { left: 114px; top: 0; }
+    .s3 { left: 228px; top: 0; }
+    .s4 { left: 0; top: 114px; }
+    .s5 { left: 114px; top: 114px; }
+    .s6 { left: 228px; top: 114px; }
+    .s7 { left: 0; top: 228px; }
+    .s8 { left: 114px; top: 228px; }
+    .s9 { left: 228px; top: 228px; }
+
+    .aura-line {
+      position: absolute;
+      height: 3px;
+      transform-origin: left center;
+      background: currentColor;
+      box-shadow: 0 0 10px currentColor;
+      opacity: .7;
+    }
+
+    .badline { color: var(--bleed); }
+    .goodline { color: var(--shield); }
+    .l-a { left: 187px; top: 214px; width: 168px; transform: rotate(0deg); }
+    .l-b { left: 222px; top: 214px; width: 118px; transform: rotate(90deg); }
+    .l-c { left: 190px; top: 190px; width: 176px; transform: rotate(42deg); }
+
+    .chip {
+      position: absolute;
+      padding: 2px 7px;
+      background: #09070d;
+      border: 1px solid currentColor;
+      box-shadow: 0 0 12px currentColor;
+      color: currentColor;
+      font: bold 12px "Courier New", monospace;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .chip.bad1 { left: 260px; top: 204px; color: var(--bleed); }
+    .chip.bad2 { left: 225px; top: 260px; color: var(--shield); }
+    .chip.bad3 { left: 285px; top: 255px; color: var(--burn); }
+
+    .label {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 4px 8px;
+      border: 1px solid #49384f;
+      color: #d9c39a;
+      background: rgba(10, 8, 12, .7);
+      font-size: 11px;
+    }
+
+    .legend {
+      position: absolute;
+      left: 16px;
+      bottom: 16px;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      max-width: 88%;
+    }
+
+    .route {
+      position: absolute;
+      pointer-events: none;
+    }
+
+    .route path {
+      fill: none;
+      stroke-width: 4;
+      stroke-linecap: square;
+      stroke-linejoin: round;
+      filter: drop-shadow(0 0 8px currentColor);
+      opacity: .82;
+    }
+
+    .route .thin { stroke-width: 2; opacity: .5; }
+
+    .endpoint {
+      position: absolute;
+      width: 78px;
+      height: 78px;
+      border: 2px solid currentColor;
+      box-shadow: 0 0 18px currentColor, inset 0 0 18px rgba(255,255,255,.06);
+      opacity: .75;
+    }
+
+    .port-chip {
+      position: absolute;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      min-height: 20px;
+      padding: 2px 7px;
+      border: 1px solid currentColor;
+      background: rgba(7,5,10,.95);
+      color: currentColor;
+      font: bold 11px "Courier New", monospace;
+      text-transform: uppercase;
+      box-shadow: 0 0 10px currentColor;
+    }
+
+    .p1 { left: 354px; top: 185px; color: var(--bleed); }
+    .p2 { left: 354px; top: 230px; color: var(--shield); }
+    .p3 { left: 182px; top: 322px; color: var(--haste); }
+
+    .halo5 { left: 50%; top: 52%; transform: translate(-50%, -50%); color: var(--bleed); }
+    .halo6 { left: calc(50% + 114px); top: 52%; transform: translate(-50%, -50%); color: var(--bleed); }
+
+    .commander {
+      position: absolute;
+      right: 26px;
+      bottom: 24px;
+      width: 92px;
+      height: 54px;
+      border: 1px solid #574469;
+      background: linear-gradient(180deg, #1f1730, #0d0912);
+      color: var(--gold);
+      font: bold 11px "Courier New", monospace;
+      display: grid;
+      place-items: center;
+      text-transform: uppercase;
+    }
+
+    .card-stack {
+      display: grid;
+      grid-template-columns: 290px 240px 240px;
+      gap: 12px;
+      align-items: start;
+      overflow-x: auto;
+      padding-bottom: 4px;
+    }
+
+    .monster-card, .sidecar, .glossary {
+      min-height: 420px;
+      background: linear-gradient(180deg, #1a1420, #09070d);
+      border: 2px solid #4a394e;
+      box-shadow: inset 0 0 0 1px rgba(211,169,79,.08);
+      padding: 14px;
+    }
+
+    .monster-card h3 {
+      font-family: Georgia, "Times New Roman", serif;
+      text-transform: uppercase;
+      letter-spacing: .02em;
+      color: #f2e8d5;
+      font-size: 24px;
+      line-height: 1.05;
+      margin-bottom: 12px;
+    }
+
+    .portrait {
+      height: 118px;
+      border: 1px solid #302637;
+      background:
+        radial-gradient(circle at 50% 50%, rgba(211, 169, 79, .25), transparent 46px),
+        #0b0810;
+      margin-bottom: 14px;
+      position: relative;
+    }
+
+    .portrait::after {
+      content: "";
+      position: absolute;
+      left: 50%;
+      top: 30px;
+      width: 52px;
+      height: 74px;
+      transform: translateX(-50%);
+      background: linear-gradient(180deg, #6b4b88, #2b1a3a);
+      clip-path: polygon(50% 0, 74% 16%, 82% 100%, 18% 100%, 26% 16%);
+      box-shadow: 0 0 18px rgba(144,92,188,.3);
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 6px;
+      margin: 12px 0;
+    }
+
+    .stat {
+      border: 1px solid #2c2232;
+      padding: 7px 5px;
+      color: #d8c9b8;
+      font: bold 12px "Courier New", monospace;
+      text-align: center;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 48px 1fr auto;
+      gap: 8px;
+      align-items: center;
+      padding: 9px 0;
+      border-bottom: 1px solid rgba(87, 68, 105, .55);
+    }
+
+    .row:last-child { border-bottom: 0; }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 24px;
+      padding: 2px 6px;
+      border: 1px solid var(--gold);
+      color: var(--gold);
+      background: rgba(0,0,0,.28);
+      font: bold 11px "Courier New", monospace;
+      text-transform: uppercase;
+    }
+
+    .source {
+      color: #e7d3a1;
+      font: bold 12px "Courier New", monospace;
+      text-transform: uppercase;
+      line-height: 1.2;
+    }
+
+    .detail {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.25;
+    }
+
+    .value {
+      color: currentColor;
+      font: bold 14px "Courier New", monospace;
+      text-align: right;
+      min-width: 76px;
+    }
+
+    .value .vmain {
+      display: block;
+      color: currentColor;
+      font-size: 12px;
+      line-height: 1.05;
+      text-transform: uppercase;
+    }
+
+    .value .vsub {
+      display: block;
+      color: #d8c9b8;
+      font-size: 10px;
+      line-height: 1.1;
+      text-transform: uppercase;
+      white-space: normal;
+    }
+
+    .sidecar h3, .glossary h3 {
+      color: var(--gold);
+      font-size: 14px;
+      margin-bottom: 14px;
+    }
+
+    .section-title {
+      margin: 16px 0 6px;
+      color: #a99b89;
+      font: bold 11px "Courier New", monospace;
+      text-transform: uppercase;
+      letter-spacing: .1em;
+    }
+
+    .mini-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .mini {
+      min-height: 70px;
+      border: 1px solid #43344d;
+      background: #0c0910;
+      padding: 8px;
+      color: #b7a98e;
+      font-size: 13px;
+    }
+
+    .tokens {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .token {
+      border: 1px solid currentColor;
+      color: currentColor;
+      padding: 4px 8px;
+      background: #09070c;
+      font: bold 12px "Courier New", monospace;
+      text-transform: uppercase;
+    }
+
+    .poison { color: var(--poison); }
+    .burn { color: var(--burn); }
+    .bleed { color: var(--bleed); }
+    .rot { color: var(--rot); }
+    .shield { color: var(--shield); }
+    .haste { color: var(--haste); }
+    .gold { color: var(--gold); }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+    }
+
+    .step {
+      border: 1px solid #403348;
+      background: rgba(255,255,255,.03);
+      padding: 12px;
+      min-height: 132px;
+    }
+
+    .step .num {
+      color: var(--gold);
+      font: bold 13px "Courier New", monospace;
+      margin-bottom: 8px;
+    }
+
+    .stress-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .stress-case {
+      border: 1px solid #3f3348;
+      background: linear-gradient(180deg, rgba(20, 16, 24, .95), rgba(8, 6, 10, .98));
+      padding: 14px;
+      min-height: 360px;
+    }
+
+    .stress-case h3 {
+      color: #e0c077;
+      margin-bottom: 6px;
+    }
+
+    .stress-case .why {
+      min-height: 54px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .case-viz {
+      position: relative;
+      height: 178px;
+      margin: 12px 0;
+      border: 1px solid #33283b;
+      background:
+        radial-gradient(circle at 50% 50%, rgba(91, 51, 113, .18), transparent 110px),
+        #09070d;
+      overflow: hidden;
+    }
+
+    .mini-board {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 156px;
+      height: 156px;
+      transform: translate(-50%, -50%);
+      display: grid;
+      grid-template-columns: repeat(3, 46px);
+      grid-template-rows: repeat(3, 46px);
+      gap: 9px;
+    }
+
+    .cell {
+      position: relative;
+      border: 1px solid #4b4053;
+      background: linear-gradient(180deg, #1a1420, #09070d);
+      color: #756a78;
+      font: bold 9px "Courier New", monospace;
+      display: grid;
+      place-items: center;
+      text-align: center;
+      text-transform: uppercase;
+      box-shadow: inset 0 0 12px rgba(0,0,0,.55);
+    }
+
+    .cell.source {
+      color: #f1d58f;
+      border-color: var(--gold);
+      box-shadow: 0 0 16px rgba(211,169,79,.28), inset 0 0 12px rgba(0,0,0,.55);
+    }
+
+    .cell.target {
+      color: #f3e7d2;
+      border-color: currentColor;
+      box-shadow: 0 0 14px currentColor, inset 0 0 12px rgba(0,0,0,.55);
+    }
+
+    .cell.empty { opacity: .55; }
+
+    .case-viz svg {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+    }
+
+    .case-viz path {
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 3;
+      stroke-linecap: square;
+      stroke-linejoin: round;
+      filter: drop-shadow(0 0 7px currentColor);
+      opacity: .78;
+    }
+
+    .case-viz path.ghost {
+      stroke-width: 7;
+      opacity: .12;
+    }
+
+    .rail-label {
+      position: absolute;
+      padding: 3px 7px;
+      border: 1px solid currentColor;
+      background: rgba(6, 4, 8, .94);
+      color: currentColor;
+      font: bold 10px "Courier New", monospace;
+      text-transform: uppercase;
+      box-shadow: 0 0 10px currentColor;
+      white-space: nowrap;
+    }
+
+    .rl-a { left: 18px; top: 20px; }
+    .rl-b { right: 16px; top: 18px; }
+    .rl-c { left: 14px; bottom: 18px; }
+    .rl-d { right: 14px; bottom: 18px; }
+
+    .case-list {
+      display: grid;
+      gap: 7px;
+      margin-top: 10px;
+    }
+
+    .case-row {
+      display: grid;
+      grid-template-columns: 56px 1fr 112px;
+      gap: 8px;
+      align-items: center;
+      border-top: 1px solid rgba(87, 68, 105, .45);
+      padding-top: 7px;
+      color: var(--ink);
+    }
+
+    .case-row .badge {
+      min-height: 20px;
+      font-size: 10px;
+    }
+
+    .case-row .source {
+      font-size: 11px;
+    }
+
+    .case-row .detail {
+      font-size: 12px;
+    }
+
+    .case-row .value {
+      min-width: 0;
+    }
+
+    .rule-table {
+      display: grid;
+      grid-template-columns: 170px 1fr 1fr;
+      border: 1px solid #3f3348;
+      margin-top: 12px;
+    }
+
+    .rule-table > div {
+      padding: 9px 10px;
+      border-right: 1px solid #3f3348;
+      border-bottom: 1px solid #3f3348;
+    }
+
+    .rule-table > div:nth-child(3n) { border-right: 0; }
+    .rule-table > div:nth-last-child(-n+3) { border-bottom: 0; }
+    .rule-head {
+      color: var(--gold);
+      font: bold 11px "Courier New", monospace;
+      text-transform: uppercase;
+    }
+
+    code {
+      color: #ffd987;
+      background: rgba(0,0,0,.28);
+      padding: 1px 4px;
+      border: 1px solid rgba(211,169,79,.2);
+    }
+
+    @media (max-width: 880px) {
+      .span-4, .span-5, .span-6, .span-7, .span-8 { grid-column: span 12; }
+      .flow { grid-template-columns: 1fr; }
+      .stress-grid { grid-template-columns: 1fr; }
+      .rule-table { grid-template-columns: 1fr; }
+      .rule-table > div { border-right: 0; }
+      .page { padding: 28px 16px 60px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <div class="kicker">The Pit / Design brief pour designer UI</div>
+    <h1>Auras, liens et panneau d'influences</h1>
+    <p class="intro">
+      Objectif: rendre lisibles les synergies du plateau sans recouvrir les monstres,
+      et remplacer le bloc d'aura actuel accroche a la carte par un vrai panneau
+      lateral d'influences. La carte monstre reste la fiche identitaire; les
+      influences deviennent une surface voisine, lisible, stable et collision-aware.
+    </p>
+
+    <section class="grid">
+      <div class="card span-6 bad">
+        <h3>Probleme observe</h3>
+        <p>
+          Le systeme actuel dessine des lignes d'aura permanentes et pose des chips
+          chiffres au milieu des segments. Quand plusieurs liens traversent le board,
+          les chips peuvent tomber sur une creature ou au-dessus d'une silhouette.
+        </p>
+        <p>
+          L'inspecteur actuel est accroche sous ou au-dessus de la carte monstre.
+          Il ajoute de la hauteur, deplace l'attention et entre en competition avec
+          la pop-up Shift de glossaire.
+        </p>
+      </div>
+      <div class="card span-6 good">
+        <h3>Direction cible</h3>
+        <p>
+          Separer les deux niveaux d'information: le board montre le reseau
+          rapidement, la sidecar explique les effets precisement. Les valeurs
+          detaillees ne doivent plus vivre en permanence sur les lignes quand elles
+          entrent en collision avec les unites.
+        </p>
+        <p>
+          La sidecar d'influences apparait automatiquement a gauche ou a droite de
+          la carte. Quand Shift est maintenu, le glossaire se place encore plus a
+          l'exterieur, avec une logique de bord d'ecran.
+        </p>
+      </div>
+    </section>
+
+    <h2>0. Regle critique: une valeur doit dire ce qu'elle modifie</h2>
+    <section class="grid">
+      <div class="card span-12">
+        <p>
+          Le probleme principal des badges actuels et de la premiere proposition:
+          une valeur brute ne suffit pas. Un joueur ne doit jamais lire
+          <code>+18%</code>, <code>+4</code> ou <code>-10%</code> sans savoir
+          quel systeme est modifie. La valeur doit toujours avoir trois morceaux:
+          <strong>tag canonique</strong>, <strong>nombre</strong>,
+          <strong>objet du bonus</strong>.
+        </p>
+        <div class="rule-table">
+          <div class="rule-head">Valeur brute interdite</div>
+          <div class="rule-head">Libelle attendu</div>
+          <div class="rule-head">Pourquoi</div>
+
+          <div><code>+1</code></div>
+          <div><span class="token bleed">Bleed +1 dps</span></div>
+          <div>Dit que le bonus ajoute du saignement, pas une stat generique.</div>
+
+          <div><code>+18%</code></div>
+          <div><span class="token bleed">Bleed +18% damage</span></div>
+          <div>Le joueur comprend que seul le Bleed est amplifie.</div>
+
+          <div><code>-15%</code></div>
+          <div><span class="token shield">Guard -15% damage taken</span></div>
+          <div>Distingue reduction de degats, shield et armor.</div>
+
+          <div><code>+12%</code></div>
+          <div><span class="token haste">Haste +12% attack speed</span></div>
+          <div>Evite la confusion avec damage, cooldown ou move speed.</div>
+
+          <div><code>x2</code></div>
+          <div><span class="token gold">Multicast +1 extra hit</span></div>
+          <div>Explique l'effet reel plutot qu'un multiplicateur abstrait.</div>
+
+          <div><code>∞</code></div>
+          <div><span class="token burn">Burn no decay</span></div>
+          <div>Les symboles seuls doivent rester secondaires.</div>
+        </div>
+      </div>
+    </section>
+
+    <h2>1. Board: du reseau permanent au focus lisible</h2>
+    <section class="grid">
+      <div class="card span-6">
+        <h3>Etat actuel: chips au milieu des lignes</h3>
+        <div class="mock">
+          <div class="board">
+            <div class="slot unit s1"><span class="name">Rat</span></div>
+            <div class="slot s2"></div>
+            <div class="slot s3"></div>
+            <div class="slot unit s4"><span class="name">Bleed</span></div>
+            <div class="slot unit s5"><span class="name">Mender</span></div>
+            <div class="slot unit s6"><span class="name">Rot</span></div>
+            <div class="slot s7"></div>
+            <div class="slot s8"></div>
+            <div class="slot s9"></div>
+          </div>
+          <div class="aura-line badline l-a"></div>
+          <div class="aura-line goodline l-b"></div>
+          <div class="aura-line badline l-c"></div>
+          <div class="chip bad1">+1</div>
+          <div class="chip bad2">+12%</div>
+          <div class="chip bad3">+2</div>
+          <div class="legend">
+            <span class="label">Lisible quand il y a peu de liens</span>
+            <span class="label">Fragile des que les liens traversent une unite</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card span-6">
+        <h3>Cible: lanes + ports + sidecar</h3>
+        <div class="mock">
+          <div class="board">
+            <div class="slot unit s1"><span class="name">Rat</span></div>
+            <div class="slot s2"></div>
+            <div class="slot s3"></div>
+            <div class="slot unit s4"><span class="name">Bleed</span></div>
+            <div class="slot unit s5"><span class="name">Mender</span></div>
+            <div class="slot unit s6"><span class="name">Rot</span></div>
+            <div class="slot s7"></div>
+            <div class="slot s8"></div>
+            <div class="slot s9"></div>
+          </div>
+          <svg class="route" width="100%" height="100%" viewBox="0 0 560 430" style="color: var(--bleed)">
+            <path d="M 280 216 L 354 216 L 354 184 L 400 184" stroke="currentColor" />
+            <path class="thin" d="M 280 216 L 354 216 L 354 184 L 400 184" stroke="currentColor" />
+          </svg>
+          <svg class="route" width="100%" height="100%" viewBox="0 0 560 430" style="color: var(--shield)">
+            <path d="M 280 216 L 354 216 L 354 270 L 400 270" stroke="currentColor" />
+            <path class="thin" d="M 280 216 L 354 216 L 354 270 L 400 270" stroke="currentColor" />
+          </svg>
+          <div class="endpoint halo5"></div>
+          <div class="endpoint halo6"></div>
+          <div class="port-chip p1">Bleed +1 dps</div>
+          <div class="port-chip p2">Guard -10% dmg</div>
+          <div class="port-chip p3">Haste +12% speed</div>
+          <div class="commander">Command</div>
+          <div class="legend">
+            <span class="label">Chips sur rails exterieurs</span>
+            <span class="label">Halo sur source/cible</span>
+            <span class="label">Details dans sidecar</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="grid">
+      <div class="card span-4">
+        <h3>Mode repos</h3>
+        <p>
+          Afficher les lignes d'aura en cheveux fins, sous les rigs, avec un alpha
+          tres bas. Pas de chip permanent sauf si le lien ne collisionne aucun slot.
+        </p>
+        <ul>
+          <li>Couleur = type d'effet.</li>
+          <li>Source et cible ont un halo tres subtil.</li>
+          <li>Les liens reliques restent hors reseau permanent.</li>
+        </ul>
+      </div>
+      <div class="card span-4">
+        <h3>Mode hover</h3>
+        <p>
+          Au hover d'une unite, montrer seulement ses liens entrants et sortants.
+          Les autres liens tombent a 15% d'opacite. Les valeurs apparaissent sur
+          des ports externes ou dans les gaps garantis, jamais sur un slot.
+        </p>
+        <ul>
+          <li>Unite source: pulse bord couleur.</li>
+          <li>Unites ciblees: halo cible + petite fleche.</li>
+          <li>Commander: route par le gutter exterieur.</li>
+        </ul>
+      </div>
+      <div class="card span-4">
+        <h3>Mode detail</h3>
+        <p>
+          La sidecar devient l'autorite textuelle. Le board ne doit pas tout dire:
+          il indique seulement qui parle a qui. La sidecar dit quelle source,
+          quel effet, quelle valeur et pourquoi la cible est eligible.
+        </p>
+        <ul>
+          <li>Rows groupees par source.</li>
+          <li>Badges effect + valeur verbale, jamais valeur seule.</li>
+          <li>Scope lisible: voisin, type, role, commandant, relique.</li>
+        </ul>
+      </div>
+    </section>
+
+    <h2>2. Stress-cases reels a tester</h2>
+    <p class="intro" style="margin-bottom: 18px;">
+      Ces cas doivent guider le designer. Ils ne sont pas des mockups finaux:
+      ils servent a verifier que la solution gere les situations qui cassent
+      l'UX actuelle. Dans tous les cas, la valeur doit nommer le bonus:
+      pas seulement <code>+18%</code>, mais <code>Bleed damage +18%</code> ou
+      <code>Guard -15% damage taken</code>.
+    </p>
+
+    <section class="stress-grid">
+      <div class="stress-case">
+        <h3>Cas A - Clot Mender au centre</h3>
+        <p class="why">
+          Vrai cas: <strong>Clot Mender</strong> donne une aura
+          <code>aura_grant_bleed</code> aux voisins. Plusieurs lignes partent du
+          centre et peuvent passer sur les portraits.
+        </p>
+        <div class="case-viz" style="color: var(--bleed)">
+          <svg viewBox="0 0 520 178">
+            <path class="ghost" d="M260 89 L198 89 M260 89 L322 89 M260 89 L260 28 M260 89 L260 150" stroke="currentColor"/>
+            <path d="M260 89 L198 89 M260 89 L322 89 M260 89 L260 28 M260 89 L260 150" stroke="currentColor"/>
+          </svg>
+          <div class="mini-board">
+            <div class="cell empty"></div><div class="cell target" style="color: var(--bleed)">Raz</div><div class="cell empty"></div>
+            <div class="cell target" style="color: var(--bleed)">Gash</div><div class="cell source">Clot</div><div class="cell target" style="color: var(--bleed)">Rot</div>
+            <div class="cell empty"></div><div class="cell target" style="color: var(--bleed)">Rat</div><div class="cell empty"></div>
+          </div>
+          <div class="rail-label rl-a" style="color: var(--bleed)">Bleed +1 dps</div>
+          <div class="rail-label rl-b" style="color: var(--bleed)">4 targets</div>
+        </div>
+        <div class="case-list">
+          <div class="case-row" style="color: var(--bleed)">
+            <span class="badge">Aura</span>
+            <div><div class="source">Clot Mender -> neighbors</div><div class="detail">Chaque voisin applique Bleed on hit.</div></div>
+            <span class="value"><span class="vmain">Bleed</span><span class="vsub">+1 dps</span></span>
+          </div>
+          <div class="case-row" style="color: var(--gold)">
+            <span class="badge">Board</span>
+            <div><div class="source">Dense center</div><div class="detail">Au repos: pas 4 chips sur le centre.</div></div>
+            <span class="value"><span class="vmain">Group</span><span class="vsub">4 links</span></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="stress-case">
+        <h3>Cas B - Support defensif + relique</h3>
+        <p class="why">
+          Vrai cas: <strong>Aegis</strong> ou <strong>Tide Caller</strong> donne
+          une reduction de degats a l'equipe. Le board ne doit pas devenir une toile
+          de 9 lignes.
+        </p>
+        <div class="case-viz" style="color: var(--shield)">
+          <svg viewBox="0 0 520 178">
+            <path class="ghost" d="M44 28 H476 M44 89 H476 M44 150 H476" stroke="currentColor"/>
+            <path d="M44 28 H476 M44 89 H476 M44 150 H476" stroke="currentColor"/>
+          </svg>
+          <div class="mini-board">
+            <div class="cell target" style="color: var(--shield)">Rat</div><div class="cell target" style="color: var(--shield)">Raz</div><div class="cell target" style="color: var(--shield)">Gash</div>
+            <div class="cell target" style="color: var(--shield)">Bone</div><div class="cell target" style="color: var(--shield)">Templ</div><div class="cell target" style="color: var(--shield)">Rot</div>
+            <div class="cell empty"></div><div class="cell target" style="color: var(--shield)">Maw</div><div class="cell empty"></div>
+          </div>
+          <div class="rail-label rl-a" style="color: var(--shield)">Team guard</div>
+          <div class="rail-label rl-d" style="color: var(--shield)">-15% damage taken</div>
+        </div>
+        <div class="case-list">
+          <div class="case-row" style="color: var(--shield)">
+            <span class="badge">Relic</span>
+            <div><div class="source">Aegis -> team</div><div class="detail">La cible est toute l'equipe, pas un voisin.</div></div>
+            <span class="value"><span class="vmain">Guard</span><span class="vsub">-15% dmg taken</span></span>
+          </div>
+          <div class="case-row" style="color: var(--shield)">
+            <span class="badge">Rule</span>
+            <div><div class="source">No board web</div><div class="detail">Afficher halos + sidecar, pas 9 lignes permanentes.</div></div>
+            <span class="value"><span class="vmain">Sidecar</span><span class="vsub">only</span></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="stress-case">
+        <h3>Cas C - Directionnel ahead/behind</h3>
+        <p class="why">
+          Vrais cas: <strong>Glass Mantis</strong> donne Haste a l'unite ahead,
+          <strong>Bore Worm</strong> donne Empower behind. Le joueur doit lire
+          la direction, pas seulement une couleur.
+        </p>
+        <div class="case-viz" style="color: var(--haste)">
+          <svg viewBox="0 0 520 178">
+            <path class="ghost" d="M198 89 H322 M322 89 L406 89" stroke="currentColor"/>
+            <path d="M198 89 H322 M322 89 L406 89" stroke="currentColor"/>
+          </svg>
+          <div class="mini-board">
+            <div class="cell empty"></div><div class="cell empty"></div><div class="cell empty"></div>
+            <div class="cell target" style="color: var(--haste)">Front</div><div class="cell source">Mantis</div><div class="cell target" style="color: var(--gold)">Back</div>
+            <div class="cell empty"></div><div class="cell empty"></div><div class="cell empty"></div>
+          </div>
+          <div class="rail-label rl-a" style="color: var(--haste)">Ahead: speed +12%</div>
+          <div class="rail-label rl-b" style="color: var(--gold)">Behind: dmg +15%</div>
+        </div>
+        <div class="case-list">
+          <div class="case-row" style="color: var(--haste)">
+            <span class="badge">Aura</span>
+            <div><div class="source">Glass Mantis -> ahead</div><div class="detail">Cible directionnelle, un seul slot.</div></div>
+            <span class="value"><span class="vmain">Haste</span><span class="vsub">+12% attack speed</span></span>
+          </div>
+          <div class="case-row" style="color: var(--gold)">
+            <span class="badge">Aura</span>
+            <div><div class="source">Bore Worm -> behind</div><div class="detail">Le texte doit nommer la direction.</div></div>
+            <span class="value"><span class="vmain">Empower</span><span class="vsub">+15% damage</span></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="stress-case">
+        <h3>Cas D - Commandant type/role</h3>
+        <p class="why">
+          Vrai cas: un commandant peut cibler <code>type:bone</code>,
+          <code>role:front</code> ou <code>team</code>. Le rail doit partir du
+          pedestal de commandement, pas d'une case du board.
+        </p>
+        <div class="case-viz" style="color: var(--gold)">
+          <svg viewBox="0 0 520 178">
+            <path class="ghost" d="M466 150 C430 118, 398 86, 336 86 M466 150 C408 142, 336 136, 260 136" stroke="currentColor"/>
+            <path d="M466 150 C430 118, 398 86, 336 86 M466 150 C408 142, 336 136, 260 136" stroke="currentColor"/>
+          </svg>
+          <div class="mini-board">
+            <div class="cell target" style="color: var(--shield)">Bone</div><div class="cell empty"></div><div class="cell target" style="color: var(--gold)">Front</div>
+            <div class="cell empty"></div><div class="cell source">Carry</div><div class="cell empty"></div>
+            <div class="cell target" style="color: var(--shield)">Bone</div><div class="cell empty"></div><div class="cell empty"></div>
+          </div>
+          <div class="commander">Command</div>
+          <div class="rail-label rl-a" style="color: var(--shield)">Type: bone</div>
+          <div class="rail-label rl-d" style="color: var(--gold)">Front role</div>
+        </div>
+        <div class="case-list">
+          <div class="case-row" style="color: var(--shield)">
+            <span class="badge">Cmd</span>
+            <div><div class="source">Clot Mender command -> type:bone</div><div class="detail">Toutes les unites Bone eligibles.</div></div>
+            <span class="value"><span class="vmain">Bleed</span><span class="vsub">+18% damage</span></span>
+          </div>
+          <div class="case-row" style="color: var(--gold)">
+            <span class="badge">Cmd</span>
+            <div><div class="source">Butcher command -> role:front</div><div class="detail">Une seule unite: l'avant-garde.</div></div>
+            <span class="value"><span class="vmain">Empower</span><span class="vsub">+12% damage</span></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="stress-case">
+        <h3>Cas E - Meme cible, plusieurs sources</h3>
+        <p class="why">
+          Cas frequent: une unite recoit a la fois une aura de voisin, une aura de
+          commandant et une relique. La cible ne doit pas porter trois chips empiles
+          sur sa tete.
+        </p>
+        <div class="case-viz" style="color: var(--poison)">
+          <svg viewBox="0 0 520 178">
+            <path class="ghost" d="M198 89 H260 M322 89 H260 M466 150 C404 120, 336 96, 260 89" stroke="currentColor"/>
+            <path d="M198 89 H260 M322 89 H260 M466 150 C404 120, 336 96, 260 89" stroke="currentColor"/>
+          </svg>
+          <div class="mini-board">
+            <div class="cell empty"></div><div class="cell target" style="color: var(--poison)">Abyss</div><div class="cell empty"></div>
+            <div class="cell source">Miasma</div><div class="cell target" style="color: var(--poison)">Carry</div><div class="cell source">Orb</div>
+            <div class="cell empty"></div><div class="cell empty"></div><div class="cell empty"></div>
+          </div>
+          <div class="commander">Command</div>
+          <div class="rail-label rl-a" style="color: var(--poison)">3 effects on target</div>
+          <div class="rail-label rl-b" style="color: var(--poison)">Open sidecar</div>
+        </div>
+        <div class="case-list">
+          <div class="case-row" style="color: var(--poison)">
+            <span class="badge">Aura</span>
+            <div><div class="source">Miasma Acolyte -> neighbor</div><div class="detail">Augmente les poisons du voisin.</div></div>
+            <span class="value"><span class="vmain">Poison</span><span class="vsub">+X dps</span></span>
+          </div>
+          <div class="case-row" style="color: var(--poison)">
+            <span class="badge">Relic</span>
+            <div><div class="source">Bile Orb -> type:abyss</div><div class="detail">Meme cible par type.</div></div>
+            <span class="value"><span class="vmain">Poison</span><span class="vsub">+12% damage</span></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="stress-case">
+        <h3>Cas F - Vertical above/below</h3>
+        <p class="why">
+          Vrai cas: certaines auras ciblent <code>above</code> ou
+          <code>below</code>. Les labels au milieu sont particulierement dangereux
+          car ils tombent sur les portraits de la colonne.
+        </p>
+        <div class="case-viz" style="color: var(--shield)">
+          <svg viewBox="0 0 520 178">
+            <path class="ghost" d="M260 28 V150" stroke="currentColor"/>
+            <path d="M260 28 V150" stroke="currentColor"/>
+          </svg>
+          <div class="mini-board">
+            <div class="cell empty"></div><div class="cell target" style="color: var(--shield)">Above</div><div class="cell empty"></div>
+            <div class="cell empty"></div><div class="cell source">Spine</div><div class="cell empty"></div>
+            <div class="cell empty"></div><div class="cell target" style="color: var(--shield)">Below</div><div class="cell empty"></div>
+          </div>
+          <div class="rail-label rl-a" style="color: var(--shield)">Above: guard</div>
+          <div class="rail-label rl-c" style="color: var(--shield)">Below: guard</div>
+        </div>
+        <div class="case-list">
+          <div class="case-row" style="color: var(--shield)">
+            <span class="badge">Aura</span>
+            <div><div class="source">Vertical Spine -> above/below</div><div class="detail">Deux cibles sur la meme colonne.</div></div>
+            <span class="value"><span class="vmain">Guard</span><span class="vsub">-12% dmg taken</span></span>
+          </div>
+          <div class="case-row" style="color: var(--gold)">
+            <span class="badge">Rule</span>
+            <div><div class="source">No middle chip</div><div class="detail">Le label doit sortir vers un port lateral.</div></div>
+            <span class="value"><span class="vmain">Port</span><span class="vsub">left/right</span></span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <h2>3. Panneau lateral d'influences</h2>
+    <div class="card span-12">
+      <div class="card-stack">
+        <div class="monster-card">
+          <h3>The Clot Mender</h3>
+          <div class="portrait"></div>
+          <div class="stats">
+            <div class="stat">HP 54</div>
+            <div class="stat">DMG 5</div>
+            <div class="stat">CD 1.4s</div>
+          </div>
+          <div class="tokens">
+            <span class="token bleed">Bleed</span>
+            <span class="token gold">Aura</span>
+            <span class="token haste">Command</span>
+          </div>
+          <p style="margin-top: 18px;">
+            <strong>Passive</strong><br />
+            Neighbors apply Bleed when they hit.
+          </p>
+          <p style="color: var(--muted); font-style: italic; margin-top: 24px;">
+            The wound that teaches other wounds to open.
+          </p>
+        </div>
+
+        <aside class="sidecar">
+          <h3>Influences</h3>
+          <div class="section-title">Affecte cette unite</div>
+          <div class="row" style="color: var(--shield)">
+            <span class="badge">Relic</span>
+            <div>
+              <div class="source">Aegis of the Drowned</div>
+              <div class="detail">Applique a toute l'equipe</div>
+            </div>
+            <span class="value"><span class="vmain">Guard</span><span class="vsub">-15% dmg taken</span></span>
+          </div>
+          <div class="row" style="color: var(--haste)">
+            <span class="badge">Cmd</span>
+            <div>
+              <div class="source">The Old Scar</div>
+              <div class="detail">Cible type: bone</div>
+            </div>
+            <span class="value"><span class="vmain">Bleed</span><span class="vsub">+18% damage</span></span>
+          </div>
+
+          <div class="section-title">Cette unite donne</div>
+          <div class="row" style="color: var(--bleed)">
+            <span class="badge">Aura</span>
+            <div>
+              <div class="source">To Razorkin</div>
+              <div class="detail">Voisin direct, slot 2</div>
+            </div>
+            <span class="value"><span class="vmain">Bleed</span><span class="vsub">+1 dps on hit</span></span>
+          </div>
+          <div class="row" style="color: var(--bleed)">
+            <span class="badge">Aura</span>
+            <div>
+              <div class="source">To Rot Hound</div>
+              <div class="detail">Voisin direct, slot 6</div>
+            </div>
+            <span class="value"><span class="vmain">Bleed</span><span class="vsub">+1 dps on hit</span></span>
+          </div>
+
+          <div class="section-title">Position</div>
+          <div class="mini-grid">
+            <div class="mini"><strong>Role</strong><br />Center support</div>
+            <div class="mini"><strong>Expose</strong><br />Middle</div>
+            <div class="mini"><strong>Links</strong><br />2 out / 2 in</div>
+          </div>
+        </aside>
+
+        <aside class="glossary">
+          <h3>Shift: tags</h3>
+          <div class="row" style="color: var(--bleed)">
+            <span class="badge">Tag</span>
+            <div>
+              <div class="source">Bleed</div>
+              <div class="detail">Damage over time and attack speed reduction.</div>
+            </div>
+          </div>
+          <div class="row" style="color: var(--gold)">
+            <span class="badge">Tag</span>
+            <div>
+              <div class="source">Aura</div>
+              <div class="detail">A build-time effect applied from a source to eligible targets.</div>
+            </div>
+          </div>
+          <div class="row" style="color: var(--haste)">
+            <span class="badge">Tag</span>
+            <div>
+              <div class="source">Command</div>
+              <div class="detail">Only active when the unit is placed in command.</div>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </div>
+
+    <h2>4. Placement intelligent des panneaux</h2>
+    <section class="grid">
+      <div class="card span-7">
+        <h3>Regle de docking proposee</h3>
+        <div class="flow">
+          <div class="step">
+            <div class="num">01</div>
+            <p>Calculer la carte monstre comme aujourd'hui: rectangle <code>cardBox</code>.</p>
+          </div>
+          <div class="step">
+            <div class="num">02</div>
+            <p>Calculer une sidecar <code>influenceBox</code> de largeur fixe 220-260 px.</p>
+          </div>
+          <div class="step">
+            <div class="num">03</div>
+            <p>Preferer le cote avec le plus d'espace. Sinon inverser. Sinon compacter sous forme de tab.</p>
+          </div>
+          <div class="step">
+            <div class="num">04</div>
+            <p>Quand Shift est actif, placer le glossaire a l'exterieur du bloc carte + sidecar.</p>
+          </div>
+        </div>
+      </div>
+      <div class="card span-5">
+        <h3>Contraintes</h3>
+        <ul>
+          <li>Aucun panneau ne doit sortir de l'ecran.</li>
+          <li>Aucun panneau ne doit recouvrir le board si un cote libre existe.</li>
+          <li>La sidecar est visible automatiquement au hover d'une unite posee.</li>
+          <li>Le glossaire Shift reste manuel et ne remplace pas la sidecar.</li>
+          <li>Si l'espace horizontal manque, la sidecar passe sous la carte et le glossaire sous la sidecar.</li>
+        </ul>
+      </div>
+    </section>
+
+    <h2>5. Specification de contenu</h2>
+    <section class="grid">
+      <div class="card span-6">
+        <h3>Influences recues</h3>
+        <p>Chaque ligne doit repondre a ces questions:</p>
+        <ul>
+          <li><strong>Source</strong>: unite, commandant ou relique.</li>
+          <li><strong>Effet</strong>: tag canonique + valeur concrete.</li>
+          <li><strong>Pourquoi moi?</strong>: neighbor, team, type, role, level, tier.</li>
+          <li><strong>Etat</strong>: actif, inactif, requis manquant si necessaire.</li>
+        </ul>
+      </div>
+      <div class="card span-6">
+        <h3>Influences donnees</h3>
+        <p>Chaque ligne doit montrer:</p>
+        <ul>
+          <li><strong>Cible</strong>: nom court ou slot cible.</li>
+          <li><strong>Effet donne</strong>: valeur lisible, pas une formule interne.</li>
+          <li><strong>Portee</strong>: voisin direct, direction, equipe, role.</li>
+          <li><strong>Collision board</strong>: la ligne correspondante pulse au hover de la row.</li>
+        </ul>
+      </div>
+      <div class="card span-12 note">
+        <strong>Important:</strong> la sidecar ne doit pas devenir une seconde carte monstre.
+        Elle doit etre un panneau d'etat tactique: court, scannable, groupe par source,
+        avec des badges et des valeurs. Si une explication longue est necessaire, elle va
+        dans le glossaire Shift, pas dans la sidecar permanente.
+      </div>
+    </section>
+
+    <h2>6. Specification board / anti-collision</h2>
+    <section class="grid">
+      <div class="card span-4">
+        <h3>Ports</h3>
+        <p>
+          Chaque slot expose 4 ports: top, right, bottom, left. Un lien sort par le
+          port le plus proche du target, mais evite de traverser le rectangle du slot.
+        </p>
+      </div>
+      <div class="card span-4">
+        <h3>Routes</h3>
+        <p>
+          Preferer des polylignes orthogonales dans les gutters entre slots. Les lignes
+          diagonales restent possibles seulement quand elles ne coupent aucun slot inflate.
+        </p>
+      </div>
+      <div class="card span-4">
+        <h3>Labels</h3>
+        <p>
+          Le label se place sur le segment libre le plus long. Si aucun segment n'est
+          libre, afficher un simple pip numerote sur source/cible et envoyer le detail
+          dans la sidecar.
+        </p>
+      </div>
+    </section>
+
+    <section class="grid">
+      <div class="card span-6">
+        <h3>Z-order</h3>
+        <ul>
+          <li>Fond nightmare / board background.</li>
+          <li>Lignes d'aura tres faibles.</li>
+          <li>Slots et silhouettes.</li>
+          <li>Halo endpoints et focus hover.</li>
+          <li>Labels non-collision seulement.</li>
+          <li>Carte, sidecar, glossaire.</li>
+        </ul>
+      </div>
+      <div class="card span-6">
+        <h3>Comportement dense</h3>
+        <ul>
+          <li>Plus de 6 liens visibles: grouper par source et type.</li>
+          <li>Plus de 2 liens meme source/cible: chip resume, ex. <code>3 effects</code>.</li>
+          <li>Commander team-wide: ne pas tracer 9 lignes pleines; utiliser un rail externe + halos cibles.</li>
+          <li>Relics team-wide: ne pas tracer de webs permanents; sidecar seulement.</li>
+        </ul>
+      </div>
+    </section>
+
+    <h2>7. Variantes a proposer</h2>
+    <section class="grid">
+      <div class="card span-4">
+        <h3>Variante A: minimale</h3>
+        <p>
+          Garder les lignes actuelles, mais supprimer les chips permanents hors hover.
+          Au hover, chips uniquement dans les gaps libres; le reste va dans la sidecar.
+        </p>
+        <p><strong>Risque:</strong> moins spectaculaire, mais tres robuste.</p>
+      </div>
+      <div class="card span-4">
+        <h3>Variante B: rails externes</h3>
+        <p>
+          Les liens longs sortent du board par un rail exterieur puis reviennent vers
+          la cible. Les labels vivent sur ce rail. Tres lisible pour commandant/team.
+        </p>
+        <p><strong>Risque:</strong> plus technique a router proprement.</p>
+      </div>
+      <div class="card span-4">
+        <h3>Variante C: focus-only</h3>
+        <p>
+          Aucune valeur sur le board au repos. Le board ne montre que le reseau du
+          hovered slot. La sidecar devient l'information permanente principale.
+        </p>
+        <p><strong>Risque:</strong> moins de lecture globale instantanee.</p>
+      </div>
+    </section>
+
+    <h2>8. Criteres d'acceptation</h2>
+    <section class="grid">
+      <div class="card span-12">
+        <ul>
+          <li>Un chip d'aura ne doit jamais recouvrir une silhouette ou un nom de carte.</li>
+          <li>Au hover d'une unite, le joueur comprend en moins de 2 secondes ce qu'elle recoit et ce qu'elle donne.</li>
+          <li>Les reliques affectant l'unite apparaissent dans la sidecar, pas dans un reseau permanent illisible.</li>
+          <li>Le commandant doit etre identifiable comme source distincte, avec un rail ou badge specifique.</li>
+          <li>La sidecar + le glossaire Shift ne doivent jamais se superposer.</li>
+          <li>La carte monstre ne doit pas grossir pour contenir les influences.</li>
+          <li>Les couleurs restent des aides, jamais l'unique signal: chaque effet a tag/icone/valeur.</li>
+          <li>Le systeme doit fonctionner en 1280x720 et aux tailles fenetre non natives.</li>
+        </ul>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

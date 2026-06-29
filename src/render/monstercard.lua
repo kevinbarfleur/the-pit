@@ -344,6 +344,7 @@ function MonsterCard.draw(view, palette, id, anchorX, anchorY, t, opts)
     cmdPrepared = prepareAbilityBlocks({ MechanicsText.commandBlock(U) }, cmdBodyFont, cmdHeadFont, innerW, commandTagSet)[1]
   end
   local showKeywordHint = opts.keywordHint == true and #visibleTags > 0
+  local showNetworkHint = opts.networkHint == true
   local keywordHintFont = Theme.label(8)
 
   -- mesure des hauteurs de bloc
@@ -378,7 +379,7 @@ function MonsterCard.draw(view, palette, id, anchorX, anchorY, t, opts)
     local _, fLines = flavFont:getWrap(T(flavorKey), innerW)
     h = h + SECTION_GAP + #fLines * (hFlav + 1)
   end
-  if showKeywordHint and keywordHintFont then
+  if (showKeywordHint or showNetworkHint) and keywordHintFont then
     h = h + SECTION_GAP + keywordHintFont:getHeight()
   end
   h = h + PAD
@@ -537,9 +538,12 @@ function MonsterCard.draw(view, palette, id, anchorX, anchorY, t, opts)
     cy = cy + Draw.textWrap(T(flavorKey), bodyX, cy, innerW, C.ink3, flavFont)
   end
 
-  if showKeywordHint and keywordHintFont then
+  if (showKeywordHint or showNetworkHint) and keywordHintFont then
     cy = cy + SECTION_GAP
-    Draw.textR(T("ui.keyword_hint"), rightX, cy, C.ink4, keywordHintFont)
+    local hints = {}
+    if showKeywordHint then hints[#hints + 1] = T("ui.keyword_hint") end
+    if showNetworkHint then hints[#hints + 1] = T("ui.network_hint") end
+    Draw.textR(table.concat(hints, "   ·   "), rightX, cy, C.ink4, keywordHintFont)
   end
   Draw.reset()
 

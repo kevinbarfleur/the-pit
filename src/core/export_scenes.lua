@@ -12,6 +12,8 @@ local Palette  = require("src.core.palette")
 local RunState = require("src.run.state")
 local RunEvents = require("src.data.run_events")
 local OppGen   = require("src.data.oppgen") -- A4 : adversaire généré scalé (capture combat)
+local Compositions = require("src.data.compositions")
+local Compbuild = require("src.lab.compbuild")
 
 local Build     = require("src.scenes.build")
 local Combat    = require("src.scenes.combat")
@@ -218,6 +220,55 @@ function Builders.combat(host)
   return Combat.new(Palette, VW, VH, host, { left = left, right = right, enemyKey = b:encounterKeyFor(#enc.units), seed = 7 })
 end
 
+-- COMBAT_HOVER_INSPECT : validation du nouveau hover combat (carte + sidecar influences + pause).
+-- On engage la bataille quelques ticks, on place la souris sur une unite vivante, puis on gele la scene :
+-- le shot montre l'etat inspectable sans que la simulation continue pendant l'export.
+function Builders.combat_hover_inspect(host)
+  local cs = Builders.combat(host)
+  for _ = 1, 24 do cs:update(1.0); if cs.arena.over then break end end
+  local hover
+  for _, u in ipairs(cs.arena.units) do
+    if u.alive and u.team == "left" and not u.isCommander then hover = hover or u end
+  end
+  if hover then
+    cs.mx, cs.my = hover.x * 4, (hover.y - 16) * 4
+  end
+  cs.paused = true
+  cs.update = function() end
+  return cs
+end
+
+-- COMBAT_MURMUR_INSPECT : vitrine du panneau d'influences avec un murmure combat_start déjà actif.
+-- Le murmure reste absent des cartes/tags : seule la section basse du sidecar révèle une ligne cryptique.
+function Builders.combat_murmur_inspect(host)
+  local left = Compbuild.toComp(Compositions.byId.whisper_abyss_carre, -1)
+  local right = Compbuild.toComp(Compositions.byId.tank_carre, 1)
+  local cs = Combat.new(Palette, VW, VH, host, { left = left, right = right, enemyKey = "exhibition", seed = 1041 })
+  for _ = 1, 8 do cs:update(1.0); if cs.arena.over then break end end
+  local hover
+  for _, u in ipairs(cs.arena.units) do
+    if u.alive and u.team == "left" and u.id == "ink_horror" then hover = u; break end
+  end
+  hover = hover or cs.arena.units[1]
+  if hover then cs.mx, cs.my = hover.x * 4, (hover.y - 16) * 4 end
+  cs.paused = true
+  cs.update = function() end
+  return cs
+end
+
+function Builders.combat_network_focus(host)
+  local cs = Builders.combat_hover_inspect(host)
+  cs.forceNetworkInspect = true
+  return cs
+end
+
+function Builders.combat_network_all(host)
+  local cs = Builders.combat_hover_inspect(host)
+  cs.forceNetworkInspect = true
+  cs.mx, cs.my = -100, -100
+  return cs
+end
+
 -- COMBAT_IMPACTS : planche de validation des signatures d'impact (attaque/saignement/poison/choc/brûlure/
 -- pourriture). Injecte UNIQUEMENT des transients RENDER dans ArenaDraw puis gèle la scène : aucune SIM touchée.
 function Builders.combat_impacts(host)
@@ -358,6 +409,35 @@ function Builders.runevent(host)
   return Relicpick.new(Palette, VW, VH, host, { event = event })
 end
 
+local function makeRunEventShot(host, eventId, opts)
+  opts = opts or {}
+  host.run = RunState.new(SEED)
+  host.run.wins = opts.wins or 5
+  host.run.losses = opts.losses or 1
+  local exclude = {}
+  for _, id in ipairs(RunEvents.order) do if id ~= eventId then exclude[id] = true end end
+  local rollOpts = { exclude = exclude }
+  if opts.mutations then
+    -- Export-only target: live mutation rewards still need Build/EventRewards to
+    -- provide a real instance. This just lets --shoot cover the visual lane.
+    rollOpts.mutationTarget = function()
+      return { copyId = 1, where = "board", slot = 5, id = "husk", level = 2 }
+    end
+  end
+  local event = host.run:rollRunEvent(rollOpts)
+  return Relicpick.new(Palette, VW, VH, host, { event = event })
+end
+
+function Builders.runevent_brood(host) return makeRunEventShot(host, "sealed_brood", { mutations = true }) end
+function Builders.runevent_economy(host) return makeRunEventShot(host, "ashen_well", { mutations = true }) end
+function Builders.runevent_shop_tier(host) return makeRunEventShot(host, "fossil_gate") end
+function Builders.runevent_unit_glossary(host)
+  local s = makeRunEventShot(host, "sealed_brood", { mutations = true })
+  s.hover = 2 -- unit reward in the current seeded brood event.
+  s.forceKeywordGlossary = true
+  return s
+end
+
 -- BUILD_RELIC_HOVER : board peuplé + 3 reliques au HUD + curseur posé sur une miniature -> POP-UP de la
 -- carte de relique ANIMÉE (RelicCard avec icône RelicAnim). Prouve au screenshot la pop-up de survol HUD.
 -- On choisit 3 reliques de PALIERS variés (Argent/Or/Prismatique) pour montrer la couleur de carte, et on
@@ -382,6 +462,19 @@ function Builders.build_aura_hover(host)
   host.run:grantRelic("blood_banner")
   local p = b.pos[4] -- marauder: voisin du templar + rang 1 commande par galvanizer + reliques team.
   b.mx, b.my = p.x, p.y
+  return b
+end
+
+function Builders.build_aura_network_focus(host)
+  local b = Builders.build_aura_hover(host)
+  b.forceNetworkInspect = true
+  return b
+end
+
+function Builders.build_aura_network_all(host)
+  local b = Builders.build_aura_hover(host)
+  b.forceNetworkInspect = true
+  b.mx, b.my = -100, -100
   return b
 end
 
@@ -413,10 +506,14 @@ function Builders.settings(host) return makeSystemShot(host, "settings") end
 -- RUNOVER : écran de fin (ascension). On feed un run seedé + résultat.
 function Builders.runover(host)
   host.run = RunState.new(SEED)
+  host.run.wins = RunState.WIN_TARGET
+  host.run.losses = 2
+  host.run.round = RunState.WIN_TARGET + host.run.losses
+  host.run.shopTier = 5
   return Runover.new(Palette, VW, VH, host, { result = "win", run = host.run })
 end
 
-function Builders.bossrush(host)
+local function makeBossrushShot(host, bossKey)
   host.run = RunState.new(SEED)
   host.run.wins = RunState.WIN_TARGET
   local Comps = require("src.data.compositions")
@@ -426,11 +523,23 @@ function Builders.bossrush(host)
   return Bossrush.new(Palette, VW, VH, host, {
     run = host.run,
     left = left,
-    bossKey = "brasier",
+    bossKey = bossKey or "brasier",
     seed = SEED + 900,
     instantScore = true,
   })
 end
+
+function Builders.bossrush(host) return makeBossrushShot(host, "brasier") end
+function Builders.bossrush_brasier(host) return makeBossrushShot(host, "brasier") end
+function Builders.bossrush_leviathan(host) return makeBossrushShot(host, "leviathan") end
+function Builders.bossrush_regard(host) return makeBossrushShot(host, "regard") end
+function Builders.bossrush_ossuaire(host) return makeBossrushShot(host, "ossuaire") end
+function Builders.bossrush_kraken(host) return makeBossrushShot(host, "kraken") end
+function Builders.bossrush_idole(host) return makeBossrushShot(host, "idole") end
+function Builders.bossrush_ruche(host) return makeBossrushShot(host, "ruche") end
+function Builders.bossrush_floraison(host) return makeBossrushShot(host, "floraison") end
+function Builders.bossrush_devoreur(host) return makeBossrushShot(host, "devoreur") end
+function Builders.bossrush_vermine(host) return makeBossrushShot(host, "vermine") end
 
 -- GRIMOIRE : codex persistant en deux colonnes. Pour la capture : onglet BESTIAIRE, entrée de haut tier
 -- sélectionnée, fiche fixe à droite au niveau III. Full-unlock DEV pour ne pas dépendre de la sauvegarde.
@@ -527,9 +636,12 @@ end
 local M = {}
 
 -- Liste des noms de scènes capturables (ordre stable, pour --shoot=all et les messages d'erreur).
-M.names = { "menu", "build", "combat", "combat_impacts", "combat_numbers_stack", "combat_react", "summary", "relicpick", "runevent", "runover", "bossrush", "grimoire", "grimoire_glossary", "grimoire_relics",
+M.names = { "menu", "build", "combat", "combat_hover_inspect", "combat_murmur_inspect", "combat_network_focus", "combat_network_all", "combat_impacts", "combat_numbers_stack", "combat_react", "summary", "relicpick", "runevent", "runevent_brood", "runevent_economy", "runevent_shop_tier", "runevent_unit_glossary", "runover", "bossrush", "bossrush_brasier",
+  "bossrush_leviathan", "bossrush_regard", "bossrush_ossuaire", "bossrush_kraken", "bossrush_idole",
+  "bossrush_ruche", "bossrush_floraison", "bossrush_devoreur", "bossrush_vermine",
+  "grimoire", "grimoire_glossary", "grimoire_relics",
   "grimoire_bestiary",
-  "gallery", "designsystem", "build_relic_hover", "build_aura_hover", "build_freeze", "system", "settings",
+  "gallery", "designsystem", "build_relic_hover", "build_aura_hover", "build_aura_network_focus", "build_aura_network_all", "build_freeze", "system", "settings",
   "anim_attack", "anim_death", "anim_hurt",
   "combat_commander",
   "commander_empty", "commander_filled", "commander_hover", "commander_offer", "commander_refuse",

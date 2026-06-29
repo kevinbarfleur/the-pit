@@ -30,6 +30,7 @@ local Ambient = require("src.fx.ambient")
 local Panel = require("src.ui.panel")
 local Button = require("src.ui.button")      -- boutons propres : primary (BIND) / eco (REFUSE)
 local Dividers = require("src.ui.dividers")  -- filets laiton/sang propres (cassure d'en-tête)
+local Badge = require("src.ui.badge")
 local Feel = require("src.ui.feel")          -- JUICE : survol (glow/lift) + press (squash/flash)
 local Overlay = require("src.ui.overlay")    -- CHORÉGRAPHIE d'entrée unifiée (voile modéré qui monte + cartes back-ease)
 local SFX = require("src.audio.sfx")         -- SON (Oniric grave) : BIND d'une relique = payoff (success). No-op headless.
@@ -93,6 +94,14 @@ local function tx(key, fallback, vars)
   return fallback or key
 end
 
+local function mutationText(id, field)
+  local def = Mutations.byId[id]
+  local key = id and ("mutation." .. tostring(id) .. "." .. field) or nil
+  if key and hasKey(key) then return T(key) end
+  if field == "name" then return def and def.label or tostring(id) end
+  return def and def.desc or ""
+end
+
 local function wrapLines(font, str, limit)
   if not (font and font.getWrap and str and str ~= "") then return 0 end
   local _, lines = font:getWrap(str, limit)
@@ -113,8 +122,8 @@ local function rewardTitle(reward)
   elseif reward.kind == "shop_tier_up" then
     return T("runevent.reward.shop_tier_up", { n = reward.amount or 1 })
   elseif reward.kind == "mutation" then
-    local def = Mutations.byId[reward.id or reward.mutation]
-    return T("runevent.reward.mutation", { name = def and def.label or tostring(reward.id or reward.mutation) })
+    local id = reward.id or reward.mutation
+    return T("runevent.reward.mutation", { name = mutationText(id, "name") })
   end
   return T("runevent.reward.unknown")
 end
@@ -133,8 +142,7 @@ local function rewardDetail(reward)
   if reward.kind == "shop_xp" then return T("runevent.reward.shop_xp_detail") end
   if reward.kind == "shop_tier_up" then return T("runevent.reward.shop_tier_up_detail") end
   if reward.kind == "mutation" then
-    local def = Mutations.byId[reward.id or reward.mutation]
-    return def and def.desc or ""
+    return mutationText(reward.id or reward.mutation, "desc")
   end
   return ""
 end
@@ -143,6 +151,10 @@ local function rewardHasArt(reward)
   reward = reward or {}
   return (reward.kind == "relic" and reward.id and Relics[reward.id])
     or (reward.kind == "unit" and reward.id and Units[reward.id])
+    or reward.kind == "gold"
+    or reward.kind == "shop_xp"
+    or reward.kind == "shop_tier_up"
+    or reward.kind == "mutation"
 end
 
 local function eventChoiceOpts(choice, eventId)
@@ -179,6 +191,7 @@ local function drawRewardArt(view, palette, reward, x, y, w, h, t)
   if not rewardHasArt(reward) then return 0 end
   local boxW = math.min(132, w)
   local bx = math.floor(x + (w - boxW) / 2)
+  local cx, cy = bx + boxW / 2, y + h / 2
   Draw.rect(bx, y, boxW, h, C.stone900, C.iron, 1)
   if reward.kind == "relic" then
     local baked = RelicGen.cached(reward.id, palette)
@@ -196,6 +209,31 @@ local function drawRewardArt(view, palette, reward, x, y, w, h, t)
     MonsterCard.drawCardPortrait(view, palette, reward.id, nil,
       { x = bx + 4, y = y + 4, w = boxW - 8, h = h - 8 },
       rank, Rarity.frame(rank), rank >= 4, t)
+  elseif reward.kind == "gold" then
+    Badge.diamond(cx - 18, cy, 11, C.brassL, C.brassD, C.brassS)
+    Badge.diamond(cx + 2, cy - 6, 7, C.gold, C.brassD, C.brassS)
+    Badge.diamond(cx + 18, cy + 7, 6, C.brass, C.brassD, nil)
+    Draw.textC(T("runevent.reward.art.gold", { n = reward.amount or 0 }), cx, y + h - 24, C.gold, Theme.value(13))
+  elseif reward.kind == "shop_xp" then
+    local n = math.max(1, math.min(5, math.floor((reward.amount or 0) / 2 + 0.5)))
+    for i = 1, 5 do
+      local px = cx - 34 + (i - 1) * 17
+      Draw.rect(px, cy - 10, 11, 20, i <= n and C.gold or C.stone800, i <= n and C.brassS or C.brassD, 1)
+    end
+    Draw.textC(T("runevent.reward.art.shop_xp"), cx, y + h - 22, C.gold, Theme.value(12))
+  elseif reward.kind == "shop_tier_up" then
+    Badge.rarity(cx - 46, cy - 16, 92, math.max(1, math.min(5, reward.amount or 1)), 5, 10)
+    Draw.textC(T("runevent.reward.art.shop_tier"), cx, y + h - 22, Theme.type("abyss").color, Theme.value(11))
+  elseif reward.kind == "mutation" then
+    local col = C.blood
+    Draw.setColor(col, 0.22)
+    love.graphics.circle("fill", cx, cy - 2, 24)
+    Draw.setColor(col, 0.80)
+    love.graphics.setLineWidth(2)
+    love.graphics.circle("line", cx, cy - 2, 20)
+    love.graphics.line(cx - 18, cy + 8, cx - 4, cy - 17, cx + 9, cy + 11, cx + 20, cy - 9)
+    love.graphics.setLineWidth(1)
+    Draw.textC(T("runevent.reward.art.mutation"), cx, y + h - 22, col, Theme.value(11))
   end
   return h
 end

@@ -120,8 +120,17 @@ function OppGen.generate(opts)
     if not cell then break end
     units[#units + 1] = { id = picks[i], col = cell.col, row = cell.row, level = levels[i] }
   end
+  local signatureParts = {}
+  for _, u in ipairs(units) do
+    signatureParts[#signatureParts + 1] = tostring(u.id) .. ":L" .. tostring(u.level or 1)
+  end
 
-  return { key = "pit_spawn", generated = true, units = units }
+  return {
+    key = "pit_spawn",
+    generated = true,
+    units = units,
+    signature = "generated:" .. table.concat(signatureParts, "+"),
+  }
 end
 
 return OppGen

@@ -723,6 +723,7 @@ local ok, err = pcall(function()
   -- Relicpick : 3 cartes forge (Layout.row, gouttières égales) + BIND bouton-œil. host stub recoit le pick.
   do
     local Relicpick = require("src.scenes.relicpick")
+    local Draw = require("src.ui.draw")
     local picked = nil
     local host = { finishRelicPick = function(id) picked = id end }
     local rp = Relicpick.new(Palette, 320, 180, host, { choices = { "bloodstone", "ember_heart", "aegis" } })
@@ -749,6 +750,34 @@ local ok, err = pcall(function()
     assert(picked == "bloodstone", "relicpick : BIND confirme le pick de la carte 1 (apres differe)")
     rp:keypressed("2"); assert(rp.sel == 2, "relicpick : touche 2 sélectionne")
     rp:keypressed("return") -- confirme via clavier (no crash)
+
+    local eventPicked = nil
+    local eventHost = { finishRunEventPick = function(idx) eventPicked = idx end }
+    local ev = {
+      id = "sealed_brood",
+      titleKey = "runevent.sealed_brood.title",
+      bodyKey = "runevent.sealed_brood.body",
+      choices = {
+        { id = "crack_the_warm_egg", reward = { kind = "unit", id = "husk", level = 1 } },
+        { id = "take_the_twin", reward = { kind = "unit", id = "husk", level = 2 } },
+        { id = "boil_the_shell", reward = { kind = "relic", id = "weeping_nail" } },
+        { id = "let_it_echo", reward = { kind = "mutation", id = "echo_touched" } },
+      },
+    }
+    local erp = Relicpick.new(Palette, 320, 180, eventHost, { event = ev })
+    assert(#erp.cards == 4 and not erp.decline, "runevent : 4 choix explicites et pas de REFUSE")
+    assert(erp.cards[1].x >= 0 and erp.cards[4].x + erp.cards[4].w <= Draw.W,
+      "runevent : cartes dans le viewport")
+    erp:update(1.0)
+    erp:drawBack(view); erp:drawWorld(); erp:drawOverlay(view)
+    local ec2 = erp.cards[2]
+    erp:mousemoved((ec2.x + ec2.w / 2) / 4, (ec2.y + ec2.h / 2) / 4)
+    assert(erp.hover == 2, "runevent : survol choix unite")
+    erp:mousepressed((ec2.x + ec2.w / 2) / 4, (ec2.y + ec2.h / 2) / 4, 1)
+    assert(erp.sel == 2, "runevent : clic selectionne le choix event")
+    erp:mousepressed((erp.bind.x + erp.bind.w / 2) / 4, (erp.bind.y + erp.bind.h / 2) / 4, 1)
+    erp:update(60)
+    assert(eventPicked == 2, "runevent : BIND appelle finishRunEventPick(index)")
   end
 
   -- Menu : entrées = boutons forge (ENTER = cta), Layout.column centrée. host stub recoit les actions.

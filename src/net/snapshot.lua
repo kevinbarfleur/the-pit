@@ -77,7 +77,7 @@ function Snapshot.toComp(s, side)
   for _, p in ipairs(placed) do
     local stats = UnitResolver.statsFor(p.id, p.level)
     local px, py = Place.pos(p.col, p.row, side, b)
-    local effects = (p.level or 1) > 1 and UnitResolver.hasAuthoredLevel(p.id) and UnitResolver.effectsFor(p.id, p.level) or nil
+    local effects = (p.level or 1) > 1 and UnitResolver.effectsFor(p.id, p.level) or nil
     local spec = { id = p.id, level = p.level,
       hp = stats.hp, dmg = stats.dmg, cd = stats.cd,
       depth = b.maxC - p.col, row = p.row, effects = effects, x = px, y = py, facing = facing }

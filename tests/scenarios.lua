@@ -145,16 +145,35 @@ local ok, err = pcall(function()
         and body:find('"policy_rows_bottom"', 1, true)
         and body:find('"target_rows"', 1, true),
         "mode economy : resume compact profils/policies/cibles reporte")
+      assert(body:find('"held_level_75_hit_rate"', 1, true)
+        and body:find('"board_p75_99_winrate"', 1, true),
+        "mode economy : resume compact expose les seuils de realisation des plans")
+      assert(body:find('"position_complete_rate"', 1, true)
+        and body:find('"avg_board_slot_coverage"', 1, true)
+        and body:find('"avg_peak_board_slot_level_coverage"', 1, true),
+        "mode economy : resume compact expose la realisation positionnelle des plans")
     elseif m == "pacing" then
       assert(body:find('"duration_fit"', 1, true),
         "mode pacing : score de fit duration reporte")
       assert(body:find('"duration_fit_score"', 1, true),
         "mode pacing : score de fit duration expose dans le resume")
+      assert(body:find('"early_by_enemy_top"', 1, true),
+        "mode pacing : adversaires responsables des combats early trop courts reportes")
+      assert(body:find('"early_by_enemy_signature_top"', 1, true),
+        "mode pacing : signatures exactes des adversaires early trop courts reportees")
+      assert(body:find('"early_short_fight_diagnostics"', 1, true),
+        "mode pacing : diagnostic causal des combats early sous 5s reporte")
     elseif m == "sweep" then
       assert(body:find('"duration_fit"', 1, true),
         "mode sweep : score de fit duration reporte")
       assert(body:find('"duration_fit_score"', 1, true),
         "mode sweep : score de fit duration expose dans le resume")
+      assert(body:find('"early_by_enemy_top"', 1, true),
+        "mode sweep : adversaires responsables des combats early trop courts reportes")
+      assert(body:find('"early_by_enemy_signature_top"', 1, true),
+        "mode sweep : signatures exactes des adversaires early trop courts reportees")
+      assert(body:find('"early_short_fight_diagnostics"', 1, true),
+        "mode sweep : diagnostic causal des combats early sous 5s reporte")
       assert(body:find('"recommendations"', 1, true),
         "mode sweep : recommandations de pacing/economie reportees")
       assert(body:find('"selection_score"', 1, true),
@@ -171,8 +190,12 @@ local ok, err = pcall(function()
         "mode mechanics : taux affliction simple reporte")
       assert(body:find('"low_variety_rate"', 1, true),
         "mode mechanics : taux de faible variete reporte")
+      assert(body:find('"level_effect_progression_rate"', 1, true),
+        "mode mechanics : progression effective des effets niveau 2/3 reportee")
       assert(body:find('"redesign_first"', 1, true),
         "mode mechanics : liste de redesign prioritaire reportee")
+      assert(body:find('"no_effect_progression"', 1, true),
+        "mode mechanics : liste sans progression d'effet reportee")
       assert(body:find('"simple_affliction_priority"', 1, true),
         "mode mechanics : dette simple-affliction priorisee reportee")
     elseif m == "bossrush_run" then

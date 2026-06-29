@@ -14,6 +14,15 @@ local N = require("tools.scenarios.argn")(30)
 local BASE_SEED = 1360000
 local COMMANDER_MODE = Common.env("PIT_COMMANDER_MODE") or "ignore"
 local RUN_EVENTS = Common.envBool("PIT_RUN_EVENTS", false)
+local OPPONENT_MODE = Common.env("PIT_OPPONENT_MODE") or "static"
+assert(OPPONENT_MODE == "static" or OPPONENT_MODE == "generated",
+  "PIT_OPPONENT_MODE doit etre static ou generated")
+local OPPONENT_PRESSURE = {
+  roundBonus = Common.envNumber("PIT_OPPGEN_ROUND_BONUS", 0),
+  tierBonus = Common.envNumber("PIT_OPPGEN_TIER_BONUS", 0),
+  sizeBonus = Common.envNumber("PIT_OPPGEN_SIZE_BONUS", 0),
+  levelMult = Common.envNumber("PIT_OPPGEN_LEVEL_MULT", 1),
+}
 
 local DEFAULT_PACE_PROFILES = {
   { id = Pacing.profiles.legacy.id, label = Pacing.profiles.legacy.label,
@@ -40,6 +49,9 @@ local function newAgg(fatigueStart)
     combatWins = 0, combatTotal = 0, undecided = 0,
     goldSum = 0, scoreSum = 0,
     duration = Common.durationSet(fatigueStart),
+    earlyByEnemy = Common.durationByKeyAgg(fatigueStart),
+    earlyByEnemySignature = Common.durationByKeyAgg(fatigueStart),
+    earlyShortFight = Common.earlyShortFightAgg(),
   }
 end
 
@@ -58,12 +70,18 @@ local function addRun(a, traj)
       if rd.decided == false then a.undecided = a.undecided + 1 end
     end
     Common.addRoundDuration(a.duration, rd)
+    Common.addEarlyDurationByKey(a.earlyByEnemy, rd, rd.enemyKey)
+    Common.addEarlyDurationByKey(a.earlyByEnemySignature, rd, rd.enemySignature)
+    Common.addEarlyShortFight(a.earlyShortFight, rd)
   end
 end
 
 local function finish(a)
   local duration = Common.finishDurationSet(a.duration)
   local durationFit = Common.durationFit(duration)
+  local earlyByEnemy = Common.finishDurationByKey(a.earlyByEnemy, 10)
+  local earlyByEnemySignature = Common.finishDurationByKey(a.earlyByEnemySignature, 10)
+  local earlyShortFight = Common.finishEarlyShortFight(a.earlyShortFight, 10)
   return {
     runs = a.runs,
     completion = (a.runs > 0) and (a.completions / a.runs) or 0,
@@ -76,6 +94,11 @@ local function finish(a)
     duration = duration,
     duration_fit = durationFit,
     duration_fit_score = durationFit.score,
+    early_by_enemy = earlyByEnemy.by_key,
+    early_by_enemy_top = earlyByEnemy.top,
+    early_by_enemy_signature = earlyByEnemySignature.by_key,
+    early_by_enemy_signature_top = earlyByEnemySignature.top,
+    early_short_fight_diagnostics = earlyShortFight,
   }
 end
 
@@ -97,6 +120,8 @@ for run = 1, N do
         cooldownMult = pace.cdMult,
         commanderMode = COMMANDER_MODE,
         runEvents = RUN_EVENTS,
+        opponentMode = OPPONENT_MODE,
+        opponentPressure = OPPONENT_PRESSURE,
         fatigue = Common.fatigueOptions(pace.fatigueStart, pace.fatigueBase, pace.fatigueRamp),
       })
       addRun(byPace[pace.id], traj)
@@ -123,6 +148,9 @@ for _, pace in ipairs(PACE_PROFILES) do
     combat_winrate = row.combat_winrate,
     early_avg_seconds = row.duration.early.avg_seconds,
     early_under_5s_rate = row.duration.early.under_5s_rate,
+    early_by_enemy_top = row.early_by_enemy_top,
+    early_by_enemy_signature_top = row.early_by_enemy_signature_top,
+    early_short_fight_diagnostics = row.early_short_fight_diagnostics,
     p50_seconds = row.duration.all.p50_seconds,
     p90_seconds = row.duration.all.p90_seconds,
     fatigue_touch_rate = row.duration.all.fatigue_touch_rate,
@@ -137,6 +165,9 @@ for _, pace in ipairs(PACE_PROFILES) do
       combat_winrate = pr.combat_winrate,
       early_avg_seconds = pr.duration.early.avg_seconds,
       early_under_5s_rate = pr.duration.early.under_5s_rate,
+      early_by_enemy_top = pr.early_by_enemy_top,
+      early_by_enemy_signature_top = pr.early_by_enemy_signature_top,
+      early_short_fight_diagnostics = pr.early_short_fight_diagnostics,
       fatigue_touch_rate = pr.duration.all.fatigue_touch_rate,
       duration_fit_score = pr.duration_fit.score,
     }
@@ -162,6 +193,8 @@ local payload = {
     policies = Common.env("PIT_POLICIES"),
     commander_mode = COMMANDER_MODE,
     run_events = RUN_EVENTS,
+    opponent_mode = OPPONENT_MODE,
+    oppgen_pressure = OPPONENT_PRESSURE,
     pace_ids = Common.env("PIT_PACE_IDS"),
     pace_profiles = Common.env("PIT_PACE_PROFILES"),
   },

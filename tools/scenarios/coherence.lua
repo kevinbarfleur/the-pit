@@ -86,18 +86,62 @@ local function randomLevel(rng, stage)
   return 1
 end
 
+local function placementSlots(boardLevel)
+  local out, seen = {}, {}
+  for _, col in ipairs({ 2, 1, 0 }) do
+    for _, row in ipairs({ 1, 0, 2 }) do
+      local slot = row * 3 + col + 1
+      if slot <= boardLevel then
+        out[#out + 1] = slot
+        seen[slot] = true
+      end
+    end
+  end
+  for slot = 1, boardLevel do
+    if not seen[slot] then out[#out + 1] = slot end
+  end
+  return out
+end
+
+local function placementFrontness(id)
+  local u = Units[id] or {}
+  local score = (u.hp or 0) - (u.dmg or 0) * 2
+  if u.taunt then score = score + 1000 end
+  if (u.aggro or 0) >= 40 then score = score + 220
+  elseif (u.aggro or 0) >= 25 then score = score + 80 end
+  for _, e in ipairs(u.effects or {}) do
+    local op = e.op or ""
+    if op == "shield_aura" or op == "shield_caster" or op == "aura_shield" then
+      score = score + 200
+    elseif op == "thorns" then
+      score = score + 80
+    end
+  end
+  return score
+end
+
 local function randomComp(rng, index, stage, archetype)
   local cfg = STAGE_LEVEL[stage]
   local pool = unitPool(stage, archetype)
-  local units, seen = {}, {}
-  for slot = 1, cfg.size do
+  local entries, seen = {}, {}
+  for _ = 1, cfg.size do
     local id
     for _ = 1, 20 do
       id = pool[rng:random(1, #pool)]
       if not seen[id] or rng:random(1, 100) <= 12 then break end
     end
     seen[id] = true
-    units[#units + 1] = { id = id, slot = slot, level = randomLevel(rng, stage) }
+    entries[#entries + 1] = { id = id, level = randomLevel(rng, stage) }
+  end
+  table.sort(entries, function(a, b)
+    local fa, fb = placementFrontness(a.id), placementFrontness(b.id)
+    if fa ~= fb then return fa > fb end
+    return tostring(a.id) < tostring(b.id)
+  end)
+  local slots = placementSlots(cfg.board)
+  local units = {}
+  for i, entry in ipairs(entries) do
+    units[#units + 1] = { id = entry.id, slot = slots[i] or i, level = entry.level }
   end
   return {
     id = stableCompId(archetype and "gen_focused" or "gen_mixed", index, stage, archetype),
@@ -325,7 +369,7 @@ end
 local function newBucket()
   return {
     candidates = 0, wins = 0, fights = 0, coherence = 0, cost = 0,
-    levelFit = 0, boardFit = 0, ticks = 0, tickN = 0,
+    levelFit = 0, boardFit = 0, frontlineFit = 0, ticks = 0, tickN = 0,
   }
 end
 
@@ -337,6 +381,7 @@ local function addBucket(b, row)
   b.cost = b.cost + row.cost_score
   b.levelFit = b.levelFit + row.level_fit
   b.boardFit = b.boardFit + row.board_fit
+  b.frontlineFit = b.frontlineFit + row.frontline_fit
   b.ticks = b.ticks + row.ticks
   b.tickN = b.tickN + row.tickN
 end
@@ -349,6 +394,7 @@ local function finishBucket(b)
     avg_cost_score = (b.candidates > 0) and (b.cost / b.candidates) or 0,
     avg_level_fit = (b.candidates > 0) and (b.levelFit / b.candidates) or 0,
     avg_board_fit = (b.candidates > 0) and (b.boardFit / b.candidates) or 0,
+    avg_frontline_fit = (b.candidates > 0) and (b.frontlineFit / b.candidates) or 0,
     winrate = (b.fights > 0) and (b.wins / b.fights) or 0,
     avg_seconds = (b.tickN > 0) and (b.ticks / b.tickN / Common.FPS) or 0,
   }
@@ -371,6 +417,37 @@ local function levelFit(comp)
   for _, u in ipairs(units) do points = points + math.max(0, (u.level or 1) - 1) end
   local fit = math.min(1, points / expected)
   return fit, fit < 0.75
+end
+
+local function unitFrontlineScore(id)
+  local u = Units[id] or {}
+  local score = 0
+  if u.taunt then score = score + 1 end
+  if (u.aggro or 0) >= 40 then score = score + 0.75
+  elseif (u.aggro or 0) >= 25 then score = score + 0.35 end
+  if (u.hp or 0) >= 70 then score = score + 0.25 end
+  for _, e in ipairs(u.effects or {}) do
+    local op = e.op or ""
+    if op == "shield_aura" or op == "shield_caster" or op == "aura_shield" then
+      score = score + 0.45
+    elseif op == "thorns" then
+      score = score + 0.25
+    elseif op == "aura_stat" and e.params and e.params.stat == "dmgReduce" then
+      score = score + 0.35
+    end
+  end
+  return score
+end
+
+local function frontlineFit(comp)
+  local units = comp.units or {}
+  local expected = math.max(1, math.floor((#units + 2) / 4))
+  local score = 0
+  for _, u in ipairs(units) do
+    score = score + math.min(1, unitFrontlineScore(u.id))
+  end
+  local fit = math.min(1, score / expected)
+  return fit, fit < 0.5
 end
 
 local function pearson(rows)
@@ -464,6 +541,8 @@ local function compactRow(r)
     board_fit = r.board_fit,
     underfilled = r.underfilled,
     avg_seconds = r.avg_seconds,
+    frontline_fit = r.frontline_fit,
+    role_thin = r.role_thin,
     subscores = r.subscores,
     units = r.units,
     relics = r.relics,
@@ -488,6 +567,7 @@ for _, comp in ipairs(candidates) do
   local inv = Common.invest(comp)
   local fit, underleveled = levelFit(comp)
   local fill, underfilled = boardFit(comp)
+  local frontFit, roleThin = frontlineFit(comp)
   local L = leftOf(comp)
   local wins, fights, ticks, tickN = 0, 0, 0, 0
   local foeBreakdown = {}
@@ -530,6 +610,7 @@ for _, comp in ipairs(candidates) do
     duplicate_pressure = inv.duplicatePressure or 0,
     level_fit = fit, underleveled = underleveled,
     board_fit = fill, underfilled = underfilled,
+    frontline_fit = frontFit, role_thin = roleThin,
     wins = wins, fights = fights, winrate = (fights > 0) and (wins / fights) or 0,
     ticks = ticks, tickN = tickN, avg_seconds = (tickN > 0) and (ticks / tickN / Common.FPS) or 0,
     units = cloneUnits(comp.units),
@@ -544,10 +625,14 @@ for _, comp in ipairs(candidates) do
   addBucket(byStage[stage], row)
 end
 
-local highCoherenceWeak, lowCoherenceStrong, cheapStrong, expensiveWeak = {}, {}, {}, {}
+local highCoherenceWeak, roleThinWeak, lowCoherenceStrong, cheapStrong, expensiveWeak = {}, {}, {}, {}, {}
 local underleveledWeak, underfilledWeak = {}, {}
 for _, r in ipairs(rows) do
-  if r.coherence >= 0.65 and r.winrate <= 0.35 and not r.underleveled and not r.underfilled then
+  if r.coherence >= 0.65 and r.winrate <= 0.35 and r.role_thin then
+    roleThinWeak[#roleThinWeak + 1] = compactRow(r)
+  end
+  if r.coherence >= 0.65 and r.winrate <= 0.35
+    and not r.underleveled and not r.underfilled and not r.role_thin then
     highCoherenceWeak[#highCoherenceWeak + 1] = compactRow(r)
   end
   if r.coherence >= 0.65 and r.winrate <= 0.35 and r.underleveled then
@@ -564,6 +649,11 @@ for _, r in ipairs(rows) do
 end
 table.sort(highCoherenceWeak, function(a, b)
   if a.winrate ~= b.winrate then return a.winrate < b.winrate end
+  return a.coherence > b.coherence
+end)
+table.sort(roleThinWeak, function(a, b)
+  if a.winrate ~= b.winrate then return a.winrate < b.winrate end
+  if a.frontline_fit ~= b.frontline_fit then return a.frontline_fit < b.frontline_fit end
   return a.coherence > b.coherence
 end)
 table.sort(lowCoherenceStrong, function(a, b)
@@ -665,6 +755,7 @@ local payload = {
   by_stage = stageOut,
   outliers = {
     high_coherence_weak = take(highCoherenceWeak, 16),
+    role_thin_high_coherence_weak = take(roleThinWeak, 16),
     underleveled_high_coherence_weak = take(underleveledWeak, 16),
     underfilled_high_coherence_weak = take(underfilledWeak, 16),
     filled_resolutions = take(filledResolutions, 16),
@@ -674,12 +765,14 @@ local payload = {
   },
   outlier_unit_frequency = {
     high_coherence_weak = unitFrequency(highCoherenceWeak, 16),
+    role_thin_high_coherence_weak = unitFrequency(roleThinWeak, 16),
     low_coherence_strong = unitFrequency(lowCoherenceStrong, 16),
     cheap_strong = unitFrequency(cheapStrong, 16),
     expensive_weak = unitFrequency(expensiveWeak, 16),
   },
   outlier_counts = {
     high_coherence_weak = #highCoherenceWeak,
+    role_thin_high_coherence_weak = #roleThinWeak,
     underleveled_high_coherence_weak = #underleveledWeak,
     underfilled_high_coherence_weak = #underfilledWeak,
     filled_resolutions = #filledResolutions,
@@ -699,6 +792,7 @@ local summary = {
   buckets = bucketOut,
   outlier_counts = {
     high_coherence_weak = #highCoherenceWeak,
+    role_thin_high_coherence_weak = #roleThinWeak,
     underleveled_high_coherence_weak = #underleveledWeak,
     underfilled_high_coherence_weak = #underfilledWeak,
     filled_resolutions = #filledResolutions,
@@ -710,6 +804,7 @@ local summary = {
     low_coherence_strong = unitFrequency(lowCoherenceStrong, 8),
     cheap_strong = unitFrequency(cheapStrong, 8),
     high_coherence_weak = unitFrequency(highCoherenceWeak, 8),
+    role_thin_high_coherence_weak = unitFrequency(roleThinWeak, 8),
   },
   top_low_coherence_strong = take(lowCoherenceStrong, 8),
   top_high_coherence_weak = take(highCoherenceWeak, 8),

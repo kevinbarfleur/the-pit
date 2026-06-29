@@ -61,6 +61,7 @@ local Rarity = require("src.gen.rarity") -- rang -> couleur de cadre + glow (acc
 local MiniRig = require("src.render.minirig") -- mesure OPAQUE mutualisée des rigs (bounds/fit) : seule source de vérité
 local MonsterCard = require("src.render.monstercard") -- FICHE de monstre (extraite de drawTooltip) : réutilisée ici + Chronique
 local CardGlossary = require("src.ui.card_glossary") -- glossaire Shift des mots-cles mecaniques de la fiche
+local InfluencePanel = require("src.ui.influence_panel") -- sidecar d'auras/influences ancre aux cartes
 local RelicCard = require("src.ui.relic_card") -- FICHE de relique au survol (icône ANIMÉE + band + fam) : pop-up HUD
 local RelicsData = require("src.data.relics") -- band/palier de la relique (couleur de carte Argent/Or/Prismatique)
 local MechanicsText = require("src.ui.mechanics_text")
@@ -146,6 +147,9 @@ local ENEMY_LEVEL_EVERY = 3  -- est déjà leveled ; le bump ne sert qu'aux runs
 
 -- Hit-test (espace virtuel), défini en TÊTE de module : utilisé par computeLayout/commanderAt/les hit-tests.
 local function inRect(px, py, r) return px >= r.x and px <= r.x + r.w and py >= r.y and py <= r.y + r.h end
+local function ctrlHeld()
+  return love and love.keyboard and love.keyboard.isDown and love.keyboard.isDown("lctrl", "rctrl")
+end
 
 function Build.new(palette, vw, vh, host, opts)
   opts = opts or {}
@@ -1856,7 +1860,7 @@ function Build:buildComp(side)
   local function auraEffects(id, slot)
     local mc = mimicCopies[slot]
     local level = (self.slotRigs[slot] and self.slotRigs[slot].level) or 1
-    local needsLevelEffects = level > 1 and UnitResolver.hasAuthoredLevel(id)
+    local needsLevelEffects = level > 1
     if not (rotGrowth[slot] or grantBleed[slot] or mc or needsLevelEffects) then return nil end
     local out = {}
     for _, e in ipairs(UnitResolver.effectsFor(id, level)) do
@@ -2194,7 +2198,7 @@ function Build:buildRightComp(enc, levelBump)
     local lvl = math.min(MAX_LEVEL, (e.level or 1) + levelBump)
     local stats = UnitResolver.statsFor(e.id, lvl)
     local x, y = Place.pos(e.col, e.row, 1, b)
-    local effects = (lvl > 1 and UnitResolver.hasAuthoredLevel(e.id)) and UnitResolver.effectsFor(e.id, lvl) or nil
+    local effects = (lvl > 1) and UnitResolver.effectsFor(e.id, lvl) or nil
     comp[#comp + 1] = { id = e.id, level = lvl,
       hp = stats.hp, dmg = stats.dmg, cd = stats.cd,
       depth = b.maxC - e.col, row = e.row,
@@ -2425,6 +2429,10 @@ local function statAuraVisual(stat, value, targetId, targetLevel)
   return nil, nil
 end
 
+local function auraValueText(kind, label)
+  return InfluencePanel.formatValue(kind, label)
+end
+
 local function grantTeamVisual(params)
   params = params or {}
   if params.burnNoDecay then return "burn", "∞" end
@@ -2495,7 +2503,7 @@ function Build:resolveAuraLinks()
   local function addLink(from, to, kind, label, sourceKind, sourceId)
     if to and kind and label then
       links[#links + 1] = { from = from, to = to, kind = kind, label = label,
-        sourceKind = sourceKind or "unit", sourceId = sourceId }
+        valueText = auraValueText(kind, label), sourceKind = sourceKind or "unit", sourceId = sourceId }
     end
   end
 
@@ -2589,8 +2597,25 @@ function Build:computeUi()
     ui.cmdRange, ui.cmdRangeLabel, ui.cmdRangeVars = self:commandRange()
   end
   ui.auraLinks = self:resolveAuraLinks() -- « qui buffe qui » : arêtes colorées (drawBack) + chips (drawOverlay)
+  ui.networkInspect = self.forceNetworkInspect or ctrlHeld()
+  local hoverUnit = ui.hover and self.slotRigs[ui.hover] and ui.hover or nil
+  local dropUnit = ui.dropTarget and self.slotRigs[ui.dropTarget] and ui.dropTarget or nil
+  local commanderUnit = ui.commanderHover and self.commanderSlot and "commander" or nil
+  ui.networkFocus = ui.networkInspect and (hoverUnit or dropUnit or commanderUnit) or nil
+  ui.networkShowAll = ui.networkInspect and not ui.networkFocus
   self.uiState = ui -- champ distinct de la méthode (sinon self.uiState renverrait la méthode quand vide)
   return ui
+end
+
+function Build:auraLinkActive(lk, ui)
+  if not (lk and ui) then return false end
+  if not ui.networkInspect then return false end
+  if ui.networkShowAll then return true end
+  local focus = ui.networkFocus
+  if not focus then return false end
+  if focus == "commander" then return lk.from == "commander" or lk.sourceKind == "commander" end
+  if lk.from == focus or lk.to == focus then return true end
+  return false
 end
 
 -- ── Pre-pass natif (espace design) : atmosphère + arêtes + FONDS (cases / panneau / cartes) ──
@@ -2634,20 +2659,25 @@ function Build:drawBack(view)
       end
     end
   end
-  -- ARÊTES D'AURA (refonte « Build Screen ») : « qui buffe qui » EN PERMANENCE, colorées par TYPE d'aura
-  -- (poison/burn/bleed/rot/shield) + lueur additive. Couche d'info posée PAR-DESSUS les arêtes du graphe ->
-  -- la synergie positionnelle se lit d'un coup d'œil sans survoler. Les chips chiffrés se posent en overlay.
-  for _, lk in ipairs(ui.auraLinks or {}) do
-    local pf, pt = self:auraPoint(lk.from), self:auraPoint(lk.to)
-    if pf and pt and (pf.x ~= pt.x or pf.y ~= pt.y) then
-      local col = self:auraColor(lk.kind)
-      if love.graphics.setBlendMode then
-        love.graphics.setBlendMode("add"); Draw.setColor({ col[1], col[2], col[3], 0.32 })
-        love.graphics.setLineWidth(6); love.graphics.line(pf.x * 4, pf.y * 4, pt.x * 4, pt.y * 4)
-        love.graphics.setBlendMode("alpha")
+  -- Mode inspection réseau (Ctrl) : les liens d'aura ne polluent plus le hover normal des cartes.
+  -- Ctrl + unité = liens liés à cette unité ; Ctrl sans unité = stress view de tout le réseau.
+  if ui.networkInspect then
+    for _, lk in ipairs(ui.auraLinks or {}) do
+      if self:auraLinkActive(lk, ui) then
+        local pf, pt = self:auraPoint(lk.from), self:auraPoint(lk.to)
+        if pf and pt and (pf.x ~= pt.x or pf.y ~= pt.y) then
+          local col = self:auraColor(lk.kind)
+          local allMode = ui.networkShowAll
+          if love.graphics.setBlendMode then
+            love.graphics.setBlendMode("add"); Draw.setColor({ col[1], col[2], col[3], allMode and 0.10 or 0.20 })
+            love.graphics.setLineWidth(allMode and 6 or 8); love.graphics.line(pf.x * 4, pf.y * 4, pt.x * 4, pt.y * 4)
+            love.graphics.setBlendMode("alpha")
+          end
+          Draw.setColor({ col[1], col[2], col[3], allMode and 0.46 or 0.88 })
+          love.graphics.setLineWidth(allMode and 2 or 3)
+          love.graphics.line(pf.x * 4, pf.y * 4, pt.x * 4, pt.y * 4)
+        end
       end
-      Draw.setColor(col); love.graphics.setLineWidth(2.5)
-      love.graphics.line(pf.x * 4, pf.y * 4, pt.x * 4, pt.y * 4)
     end
   end
   love.graphics.setLineWidth(1); Draw.reset()
@@ -3189,31 +3219,34 @@ function Build:drawOverlay(view)
     { hover = over and enabled, disabled = not enabled, feel = Feel.state("build.combat"),
       id = "build.combat", mouse = { mx = self.mx * 4, my = self.my * 4 }, t = self.t / 60 })
 
-  -- Reliques rendues dans le bandeau de run (haut) ; ici on ne gère que l'infobulle au survol (prioritaire sur unité).
-  local relIdx = run and self:relicAt(self.mx, self.my)
-  if relIdx then
-    self:drawRelicTooltip(run.relics[relIdx].id)
-  elseif run and self.xpBarRect and inRect(self.mx, self.my, self.xpBarRect) then
-    -- Survol de la barre d'XP -> cotes par rang du tier courant (enseigne « à quoi sert monter »).
-    self:drawOddsTooltip(run)
-  elseif self:commanderAt(self.mx, self.my) and self.commanderSlot and not self.drag then
-    -- C4 — SURVOL DU PIÉDESTAL (rempli) : la MÊME fiche de monstre qu'une unité du board (MonsterCard), qui
-    -- contient déjà le bandeau « AT COMMAND » détaillant l'aura -> on COMPREND ce que fait le commandant (fix du
-    -- retour user : « le hover ne marche pas dessus »). Les cases commandées pulsent en or en parallèle (drawBack).
-    self:drawTooltip(self.commanderSlot.id, nil, { context = "commander", occ = self.commanderSlot })
-  else
-    local id, boardSlot, occ
-    local oi = self:shopAt(self.mx, self.my)
-    if oi then id = run.shop[oi].id
+  -- En mode Ctrl réseau, on masque les cartes/sidecars : le curseur devient un outil de lecture des liens.
+  if not (ui and ui.networkInspect) then
+    -- Reliques rendues dans le bandeau de run (haut) ; ici on ne gère que l'infobulle au survol (prioritaire sur unité).
+    local relIdx = run and self:relicAt(self.mx, self.my)
+    if relIdx then
+      self:drawRelicTooltip(run.relics[relIdx].id)
+    elseif run and self.xpBarRect and inRect(self.mx, self.my, self.xpBarRect) then
+      -- Survol de la barre d'XP -> cotes par rang du tier courant (enseigne « à quoi sert monter »).
+      self:drawOddsTooltip(run)
+    elseif self:commanderAt(self.mx, self.my) and self.commanderSlot and not self.drag then
+      -- C4 — SURVOL DU PIÉDESTAL (rempli) : la MÊME fiche de monstre qu'une unité du board (MonsterCard), qui
+      -- contient déjà le bandeau « AT COMMAND » détaillant l'aura -> on COMPREND ce que fait le commandant (fix du
+      -- retour user : « le hover ne marche pas dessus »). Les cases commandées pulsent en or en parallèle (drawBack).
+      self:drawTooltip(self.commanderSlot.id, nil, { context = "commander", occ = self.commanderSlot })
     else
-      local si = self:slotAt(self.mx, self.my)
-      if si and self.slotRigs[si] then id = self.slotRigs[si].id; boardSlot = si; occ = self.slotRigs[si]
+      local id, boardSlot, occ
+      local oi = self:shopAt(self.mx, self.my)
+      if oi then id = run.shop[oi].id
       else
-        local bi = self:benchAt(self.mx, self.my)
-        if bi and self.bench[bi] then id = self.bench[bi].id; occ = self.bench[bi] end
+        local si = self:slotAt(self.mx, self.my)
+        if si and self.slotRigs[si] then id = self.slotRigs[si].id; boardSlot = si; occ = self.slotRigs[si]
+        else
+          local bi = self:benchAt(self.mx, self.my)
+          if bi and self.bench[bi] then id = self.bench[bi].id; occ = self.bench[bi] end
+        end
       end
+      if id then self:drawTooltip(id, boardSlot, { occ = occ }) end
     end
-    if id then self:drawTooltip(id, boardSlot, { occ = occ }) end
   end
 
   self:drawFx() -- GAME FEEL : bursts achat/vente/level-up PAR-DESSUS tout (transitoires)
@@ -3778,7 +3811,7 @@ end
 -- comme en V) -> jamais plus sur une case que l'autre, la ligne reste visible de part et d'autre. Cas
 -- BIDIRECTIONNEL (2 liens sur la même arête, ex. bouclier<->bouclier) : chacun légèrement vers SA source.
 function Build:drawAuraChips(ui)
-  if not (ui and ui.auraLinks) then return end
+  if not (ui and ui.auraLinks and ui.networkInspect) then return end
   local function linkKey(a, b)
     local sa, sb = tostring(a), tostring(b)
     if sa < sb then return sa .. ">" .. sb end
@@ -3793,11 +3826,22 @@ function Build:drawAuraChips(ui)
     end
   end
   for _, lk in ipairs(ui.auraLinks) do
-    local pf, pt = self:auraPoint(lk.from), self:auraPoint(lk.to)
-    if pf and pt and (pf.x ~= pt.x or pf.y ~= pt.y) then
-      local a, b = lk.from, lk.to
-      local t = ((count[linkKey(a, b)] or 0) >= 2) and 0.37 or 0.5
-      self:drawAuraChip((pf.x + (pt.x - pf.x) * t) * 4, (pf.y + (pt.y - pf.y) * t) * 4, lk.kind, lk.label)
+    if self:auraLinkActive(lk, ui) then
+      local pf, pt = self:auraPoint(lk.from), self:auraPoint(lk.to)
+      if pf and pt and (pf.x ~= pt.x or pf.y ~= pt.y) then
+        local a, b = lk.from, lk.to
+        local t = ((count[linkKey(a, b)] or 0) >= 2) and 0.37 or 0.5
+        local mx, my = (pf.x + (pt.x - pf.x) * t) * 4, (pf.y + (pt.y - pf.y) * t) * 4
+        local dx, dy = (pt.x - pf.x), (pt.y - pf.y)
+        local len = math.sqrt(dx * dx + dy * dy)
+        if len > 0 then
+          local px, py = -dy / len, dx / len
+          mx, my = mx + px * 14, my + py * 14
+        end
+        mx = math.max(28, math.min(Draw.W - 28, mx))
+        my = math.max(TOPCHROME_H + 12, math.min(BAR.y * 4 - 12, my))
+        self:drawAuraChip(mx, my, lk.kind, lk.valueText or auraValueText(lk.kind, lk.label))
+      end
     end
   end
 end
@@ -3832,15 +3876,18 @@ function Build:drawTooltip(id, boardSlot, opts)
   local level = opts.level or (occ and occ.level) or 1
   local unit = opts.unit or UnitResolver.unitForLevel(id, level)
   local tagOpts = opts.tagOpts or (opts.context and { context = opts.context }) or nil
+  local networkHint = opts.networkHint
+  if networkHint == nil then networkHint = boardSlot ~= nil or opts.context == "commander" end
   local box = MonsterCard.draw(self.view, self.palette, id, self.mx * 4, self.my * 4, self.t / 60,
-    { rig = self.previewRigs[id], keywordHint = true, tagOpts = tagOpts, unit = unit, level = level })
+    { rig = self.previewRigs[id], keywordHint = true, networkHint = networkHint, tagOpts = tagOpts, unit = unit, level = level })
+  local sidecar
   if box and boardSlot and self.slotRigs[boardSlot] then
-    self:drawBoardInspectorExtra(box, boardSlot)
+    sidecar = self:drawBoardInspectorExtra(box, boardSlot)
   end
   local showKeywords = opts.showKeywords or self.forceKeywordGlossary
     or (love and love.keyboard and love.keyboard.isDown and love.keyboard.isDown("lshift", "rshift"))
   if box and showKeywords then
-    CardGlossary.drawMonster(self.view, box, id, self.t / 60,
+    CardGlossary.drawMonster(self.view, InfluencePanel.union(box, sidecar), id, self.t / 60,
       { showKeywords = true, scroll = self.tagGlossaryScroll or 0, tagOpts = tagOpts, unit = unit })
   end
 end
@@ -3889,6 +3936,7 @@ function Build:relicAuraRowsForSlot(slot)
         kind = kind,
         text = T("ui.aura_takes", { name = auraUpperAscii(T("relic." .. id .. ".name")) }),
         value = value,
+        valueText = auraValueText(kind, value),
         sourceKind = "relic",
         sourceId = id,
       }
@@ -3935,79 +3983,77 @@ end
 -- AURAS (« qui je buffe / qui me buffe », chiffré + icône, lu des liens d'aura) + EXPOSURE (rang
 -- d'exposition au ciblage de colonne, dérivé de la forme). Ancré à la fiche (cardBox) : dessous si la
 -- place le permet, sinon dessus. PUR-RENDER (golden neutre). ──
-function Build:drawBoardInspectorExtra(cardBox, slot)
-  local c = Theme.c
+function Build:influenceDataForSlot(slot)
   local links = (self.uiState and self.uiState.auraLinks) or {}
-  -- (1) lignes AURAS : gives (cette case = SOURCE, une ligne par voisin -> chaque bonus CONCRET est exact)
-  -- puis takes (liens entrants).
-  local rows = {}
+  local gives, receives, position = {}, {}, {}
   for _, lk in ipairs(links) do
     if lk.from == slot and self.slotRigs[lk.to] then
-      rows[#rows + 1] = { kind = lk.kind, text = T("ui.aura_gives", { names = self:auraTargetName(lk.to) }), value = lk.label }
+      gives[#gives + 1] = {
+        kind = lk.kind,
+        value = lk.label,
+        valueText = lk.valueText or auraValueText(lk.kind, lk.label),
+        source = T("ui.influence_to", { name = self:auraTargetName(lk.to) }),
+        detail = T("ui.influence_direct_link"),
+        badge = T("ui.influence_aura"),
+      }
     end
   end
   for _, lk in ipairs(links) do
     if lk.to == slot and lk.from ~= slot then
-      rows[#rows + 1] = { kind = lk.kind, text = T("ui.aura_takes", { name = self:auraSourceName(lk) }), value = lk.label }
+      receives[#receives + 1] = {
+        kind = lk.kind,
+        value = lk.label,
+        valueText = lk.valueText or auraValueText(lk.kind, lk.label),
+        source = T("ui.influence_from", { name = self:auraSourceName(lk) }),
+        detail = (lk.sourceKind == "commander") and T("ui.influence_commander_source") or T("ui.influence_direct_link"),
+        badge = (lk.sourceKind == "commander") and T("ui.influence_commander") or T("ui.influence_aura"),
+      }
     end
   end
-  for _, r in ipairs(self:relicAuraRowsForSlot(slot)) do rows[#rows + 1] = r end
-  -- (2) exposition : front-ness dérivée de la colonne (depth = maxCol - cell.x) sur les cases OCCUPÉES.
+  for _, r in ipairs(self:relicAuraRowsForSlot(slot)) do
+    receives[#receives + 1] = {
+      kind = r.kind,
+      value = r.value,
+      valueText = r.valueText or auraValueText(r.kind, r.value),
+      source = T("ui.influence_from", { name = self:auraSourceName({ sourceKind = "relic", sourceId = r.sourceId }) }),
+      detail = T("ui.influence_relic_source"),
+      badge = T("ui.influence_relic"),
+    }
+  end
+
   local cell = self.board.shape.cells[slot]
   local minC, maxC = math.huge, -math.huge
   for i = 1, 9 do
-    if self.slotRigs[i] then local cc = self.board.shape.cells[i]; if cc.x < minC then minC = cc.x end; if cc.x > maxC then maxC = cc.x end end
-  end
-  local expoFrac = 1 - (maxC - cell.x) / math.max(1, maxC - minC)
-  local filled = math.max(1, math.min(3, math.floor(expoFrac * 3 + 0.999)))
-  local expoLab = (expoFrac >= 0.66) and T("ui.expo_front") or ((expoFrac >= 0.33) and T("ui.expo_mid") or T("ui.expo_back"))
-
-  -- (3) mesure + position (attachée à la fiche : dessous si possible, sinon dessus).
-  local W, PAD, ROW_H = cardBox.w, 13, 19
-  local headF, valF = Theme.label(8), Theme.value(11)
-  local hasAuras = #rows > 0
-  local h = PAD + 12 + PAD -- exposition (≈12) + marges
-  if hasAuras then h = h + headF:getHeight() + 8 + #rows * ROW_H + 10 end
-  local x = math.floor(cardBox.x)
-  local y = cardBox.y + cardBox.h + 6
-  if y + h > Draw.H then y = cardBox.y - h - 6 end
-  if y < 4 then y = 4 end
-  y = math.floor(y)
-
-  Panel.draw(x, y, W, h, { fill1 = c.stone800, fill2 = c.stone900, border = c.iron })
-  local bx, rightX, cy = x + PAD, x + W - PAD, y + PAD
-
-  if hasAuras then
-    Draw.text(T("ui.auras_on_cell"), bx, cy, c.ink3, headF)
-    Draw.textR(T("ui.links_count", { n = #rows }), rightX, cy, c.ink4, headF)
-    cy = cy + headF:getHeight() + 8
-    for _, r in ipairs(rows) do
-      local col = self:auraColor(r.kind)
-      local icon = (r.kind ~= "shield") and Keywords.icon(r.kind) or nil
-      local ix = bx
-      if icon and icon.image and love.graphics then
-        love.graphics.setColor(1, 1, 1, 1); love.graphics.draw(icon.image, ix, math.floor(cy + ROW_H / 2 - icon.h / 2)); ix = bx + icon.w + 6
-      elseif love.graphics and love.graphics.polygon then
-        Draw.setColor(col); love.graphics.polygon("fill", ix, cy + 5, ix + 7, cy + 5, ix + 7, cy + 10, ix + 3.5, cy + 14, ix, cy + 10); ix = bx + 12; Draw.reset()
-      else ix = bx + 12 end
-      local vw = valF:getWidth(r.value)
-      Draw.text(r.value, rightX - vw, cy + math.floor((ROW_H - valF:getHeight()) / 2), col, valF)
-      local txt, tf = fitText(r.text, (rightX - vw - 6) - ix, Theme.body, 12, 10)
-      Draw.text(txt, ix, cy + math.floor((ROW_H - (tf and tf:getHeight() or 12)) / 2), c.ink2, tf)
-      cy = cy + ROW_H
+    if self.slotRigs[i] then
+      local cc = self.board.shape.cells[i]
+      if cc.x < minC then minC = cc.x end
+      if cc.x > maxC then maxC = cc.x end
     end
-    cy = cy + 10
   end
-  -- EXPOSURE : label + 3 segments + rang (saveur).
-  Draw.text(T("ui.exposure"), bx, cy + 1, c.ink4, headF)
-  local segX = bx + headF:getWidth(T("ui.exposure")) + 10
-  for k = 1, 3 do
-    local sx = segX + (k - 1) * 15
-    if k <= filled then Panel.vgrad(sx, cy, 12, 9, { 0x7a / 255, 0x14 / 255, 0x10 / 255, 1 }, { 0x3a / 255, 0x0a / 255, 0x08 / 255, 1 })
-    else Draw.rect(sx, cy, 12, 9, c.stone850, c.stone700, 1) end
-  end
-  Draw.textR(expoLab, rightX, cy, c.ink4, Theme.flavor(11))
-  Draw.reset()
+  local expoFrac = cell and (1 - (maxC - cell.x) / math.max(1, maxC - minC)) or 0
+  local expoLab = (expoFrac >= 0.66) and T("ui.expo_front") or ((expoFrac >= 0.33) and T("ui.expo_mid") or T("ui.expo_back"))
+  position[#position + 1] = {
+    kind = "state",
+    valueText = T("ui.exposure"),
+    source = T("ui.influence_position", { name = expoLab }),
+    detail = T("ui.influence_links_summary", { out = #gives, inc = #receives }),
+    badge = T("ui.influence_position_badge"),
+  }
+
+  local sr = self.slotRigs[slot]
+  return {
+    title = T("ui.influence_title"),
+    subtitle = sr and T("unit." .. sr.id .. ".name") or nil,
+    sections = {
+      { title = T("ui.influence_receives"), rows = receives },
+      { title = T("ui.influence_gives"), rows = gives },
+      { title = T("ui.influence_position_title"), rows = position },
+    },
+  }
+end
+
+function Build:drawBoardInspectorExtra(cardBox, slot)
+  return InfluencePanel.draw(self.view, cardBox, self:influenceDataForSlot(slot))
 end
 
 -- Infobulle de relique (survol de la rangée) = Panel propre (même langage que src/scenes/relicpick.lua) :

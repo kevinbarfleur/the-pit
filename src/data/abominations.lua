@@ -74,13 +74,13 @@ Abominations.list = {
     accent = "#cfd0c0",
     intent = "mur defensif qui teste le sustain et les counters anti-tank",
     boss = boss("ossuary", 2300, 7, 96, {
-      E("on_attacked", "thorns", { value = 5 }),
+      E("on_attacked", "thorns", { value = 4 }),
       E("combat_start", "regen", { value = 2 }),
-    }, { dmgReduce = 0.18, shield = 40 }),
+    }, { dmgReduce = 0.16, shield = 38 }),
     generals = {
-      general("bone_reaper", 150, 9, 78, { E("on_attack", "execute", { threshold = 0.30, bonus = 0.60 }) }),
+      general("bone_reaper", 150, 9, 78, { E("on_attack", "execute", { threshold = 0.28, bonus = 0.55 }) }),
       general("bone_crawler", 180, 5, 58, { E("on_attacked", "thorns", { value = 4 }) }, { dmgReduce = 0.10 }),
-      general("bone_guard", 260, 4, 84, {}, { taunt = true, dmgReduce = 0.24, shield = 35 }),
+      general("bone_guard", 250, 4, 84, {}, { taunt = true, dmgReduce = 0.22, shield = 30 }),
     },
   },
   {
