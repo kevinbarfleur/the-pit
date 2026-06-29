@@ -32,6 +32,8 @@ local ok, err = pcall(function()
     "combat_network_focus",
     "combat_network_all",
     "combat_impacts",
+    "playground",
+    "playground_boss",
   }) do
     assert(seen[name], "scene de regression visuelle attendue absente: " .. name)
   end

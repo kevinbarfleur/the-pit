@@ -45,11 +45,12 @@ function Bossrush.toComp(abom, side)
   }
   local b = Place.bounds(cells)
   local comp = {}
-  for _, s in ipairs(cells) do
+  for i, s in ipairs(cells) do
     local x, y = Place.pos(s.col, s.row, side, b)
     comp[#comp + 1] = {
       id = s.id,
       role = s.role,
+      displayName = s.role == "boss" and abom.name or ("General " .. tostring(math.max(1, i - 1))),
       abomination = abom.key,
       theme = abom.theme,
       slot = s.slot,

@@ -79,6 +79,8 @@ local ok, err = pcall(function()
   end
   for _, k in ipairs({ "pg.title", "pg.subtitle", "pg.vs", "pg.watch", "pg.sim", "pg.simming",
     "pg.winrate", "pg.decided", "pg.invest_delta", "pg.idle", "pg.watched", "pg.invest", "pg.gold", "pg.trials",
+    "pg.boss_stats", "pg.boss_generals", "pg.boss_rule", "pg.boss_preview_hint", "pg.boss_score",
+    "pg.boss_slain", "pg.boss_measured", "pg.boss_avg_score", "pg.boss_sim_line",
     "result.left", "result.right", "ui.hint_playground", "menu.proving", "encounter.exhibition.name" }) do
     need(k)
   end

@@ -51,7 +51,11 @@ local ok, err = pcall(function()
   end
   for _, s in ipairs(Compositions.scenarios) do
     assert(Compositions.byId[s.a], "scenario " .. s.id .. " : compo A inconnue " .. tostring(s.a))
-    assert(Compositions.byId[s.b], "scenario " .. s.id .. " : compo B inconnue " .. tostring(s.b))
+    if s.kind == "bossrush" or s.boss then
+      assert(Abominations.byKey[s.boss], "scenario " .. s.id .. " : boss inconnu " .. tostring(s.boss))
+    else
+      assert(Compositions.byId[s.b], "scenario " .. s.id .. " : compo B inconnue " .. tostring(s.b))
+    end
     assert(type(s.seed) == "number", "scenario " .. s.id .. " : seed requis")
     if s.tags then -- facette de filtre thematique : tout tag doit etre connu (anti-typo)
       for _, tg in ipairs(s.tags) do
@@ -106,11 +110,17 @@ local ok, err = pcall(function()
   -- 4) SMOKE : chaque scénario featured conclut (ou jugé) sous le plafond, verdict booléen.
   for _, s in ipairs(Compositions.scenarios) do
     local a = Compbuild.toComp(Compositions.byId[s.a], -1)
-    local b = Compbuild.toComp(Compositions.byId[s.b], 1)
-    local res = Match.run(a, b, s.seed, {})
-    assert(type(res.win) == "boolean", "scenario " .. s.id .. " : verdict booleen")
+    if s.kind == "bossrush" or s.boss then
+      local res = Bossrush.run(a, s.boss, s.seed, { scoreTicks = 60, tickCap = 1200 })
+      assert(res.boss_key == s.boss and type(res.boss_score_damage) == "number",
+        "scenario " .. s.id .. " : bossrush produit score boss")
+    else
+      local b = Compbuild.toComp(Compositions.byId[s.b], 1)
+      local res = Match.run(a, b, s.seed, {})
+      assert(type(res.win) == "boolean", "scenario " .. s.id .. " : verdict booleen")
+    end
   end
-  print(string.format("  lab : smoke OK (%d scenarios concluent, verdict booleen)", #Compositions.scenarios))
+  print(string.format("  lab : smoke OK (%d scenarios concluent, verdict ou score boss valide)", #Compositions.scenarios))
 
   -- 5) MONOTONICITÉ DU COÛT : perfect >= variantes amputées (le clutch/redondance coûte de l'or) ;
   -- score dans (0,1] ; placementSens dans [0,1]. C'est le socle de l'analyse investissement-aware.

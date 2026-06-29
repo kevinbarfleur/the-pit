@@ -31,6 +31,8 @@ local Compositions = require("src.data.compositions")
 local Compbuild = require("src.lab.compbuild")
 local Compcost = require("src.lab.compcost")
 local Match = require("src.combat.match")
+local Bossrush = require("src.lab.bossrush")
+local Abominations = require("src.data.abominations")
 local T = require("src.core.i18n").t
 local C = Theme.c
 
@@ -54,6 +56,64 @@ local BTN_W, BTN_GAP = 200, 16
 local BTN_Y, BTN_H = 540, 54
 -- listY / listViewH / listVisible sont CALCULES (layoutChips) : la liste commence sous la derniere rangee de
 -- chips et garde son bas aligne sur LIST_BOTTOM -> le filtre peut occuper 1, 2 ou 3 rangs sans chevauchement.
+
+local function isBossScenario(sc)
+  return sc and (sc.kind == "bossrush" or sc.boss ~= nil)
+end
+
+local function bossName(key)
+  if not key then return T("bossrush.no_boss") end
+  return T("bossrush.abomination." .. tostring(key) .. ".name")
+end
+
+local function colorFromAccent(hex, fallback)
+  if type(hex) ~= "string" then return fallback end
+  local raw = hex:match("^#?([%da-fA-F][%da-fA-F][%da-fA-F][%da-fA-F][%da-fA-F][%da-fA-F])$")
+  if not raw then return fallback end
+  local n = tonumber(raw, 16)
+  if not n then return fallback end
+  return Theme.hex(n)
+end
+
+local function effectColor(op)
+  if op == "burn" or op == "spread_burn_on_death" then return C.burn end
+  if op == "poison" then return C.poison end
+  if op == "bleed" then return C.bleed end
+  if op == "rot" then return C.rot end
+  if op == "shock" then return C.shock end
+  if op == "regen" or op == "lifesteal" then return C.regen end
+  if op == "thorns" or op == "execute" or op == "percent_hp_strike" then return C.bloodL end
+  if op == "grant_vuln" then return C.ember end
+  if op == "grant_team" then return C.gold end
+  if op == "summon" then return C.brassS end
+  return C.ink3
+end
+
+local function opLabel(op)
+  local key = "bossrush.op." .. tostring(op or "attack")
+  local v = T(key)
+  if v ~= key then return v end
+  return string.upper(tostring(op or "attack"):gsub("_", " "))
+end
+
+local function primaryThreat(spec)
+  if not spec then return T("bossrush.op.attack"), C.ink3 end
+  if spec.taunt then return T("bossrush.op.taunt"), C.gold end
+  if (spec.shield or 0) > 0 then return T("bossrush.op.shield"), C.shield end
+  if (spec.dmgReduce or 0) > 0 then return T("bossrush.op.armor"), C.steel end
+  for _, e in ipairs(spec.effects or {}) do
+    if e and e.op then return opLabel(e.op), effectColor(e.op) end
+  end
+  return T("bossrush.op.attack"), C.ink3
+end
+
+local function drawThreatTag(x, y, label, color, w)
+  w = w or math.max(78, Theme.labelSmall(9):getWidth(label) + 22)
+  Draw.rect(x, y, w, 22, { C.stone900[1], C.stone900[2], C.stone900[3], 0.72 }, color, 1)
+  Draw.rect(x, y, 3, 22, color)
+  Draw.textC(label, x + w / 2 + 2, y + 5, color, Theme.labelSmall(9))
+  return w
+end
 
 function Playground.new(palette, vw, vh, host)
   local self = setmetatable({
@@ -84,7 +144,7 @@ function Playground:buildChips()
   for _, sc in ipairs(self.allScenarios) do
     local a, b = Compositions.byId[sc.a], Compositions.byId[sc.b]
     if a then present[a.archetype] = true end
-    if b then present[b.archetype] = true end
+    if b and not isBossScenario(sc) then present[b.archetype] = true end
     if sc.tags then for _, tg in ipairs(sc.tags) do tagSeen[tg] = true end end
   end
   self.chips = { { key = "all", label = T("pg.filter.all") } }
@@ -125,7 +185,7 @@ function Playground:rebuildView()
       local keep = false
       if kind == "arch" then
         local a, b = Compositions.byId[sc.a], Compositions.byId[sc.b]
-        keep = (a and a.archetype == val) or (b and b.archetype == val)
+        keep = (a and a.archetype == val) or (b and not isBossScenario(sc) and b.archetype == val)
       elseif kind == "tag" and sc.tags then
         for _, tg in ipairs(sc.tags) do if tg == val then keep = true; break end end
       end
@@ -153,19 +213,38 @@ function Playground:select(i)
   self.sel = i
   self:ensureVisible(i)
   self.cA = Compositions.byId[sc.a]
-  self.cB = Compositions.byId[sc.b]
+  self.cB = (not isBossScenario(sc)) and Compositions.byId[sc.b] or nil
   self.compA = Compbuild.toComp(self.cA, -1)
-  self.compB = Compbuild.toComp(self.cB, 1)
+  self.boss = isBossScenario(sc) and Abominations.byKey[sc.boss] or nil
+  if self.boss then self.compB = Bossrush.toComp(self.boss, 1)
+  elseif self.cB then self.compB = Compbuild.toComp(self.cB, 1)
+  else self.compB = nil end
   self.costA = Compcost.of(self.cA)
-  self.costB = Compcost.of(self.cB)
+  self.costB = self.cB and Compcost.of(self.cB) or nil
   self.result, self.sim = nil, nil
 end
 
 -- INSPECT-then-fight : ouvre le BUILD VERROUILLÉ (compo A posée, hover/auras/fiche actifs) ; son bouton FIGHT
 -- lance le combat A vs B, dont onFinish rend la main ICI (résultat WATCH). cf. main.lua host.goto("inspect").
 function Playground:startWatch()
-  if not (self.compA and self.compB) then return end
   local sc = self.scenarios[self.sel]
+  if not (sc and self.compA) then return end
+  if isBossScenario(sc) then
+    if not self.boss then return end
+    local pg = self
+    self.host.goto("bossrush", {
+      left = self.compA,
+      bossKey = sc.boss,
+      seed = sc.seed,
+      source = "playground",
+      onFinish = function(result)
+        pg.result = { kind = "boss_watch", result = result }
+        pg.host.goto("playground")
+      end,
+    })
+    return
+  end
+  if not self.compB then return end
   local pg = self
   self.host.goto("inspect", {
     composition = self.cA, -- compo BRUTE (sigil + units/slots/levels) à poser pour l'inspection
@@ -180,9 +259,27 @@ function Playground:startWatch()
 end
 
 function Playground:startSim()
-  if not (self.compA and self.compB) or self.sim then return end
+  if not self.compA or self.sim then return end
   local sc = self.scenarios[self.sel]
-  self.sim = { n = SIM_N, done = 0, wins = 0, decided = 0, seed = sc.seed }
+  if not sc then return end
+  if isBossScenario(sc) then
+    if not self.boss then return end
+    self.sim = {
+      kind = "bossrush",
+      n = SIM_N,
+      done = 0,
+      seed = sc.seed,
+      score = 0,
+      clears = 0,
+      fullWindows = 0,
+      survived = 0,
+      bossKills = 0,
+    }
+  elseif self.compB then
+    self.sim = { kind = "match", n = SIM_N, done = 0, wins = 0, decided = 0, seed = sc.seed }
+  else
+    return
+  end
   self.result = nil
 end
 
@@ -200,13 +297,35 @@ function Playground:update(dt)
   if self.sim then
     local s, k = self.sim, 0
     while s.done < s.n and k < SIM_PER_FRAME do
-      local res = Match.run(self.compA, self.compB, s.seed + s.done, {})
-      if res.win then s.wins = s.wins + 1 end
-      if res.decided then s.decided = s.decided + 1 end
+      if s.kind == "bossrush" then
+        local sc = self.scenarios[self.sel]
+        local res = Bossrush.run(self.compA, sc and sc.boss, s.seed + s.done, { scoreTicks = 8 * 60, tickCap = 60 * 60 })
+        s.score = s.score + (res.boss_score_damage or 0)
+        if res.cleared_blockers then s.clears = s.clears + 1 end
+        if res.survived_score_window then s.fullWindows = s.fullWindows + 1 end
+        if res.survived then s.survived = s.survived + 1 end
+        if res.boss_killed then s.bossKills = s.bossKills + 1 end
+      else
+        local res = Match.run(self.compA, self.compB, s.seed + s.done, {})
+        if res.win then s.wins = s.wins + 1 end
+        if res.decided then s.decided = s.decided + 1 end
+      end
       s.done = s.done + 1; k = k + 1
     end
     if s.done >= s.n then
-      self.result = { kind = "sim", n = s.n, wins = s.wins, decided = s.decided }
+      if s.kind == "bossrush" then
+        self.result = {
+          kind = "boss_sim",
+          n = s.n,
+          avgScore = s.score / math.max(1, s.n),
+          clears = s.clears,
+          fullWindows = s.fullWindows,
+          survived = s.survived,
+          bossKills = s.bossKills,
+        }
+      else
+        self.result = { kind = "sim", n = s.n, wins = s.wins, decided = s.decided }
+      end
       self.sim = nil
     end
   end
@@ -276,6 +395,44 @@ function Playground:drawComp(comp, resolved, cost, px, py, pw, ph, won)
   Draw.textR(T("pg.gold", { n = cost.gold }), px + pw - 18, iyv + 34, C.ink3, Theme.label(10))
 end
 
+function Playground:drawBossPreview(abom, px, py, pw, ph, won)
+  local accent = colorFromAccent(abom and abom.accent, C.bloodL)
+  local ix, iy, iw, ih = Panel.draw(px, py, pw, ph, { accent = won and C.gold or accent })
+
+  Draw.textC(bossName(abom and abom.key), ix + iw / 2, iy + 12, C.ink, Theme.subhead(17))
+  local family = string.upper(tostring((abom and abom.theme) or "-"))
+  Draw.textC(T("bossrush.family", { family = family }), ix + iw / 2, iy + 35, C.ink4, Theme.label(10))
+
+  local boss = abom and abom.boss or nil
+  local bx, by, bw, bh = ix + 22, iy + 64, iw - 44, 82
+  Draw.rect(bx, by, bw, bh, { C.stone900[1], C.stone900[2], C.stone900[3], 0.70 }, C.iron, 1)
+  Draw.rect(bx, by, 4, bh, accent)
+  Draw.textTrackedL(T("bossrush.boss_role"), bx + 16, by + 12, accent, Theme.labelSmall(9), 1.1)
+  Draw.text(T("pg.boss_stats", {
+    hp = tostring(boss and boss.hp or "-"),
+    dmg = tostring(boss and boss.dmg or "-"),
+    cd = string.format("%.1fs", ((boss and boss.cd or 0) / 60)),
+  }), bx + 16, by + 36, C.ink, Theme.value(13))
+  local label, col = primaryThreat(boss)
+  drawThreatTag(bx + bw - 112, by + 31, label, col, 92)
+
+  Dividers.text(ix + iw / 2, iy + 174, iw - 42, T("pg.boss_generals"))
+  local gy = iy + 198
+  for i = 1, 3 do
+    local spec = abom and abom.generals and abom.generals[i] or nil
+    local glabel, gcol = primaryThreat(spec)
+    local y = gy + (i - 1) * 38
+    Draw.rect(ix + 22, y, iw - 44, 30, { C.stone900[1], C.stone900[2], C.stone900[3], 0.50 }, C.brassD, 1)
+    Draw.rect(ix + 22, y, 4, 30, gcol)
+    Draw.textTrackedL(T("bossrush.general_n", { n = i }), ix + 36, y + 7, C.ink3, Theme.labelSmall(8), 1.0)
+    drawThreatTag(ix + iw - 132, y + 4, glabel, gcol, 94)
+  end
+
+  local hy = py + ph - 82
+  Dividers.text(px + pw / 2, hy, pw - 36, T("pg.boss_rule"))
+  Draw.textWrap(T("pg.boss_preview_hint"), px + 22, hy + 22, pw - 44, C.ink3, Theme.body(11), "center")
+end
+
 function Playground:drawOverlay(view)
   Draw.begin(view)
 
@@ -312,8 +469,9 @@ function Playground:drawOverlay(view)
       })
       Draw.text(T("scenario." .. sc.id .. ".label"), r.x + 14, r.y + 8, on and C.ink or C.ink2, Theme.subhead(14))
       local a, b = Compositions.byId[sc.a], Compositions.byId[sc.b]
-      Draw.text(T("pg.archetype." .. a.archetype) .. "  vs  " .. T("pg.archetype." .. b.archetype),
-        r.x + 14, r.y + 27, C.ink4, Theme.label(9))
+      local right = isBossScenario(sc) and bossName(sc.boss) or T("pg.archetype." .. b.archetype)
+      Draw.text(T("pg.archetype." .. a.archetype) .. "  vs  " .. right,
+        r.x + 14, r.y + 27, isBossScenario(sc) and C.bloodL or C.ink4, Theme.label(9))
     end
   end
   Draw.noScissor()
@@ -329,8 +487,14 @@ function Playground:drawOverlay(view)
 
   -- Aperçus A (gauche) / B (droite) + "Vs".
   local watched = self.result and self.result.kind == "watch"
+  local bossWatched = self.result and self.result.kind == "boss_watch"
   self:drawComp(self.cA, self.compA, self.costA, AX, PANEL_Y, PANEL_W, PANEL_H, watched and self.result.win)
-  self:drawComp(self.cB, self.compB, self.costB, BX, PANEL_Y, PANEL_W, PANEL_H, watched and (self.result.win == false))
+  if self.boss then
+    local killed = bossWatched and self.result.result and self.result.result.boss_killed
+    self:drawBossPreview(self.boss, BX, PANEL_Y, PANEL_W, PANEL_H, killed)
+  else
+    self:drawComp(self.cB, self.compB, self.costB, BX, PANEL_Y, PANEL_W, PANEL_H, watched and (self.result.win == false))
+  end
   Draw.textC(T("pg.vs"), (AX + PANEL_W + BX) / 2, PANEL_Y + PANEL_H / 2 - 24, C.bloodL, Theme.display(34))
 
   -- Boutons WATCH / SIM + lecture du résultat (contextualisée par l'investissement).
@@ -370,6 +534,22 @@ function Playground:drawResult()
     local who = self.result.win and T("result.left") or T("result.right")
     Draw.textC(who, rx + PANEL_W / 2, ry + 8, self.result.win and C.gold or C.bloodL, Theme.heading(16))
     Draw.textC(T("pg.watched"), rx + PANEL_W / 2, ry + 32, C.ink4, Theme.label(9))
+  elseif self.result.kind == "boss_watch" then
+    local r = self.result.result or {}
+    Draw.textC(T("pg.boss_score", { score = tostring(math.floor((r.boss_score_damage or 0) + 0.5)) }),
+      rx + PANEL_W / 2, ry + 4, C.gold, Theme.value(15))
+    Draw.textC(T(r.boss_killed and "pg.boss_slain" or "pg.boss_measured"),
+      rx + PANEL_W / 2, ry + 28, r.boss_killed and C.bloodL or C.ink4, Theme.label(9))
+  elseif self.result.kind == "boss_sim" then
+    local r = self.result
+    local clearPct = r.clears / r.n * 100
+    local windowPct = r.fullWindows / r.n * 100
+    Draw.textC(T("pg.boss_avg_score", { score = tostring(math.floor((r.avgScore or 0) + 0.5)), n = r.n }),
+      rx + PANEL_W / 2, ry + 4, C.ink, Theme.value(15))
+    Draw.textC(T("pg.boss_sim_line", {
+      clear = string.format("%.0f", clearPct),
+      window = string.format("%.0f", windowPct),
+    }), rx + PANEL_W / 2, ry + 28, C.ink4, Theme.label(9))
   else
     local pct = self.result.wins / self.result.n * 100
     local dpct = self.result.decided / self.result.n * 100

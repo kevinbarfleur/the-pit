@@ -1017,7 +1017,7 @@ local ok, err = pcall(function()
     ro2:keypressed("r")
   end
 
-  -- Bossrush result : scene post-win calcule un score deterministe, archive un record et expose des sorties.
+  -- Bossrush live : entree post-win = vrai combat PvE, pas un score precalcule.
   do
     local BossrushScene = require("src.scenes.bossrush")
     local Units = require("src.data.units")
@@ -1043,9 +1043,17 @@ local ok, err = pcall(function()
       scoreTicks = 12,
       tickCap = 420,
     })
-    assert(s.result and s.result.boss_key == "brasier", "bossrush : resultat calcule pour le boss demande")
-    assert(#run.bossrushResults == 1, "bossrush : record score archive sur le run")
+    assert(s.arena and s.renderer and not s.result, "bossrush : demarre par une arene live")
+    assert(#run.bossrushResults == 0, "bossrush : aucun record score avant resolution live")
     s:update(1.0); s:drawBack(view); s:drawWorld(); s:drawOverlay(view)
+    s.skipping = true
+    for _ = 1, 8 do
+      s:update(1.0)
+      if s.result then break end
+    end
+    assert(s.result and s.result.boss_key == "brasier", "bossrush : resultat calcule pour le boss demande")
+    assert(#run.bossrushResults == 1, "bossrush : record score archive apres resolution")
+    s:drawBack(view); s:drawWorld(); s:drawOverlay(view)
     local b = s.btnNew
     s:mousepressed((b.x + b.w / 2) / 4, (b.y + b.h / 2) / 4, 1)
     s:update(60)

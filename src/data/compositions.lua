@@ -577,6 +577,18 @@ Compositions.scenarios = {
   { id = "whisper_forge",     a = "whisper_forge_ligne",   b = "bruiser_carre",      seed = 1042, tags = { "murmur", "vfx" },        noteKey = "scenario.whisper_forge.note" },
   { id = "whisper_echo",      a = "whisper_echo_carre",    b = "shock_storm_carre",  seed = 1043, tags = { "murmur", "tempo" },      noteKey = "scenario.whisper_echo.note" },
   { id = "whisper_patient",   a = "whisper_patient_carre", b = "bruiser_carre",      seed = 1044, tags = { "murmur", "tempo" },      noteKey = "scenario.whisper_patient.note" },
+  -- ── BOSSRUSH PvE : toutes les abominations, chacune contre une équipe joueur différente. WATCH lance
+  -- le vrai combat bossrush live ; SIM xN mesure score/clear/survie en headless. ──
+  { id = "boss_leviathan", kind = "bossrush", a = "poison_diamant_perfect", boss = "leviathan", seed = 1101, tags = { "boss", "spread", "vfx" }, noteKey = "scenario.boss_leviathan.note" },
+  { id = "boss_regard",    kind = "bossrush", a = "shock_nuke_croix",       boss = "regard",    seed = 1102, tags = { "boss", "tempo", "vfx" },  noteKey = "scenario.boss_regard.note" },
+  { id = "boss_ossuaire",  kind = "bossrush", a = "siege_carre",           boss = "ossuaire",  seed = 1103, tags = { "boss", "tempo" },         noteKey = "scenario.boss_ossuaire.note" },
+  { id = "boss_kraken",    kind = "bossrush", a = "bleed_lock_anneau",      boss = "kraken",    seed = 1104, tags = { "boss", "tempo", "vfx" },  noteKey = "scenario.boss_kraken.note" },
+  { id = "boss_idole",     kind = "bossrush", a = "ward_fortress_carre",    boss = "idole",     seed = 1105, tags = { "boss", "vfx" },           noteKey = "scenario.boss_idole.note" },
+  { id = "boss_ruche",     kind = "bossrush", a = "spread_showcase",        boss = "ruche",     seed = 1106, tags = { "boss", "spread", "vfx" }, noteKey = "scenario.boss_ruche.note" },
+  { id = "boss_brasier",   kind = "bossrush", a = "burn_conduit_ligne",     boss = "brasier",   seed = 1107, tags = { "boss", "vfx" },           noteKey = "scenario.boss_brasier.note" },
+  { id = "boss_floraison", kind = "bossrush", a = "cross_venom_pyre",       boss = "floraison", seed = 1108, tags = { "boss", "cross", "spread" }, noteKey = "scenario.boss_floraison.note" },
+  { id = "boss_devoreur",  kind = "bossrush", a = "fortress_thorns_carre",  boss = "devoreur",  seed = 1109, tags = { "boss", "tempo" },         noteKey = "scenario.boss_devoreur.note" },
+  { id = "boss_vermine",   kind = "bossrush", a = "rot_patient_carre",      boss = "vermine",   seed = 1110, tags = { "boss", "tempo", "vfx" },  noteKey = "scenario.boss_vermine.note" },
 }
 
 -- ── Index (construits au load ; DATA pure, aucun love/require) ──
@@ -596,7 +608,7 @@ Compositions.archetypes = { "poison", "burn", "bleed", "rot", "tank", "bruiser",
 
 -- Tags THÉMATIQUES (facette de filtre transversale du Proving Ground, en plus des archétypes). Ordre =
 -- ordre d'affichage des chips. L'intégrité du catalogue vérifie que tout tag de scénario est connu.
-Compositions.tags = { "spread", "cross", "tempo", "vfx", "mirror", "murmur" }
+Compositions.tags = { "spread", "cross", "tempo", "vfx", "mirror", "murmur", "boss" }
 Compositions.tagSet = {}
 for _, tg in ipairs(Compositions.tags) do Compositions.tagSet[tg] = true end
 

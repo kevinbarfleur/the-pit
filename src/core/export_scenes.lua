@@ -22,6 +22,7 @@ local Bossrush  = require("src.scenes.bossrush")
 local Relicpick = require("src.scenes.relicpick")
 local Menu      = require("src.scenes.menu")
 local Gallery   = require("src.scenes.gallery")
+local Playground = require("src.scenes.playground")
 local GrimoireS = require("src.scenes.grimoire")
 local SystemMenu = require("src.ui.system_menu")
 local Draw      = require("src.ui.draw")
@@ -525,7 +526,6 @@ local function makeBossrushShot(host, bossKey)
     left = left,
     bossKey = bossKey or "brasier",
     seed = SEED + 900,
-    instantScore = true,
   })
 end
 
@@ -540,6 +540,22 @@ function Builders.bossrush_ruche(host) return makeBossrushShot(host, "ruche") en
 function Builders.bossrush_floraison(host) return makeBossrushShot(host, "floraison") end
 function Builders.bossrush_devoreur(host) return makeBossrushShot(host, "devoreur") end
 function Builders.bossrush_vermine(host) return makeBossrushShot(host, "vermine") end
+
+local function makePlaygroundShot(host, opts)
+  opts = opts or {}
+  if not host.goto then host.goto = function() end end
+  local pg = Playground.new(Palette, VW, VH, host)
+  if opts.boss then
+    pg:setFilter("tag:boss")
+    for i, sc in ipairs(pg.scenarios or {}) do
+      if sc.id == "boss_brasier" then pg:select(i); break end
+    end
+  end
+  return pg
+end
+
+function Builders.playground(host) return makePlaygroundShot(host) end
+function Builders.playground_boss(host) return makePlaygroundShot(host, { boss = true }) end
 
 -- GRIMOIRE : codex persistant en deux colonnes. Pour la capture : onglet BESTIAIRE, entrée de haut tier
 -- sélectionnée, fiche fixe à droite au niveau III. Full-unlock DEV pour ne pas dépendre de la sauvegarde.
@@ -636,7 +652,7 @@ end
 local M = {}
 
 -- Liste des noms de scènes capturables (ordre stable, pour --shoot=all et les messages d'erreur).
-M.names = { "menu", "build", "combat", "combat_hover_inspect", "combat_murmur_inspect", "combat_network_focus", "combat_network_all", "combat_impacts", "combat_numbers_stack", "combat_react", "summary", "relicpick", "runevent", "runevent_brood", "runevent_economy", "runevent_shop_tier", "runevent_unit_glossary", "runover", "bossrush", "bossrush_brasier",
+M.names = { "menu", "build", "combat", "combat_hover_inspect", "combat_murmur_inspect", "combat_network_focus", "combat_network_all", "combat_impacts", "combat_numbers_stack", "combat_react", "summary", "relicpick", "runevent", "runevent_brood", "runevent_economy", "runevent_shop_tier", "runevent_unit_glossary", "runover", "playground", "playground_boss", "bossrush", "bossrush_brasier",
   "bossrush_leviathan", "bossrush_regard", "bossrush_ossuaire", "bossrush_kraken", "bossrush_idole",
   "bossrush_ruche", "bossrush_floraison", "bossrush_devoreur", "bossrush_vermine",
   "grimoire", "grimoire_glossary", "grimoire_relics",

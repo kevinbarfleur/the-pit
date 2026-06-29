@@ -1506,7 +1506,7 @@ function ArenaDraw:drawOverlay(view)
   for _, u in ipairs(self.arena.units) do
     if u.alive then
       local ny = (u.y + (HealthBar.BAR_DY or -34)) * 4 - nameH - 1
-      local name = (Units[u.id] and T("unit." .. u.id .. ".name")) or u.id
+      local name = (u.spec and u.spec.displayName) or (Units[u.id] and T("unit." .. u.id .. ".name")) or u.id
       if u.isCommander then
         -- C4 — LE COMMANDANT (« général ») : visiblement distinct, JAMAIS de barre de vie ni de rôle. Une plaque
         -- « COMMANDER » (sa caste en doré, son nom dessous) prend la place de l'encadré de vie -> il se présente

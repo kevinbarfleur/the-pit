@@ -1,11 +1,16 @@
 -- src/scenes/bossrush.lua
--- Premier flux produit PvE post-victoire : on envoie le build final dans le
--- runner bossrush deterministe, puis on affiche un resultat de score lisible.
--- La scene reste RENDER/UI ; la simulation PvE vit dans src/lab/bossrush.lua.
+-- Flux PvE post-victoire : le build final affronte une abomination EN LIVE
+-- (boss + trois generaux). Une fois les generaux brises, une fenetre de
+-- scoring compte les degats au boss, puis seulement ensuite le resultat est
+-- affiche. Le runner lab reste disponible pour les outils/snapshots instantanes.
 
 local Bossrush = require("src.lab.bossrush")
 local Abominations = require("src.data.abominations")
+local Arena = require("src.combat.arena")
+local ArenaDraw = require("src.render.arena_draw")
+local Pacing = require("src.run.pacing")
 local Ambient = require("src.fx.ambient")
+local NightmareBG = require("src.fx.nightmare_bg")
 local Theme = require("src.ui.theme")
 local Draw = require("src.ui.draw")
 local Banner = require("src.ui.banner")
@@ -25,6 +30,7 @@ Scene.__index = Scene
 local PANEL_W, PANEL_H = 1080, 390
 local BTN_W, BTN_H, BTN_GAP = 250, 52, 22
 local CAUSE_ORDER = { "attack", "cleave", "shock", "burn", "poison", "rot", "bleed", "thorns", "reflect", "fatigue" }
+local NO_FATIGUE = { start = 999999, base = 0, ramp = 0 }
 
 local function ptIn(px, py, r)
   return r and px >= r.x and px <= r.x + r.w and py >= r.y and py <= r.y + r.h
@@ -56,6 +62,20 @@ local function bossDisplayName(result)
   return result.boss_name or T("bossrush.no_boss")
 end
 
+local function hasReturnPayload(self)
+  return self and self.payload and type(self.payload.onFinish) == "function"
+end
+
+local function finishPrimary(self)
+  if hasReturnPayload(self) then self.payload.onFinish(self.result)
+  else self.host.newRun() end
+end
+
+local function finishSecondary(self)
+  if self.host.abandonRun then self.host.abandonRun()
+  elseif self.host.goto then self.host.goto("menu") end
+end
+
 local function scoreSeed(run, payload)
   if payload and payload.seed then return payload.seed end
   local base = run and run.seed or 0
@@ -81,6 +101,58 @@ local function buildLeftComp(host, payload)
   local run = (payload and payload.run) or (host and host.run)
   if run and run.applyRelics then run:applyRelics(left) end
   return left
+end
+
+local function countAlive(arena, pred)
+  local n = 0
+  for _, u in ipairs((arena and arena.units) or {}) do
+    if u.alive and pred(u) then n = n + 1 end
+  end
+  return n
+end
+
+local function bossUnit(arena)
+  for _, u in ipairs((arena and arena.units) or {}) do
+    if u.spec and u.spec.role == "boss" then return u end
+  end
+  return nil
+end
+
+local function sideAlive(arena, team)
+  return countAlive(arena, function(u) return u.team == team and not u.isCommander end)
+end
+
+local function rightBlockersAlive(arena)
+  return countAlive(arena, function(u)
+    return u.team == "right" and not u.isCommander and not (u.spec and u.spec.role == "boss")
+  end)
+end
+
+local function generalStates(arena, abom)
+  local out = {}
+  for i, spec in ipairs((abom and abom.generals) or {}) do
+    local found = nil
+    for _, u in ipairs((arena and arena.units) or {}) do
+      if u.team == "right" and u.spec and u.spec.role == "general"
+        and (u.id == spec.id or u.spec.id == spec.id) then
+        found = u
+        break
+      end
+    end
+    out[i] = {
+      id = spec.id,
+      alive = found and found.alive or false,
+      hp = found and found.hp or 0,
+      maxHp = found and found.maxHp or (spec.hp or 0),
+    }
+  end
+  return out
+end
+
+local function sortedCauseMap(t)
+  local out = {}
+  for k, v in pairs(t or {}) do out[k] = v end
+  return out
 end
 
 local function recordResult(run, result)
@@ -141,8 +213,55 @@ end
 
 function Scene.new(palette, vw, vh, host, payload)
   payload = payload or {}
-  local result = computeResult(host, payload)
-  recordResult(payload.run or (host and host.run), result)
+  local run = payload.run or (host and host.run)
+  local seed = scoreSeed(run, payload)
+  local key = bossKey(run, seed, payload)
+  local left = buildLeftComp(host, payload)
+  local abom = key and Abominations.byKey[key] or nil
+  local instant = payload.instantScore and true or false
+  local result = nil
+  local arena, renderer = nil, nil
+  if instant then
+    result = computeResult(host, payload)
+    recordResult(run, result)
+  elseif not key or not abom or #left == 0 then
+    result = {
+      seed = seed,
+      boss_key = key or "none",
+      boss_name = T("bossrush.no_boss"),
+      cleared_blockers = false,
+      survived = false,
+      survived_score_window = false,
+      boss_killed = false,
+      score_ticks = 0,
+      score_seconds = 0,
+      boss_damage = 0,
+      boss_score_damage = 0,
+      boss_score_dps = 0,
+      boss_hp_remaining = 0,
+      boss_hp_max = 0,
+      boss_hp_frac = 1,
+      generals = {},
+      damage_by_cause = {},
+      score_damage_by_cause = {},
+    }
+    recordResult(run, result)
+  else
+    local pacing = Pacing.arenaOptions(payload.pacingProfile)
+    pacing.hpMult = (payload.hpMult ~= nil) and payload.hpMult or 2
+    pacing.cooldownMult = (payload.cooldownMult ~= nil) and payload.cooldownMult or 0.5
+    pacing.fatigue = payload.fatigue or NO_FATIGUE
+    arena = Arena.new({
+      left = left,
+      right = Bossrush.toComp(abom, 1),
+      autoReset = false,
+      seed = seed,
+      hpMult = pacing.hpMult,
+      cooldownMult = pacing.cooldownMult,
+      fatigue = pacing.fatigue,
+    })
+    renderer = ArenaDraw.new(arena, palette)
+  end
   local self = setmetatable({
     vw = vw,
     vh = vh,
@@ -150,14 +269,35 @@ function Scene.new(palette, vw, vh, host, payload)
     palette = palette,
     host = host,
     payload = payload,
+    run = run,
+    bossKey = key,
+    abom = abom,
+    left = left,
+    arena = arena,
+    renderer = renderer,
     result = result,
+    paused = false,
+    speed = 1,
+    skipping = false,
+    scoreTicks = payload.scoreTicks or Bossrush.DEFAULT_SCORE_TICKS,
+    tickCap = payload.tickCap or Bossrush.DEFAULT_TICK_CAP,
+    clearTicks = nil,
+    scoreStartTick = nil,
+    scoreElapsed = 0,
+    scoreActive = false,
+    bossDamage = 0,
+    scoreDamage = 0,
+    damageByCause = {},
+    scoreDamageByCause = {},
     daChrome = true,
+    nativeWorld = true,
     titleKey = "scene.bossrush",
     hintKey = "ui.hint_bossrush",
-    ambient = Ambient.new((result.seed or 0) + 77),
+    ambient = Ambient.new(((result and result.seed) or seed or 0) + 77),
+    nightmareBg = NightmareBG.new(seed + 77),
     mx = -100,
     my = -100,
-    shownScore = payload.instantScore and (result.boss_score_damage or 0) or 0,
+    shownScore = payload.instantScore and result and (result.boss_score_damage or 0) or 0,
     scorePlayed = false,
     scoreFxMilestone = 0,
     scoreFxBucket = 0,
@@ -166,18 +306,93 @@ function Scene.new(palette, vw, vh, host, payload)
   self.panel = { x = math.floor(cx - PANEL_W / 2), y = 222, w = PANEL_W, h = PANEL_H }
   self.btnNew = { x = math.floor(cx - BTN_W - BTN_GAP / 2), y = 632, w = BTN_W, h = BTN_H }
   self.btnMenu = { x = math.floor(cx + BTN_GAP / 2), y = 632, w = BTN_W, h = BTN_H }
+  if self.arena then
+    self.arena.bus:on("damage", function(ev)
+      local tgt = ev and ev.target
+      if tgt and tgt.spec and tgt.spec.role == "boss" and ev.hp and ev.hp > 0 then
+        local cause = ev.cause or "attack"
+        self.bossDamage = self.bossDamage + ev.hp
+        self.damageByCause[cause] = (self.damageByCause[cause] or 0) + ev.hp
+        if self.scoreActive then
+          self.scoreDamage = self.scoreDamage + ev.hp
+          self.scoreDamageByCause[cause] = (self.scoreDamageByCause[cause] or 0) + ev.hp
+        end
+      end
+    end)
+  end
   Feel.reset()
   return self
 end
 
-function Scene:update(frameDt)
-  self.t = self.t + (frameDt or 1)
-  self._anim = Overlay.advance(self._anim, (frameDt or 1) / 60)
-  self.ambient:update(frameDt)
-  Feel.update(frameDt)
-  Feel.hover("bossrush.new", ptIn(self.mx, self.my, self.btnNew))
-  Feel.hover("bossrush.menu", ptIn(self.mx, self.my, self.btnMenu))
+function Scene:_liveSnapshot()
+  local boss = bossUnit(self.arena)
+  local bossHp, bossMax = boss and boss.hp or 0, boss and boss.maxHp or 0
+  local scoreSeconds = (self.scoreElapsed or 0) / 60
+  return {
+    boss_key = self.bossKey,
+    boss_name = self.abom and self.abom.name,
+    theme = self.abom and self.abom.theme,
+    seed = self.payload and self.payload.seed or 0,
+    cleared_blockers = self.clearTicks ~= nil,
+    clear_ticks = self.clearTicks or 0,
+    clear_seconds = self.clearTicks and (self.clearTicks / 60) or 0,
+    survived = sideAlive(self.arena, "left") > 0,
+    survived_score_window = sideAlive(self.arena, "left") > 0 and self.clearTicks ~= nil and self.scoreElapsed >= self.scoreTicks,
+    total_ticks = self.t or 0,
+    total_seconds = (self.t or 0) / 60,
+    score_ticks = self.scoreElapsed or 0,
+    score_seconds = scoreSeconds,
+    boss_damage = self.bossDamage or 0,
+    boss_score_damage = self.scoreDamage or 0,
+    boss_score_dps = (scoreSeconds > 0) and ((self.scoreDamage or 0) / scoreSeconds) or 0,
+    boss_hp_remaining = bossHp,
+    boss_hp_max = bossMax,
+    boss_hp_frac = (bossMax > 0) and (bossHp / bossMax) or 0,
+    boss_killed = boss ~= nil and not boss.alive,
+    generals = generalStates(self.arena, self.abom),
+    damage_by_cause = sortedCauseMap(self.damageByCause),
+    score_damage_by_cause = sortedCauseMap(self.scoreDamageByCause),
+  }
+end
 
+function Scene:_finishLive()
+  if self.result then return end
+  self.result = self:_liveSnapshot()
+  recordResult(self.run, self.result)
+  self.skipping = false
+  self.shownScore = 0
+  self.scorePlayed = false
+  self.scoreFxMilestone = 0
+  self.scoreFxBucket = 0
+  self._anim = nil
+end
+
+function Scene:_step(frameDt)
+  self.t = self.t + frameDt
+  self.scoreActive = self.scoreStartTick ~= nil and self.t >= self.scoreStartTick
+  self.arena:update(frameDt, self.t)
+  self.renderer:update(frameDt, self.t)
+
+  if not self.clearTicks and rightBlockersAlive(self.arena) == 0 then
+    self.clearTicks = self.t
+    self.scoreStartTick = self.t + 1
+    SFX.ladder(true)
+    SFX.play("success", { vol = 0.42, pitch = 0.82 })
+    Juice.juice_up("bossrush.phase", 0.14)
+    Juice.addTrauma(0.018)
+  elseif self.scoreStartTick and self.t >= self.scoreStartTick then
+    self.scoreElapsed = math.min(self.scoreTicks, self.scoreElapsed + frameDt)
+  end
+
+  local boss = bossUnit(self.arena)
+  local leftAlive = sideAlive(self.arena, "left")
+  if not boss or not boss.alive or leftAlive == 0 or self.scoreElapsed >= self.scoreTicks
+    or self.t >= self.tickCap or self.arena.over then
+    self:_finishLive()
+  end
+end
+
+function Scene:_updateResult(frameDt)
   if not self.scorePlayed then
     self.scorePlayed = true
     SFX.ladder(true)
@@ -216,13 +431,43 @@ function Scene:update(frameDt)
   end
 end
 
+function Scene:update(frameDt)
+  frameDt = frameDt or 1
+  self._anim = Overlay.advance(self._anim, (frameDt or 1) / 60)
+  Feel.update(frameDt)
+  if self.nightmareBg then self.nightmareBg:update(frameDt / 60) end
+  self.ambient:update(frameDt)
+  Feel.hover("bossrush.new", ptIn(self.mx, self.my, self.btnNew))
+  Feel.hover("bossrush.menu", ptIn(self.mx, self.my, self.btnMenu))
+  Feel.hover("bossrush.pause", ptIn(self.mx, self.my, self._btnPause))
+  Feel.hover("bossrush.spd1", ptIn(self.mx, self.my, self._btnSpd1))
+  Feel.hover("bossrush.spd2", ptIn(self.mx, self.my, self._btnSpd2))
+  Feel.hover("bossrush.skip", ptIn(self.mx, self.my, self._btnSkip))
+
+  if self.result then
+    self:_updateResult(frameDt)
+    return
+  end
+
+  if self.paused then return end
+  local steps = self.skipping and 240 or (self.speed or 1)
+  for _ = 1, steps do
+    self:_step(frameDt)
+    if self.result then break end
+  end
+  if self.renderer then self.renderer:flushAudio() end
+end
+
 function Scene:drawBack(view)
   Draw.begin(view)
-  self.ambient:draw("combat")
+  if self.nightmareBg then self.nightmareBg:draw(0, 0, Draw.W, Draw.H)
+  else self.ambient:draw("combat") end
   Draw.finish()
 end
 
-function Scene:drawWorld() end
+function Scene:drawWorld()
+  if self.renderer and not self.result then self.renderer:draw(false) end
+end
 
 local function yn(v)
   return T(v and "bossrush.yes" or "bossrush.no")
@@ -604,7 +849,117 @@ local function drawCauseChip(x, y, w, cause, amount)
   Draw.textR(tostring(math.floor((amount or 0) + 0.5)), x + w - 10, y + 7, C.ink, Theme.value(10))
 end
 
+local function drawLiveEncounter(x, y, w, h, abom, snap, accent)
+  local C = Theme.c
+  Draw.rect(x, y, w, h, { C.stone900[1], C.stone900[2], C.stone900[3], 0.62 }, C.brassD, 1)
+  Draw.rect(x, y, 4, h, accent)
+  Draw.textTrackedL(T("bossrush.encounter_title"), x + 14, y + 13, C.ink4, Theme.labelSmall(8), 1.2)
+  Draw.textTrackedL(T("bossrush.threats"), x + 14, y + 45, C.ink5, Theme.labelSmall(8), 1.0)
+  local tx = x + 14
+  local threats = collectThreats(abom)
+  for i = 1, math.min(3, #threats) do
+    local tag = threats[i]
+    local tw = drawTag(tx, y + 64, tag.label, tag.color, 86)
+    tx = tx + tw + 8
+  end
+  if #threats == 0 then
+    Draw.text(T("bossrush.no_threats"), x + 14, y + 66, C.ink5, Theme.labelSmall(9))
+  end
+  local gy = y + 106
+  for i = 1, 3 do
+    drawGeneralRow(x + 14, gy + (i - 1) * 36, w - 28, i, abom and abom.generals and abom.generals[i],
+      snap.generals and snap.generals[i], snap.cleared_blockers)
+  end
+end
+
+local function drawLiveScore(x, y, w, self, snap, accent)
+  local C = Theme.c
+  local open = self.scoreStartTick ~= nil
+  local phaseKey = open and "bossrush.live_score_open" or "bossrush.live_break"
+  Draw.rect(x, y, w, 152, { C.stone900[1], C.stone900[2], C.stone900[3], 0.70 }, C.brassD, 1)
+  Draw.rect(x, y, 4, 152, open and accent or C.bloodL)
+  Draw.textTrackedL(T("bossrush.live_phase"), x + 14, y + 12, C.ink5, Theme.labelSmall(8), 1.1)
+  Draw.text(T(phaseKey), x + 14, y + 30, open and accent or C.bloodL, Theme.subhead(16))
+
+  local secondsLeft = math.max(0, (self.scoreTicks - (self.scoreElapsed or 0)) / 60)
+  local barPct = open and clamp01((self.scoreElapsed or 0) / self.scoreTicks) or 0
+  Draw.text(T("bossrush.metric_damage"), x + 14, y + 62, C.ink4, Theme.labelSmall(9))
+  Draw.textR(tostring(math.floor((self.scoreDamage or 0) + 0.5)), x + w - 14, y + 54, C.ink, Theme.value(22))
+  Draw.rect(x + 14, y + 94, w - 28, 10, { C.stone800[1], C.stone800[2], C.stone800[3], 0.82 }, C.iron, 1)
+  if barPct > 0 then Draw.rect(x + 15, y + 95, math.floor((w - 30) * barPct), 8, accent) end
+  Draw.text(T("bossrush.live_timer", { s = string.format("%.1f", secondsLeft) }), x + 14, y + 116, C.ink3, Theme.labelSmall(9))
+  local dps = math.floor((snap.boss_score_dps or 0) * 10 + 0.5) / 10
+  Draw.textR(T("bossrush.metric_dps") .. " " .. tostring(dps), x + w - 14, y + 116, C.ink3, Theme.labelSmall(9))
+end
+
+function Scene:_drawControls()
+  local C = Theme.c
+  local f = Theme.label(9)
+  local y = Draw.H - 17
+  Draw.rect(0, Draw.H - 34, Draw.W, 1, { C.brassS[1], C.brassS[2], C.brassS[3], 0.1 })
+  Draw.text(T("bossrush.live_controls"), 18, y - 5, C.ink4, f)
+  local segs = {
+    { id = "pause", label = self.paused and T("ui.resume") or T("ui.pause"), on = self.paused },
+    { id = "spd1", label = "1×", on = (self.speed == 1) and not self.skipping },
+    { id = "spd2", label = "2×", on = (self.speed == 2) and not self.skipping },
+    { id = "skip", label = T("ui.speed_skip"), on = self.skipping },
+  }
+  local totalW = 0
+  for _, s in ipairs(segs) do s.w = f:getWidth(s.label) + 24; totalW = totalW + s.w end
+  local sx = Draw.W - 18 - totalW
+  for _, s in ipairs(segs) do
+    local r = { x = sx, y = y - 11, w = s.w, h = 22 }
+    local hot = ptIn(self.mx, self.my, r)
+    Draw.rect(sx, r.y, s.w, 22,
+      s.on and { 0x7a / 255, 0x1d / 255, 0x16 / 255, 1 } or { 0x10 / 255, 0x0d / 255, 0x16 / 255, 1 },
+      C.iron, 1)
+    Draw.textC(s.label, sx + s.w / 2, y - 5, s.on and C.ctaText or (hot and C.ink2 or C.ink3), f)
+    if s.id == "pause" then self._btnPause = r
+    elseif s.id == "spd1" then self._btnSpd1 = r
+    elseif s.id == "spd2" then self._btnSpd2 = r
+    else self._btnSkip = r end
+    sx = sx + s.w
+  end
+end
+
+function Scene:drawLiveOverlay(view)
+  local C = Theme.c
+  local tt = self.t / 60
+  local snap = self:_liveSnapshot()
+  local abom = self.abom
+  local accent = colorFromAccent(abom and abom.accent, C.brassS)
+  local boss = bossUnit(self.arena)
+
+  Draw.begin(view)
+  Draw.rect(0, 0, Draw.W, 86, { 0x05 / 255, 0x03 / 255, 0x08 / 255, 0.72 })
+  Draw.rect(0, 85, Draw.W, 1, { C.brassS[1], C.brassS[2], C.brassS[3], 0.26 })
+  Draw.textTrackedC(T("bossrush.word"), Draw.W / 2, 12, C.ink4, Theme.labelSmall(9), 1.7)
+  Draw.textC(bossDisplayName(snap), Draw.W / 2, 28, C.ink, Theme.subhead(22))
+
+  local hpFrac = boss and boss.maxHp and boss.maxHp > 0 and math.max(0, boss.hp / boss.maxHp) or 0
+  local bx, by, bw, bh = 430, 61, 420, 10
+  Draw.bar(bx, by, bw, bh, hpFrac, C.bloodL, C.stone900, C.iron)
+  local hpText = boss and T("bossrush.hp_left", {
+    hp = math.floor((boss.hp or 0) + 0.5),
+    max = math.floor((boss.maxHp or 0) + 0.5),
+  }) or T("bossrush.no_boss")
+  Draw.textC(hpText, bx + bw / 2, by + 14, C.ink3, Theme.labelSmall(9))
+
+  drawLiveEncounter(22, 112, 300, 250, abom, snap, accent)
+  drawLiveScore(Draw.W - 324, 112, 300, self, snap, accent)
+
+  self:_drawControls()
+  Draw.finish()
+
+  self.renderer:drawOverlay(view)
+end
+
 function Scene:drawOverlay(view)
+  if not self.result then
+    self:drawLiveOverlay(view)
+    return
+  end
+
   local C = Theme.c
   local r = self.result or {}
   local tt = self.t / 60
@@ -662,7 +1017,8 @@ function Scene:drawOverlay(view)
     Draw.text(T("bossrush.no_score_causes"), x, cy + 24, C.ink5, Theme.labelSmall(10))
   end
 
-  Button.draw(self.btnNew.x, self.btnNew.y, self.btnNew.w, self.btnNew.h, "primary", T("bossrush.new_run"), {
+  Button.draw(self.btnNew.x, self.btnNew.y, self.btnNew.w, self.btnNew.h, "primary",
+    T(hasReturnPayload(self) and "bossrush.back_pg" or "bossrush.new_run"), {
     hover = ptIn(self.mx, self.my, self.btnNew),
     feel = Feel.state("bossrush.new"),
     id = "bossrush.new",
@@ -687,24 +1043,32 @@ end
 function Scene:mousepressed(vx, vy, button)
   if button ~= 1 then return end
   self.mx, self.my = vx * 4, vy * 4
+  if not self.result then
+    if ptIn(self.mx, self.my, self._btnPause) then Feel.press("bossrush.pause"); self.paused = not self.paused; return end
+    if ptIn(self.mx, self.my, self._btnSpd1) then Feel.press("bossrush.spd1"); self.speed, self.skipping = 1, false; return end
+    if ptIn(self.mx, self.my, self._btnSpd2) then Feel.press("bossrush.spd2"); self.speed, self.skipping = 2, false; return end
+    if ptIn(self.mx, self.my, self._btnSkip) then Feel.press("bossrush.skip"); self.skipping = true; return end
+    return
+  end
   if ptIn(self.mx, self.my, self.btnNew) then
-    Feel.press("bossrush.new", function() self.host.newRun() end, { delay = Feel.CTA_DELAY })
+    Feel.press("bossrush.new", function() finishPrimary(self) end, { delay = Feel.CTA_DELAY })
   elseif ptIn(self.mx, self.my, self.btnMenu) then
-    Feel.press("bossrush.menu", function()
-      if self.host.abandonRun then self.host.abandonRun()
-      elseif self.host.goto then self.host.goto("menu") end
-    end)
+    Feel.press("bossrush.menu", function() finishSecondary(self) end)
   end
 end
 
 function Scene:mousereleased() end
 
 function Scene:keypressed(key)
-  if key == "r" then self.host.newRun()
-  elseif key == "m" then
-    if self.host.abandonRun then self.host.abandonRun()
-    elseif self.host.goto then self.host.goto("menu") end
+  if not self.result then
+    if key == "space" then self.paused = not self.paused
+    elseif key == "1" then self.speed, self.skipping = 1, false
+    elseif key == "2" then self.speed, self.skipping = 2, false
+    elseif key == "s" then self.skipping = true end
+    return
   end
+  if key == "r" then finishPrimary(self)
+  elseif key == "m" then finishSecondary(self) end
 end
 
 return Scene

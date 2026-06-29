@@ -660,13 +660,19 @@ Implementation status:
 
 - runover victory now offers two routes:
   `DESCEND FURTHER` enters bossrush, `CLAIM VICTORY` starts a fresh run;
-- `src/scenes/bossrush.lua` computes a deterministic PvE score through
-  `src/lab/bossrush.lua` and displays a score result screen;
+- `src/scenes/bossrush.lua` now starts a live PvE bossrush combat by default:
+  final build vs abomination boss + three generals, then a score window opens
+  once the generals are broken;
+- `src/lab/bossrush.lua` remains the deterministic headless runner for tools,
+  reports, and optional `instantScore` QA surfaces;
 - the final board is converted through `buildLeftComp()` and run relics are
   applied before the bossrush simulation, matching normal combat;
-- score records are appended to `run.bossrushResults` with seed, boss, score
-  damage, survival, full-window result, boss kill flag, and damage causes;
-- `--shoot=bossrush` is wired through `src/core/export_scenes.lua`.
+- score records are appended to `run.bossrushResults` only after the live
+  bossrush resolves, with seed, boss, score damage, survival, full-window
+  result, boss kill flag, and damage causes;
+- `--shoot=bossrush` is wired through `src/core/export_scenes.lua` and now
+  captures the live bossrush entry state instead of the old instant result
+  panel.
 - the score surface now presents the selected abomination, its family/threat
   signs, its three generals, and a three-step phase rail:
   generals -> score window -> result;
@@ -1144,6 +1150,11 @@ Done:
   shows the full aura/combat influence network. Visual regression scenes:
   `build_aura_network_focus`, `build_aura_network_all`, `combat_network_focus`,
   `combat_network_all`.
+- Proving Ground boss coverage was added on `2026-06-29`: all ten abominations
+  now exist as `kind = "bossrush"` scenarios with varied player teams. WATCH
+  launches the real live bossrush scene and returns the result to Proving
+  Ground; SIM x200 aggregates average score, general-clear rate, and full-window
+  rate. Visual regression scenes: `playground`, `playground_boss`.
 
 ## Explicit Non-Goals For This V1 Push
 
