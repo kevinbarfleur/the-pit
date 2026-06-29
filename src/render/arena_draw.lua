@@ -13,6 +13,7 @@
 
 local Rig = require("src.core.rig")
 local Critter = require("src.render.critter") -- rendu vivant des créatures générées (idle + réactions de combat)
+local AbominationSprite = require("src.render.abomination_sprite")
 local Creatures = require("src.data.creatures")
 local Units = require("src.data.units")
 local Spawn = require("src.data.spawn") -- tokens d'engeance (AXE 3) : pas dans Units -> visuel via le pont (family="sousetres"/arch dédié)
@@ -720,7 +721,7 @@ function ArenaDraw:update(frameDt, t)
     Rig.update(c, t, frameDt)
 
     -- Traînée de frappe : pointe de l'arme pendant l'anim "attack".
-    if c.state == "attack" and c.parts.weapon then
+    if not AbominationSprite.isBossOrGeneral(u) and c.state == "attack" and c.parts.weapon then
       local p = c.stateAge / Rig.ATTACK_DUR
       if p >= 0.3 and p <= 0.65 then
         local tx, ty = Rig.weaponTip(c)
@@ -886,8 +887,11 @@ function ArenaDraw:drawGrid()
       love.graphics.setColor(1, 1, 1, 1)
     elseif u.alive then
       local left = (u.team == "left")
-      local x = math.floor(u.x - W / 2)
-      local y = math.floor(u.y + 2 - H) -- la carte ENCADRE le monstre (tête en haut, pieds en bas)
+      local fp = u.spec and u.spec.footprint
+      local sw = fp and (W * (fp.w or 1) + 8) or W
+      local sh = fp and (H * (fp.h or 1) + 8) or H
+      local x = math.floor(u.x - sw / 2)
+      local y = math.floor(u.y + 2 - sh) -- la carte ENCADRE le monstre (tête en haut, pieds en bas)
       -- CARTE de slot : panneau SOMBRE légèrement teinté équipe (détache la créature du biome chargé ->
       -- lisibilité constante, comme les tuiles du design) + liseré MUET. Fini le wireframe vif « debug ».
       -- Dégradé vertical 3 bandes (haut un peu plus clair = lumière du dessus) -> un panneau « assis », pas un aplat.
@@ -897,13 +901,18 @@ function ArenaDraw:drawGrid()
       for i = 0, 2 do
         local t = i / 2
         love.graphics.setColor(r1 + (r2 - r1) * t, g1 + (g2 - g1) * t, b1 + (b2 - b1) * t, 0.40)
-        love.graphics.rectangle("fill", x, y + math.floor(i * H / 3), W, math.ceil(H / 3))
+        love.graphics.rectangle("fill", x, y + math.floor(i * sh / 3), sw, math.ceil(sh / 3))
       end
       -- liseré MUET (fer teinté équipe) ; ligne de base un chouïa plus marquée = pose l'unité au sol.
       if left then love.graphics.setColor(0.24, 0.29, 0.39, 0.50) else love.graphics.setColor(0.39, 0.23, 0.25, 0.50) end
-      love.graphics.rectangle("line", x, y, W, H)
+      love.graphics.rectangle("line", x, y, sw, sh)
+      if fp then
+        love.graphics.setColor(0.68, 0.42, 0.34, 0.26)
+        love.graphics.line(x + sw / 2, y + 3, x + sw / 2, y + sh - 3)
+        love.graphics.line(x + 3, y + sh / 2, x + sw - 3, y + sh / 2)
+      end
       if left then love.graphics.setColor(0.30, 0.38, 0.52, 0.55) else love.graphics.setColor(0.52, 0.28, 0.30, 0.55) end
-      love.graphics.line(x, y + H, x + W, y + H)
+      love.graphics.line(x, y + sh, x + sw, y + sh)
     end
   end
   love.graphics.setColor(1, 1, 1, 1)
@@ -1279,14 +1288,22 @@ function ArenaDraw:draw(showBones)
     local c = self.rigs[u]
     local a = u.alive and 0.5 or 0.5 * ((c and c.alpha) or 1)
     local ox = self:unitMotion(u)
+    local rx, ry = AbominationSprite.shadowSize(u)
     love.graphics.setColor(0, 0, 0, a)
-    love.graphics.ellipse("fill", u.x + (ox or 0) * 0.35, u.y + 2, 8, 2)
+    love.graphics.ellipse("fill", u.x + (ox or 0) * 0.35, u.y + 2, rx, ry)
   end
   love.graphics.setColor(1, 1, 1, 1)
 
   for _, u in ipairs(units) do
     local rig = self:rigFor(u)
-    if Critter.has(u.id) then
+    if AbominationSprite.isBossOrGeneral(u) then
+      self:drawUnitWithMotion(u, function()
+        AbominationSprite.draw(u, (self.t or 0) / 60, {
+          alpha = rig.alpha or 1,
+          flash = self.flash[u] and (1 - self.flash[u] / FLASH_DUR) * 0.32 or 0,
+        })
+      end)
+    elseif Critter.has(u.id) then
       -- B.1b — CRÉATURE GÉNÉRÉE : rendu VIVANT (critter). Même ancrage que le Rig (pieds à u.x/u.y, scale
       -- WORLD_FIT, espace virtuel) -> bascule sans déplacement. L'état d'anim render-local fournit la phase.
       self:drawUnitWithMotion(u, function() self:drawCritter(u, rig) end)
@@ -1505,7 +1522,8 @@ function ArenaDraw:drawOverlay(view)
   local roleFont = Theme.value(8)
   for _, u in ipairs(self.arena.units) do
     if u.alive then
-      local ny = (u.y + (HealthBar.BAR_DY or -34)) * 4 - nameH - 1
+      local barDy = (u.spec and u.spec.healthbarDy) or (HealthBar.BAR_DY or -34)
+      local ny = (u.y + barDy) * 4 - nameH - 1
       local name = (u.spec and u.spec.displayName) or (Units[u.id] and T("unit." .. u.id .. ".name")) or u.id
       if u.isCommander then
         -- C4 — LE COMMANDANT (« général ») : visiblement distinct, JAMAIS de barre de vie ni de rôle. Une plaque

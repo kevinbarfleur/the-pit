@@ -670,6 +670,27 @@ local ok, err = pcall(function()
     for gi, g in ipairs(abom.generals or {}) do
       assertBossOps(g.effects, abom.key .. "/general" .. gi)
     end
+    local comp = Bossrush.toComp(abom, 1)
+    local boss, front, rear = nil, 0, 0
+    for _, spec in ipairs(comp) do
+      if spec.role == "boss" then
+        boss = spec
+      elseif spec.role == "general" then
+        if spec.depth == 0 then front = front + 1 end
+        if spec.depth == 1 then rear = rear + 1 end
+      end
+    end
+    assert(boss and boss.depth == 2, "bossrush: abomination derriere deux rangs " .. abom.key)
+    assert(boss.footprint and boss.footprint.w == 2 and boss.footprint.h == 2,
+      "bossrush: abomination occupe 2x2 " .. abom.key)
+    assert(front == 1 and rear == 2, "bossrush: formation 1 tank + 2 soutiens " .. abom.key)
+    if abom.key == "brasier" then
+      local tank = nil
+      for _, spec in ipairs(comp) do
+        if spec.role == "general" and spec.depth == 0 then tank = spec end
+      end
+      assert(tank and tank.id == "abom_magma_brute", "bossrush: le general tank du Brasier ouvre le front")
+    end
   end
   local bossComp = Compbuild.toComp(Compositions.byId["bruiser_carre"], -1)
   local bossA = Bossrush.run(bossComp, "leviathan", 202606292, { scoreTicks = 120, tickCap = 2400 })

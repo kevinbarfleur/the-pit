@@ -30,18 +30,40 @@ local function specFrom(src, col, row, slot)
   return s
 end
 
--- Formation droite : les trois generaux au front (depth 0), boss derriere
--- (depth 1). Le ciblage existant force donc le joueur a ouvrir le front avant
--- de scorer le boss, sans nouvelle regle de targeting.
+local function tankScore(g)
+  if not g then return -1 end
+  local score = (g.hp or 0) + (g.shield or 0) * 1.5 + (g.aggro or 0) * 0.5
+  score = score + (g.dmgReduce or 0) * 600
+  if g.taunt then score = score + 10000 end
+  return score
+end
+
+local function orderedGenerals(abom)
+  local src = (abom and abom.generals) or {}
+  local list = {}
+  for i, g in ipairs(src) do
+    list[#list + 1] = { idx = i, spec = g, score = tankScore(g) }
+  end
+  table.sort(list, function(a, b)
+    if a.score == b.score then return a.idx < b.idx end
+    return a.score > b.score
+  end)
+  return list[1] and list[1].spec, list[2] and list[2].spec, list[3] and list[3].spec
+end
+
+-- Formation droite : un general tank au front (depth 0), deux generaux en
+-- soutien (depth 1), puis l'abomination en retrait (depth 2). Le ciblage
+-- existant force toujours a casser les bloqueurs avant la fenetre de score.
 function Bossrush.toComp(abom, side)
   if type(abom) == "string" then abom = Abominations.byKey[abom] end
   assert(abom, "abomination inconnue")
   side = side or 1
+  local tank, rearA, rearB = orderedGenerals(abom)
   local cells = {
     specFrom(abom.boss, 0, 1, 94),
-    specFrom(abom.generals[1], 1, 0, 91),
-    specFrom(abom.generals[2], 1, 1, 92),
-    specFrom(abom.generals[3], 1, 2, 93),
+    specFrom(tank, 2, 1, 91),
+    specFrom(rearA, 1, 0, 92),
+    specFrom(rearB, 1, 2, 93),
   }
   local b = Place.bounds(cells)
   local comp = {}
@@ -53,6 +75,11 @@ function Bossrush.toComp(abom, side)
       displayName = s.role == "boss" and abom.name or ("General " .. tostring(math.max(1, i - 1))),
       abomination = abom.key,
       theme = abom.theme,
+      accent = abom.accent,
+      footprint = s.role == "boss" and { w = 2, h = 2 } or nil,
+      visualKind = s.role == "boss" and "abomination" or "abomination_general",
+      visualScale = s.role == "boss" and 2 or 1,
+      healthbarDy = s.role == "boss" and -68 or nil,
       slot = s.slot,
       level = 1,
       hp = s.hp,

@@ -946,7 +946,9 @@ function Scene:drawLiveOverlay(view)
   Draw.textC(hpText, bx + bw / 2, by + 14, C.ink3, Theme.labelSmall(9))
 
   drawLiveEncounter(22, 112, 300, 250, abom, snap, accent)
-  drawLiveScore(Draw.W - 324, 112, 300, self, snap, accent)
+  -- Le boss occupe visuellement 2x2 cases cote ennemi. Le panneau live reste
+  -- compact pour ne pas recouvrir son corps pendant le scoring.
+  drawLiveScore(Draw.W - 260, 112, 238, self, snap, accent)
 
   self:_drawControls()
   Draw.finish()
