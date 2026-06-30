@@ -53,8 +53,8 @@
 | `library/music_handler.lua` | Fade/crossfade de la musique tracker. |
 | `library/push.lua` | Resolution/letterbox (present mais **non utilise** dans le pipeline principal — Moonring fait son propre scaling, voir 3). |
 | `library/tools.lua` | 70 KB d'utilitaires (HSL, dashLine, deepcopy, cloneRGBA, splitString, spiral table...). |
-| `library/perlin.lua`, `simplex_noise.lua`, `multifractal` | Bruit. |
-| `library/jumper.lua`, `core/grid.lua`, `core/bheap.lua` | Pathfinding A*. |
+| `library/perlin.lua`, `simplex_noise.lua`, `multifractal.lua` (à la racine) | Bruit. |
+| `library/jumper.lua`, `library/core/grid.lua`, `library/core/bheap.lua` | Pathfinding A*. |
 | `library/bitser.lua`, `ser.lua`, `serpent.lua` | Serialisation des saves. |
 
 ### Arbre des dossiers (commente)

@@ -1001,8 +1001,9 @@ function graphics_lerp:hovered_wiggle(element)
 end
 ```
 
-Note l'**overshoot** systématique (`bounce_in` passe par 1.5/1.2 avant de revenir
-à 1) : c'est la signature d'un "pop" satisfaisant. Et `dynamic_push()` met même à
+Note l'**overshoot** systématique (`bounce_in` dépasse à 1.2 — et sa variante
+`bounce_in_hard` à 1.5 — avant de revenir à 1) : c'est la signature d'un "pop"
+satisfaisant. Et `dynamic_push()` met même à
 jour le tween tout seul à partir de l'horloge murale (pratique pour un élément
 dessiné hors boucle de scène, comme le curseur) :
 
@@ -1282,7 +1283,8 @@ résolution de police suit le `print_scale` (donc le scale entier de la scène).
 
 Transition signature : un **wipe diagonal** (cisaillement) avec une frange douce,
 ou un fade, le tout piloté par une **machine à états** (`batteries/state_machine`)
-à cinq états : `ready → wipe_out → wait → wipe_in → ready` (idem `fade_*`). Le
+à six états (`ready, wipe_out, fade_out, wait, wipe_in, fade_in`) ; un wipe
+enchaîne `ready → wipe_out → wait → wipe_in → ready` (idem pour `fade_*`). Le
 dessin du wipe :
 
 ```lua
@@ -1339,7 +1341,7 @@ Le combat possède son overlay (`self.overlay = ferris.screen_overlay()`) dessin
 **Arco n'utilise PAS `love.graphics.newParticleSystem`.** Toutes les particules
 sont des **entités ECS** (sprite animé + behaviour d'intégration physique), ce qui
 leur donne gratuitement le tri z-on-y, le culling, le batching par texture et la
-destruction différée. Tout est dans `src/entities/particles.lua` (1056 lignes,
+destruction différée. Tout est dans `src/entities/particles.lua` (1055 lignes,
 entièrement data-driven).
 
 ### 7.1 Anatomie d'une particule

@@ -30,7 +30,7 @@
 | Élément | Valeur |
 |---|---|
 | Moteur | LÖVE **12.0** (declaré dans `conf.lua` et `build.lua`) |
-| Langage | Lua 5.1 / LuaJIT (JIT désactivé sur macOS Apple Silicon, voir `main.lua`) |
+| Langage | Lua 5.1 / LuaJIT (JIT désactivé sur **tout** macOS — condition `love.system.getOS()=='OS X'` ; Apple Silicon n'est que la raison citée en commentaire — voir `main.lua`) |
 | Résolution interne (« game ») | **640 × 360** px (`game.g.game_width/height` dans `md_globals.lua`) |
 | Fenêtre par défaut | 1280 × 720, redimensionnable (`conf.lua`) |
 | Scale pixel-art par défaut | `game_scale = 2` (réglable 2→6 dans les options ; Steam Deck force 3 à 1280×800) |

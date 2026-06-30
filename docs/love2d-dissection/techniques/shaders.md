@@ -394,14 +394,56 @@ return dissolve_mask(tex*colour, texture_coords, uv);
 
 ### `hologram.fs` — overlay holo translucide avec glow + glitch horizontal
 
-Différent : calcule un **glow** (somme de l'alpha sur 9×9 échantillons voisins),
-un **décalage horizontal glitch** (`offset_l/offset_r` sinusoïdaux), recolore
-les bords transparents en cyan. Voir le fichier source ; structure :
+Différent : calcule un **glow** (somme de l'alpha sur les texels voisins → halo
+sur les bords du sprite), un **décalage horizontal glitch** (`offset_l/offset_r`
+sinusoïdaux par ligne), et recolore en cyan. Corps complet :
+
 ```glsl
-// 1) glow = moyenne d'alpha des texels voisins (halo)
-// 2) offset horizontal par lignes (glitch) -> texture_coords.x += ...
-// 3) si pixel transparent -> couleur cyan ; sinon teinte légère
-// 4) dissolve_mask
+vec4 effect( vec4 colour, Image texture, vec2 texture_coords, vec2 screen_coords ) {
+    // 1) glow : moyenne de l'alpha des texels voisins (halo sur les bords)
+    number glow = 0.;
+    int glow_samples = 4;
+    int actual_glow_samples = 0;
+    number glow_dist = 0.0015;
+    number _a = 0.;
+    for (int i = -glow_samples; i <= glow_samples; ++i) {
+        for (int j = -glow_samples; j <= glow_samples; ++j) {
+            _a = Texel( texture, texture_coords + (glow_dist)*vec2(float(i), float(j))).a;
+            if (_a < 0.9) { actual_glow_samples += 1; glow = glow + _a; }
+        }
+    }
+    glow /= 0.7*float(actual_glow_samples);
+
+    // 2) glitch horizontal par ligne (décale texture_coords.x)
+    number offset_l = 0.;
+    number offset_r = 0.;
+    number timefac = 1.0*hologram.g;
+    offset_l = -10.0*(-0.5+sin(timefac*0.512 + texture_coords.y*14.0)
+            + sin(-timefac*0.8233 + texture_coords.y*11.532)
+            + sin(timefac*0.333 + texture_coords.y*13.3)
+            + sin(-timefac*0.1112331 + texture_coords.y*4.044343));
+    offset_r = -10.0*(-0.5+sin(timefac*0.6924 + texture_coords.y*19.0)
+        + sin(-timefac*0.9661 + texture_coords.y*21.532)
+        + sin(timefac*0.4423 + texture_coords.y*30.3)
+        + sin(-timefac*0.13321312 + texture_coords.y*3.011));
+    if (offset_r >= 1.5 || offset_r <= 0.) { offset_r = 0.; }
+    if (offset_l >= 1.5 || offset_l <= 0.) { offset_l = 0.; }
+    texture_coords.x = texture_coords.x + 0.002*(-offset_l + offset_r);
+
+    vec4 tex = Texel( texture, texture_coords);
+    if (tex.a > 0.999) { tex = vec4(0.,0.,0.,0.); }   // intérieur opaque -> vidé
+    if (tex.a < 0.001) { tex.rgb = vec3(0.,1.,1.); }  // transparent -> cyan
+    vec2 uv = (((texture_coords)*(image_details)) - texture_details.xy*texture_details.ba)/texture_details.ba;
+    if (uv.x > 0.95 || uv.x < 0.05 || uv.y > 0.95 || uv.y < 0.05) { return vec4(0.,0.,0.,0.); }
+
+    number light_strength = 0.4*(0.3*sin(2.*hologram.g) + 0.6 + 0.3*sin(hologram.r*3.) + 0.9);
+    vec4 final_col;
+    if (tex.a < 0.001)
+        final_col = tex*colour + vec4(0., 1., .5,0.6)*light_strength*(1.+abs(offset_l)+abs(offset_r))*glow;
+    else
+        final_col = tex*colour + vec4(0., 0.3, 0.2,0.3)*light_strength*(1.+abs(offset_l)+abs(offset_r))*glow;
+    return dissolve_mask(final_col, texture_coords, uv);
+}
 ```
 
 ### `gold_seal.fs` — sceau doré brillant (overlay simple, sans dissolve)
@@ -421,12 +463,48 @@ vec4 effect(vec4 color, Image texture, vec2 texture_coords, vec2 screen_coords) 
 }
 ```
 
-### `skew.fs` / `vortex.fs` — uniquement un vertex shader
+### `skew.fs` — uniquement le vertex de tilt 3D
 
-`skew.fs` ne contient *que* le bloc vertex de tilt 3D (pas de modif de couleur).
-`vortex.fs` ajoute `extern float vortex_amt;` + le bloc vertex : il déforme la
-géométrie pour l'animation de transition "tout est aspiré" (le shader est piloté
-par `G.vortex_time`).
+`skew.fs` ne contient *que* le bloc vertex de tilt 3D partagé (cf.
+[bloc partagé](#balatro-bloc-partage)), sans aucune modification de couleur. Sert
+à incliner un sprite/élément non-carte au survol.
+
+### `vortex.fs` — warp de vortex (transition "tout est aspiré")
+
+> Correction : contrairement aux autres, `vortex.fs` n'utilise **pas** le bloc
+> vertex de tilt partagé — il a son **propre** vertex shader qui réorganise la
+> géométrie en spirale. Pas de fragment custom (le fragment par défaut s'applique).
+> Piloté par `vortex_amt` (= `G.TIMERS.REAL - G.vortex_time`, envoyé depuis
+> `sprite.lua`). Code intégral :
+
+```glsl
+extern float vortex_amt;
+
+#ifdef VERTEX
+vec4 position( mat4 transform_projection, vec4 vertex_position )
+{
+    vec2 uv = (vertex_position.xy - 0.5*love_ScreenSize.xy)/length(love_ScreenSize.xy);
+
+    float effectRadius = 1.6 - 0.05*vortex_amt;
+    float effectAngle  = 0.5 + 0.15*vortex_amt;
+
+    float len   = length(uv * vec2(love_ScreenSize.x / love_ScreenSize.y, 1.));
+    float angle = atan(uv.y, uv.x) + effectAngle * smoothstep(effectRadius, 0., len);
+    float radius = length(uv);
+
+    vec2 center = 0.5*love_ScreenSize.xy/length(love_ScreenSize.xy);
+
+    vertex_position.x = (radius * cos(angle) + center.x)*length(love_ScreenSize.xy);
+    vertex_position.y = (radius * sin(angle) + center.y)*length(love_ScreenSize.xy);
+    return transform_projection * vertex_position;
+}
+#endif
+```
+
+> Reproduire : appliquer ce vertex shader à une grille de sommets (un mesh, pas un
+> simple quad 4-sommets, sinon le warp est grossier) et faire monter `vortex_amt`
+> dans le temps → l'image se tord en spirale vers le centre. Idéal pour une
+> transition d'écran "engloutissement".
 
 ---
 
@@ -502,14 +580,110 @@ bloom_fac, crt_intensity, glitch_intensity, scanlines, time`.
 ### `flame.fs` — flamme procédurale (Jokers "on fire", etc.)
 
 Pixellise (`PIXEL_SIZE_FAC 60`), construit un champ de fumée par 5 itérations,
-le fait monter dans le temps, et colore selon `colour_1/colour_2`. Piloté par
-`amount` (intensité) et `id` (désync par entité). Code complet dans la source ;
-c'est la référence pour un **feu pixel-art animé sans spritesheet**.
+le fait monter dans le temps, colore selon `colour_1/colour_2`. Piloté par
+`amount` (intensité) et `id` (désync par entité). La référence pour un **feu
+pixel-art animé sans spritesheet**. Code intégral :
+
+```glsl
+extern float time;
+extern float amount;
+extern vec4  texture_details;
+extern vec2  image_details;
+extern vec4  colour_1;
+extern vec4  colour_2;
+extern float id;
+#define PIXEL_SIZE_FAC 60.
+
+vec4 effect( vec4 colour, Image texture, vec2 texture_coords, vec2 screen_coords ) {
+    float intensity = 1.0*min(10.,amount);
+    if (intensity < 0.1) return vec4(0.,0.,0.,0.);
+
+    // UV centrées + pixellisation
+    vec2 uv = (((texture_coords)*(image_details)) - texture_details.xy*texture_details.ba)/texture_details.ba - 0.5;
+    vec2 floored_uv = (floor((uv*PIXEL_SIZE_FAC)))/PIXEL_SIZE_FAC;
+    vec2 uv_scaled_centered = (floored_uv);
+    uv_scaled_centered += uv_scaled_centered*0.01*(sin(-1.123*floored_uv.x + 0.2*time)*cos(5.3332*floored_uv.y + time*0.931));
+    vec2 flame_up_vec = vec2(0., mod(4.*time, 10000.) - 5000. + mod(1.781*id, 1000.));
+
+    float scale_fac = (7.5 + 3./(2. + 2.*intensity));
+    vec2 sv = uv_scaled_centered*scale_fac + flame_up_vec;
+    float speed = mod(20.781*id, 100.) + 1.*sin(time+id)*cos(time*0.151+id);
+    vec2 sv2 = vec2(0.,0.);
+
+    for (int i=0; i < 5; i++) {
+        sv2 += sv + 0.05*sv2.yx*(mod(float(i), 2.)>1.?-1.:1.) + 0.3*(cos(length(sv)*0.411) + 0.3344*sin(length(sv)) - 0.23*cos(length(sv)));
+        sv  += 0.5*vec2(
+                    cos(cos(sv2.y) + speed*0.0812)*sin(3.22 + (sv2.x) - speed*0.1531),
+                    sin(-sv2.x*1.21222 + 0.113785*speed)*cos(sv2.y*0.91213 - 0.13582*speed));
+    }
+
+    float smoke_res = max(0.,((length((sv - flame_up_vec)/scale_fac*5.)+ 0.1*(length(uv_scaled_centered) - 0.5))*(2./(2.+ intensity*0.2))));
+    smoke_res = intensity < 0.1 ? 1. : smoke_res + max(0., 2. - 0.3*intensity)*max(0., 2.*(uv_scaled_centered.y - 0.5)*(uv_scaled_centered.y - 0.5));
+    if (abs(uv.x) > 0.4) smoke_res = smoke_res + 10.*(abs(uv.x) - 0.4);
+    if (length((uv - vec2(0., 0.1))*vec2(0.19, 1.)) < min(0.1, intensity*0.5) && smoke_res > 1.)
+        smoke_res = smoke_res + min(8.5,intensity*10.)*(length((uv - vec2(0., 0.1))*vec2(0.19, 1.))-0.1);
+
+    vec4 ret_col = colour_1;
+    if (smoke_res > 1.) {
+        ret_col.a = 0.;
+    } else {
+        if (uv.y < 0.12) {
+            ret_col = ret_col*(1. - 0.5*(0.12 - uv.y)) + 2.5*(0.12 - uv.y)*colour_2;
+            ret_col += ret_col*(-2.+0.5*intensity*smoke_res)*(0.12 - uv.y);
+        }
+        ret_col.a = 1.;
+    }
+    return ret_col;
+}
+```
 
 ### `splash.fs` — éclaboussure/tourbillon de transition
 
-Variante de `background` orientée transition : swirl + fumée, flash blanc final
-piloté par `mid_flash`. Utilisé pour les écrans de victoire/défaite.
+Variante de `background` orientée transition : swirl piloté par `vort_speed`/
+`vort_offset` + fumée (5 itérations) + flash blanc final via `mid_flash`. Écrans
+de victoire/défaite, ouverture de booster. Code intégral :
+
+```glsl
+extern number time;
+extern number vort_speed;
+extern vec4   colour_1;
+extern vec4   colour_2;
+extern number mid_flash;
+extern number vort_offset;
+#define PIXEL_SIZE_FAC 700.
+#define BLACK 0.6*vec4(79./255.,99./255., 103./255., 1./0.6)
+
+vec4 effect( vec4 colour, Image texture, vec2 texture_coords, vec2 screen_coords ) {
+    number pixel_size = length(love_ScreenSize.xy)/PIXEL_SIZE_FAC;
+    vec2   uv = (floor(screen_coords.xy*(1./pixel_size))*pixel_size - 0.5*love_ScreenSize.xy)/length(love_ScreenSize.xy);
+    number uv_len = length(uv);
+
+    // swirl central animé
+    number speed = time*vort_speed;
+    number new_pixel_angle = atan(uv.y, uv.x) + (2.2 + 0.4*min(6.,speed))*uv_len - 1. - speed*0.05 - min(6.,speed)*speed*0.02 + vort_offset;
+    vec2   mid = (love_ScreenSize.xy/length(love_ScreenSize.xy))/2.;
+    vec2   sv = vec2((uv_len * cos(new_pixel_angle) + mid.x), (uv_len * sin(new_pixel_angle) + mid.y)) - mid;
+
+    // fumée
+    sv *= 30.;
+    speed = time*(6.)*vort_speed + vort_offset + 1033.;
+    vec2 uv2 = vec2(sv.x+sv.y);
+    for (int i=0; i < 5; i++) {
+        uv2 += sin(max(sv.x, sv.y)) + sv;
+        sv  += 0.5*vec2(cos(5.1123314 + 0.353*uv2.y + speed*0.131121), sin(uv2.x - 0.113*speed));
+        sv  -= 1.0*cos(sv.x + sv.y) - 1.0*sin(sv.x*0.711 - sv.y);
+    }
+
+    number smoke_res = min(2., max(-2., 1.5 + length(sv)*0.12 - 0.17*(min(10.,time*1.2 - 4.))));
+    if (smoke_res < 0.2) smoke_res = (smoke_res - 0.2)*0.6 + 0.2;
+    number c1p = max(0.,1. - 2.*abs(1.-smoke_res));
+    number c2p = max(0.,1. - 2.*(smoke_res));
+    number cb  = 1. - min(1., c1p + c2p);
+    vec4   ret_col = colour_1*c1p + colour_2*c2p + vec4(cb*BLACK.rgb, cb*colour_1.a);
+    number mod_flash = max(mid_flash*0.8, max(c1p, c2p)*5. - 4.4) + mid_flash*max(c1p, c2p);
+    return ret_col*(1. - mod_flash) + mod_flash*vec4(1., 1., 1., 1.);
+}
+```
 
 ### `flash.fs` — flash blanc radial temporisé
 
