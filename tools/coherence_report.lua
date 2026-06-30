@@ -6,6 +6,7 @@ package.path = "./?.lua;" .. package.path
 
 local Coherence = require("src.lab.coherence")
 local Common = require("tools.scenarios.common")
+local Economy = require("src.run.economy")
 
 local function take(list, n)
   local out = {}
@@ -31,6 +32,7 @@ local function compactScore(score)
     },
     edges = take(score.edges, 12),
     commandEdges = take(score.commandEdges, 8),
+    relicEdges = take(score.relicEdges, 8),
   }
 end
 
@@ -40,6 +42,7 @@ local SAMPLES = {
     label = "Poison reroll shell",
     note = "Low-rank L3 spore becomes a real plan when paired with poison amplifiers and corruptor command.",
     commander = { id = "corruptor", level = 3 },
+    relics = { "kings_bowl" },
     units = {
       { id = "spore_tick", level = 3, slot = 2 },
       { id = "miasma_acolyte", level = 3, slot = 5 },
@@ -52,6 +55,7 @@ local SAMPLES = {
     label = "Burn propagation shell",
     note = "Burn appliers plus neighbor burn amplifier plus death propagation.",
     commander = { id = "emberling", level = 1 },
+    relics = { "ember_heart", "everburn" },
     units = {
       { id = "emberling", level = 1, slot = 2 },
       { id = "soot_acolyte", level = 1, slot = 5 },
@@ -64,6 +68,7 @@ local SAMPLES = {
     label = "Shield engine shell",
     note = "Periodic shield caster plus shield amplifier and frontline cover.",
     commander = { id = "barrier_savant", level = 1 },
+    relics = { "tide_caller" },
     units = {
       { id = "ward_weaver", level = 1, slot = 5 },
       { id = "barrier_savant", level = 1, slot = 2 },
@@ -85,11 +90,11 @@ local SAMPLES = {
 }
 
 local function economyVariants()
-  local order = { "current", "sap_like", "curved_income" }
   local out = {}
-  for _, id in ipairs(order) do
+  for _, id in ipairs(Economy.order) do
     out[#out + 1] = {
       id = id,
+      label = Economy.profiles[id].label,
       pressure = Coherence.shopPressure(id),
     }
   end
@@ -99,12 +104,13 @@ end
 local function sampleReports()
   local out = {}
   for _, sample in ipairs(SAMPLES) do
-    local score = Coherence.scoreTeam(sample.units, { commander = sample.commander })
+    local score = Coherence.scoreTeam(sample.units, { commander = sample.commander, relics = sample.relics })
     out[#out + 1] = {
       id = sample.id,
       label = sample.label,
       note = sample.note,
       commander = sample.commander,
+      relics = sample.relics,
       units = sample.units,
       score = compactScore(score),
     }

@@ -58,6 +58,91 @@ local function markAuthored(effect)
   if type(effect) == "table" then effect.levelAuthored = true end
 end
 
+local POWER_KEYS = {
+  dps = true,
+  base = true,
+  growth = true,
+  capDps = true,
+  minDps = true,
+  add = true,
+  flat = true,
+  hp = true,
+  dmg = true,
+  dmgPerType = true,
+  hpPerType = true,
+}
+
+local DECIMAL_POWER_KEYS = {
+  inc = true,
+}
+
+local function roundPower(x)
+  if x == 0 then return 0 end
+  local sign = x < 0 and -1 or 1
+  return sign * math.max(1, math.floor(math.abs(x) + 0.5))
+end
+
+local function scalePowerValue(key, value, mult)
+  if type(value) ~= "number" then return value end
+  if DECIMAL_POWER_KEYS[key] then
+    return value * mult
+  end
+  if POWER_KEYS[key] then
+    return roundPower(value * mult)
+  end
+  if key == "value" then
+    -- `value` is used for both flat quantities (shield/thorns/heal) and small
+    -- ratios (`aura_stat`). Preserve ratios as ratios; round flat values.
+    if math.abs(value) < 1 then return value * mult end
+    return roundPower(value * mult)
+  end
+  return value
+end
+
+local function scalePowerParams(params, mult)
+  if type(params) ~= "table" then return false end
+  local changed = false
+  for k, v in pairs(params) do
+    if type(v) == "table" then
+      if scalePowerParams(v, mult) then changed = true end
+    else
+      local nv = scalePowerValue(k, v, mult)
+      if nv ~= v then
+        params[k] = nv
+        changed = true
+      end
+    end
+  end
+  return changed
+end
+
+local function applyGenericLevelScaling(effects, level)
+  local mult = Resolver.statMult(level)
+  if mult == 1.0 then return end
+  for _, effect in ipairs(effects or {}) do
+    if type(effect) == "table" and not effect.levelAuthored then
+      if scalePowerParams(effect.params, mult) then
+        effect.levelScaled = true
+      end
+    end
+  end
+end
+
+local function applyGenericCommandScaling(commandBonus, level)
+  if not (commandBonus and type(commandBonus) == "table") then return commandBonus end
+  if commandBonus.levelAuthored then return commandBonus end
+  local mult = Resolver.statMult(level)
+  if mult == 1.0 then return commandBonus end
+  if commandBonus.op == "aura_stat" then
+    if scalePowerParams(commandBonus.params, mult) then commandBonus.levelScaled = true end
+  elseif commandBonus.op == "grant_team" then
+    -- Keep boolean/permanent team rules stable, but allow nested damaging
+    -- payloads such as rotEnemies to grow with commander level.
+    if scalePowerParams(commandBonus.params, mult) then commandBonus.levelScaled = true end
+  end
+  return commandBonus
+end
+
 local function applyEffectPatches(effects, patches)
   if type(patches) ~= "table" then return end
   for idx, patch in pairs(patches) do
@@ -116,6 +201,7 @@ function Resolver.effectsFor(id, level)
       if patch then applyEffectPatches(effects, patch.effects) end
     end
   end
+  applyGenericLevelScaling(effects, level)
   return effects
 end
 
@@ -131,6 +217,7 @@ function Resolver.commandBonusFor(id, level)
       if patch then commandBonus = applyCommandPatch(commandBonus, patch.commandBonus) end
     end
   end
+  commandBonus = applyGenericCommandScaling(commandBonus, level)
   return commandBonus
 end
 
@@ -150,7 +237,7 @@ function Resolver.unitForLevel(id, level)
 end
 
 function Resolver.legacyEffectLevelMult(effect, level)
-  if effect and effect.levelAuthored then return 1.0 end
+  if effect and (effect.levelAuthored or effect.levelScaled) then return 1.0 end
   return Resolver.statMult(level)
 end
 
@@ -177,6 +264,7 @@ function Resolver.effectFactsFor(id, level, opts)
       values = valuesFor(effect),
       public = true,
       levelAuthored = effect.levelAuthored == true,
+      levelScaled = effect.levelScaled == true,
     }
   end
 

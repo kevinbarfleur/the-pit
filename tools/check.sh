@@ -148,7 +148,7 @@ luajit tests/lab.lua
 echo "== bands (harnais d'equilibrage de masse : bandes + courbe de cout + injection relique/commandant) =="
 luajit tests/bands.lua
 
-echo "== scenarios (moteur d'equilibrage : common + 5 modes invest/policy/godroll/commander/counter + determinisme) =="
+echo "== scenarios (moteur d'equilibrage : common + 13 modes invest/policy/godroll/commander/counter/economy/tank/pacing/sweep/coherence/mechanics/bossrush/bossrush_run + determinisme) =="
 luajit tests/scenarios.lua
 
 echo "== ui (fondation visuelle : Frame bevel/gilded/etats + Chip + Keywords afflictions + Theme.state) =="
@@ -156,6 +156,9 @@ luajit tests/ui.lua
 
 echo "== viewport (responsive : safe-area 16:9 + fond cover) =="
 luajit tests/viewport.lua
+
+echo "== export-scenes (captures --shoot : noms + builders + coverage boss/events) =="
+luajit tests/export_scenes.lua
 
 if command -v luacheck >/dev/null 2>&1; then
   echo "== luacheck =="

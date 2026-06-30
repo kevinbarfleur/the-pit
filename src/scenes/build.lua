@@ -33,6 +33,7 @@ local Stats = require("src.effects.stats") -- caps du framework payoff (value bo
 local Snapshot = require("src.net.snapshot")
 local Snapstore = require("src.net.snapstore")
 local Run = require("src.run.state")
+local Mutations = require("src.run.mutations")
 local RelicGen = require("src.gen.relicgen") -- icones de reliques (rangee type Slay the Spire + hover)
 local Rarity = require("src.gen.rarity") -- TIER (rang 1..5) -> couleur + nom de caste (source unique de rareté UI)
 local Bestiary = require("src.core.bestiary") -- marque les créatures vues en boutique (codex)
@@ -60,6 +61,7 @@ local Rarity = require("src.gen.rarity") -- rang -> couleur de cadre + glow (acc
 local MiniRig = require("src.render.minirig") -- mesure OPAQUE mutualisée des rigs (bounds/fit) : seule source de vérité
 local MonsterCard = require("src.render.monstercard") -- FICHE de monstre (extraite de drawTooltip) : réutilisée ici + Chronique
 local CardGlossary = require("src.ui.card_glossary") -- glossaire Shift des mots-cles mecaniques de la fiche
+local InfluencePanel = require("src.ui.influence_panel") -- sidecar d'auras/influences ancre aux cartes
 local RelicCard = require("src.ui.relic_card") -- FICHE de relique au survol (icône ANIMÉE + band + fam) : pop-up HUD
 local RelicsData = require("src.data.relics") -- band/palier de la relique (couleur de carte Argent/Or/Prismatique)
 local MechanicsText = require("src.ui.mechanics_text")
@@ -101,9 +103,17 @@ local SPACING = 26
 local BOARD_OY = 72 -- centre du plateau (virtuel) : ×4 = 288 design ; laisse un vrai souffle avant le banc
 local BOARD_HALF_W = 128 -- demi-étendue MAX (virtuelle) des CENTRES de cases -> board centré, jamais hors zone
 local BOARD_HALF_H = 30  -- (idem vertical) : RESSERRÉ pour qu'un sigil étalé ne morde pas sur le banc
-local BENCH_SIZE = 4 -- BANC (réserve hors-combat) : rangée de slots sous le plateau pour STOCKER/FUSIONNER (n'entre jamais en combat). 4 max -> garde un vrai arbitrage de placement (retour user 2026-06).
+local DEFAULT_BENCH_SIZE = 4 -- BANC live : 4 slots gardent un vrai arbitrage de placement (retour user 2026-06).
+local MAX_BENCH_SIZE = 12 -- lab-only : permet de tester des réserves plus larges sans changer le live.
 local MAX_LEVEL = 3
 local LEVEL_MULT = UnitResolver.STAT_LEVEL_MULT -- stats par niveau : source unique (duplicatas / cartes / snapshots)
+
+local function normalizeBenchSize(n)
+  n = math.floor(tonumber(n) or DEFAULT_BENCH_SIZE)
+  if n < 1 then return 1 end
+  if n > MAX_BENCH_SIZE then return MAX_BENCH_SIZE end
+  return n
+end
 
 -- ── COMMANDANTS (K4) — placeholders d'équilibrage (cf. docs/research/commanders-plan.md §1.4/§6.1).
 -- STAT_INC_CAP : plafond cumulé du buff `statInc` (commandant : +% PV ET dmg). Plus serré qu'ATK_INC_CAP
@@ -137,8 +147,12 @@ local ENEMY_LEVEL_EVERY = 3  -- est déjà leveled ; le bump ne sert qu'aux runs
 
 -- Hit-test (espace virtuel), défini en TÊTE de module : utilisé par computeLayout/commanderAt/les hit-tests.
 local function inRect(px, py, r) return px >= r.x and px <= r.x + r.w and py >= r.y and py <= r.y + r.h end
+local function ctrlHeld()
+  return love and love.keyboard and love.keyboard.isDown and love.keyboard.isDown("lctrl", "rctrl")
+end
 
-function Build.new(palette, vw, vh, host)
+function Build.new(palette, vw, vh, host, opts)
+  opts = opts or {}
   local self = setmetatable({
     vw = vw, vh = vh, t = 0, palette = palette, host = host,
     daChrome = true, -- la scène porte sa propre chrome DA (pas de HUD générique)
@@ -149,6 +163,7 @@ function Build.new(palette, vw, vh, host)
     board = Board.new("carre"),
     slotRigs = {},     -- [slot] = { id, char } : unités posées (PLATEAU = combat)
     bench = {},        -- [i] = { id, level, char } : RÉSERVE hors-combat (stock/fusion ; n'entre PAS en combat)
+    benchSize = normalizeBenchSize(opts.benchSize),
     commanderSlot = nil, -- C3 : { id, level, char } au PIÉDESTAL (1 slot logique HORS graphe de sigil, sans voisins)
     cmdCadence = 0,      -- C4 : phase 0..1 de la barre de cadence LENTE du commandant (cosmétique, dt-piloté)
     cmdShake = 0,        -- C4 : timer de SECOUSSE de refus (drop d'un non-chef) ; >0 = le socle tremble + sang
@@ -181,6 +196,46 @@ function Build.new(palette, vw, vh, host)
   return self
 end
 
+Build.DEFAULT_BENCH_SIZE = DEFAULT_BENCH_SIZE
+Build.MAX_BENCH_SIZE = MAX_BENCH_SIZE
+
+function Build:benchCapacity()
+  return self.benchSize or DEFAULT_BENCH_SIZE
+end
+
+local function unitRank(id)
+  local u = Units[id]
+  return u and (u.rank or 1) or 1
+end
+
+function Build:pairCompletionCandidates()
+  local counts = {}
+  for i = 1, 9 do
+    local sr = self.slotRigs[i]
+    if sr and (sr.level or 1) == 1 then counts[sr.id] = (counts[sr.id] or 0) + 1 end
+  end
+  for i = 1, self:benchCapacity() do
+    local sr = self.bench[i]
+    if sr and (sr.level or 1) == 1 then counts[sr.id] = (counts[sr.id] or 0) + 1 end
+  end
+  local candidates = {}
+  for id, n in pairs(counts) do
+    if n == 2 then candidates[#candidates + 1] = id end
+  end
+  table.sort(candidates, function(a, b)
+    local ar, br = unitRank(a), unitRank(b)
+    if ar ~= br then return ar < br end
+    return a < b
+  end)
+  return candidates
+end
+
+function Build:applyShopSupport(source)
+  local run = self.host and self.host.run
+  if not (run and run.applyPairCompletionSupport) then return false end
+  return run:applyPairCompletionSupport(self:pairCompletionCandidates(), source)
+end
+
 function Build:newRig(id)
   -- Visuel : rig dessiné MAIN (Creatures[id], les 6 vanille) sinon créature GÉNÉRÉE procéduralement
   -- (déterministe par id) — COHÉRENT avec le rendu de combat (arena_draw). Boutique = combat.
@@ -192,6 +247,33 @@ function Build:newRig(id)
   local c = Rig.new(def, self.palette)
   c.facing = 1
   return c
+end
+
+function Build:makeOcc(id, level, opts)
+  opts = opts or {}
+  return {
+    id = id,
+    level = level or 1,
+    char = opts.char or self:newRig(id),
+    copyId = opts.copyId,
+    mutations = Mutations.clone(opts.mutations),
+    d = opts.d,
+    bounce = opts.bounce,
+    pop = opts.pop,
+  }
+end
+
+function Build:cloneOcc(sr, opts)
+  opts = opts or {}
+  if not sr then return nil end
+  return self:makeOcc(opts.id or sr.id, opts.level or sr.level or 1, {
+    char = (opts.char ~= nil) and opts.char or sr.char,
+    copyId = (opts.copyId ~= nil) and opts.copyId or sr.copyId,
+    mutations = (opts.mutations ~= nil) and opts.mutations or sr.mutations,
+    d = (opts.d ~= nil) and opts.d or sr.d,
+    bounce = opts.bounce,
+    pop = opts.pop,
+  })
 end
 
 -- ── FIT-TO-BOX (FIX overflow) : étendue OPAQUE RÉELLE d'un rig (pose idle) en unités VIRTUELLES relatives à
@@ -261,28 +343,22 @@ function Build:computeLayout()
   self.commanderRect = { x = pedX, y = pedY, w = PED_W, h = PED_H }
 end
 
--- La case de commandant est-elle AFFICHÉE (donc droppable) ? = débloquée OU offre en cours. C'est la clé du fix
--- d'interaction (retour user) : pendant l'OFFRE (round 3), la case est visible mais `commanderUnlocked` est encore
--- false -> si `commanderAt` se basait sur `commanderUnlocked` seul, le drop tombait dans le fallback VENTE et
--- l'unité était PERDUE. On rend la case active dès qu'elle est VISIBLE ; déposer une unité dessus auto-accepte.
+-- La case de commandant est toujours affichée/droppable : le commandement est
+-- une affordance de base, pas un unlock de run.
 function Build:commanderCellShown()
-  if self:commanderUnlocked() then return true end
-  local run = self.host and self.host.run
-  return run and run.pendingCommanderGrant == true
+  return self.commanderRect ~= nil
 end
 
--- La case du commandant sous le curseur (espace virtuel) -> true si la drop-zone est touchée. Active dès que la
--- case est AFFICHÉE (déverrouillée OU offre en cours) -> jamais de drop qui retombe en vente pendant l'offre.
+-- La case du commandant sous le curseur (espace virtuel) -> true si la drop-zone est touchée.
 function Build:commanderAt(px, py)
   if not self:commanderCellShown() then return false end
   return self.commanderRect and inRect(px, py, self.commanderRect)
 end
 
--- Le commandant est-il débloqué cette run ? (sandbox sans run : toujours débloqué pour les tests/lab.)
+-- Le commandant est toujours débloqué ; on garde la fonction comme point
+-- d'entrée unique pour les vieux appels build/lab.
 function Build:commanderUnlocked()
-  local run = self.host and self.host.run
-  if not run then return true end
-  return run.commanderUnlocked == true
+  return true
 end
 
 -- Une unité peut-elle COMMANDER ? (porte un `commandBonus`). Sert au refus visuel (drop d'un non-chef).
@@ -439,14 +515,15 @@ function Build:computeShop()
   self:computeBench()
 end
 
--- BANC (réserve) : rangée de BENCH_SIZE slots centrée, juste au-dessus du bandeau boutique. Rects en VIRTUEL
+-- BANC (réserve) : rangée de slots centrée, juste au-dessus du bandeau boutique. Rects en VIRTUEL
 -- (÷4) comme shopSlots -> hit-tests directs, ×4 au rendu. La réserve sert à STOCKER/FUSIONNER, elle ne combat jamais.
 function Build:computeBench()
   local SLOT, GAP, Y = 60, 10, 452 -- taille/gouttière/haut de bande (design) ; remonté : la barre du bas est plus haute (handoff)
-  local total = BENCH_SIZE * SLOT + (BENCH_SIZE - 1) * GAP
+  local n = self:benchCapacity()
+  local total = n * SLOT + (n - 1) * GAP
   local x0 = math.floor(640 - total / 2 + 0.5) -- centré sur la largeur design (1280)
   self.benchSlots = {}
-  for i = 1, BENCH_SIZE do
+  for i = 1, n do
     local dx = x0 + (i - 1) * (SLOT + GAP)
     self.benchSlots[i] = { x = dx / 4, y = Y / 4, w = SLOT / 4, h = SLOT / 4 } -- VIRTUEL (÷4)
   end
@@ -584,7 +661,7 @@ function Build:updateSprings(dtSec)
       self:ensureSpring(sr, ax, ay); Drag.setTarget(sr.d, ax, ay); Drag.apply(sr.d, dtSec)
     end
   end
-  for i = 1, BENCH_SIZE do
+  for i = 1, self:benchCapacity() do
     local sr = self.bench[i]
     if sr then
       local ax, ay = self:benchAnchor(i)
@@ -995,11 +1072,16 @@ function Build:placedCount()
 end
 
 -- Pose un id sur un slot (aussi appelé par les tests/sim, sans souris ni économie).
-function Build:placeId(slot, id, level)
+function Build:placeId(slot, id, level, opts)
   if not (self.board.slots[slot] and self.board.slots[slot].unlocked) then return false end
-  self.slotRigs[slot] = { id = id, level = level or 1, char = self:newRig(id) }
+  opts = opts or {}
+  self.slotRigs[slot] = self:makeOcc(id, level or 1, opts)
   self.board.slots[slot].unit = id
   return true
+end
+
+function Build:emitMergeEvent(ev)
+  if self.mergeObserver then self.mergeObserver(ev) end
 end
 
 -- DUPLICATAS (étape gameplay #2) : 3 unités de MÊME id ET MÊME niveau fusionnent en une de niveau+1
@@ -1023,27 +1105,50 @@ function Build:checkMerges()
       end
     end
     for i = 1, 9 do scan("board", i, self.slotRigs[i]) end
-    for i = 1, BENCH_SIZE do scan("bench", i, self.bench[i]) end
+    for i = 1, self:benchCapacity() do scan("bench", i, self.bench[i]) end
     for _, key in ipairs(order) do -- ipairs (DÉTERMINISTE), jamais pairs
       local g = groups[key]
       if #g >= 3 then
         local keep = g[1]
         local kr = (keep.kind == "board") and self.slotRigs[keep.i] or self.bench[keep.i]
-        local id, lvl = kr.id, (kr.level or 1) + 1
+        local id, fromLevel, lvl = kr.id, kr.level or 1, (kr.level or 1) + 1
+        local keepInfo = { kind = keep.kind, i = keep.i, id = id, level = fromLevel, copyId = kr.copyId }
         -- positions (design) AVANT mutation : survivant + 2 copies consommées (anim C3 : âmes qui filent vers lui).
         local sx, sy = self:fxCenterOf(keep.kind, keep.i)
         local froms = {}
         for k = 2, 3 do local p = g[k]; local fxx, fyy = self:fxCenterOf(p.kind, p.i); froms[#froms + 1] = { fxx, fyy } end
+        local consumed = {}
         for k = 2, 3 do -- consomme 2 copies (plateau ou banc)
           local p = g[k]
+          local sr = (p.kind == "board") and self.slotRigs[p.i] or self.bench[p.i]
+          consumed[#consumed + 1] = {
+            kind = p.kind, i = p.i, id = sr and sr.id or id,
+            level = sr and (sr.level or fromLevel) or fromLevel,
+            copyId = sr and sr.copyId or nil,
+            mutations = sr and Mutations.clone(sr.mutations) or nil,
+          }
           if p.kind == "board" then self.slotRigs[p.i] = nil; self.board.slots[p.i].unit = nil
           else self.bench[p.i] = nil end
         end
         -- promeut la 1re copie + lui pose un `bounce` = état de chorégraphie (anticipation -> climax -> settle),
         -- timé sur la DERNIÈRE arrivée d'âme (#froms copies, 2 ici) ; lu par mergeLift/mergeScale/mergeGlow au DRAW.
-        local promoted = { id = id, level = lvl, char = self:newRig(id), bounce = newMergeAnim(#froms, lvl >= MAX_LEVEL) }
+        local mutationLists = { kr.mutations }
+        for _, entry in ipairs(consumed) do
+          if entry.mutations then mutationLists[#mutationLists + 1] = entry.mutations end
+        end
+        local promoted = self:makeOcc(id, lvl, {
+          bounce = newMergeAnim(#froms, lvl >= MAX_LEVEL),
+          copyId = kr.copyId,
+          mutations = Mutations.merge(mutationLists),
+        })
         if keep.kind == "board" then self.slotRigs[keep.i] = promoted; self.board.slots[keep.i].unit = id
         else self.bench[keep.i] = promoted end
+        self:emitMergeEvent({
+          type = "merge", source = "checkMerges", id = id,
+          fromLevel = fromLevel, toLevel = lvl,
+          keep = keepInfo, consumed = consumed,
+          result = { kind = keep.kind, i = keep.i, id = id, level = lvl, copyId = promoted.copyId },
+        })
         self:spawnMergeFx(sx, sy, froms, lvl) -- âmes -> burst -> sautillement (« clean & polish », retour user)
         merged = true
         anyMerge = true
@@ -1081,7 +1186,7 @@ function Build:previewMergeLevel(offer)
     local sr = self.slotRigs[i]
     if sr and sr.id == id then local lv = sr.level or 1; if count[lv] then count[lv] = count[lv] + 1 end end
   end
-  for i = 1, BENCH_SIZE do
+  for i = 1, self:benchCapacity() do
     local sr = self.bench[i]
     if sr and sr.id == id then local lv = sr.level or 1; if count[lv] then count[lv] = count[lv] + 1 end end
   end
@@ -1111,7 +1216,7 @@ end
 function Build:ownsAnyCopy(id)
   if not id then return false end
   for i = 1, 9 do local sr = self.slotRigs[i]; if sr and sr.id == id then return true end end
-  for i = 1, BENCH_SIZE do local sr = self.bench[i]; if sr and sr.id == id then return true end end
+  for i = 1, self:benchCapacity() do local sr = self.bench[i]; if sr and sr.id == id then return true end end
   return false
 end
 
@@ -1157,11 +1262,11 @@ function Build:offerPlayable(o)
   if not run then return true end -- sandbox (sans éco) : la boutique est inerte, on ne grise pas
   if run.gold < o.cost then return false end -- pas assez d'or
   for i = 1, 9 do if self.board.slots[i].unlocked and not self.slotRigs[i] then return true end end -- case libre
-  for i = 1, BENCH_SIZE do if not self.bench[i] then return true end end                            -- slot banc libre
+  for i = 1, self:benchCapacity() do if not self.bench[i] then return true end end                  -- slot banc libre
   -- PLEIN : jouable seulement si l'achat complète un trio (>=2 copies du même id au NIVEAU 1 -> fusion).
   local copies = 0
   for i = 1, 9 do local sr = self.slotRigs[i]; if sr and sr.id == o.id and (sr.level or 1) == 1 then copies = copies + 1 end end
-  for i = 1, BENCH_SIZE do local sr = self.bench[i]; if sr and sr.id == o.id and (sr.level or 1) == 1 then copies = copies + 1 end end
+  for i = 1, self:benchCapacity() do local sr = self.bench[i]; if sr and sr.id == o.id and (sr.level or 1) == 1 then copies = copies + 1 end end
   return copies >= 2
 end
 
@@ -1169,7 +1274,8 @@ end
 -- PLACE automatiquement -> 1re case board déverrouillée VIDE, sinon 1er slot de BANC vide ; checkMerges gère un
 -- éventuel trio. Si TOUT est plein mais l'achat complète un trio -> fusion directe (buyMergeWhenFull). Sinon
 -- refus (aucun or dépensé). Renvoie true si l'achat a eu lieu.
-function Build:autoBuy(offerIndex)
+function Build:autoBuy(offerIndex, opts)
+  opts = opts or {}
   local run = self.host.run
   if not run then return false end
   local o = run.shop[offerIndex]
@@ -1177,46 +1283,67 @@ function Build:autoBuy(offerIndex)
   local bslot
   for i = 1, 9 do if self.board.slots[i].unlocked and not self.slotRigs[i] then bslot = i; break end end
   local benchSlot
-  if not bslot then for i = 1, BENCH_SIZE do if not self.bench[i] then benchSlot = i; break end end end
+  if not bslot then for i = 1, self:benchCapacity() do if not self.bench[i] then benchSlot = i; break end end end
   if bslot or benchSlot then
     local id = run:buy(offerIndex)
     if not id then return false end
     SFX.play("coin") -- ACHAT : pièce qui tombe (cloche grave Oniric)
     if bslot then
-      self.slotRigs[bslot] = { id = id, level = 1, char = self:newRig(id) }; self.board.slots[bslot].unit = id
+      self.slotRigs[bslot] = self:makeOcc(id, 1, opts); self.board.slots[bslot].unit = id
       self:popPlaced(self.slotRigs[bslot]) -- APPARITION : le monstre frémit sur sa case + son « place »
     else
-      self.bench[benchSlot] = { id = id, level = 1, char = self:newRig(id) }
+      self.bench[benchSlot] = self:makeOcc(id, 1, opts)
       self:popPlaced(self.bench[benchSlot]) -- APPARITION (banc) : frémissement + « place »
     end
     self:checkMerges()
     self:flushLevelRelic()
     return true
   end
-  return self:buyMergeWhenFull(offerIndex)
+  return self:buyMergeWhenFull(offerIndex, opts)
 end
 
 -- Board ET banc PLEINS, mais l'achat complète un trio (>=2 copies du même id au NIVEAU 1) : la copie achetée
 -- est le CATALYSEUR (jamais posée) -> on retire 1 copie existante et on promeut l'autre sur place (niveau 2),
 -- puis checkMerges gère une cascade éventuelle. Arme aussi la récompense de level-up (1×/round). Renvoie true
 -- si géré (sinon le caller ne dépense pas d'or : pas de trio -> refus).
-function Build:buyMergeWhenFull(offerIndex)
+function Build:buyMergeWhenFull(offerIndex, opts)
+  opts = opts or {}
   local run = self.host.run
   local o = run.shop[offerIndex]
   local copies = {}
   for i = 1, 9 do local sr = self.slotRigs[i]; if sr and sr.id == o.id and (sr.level or 1) == 1 then copies[#copies + 1] = { kind = "board", i = i } end end
-  for i = 1, BENCH_SIZE do local sr = self.bench[i]; if sr and sr.id == o.id and (sr.level or 1) == 1 then copies[#copies + 1] = { kind = "bench", i = i } end end
+  for i = 1, self:benchCapacity() do local sr = self.bench[i]; if sr and sr.id == o.id and (sr.level or 1) == 1 then copies[#copies + 1] = { kind = "bench", i = i } end end
   if #copies < 2 then return false end
   local id = run:buy(offerIndex)
   if not id then return false end
   SFX.play("coin") -- ACHAT (catalyseur de fusion) : la pièce de l'achat (le « ta-ta-ta-TAAA » suit via spawnMergeFx)
   local keep, drop = copies[1], copies[2]
+  local keepSr = (keep.kind == "board") and self.slotRigs[keep.i] or self.bench[keep.i]
+  local dropSr = (drop.kind == "board") and self.slotRigs[drop.i] or self.bench[drop.i]
   local sx, sy = self:fxCenterOf(keep.kind, keep.i)        -- survivant
   local dxp, dyp = self:fxCenterOf(drop.kind, drop.i)      -- copie retirée (âme qui file)
   if drop.kind == "board" then self.slotRigs[drop.i] = nil; self.board.slots[drop.i].unit = nil else self.bench[drop.i] = nil end
-  local promoted = { id = id, level = 2, char = self:newRig(id), bounce = newMergeAnim(2) }
+  local mutationLists = {}
+  if keepSr and keepSr.mutations then mutationLists[#mutationLists + 1] = keepSr.mutations end
+  if dropSr and dropSr.mutations then mutationLists[#mutationLists + 1] = dropSr.mutations end
+  if opts.mutations then mutationLists[#mutationLists + 1] = opts.mutations end
+  local promoted = self:makeOcc(id, 2, {
+    bounce = newMergeAnim(2),
+    copyId = keepSr and keepSr.copyId or nil,
+    mutations = Mutations.merge(mutationLists),
+  })
   if keep.kind == "board" then self.slotRigs[keep.i] = promoted; self.board.slots[keep.i].unit = id
   else self.bench[keep.i] = promoted end
+  self:emitMergeEvent({
+    type = "merge", source = "buyMergeWhenFull", id = id,
+    fromLevel = 1, toLevel = 2,
+    keep = { kind = keep.kind, i = keep.i, id = id, level = 1, copyId = keepSr and keepSr.copyId or nil },
+    consumed = {
+      { kind = drop.kind, i = drop.i, id = id, level = 1, copyId = dropSr and dropSr.copyId or nil },
+      { kind = "shop", id = id, level = 1, copyId = opts.copyId },
+    },
+    result = { kind = keep.kind, i = keep.i, id = id, level = 2, copyId = promoted.copyId },
+  })
   -- 1 âme de la copie retirée + 1 « achetée » qui tombe d'en haut sur le survivant (le catalyseur, jamais posé).
   self:spawnMergeFx(sx, sy, { { dxp, dyp }, { sx, sy - 34 } }, 2)
   self:checkMerges()
@@ -1268,6 +1395,15 @@ function Build:mousemoved(vx, vy)
   if self.drag and self.drag.d then Drag.move(self.drag.d, vx, vy + 9) end
 end
 
+function Build:wheelmoved(_, dy)
+  if self.forceNetworkInspect or ctrlHeld() then return end
+  local si = self:slotAt(self.mx, self.my)
+  if not (si and self.slotRigs[si]) then return end
+  self.influenceScroll = self.influenceScroll or {}
+  self.influenceScroll[si] = math.max(0, (self.influenceScroll[si] or 0) - (dy or 0) * 36)
+  return true
+end
+
 function Build:mousepressed(vx, vy, button)
   if button ~= 1 then return end
   self.mx, self.my = vx, vy
@@ -1275,7 +1411,9 @@ function Build:mousepressed(vx, vy, button)
     -- INSPECTION FIGÉE : seul FIGHT agit (lance le combat fourni) ; aucune mutation (boutique/drag/reshape/grant).
     if inRect(vx, vy, self.button) and self.lockedFight then
       local f = self.lockedFight
-      self.host.goto("combat", { left = f.left, right = f.right, seed = f.seed, enemyKey = f.enemyKey or "exhibition", onFinish = f.onFinish })
+      Feel.press("build.combat", function()
+        self.host.goto("combat", { left = f.left, right = f.right, seed = f.seed, enemyKey = f.enemyKey or "exhibition", onFinish = f.onFinish })
+      end, { delay = Feel.CTA_DELAY })
     end
     return
   end
@@ -1283,7 +1421,10 @@ function Build:mousepressed(vx, vy, button)
   -- on GÈLE toute interaction de mutation — surtout COMBAT (changement de scène destructif) — pour que l'user
   -- VOIE l'explosion entière sans la couper ni enchaîner une 2e fusion qui compliquerait le différé de la pop-up.
   -- Court (~1-1,5 s). Le bouton COMBAT est aussi grisé visuellement (drawOverlay : disabled). RENDER pur.
-  if self:levelUpActive() then return end
+  if self:levelUpActive() then
+    if inRect(vx, vy, self.button) then SFX.play("error") end
+    return
+  end
   local run = self.host.run
   -- rect REROLL fidèle à l'état du grant (ligne pleine / scindée) AVANT le hit-test (mousepressed peut être
   -- appelé sans update, ex. tests headless).
@@ -1291,7 +1432,12 @@ function Build:mousepressed(vx, vy, button)
   -- Boutons de forme (barre sigil) — EN PAUSE (sigils désactivés : on ne joue que le carré).
   if not Board.SIGILS_PAUSED then
     local sk = self:shapeBtnAt(vx, vy)
-    if sk then self.shapeIdx = sk; self.board:setShape(Shapes.order[sk]); self:computeLayout(); return end
+    if sk then
+      Feel.press("build.shape." .. sk)
+      self.shapeIdx = sk; self.board:setShape(Shapes.order[sk]); self:computeLayout()
+      SFX.play("pop")
+      return
+    end
   end
   -- COMBAT : ⭐ ACTION DIFFÉRÉE (Feel) -> les YEUX du CTA réagissent au clic (squash + flash) AVANT la bascule
   -- de scène (~160 ms), pour qu'on SENTE le clic. Le test e2e mûrit l'action via Build:update avant d'asserter.
@@ -1300,38 +1446,71 @@ function Build:mousepressed(vx, vy, button)
     -- Grant en attente : REFUSER prioritaire (son rect cohabite avec la moitié REROLL) ; sinon ACCEPTER
     -- (clic sur une case verrouillée). Puis REROLL.
     if run.pendingSlotGrant then
-      if inRect(vx, vy, self.declineBtn) then Feel.press("build.decline"); run:declineSlotGrant(); return end
+      if inRect(vx, vy, self.declineBtn) then
+        Feel.press("build.decline")
+        if run:declineSlotGrant() then SFX.play("coin") else SFX.play("error") end
+        return
+      end
       local lc = self:lockedCellAt(vx, vy)
       if lc then
-        if run:acceptSlotGrant() then self.board:openCell(lc); self:unlockFx(lc) end -- ACHAT/DÉBLOCAGE : petite explosion pixel + punch + son « unlock »
+        if run:acceptSlotGrant() then
+          self.board:openCell(lc)
+          self:unlockFx(lc) -- ACHAT/DÉBLOCAGE : petite explosion pixel + punch + son « unlock »
+        else
+          SFX.play("error")
+        end
         return
       end
     end
-    -- C3 — OFFRE DE PIÉDESTAL (minimal fonctionnel ; polish/prompt dédié = ui-artisan) : pendant l'offre, un
-    -- clic sur la zone du piédestal l'ACCEPTE (le piédestal apparaît) ; un clic sur REFUSER le décline (+or).
+    -- Compat legacy : l'ancien flux pouvait laisser une offre de piédestal en attente.
+    -- En live, RunState ne crée plus cette offre ; le slot est visible dès le round 1.
     if run.pendingCommanderGrant then
-      if self.declineBtn and inRect(vx, vy, self.declineBtn) then Feel.press("build.decline"); run:declineCommanderGrant(); return end
-      if self.commanderRect and inRect(vx, vy, self.commanderRect) then run:acceptCommanderGrant(); return end
+      if self.declineBtn and inRect(vx, vy, self.declineBtn) then
+        Feel.press("build.decline")
+        if run:declineCommanderGrant() then SFX.play("coin") else SFX.play("error") end
+        return
+      end
+      if self.commanderRect and inRect(vx, vy, self.commanderRect) then
+        Feel.press("build.commander.accept")
+        if run:acceptCommanderGrant() then SFX.play("unlock") else SFX.play("error") end
+        return
+      end
     end
     -- BUY XP : achète de l'XP de boutique si abordable (NE re-tire PAS la boutique : les nouvelles cotes
     -- s'appliquent au prochain reroll/round -> préserve l'arbitrage XP-vs-reroll-vs-unités).
     -- BUY XP / REROLL : feedback de press IMMÉDIAT (Feel.press sans action) + action TOUT DE SUITE (l'e2e
     -- headless asserte l'or débité juste après le clic -> on ne diffère PAS ces actions de boutique).
-    if inRect(vx, vy, self.raiseBtn) then Feel.press("build.raise"); if run:canBuyXp() then run:buyXp(); SFX.play("coin") end; return end -- LEVEL/XP : pièce (achat d'XP)
-    if inRect(vx, vy, self.rerollBtn) then Feel.press("build.reroll"); run:reroll(); SFX.play("pop"); return end -- REROLL : « pop » (les offres se re-tirent)
+    if inRect(vx, vy, self.raiseBtn) then
+      Feel.press("build.raise")
+      if run:canBuyXp() and run:buyXp() then SFX.play("coin") else SFX.play("error") end
+      return
+    end -- LEVEL/XP : pièce (achat d'XP)
+    if inRect(vx, vy, self.rerollBtn) then
+      Feel.press("build.reroll")
+      if run:reroll() then
+        self:applyShopSupport("reroll")
+        SFX.play("pop")
+      else
+        SFX.play("error")
+      end
+      return
+    end -- REROLL : « pop » (les offres se re-tirent)
     local fi = self:shopFreezeAt(vx, vy)
     if fi then
       Feel.press("build.freeze." .. fi)
-      if run:freezeOffer(fi) then SFX.play("pop") end
+      if run:freezeOffer(fi) then SFX.play("pop") else SFX.play("error") end
       return
     end
     local oi = self:shopAt(vx, vy)
     if oi then -- prend une offre JOUABLE (achat consommé au lâcher sur une case, ou au CLIC via autoBuy) ; une
       local o = run.shop[oi] -- carte désactivée (pas d'or / plein sans level-up) est INERTE -> pas de pickup.
       if o and self:offerPlayable(o) then
-        self.drag = { id = o.id, level = 1, char = self:newRig(o.id), fromShop = oi, pressX = vx, pressY = vy }
+        self.drag = self:makeOcc(o.id, 1, { char = self:newRig(o.id) })
+        self.drag.fromShop, self.drag.pressX, self.drag.pressY = oi, vx, vy
         self:beginDrag(nil) -- offre neuve : pas de ressort source -> démarre sous le curseur (lift immédiat)
         SFX.play("pickup") -- DRAG : on saisit une offre (achat confirmé au lâcher -> coin)
+      else
+        SFX.play("error")
       end
       return
     end
@@ -1339,7 +1518,8 @@ function Build:mousepressed(vx, vy, button)
   -- C3 : ramasse le COMMANDANT du piédestal (le rétrograde -> il repartira vers board/banc ou sera vendu).
   if self:commanderAt(vx, vy) and self.commanderSlot then
     local c = self.commanderSlot
-    self.drag = { id = c.id, level = c.level or 1, char = c.char, fromCommander = true }
+    self.drag = self:cloneOcc(c)
+    self.drag.fromCommander = true
     self:beginDrag(c.d) -- reprend son ressort -> il se soulève du piédestal, pas de saut
     self.commanderSlot = nil
     SFX.play("pickup") -- DRAG : on retire le commandant du piédestal
@@ -1347,7 +1527,8 @@ function Build:mousepressed(vx, vy, button)
   end
   local si = self:slotAt(vx, vy)
   if si and self.slotRigs[si] then -- ramasse une unité du PLATEAU (réarrangement / vente / vers banc)
-    self.drag = { id = self.slotRigs[si].id, level = self.slotRigs[si].level or 1, char = self.slotRigs[si].char, fromSlot = si }
+    self.drag = self:cloneOcc(self.slotRigs[si])
+    self.drag.fromSlot = si
     self:beginDrag(self.slotRigs[si].d) -- reprend son ressort -> elle se soulève de sa case
     self.slotRigs[si] = nil
     self.board.slots[si].unit = nil
@@ -1356,7 +1537,8 @@ function Build:mousepressed(vx, vy, button)
   end
   local bi = self:benchAt(vx, vy)
   if bi and self.bench[bi] then -- ramasse une unité du BANC (réarrangement / vente / vers plateau)
-    self.drag = { id = self.bench[bi].id, level = self.bench[bi].level or 1, char = self.bench[bi].char, fromBench = bi }
+    self.drag = self:cloneOcc(self.bench[bi])
+    self.drag.fromBench = bi
     self:beginDrag(self.bench[bi].d) -- reprend son ressort -> elle se soulève du banc
     self.bench[bi] = nil
     SFX.play("pickup") -- DRAG : on soulève une unité du banc
@@ -1371,7 +1553,7 @@ function Build:mousereleased(vx, vy, button)
   local run = self.host.run
   local si = self:slotAt(vx, vy)    -- case PLATEAU sous le curseur
   local bi = self:benchAt(vx, vy)   -- slot BANC sous le curseur
-  local onPed = self:commanderAt(vx, vy) -- C3 : drop sur le PIÉDESTAL (débloqué uniquement)
+  local onPed = self:commanderAt(vx, vy) -- drop sur le PIÉDESTAL toujours disponible
 
   -- ── C3 — DROP SUR LA CASE DU COMMANDANT (promotion en commandant) ─────────────────────────────────
   -- Une seule unité au commandant ; seuls les porteurs de `commandBonus` y sont admis (refus propre sinon).
@@ -1379,12 +1561,11 @@ function Build:mousereleased(vx, vy, button)
     if not canCommand(d.id) then -- refus : l'unité non-chef RETOURNE à son origine (jamais de crash/perte).
       self.cmdShake = 0.32 -- C4 : SECOUSSE de refus (la case clignote sang) ; décroît dans update.
       Feel.press("build.commander.refuse") -- petit feedback de press (squash/flash) au point de refus
+      SFX.play("error")
       self:returnDrag(d)
       return
     end
-    -- FIX d'interaction (retour user) : déposer une unité-chef sur la case PENDANT l'offre = AUTO-ACCEPTE le grant
-    -- AVANT de placer (plus de clic séparé requis ; plus jamais de vente accidentelle). Si l'offre n'est pas en
-    -- cours (cas refusé/déjà accepté), acceptCommanderGrant est no-op -> aucun effet de bord sur l'éco/les tests.
+    -- Compat legacy : si une ancienne run a encore pendingCommanderGrant, le drop la consomme avant de placer.
     if run and run.pendingCommanderGrant and not run.commanderUnlocked then
       run:acceptCommanderGrant()
     end
@@ -1393,7 +1574,7 @@ function Build:mousereleased(vx, vy, button)
       if id then
         SFX.play("coin") -- ACHAT (promotion directe au piédestal)
         local occ = self.commanderSlot
-        self.commanderSlot = { id = id, level = 1, char = d.char, d = d.d } -- ressort repris -> glisse au piédestal
+        self.commanderSlot = self:makeOcc(id, 1, { char = d.char, d = d.d, copyId = d.copyId, mutations = d.mutations }) -- ressort repris -> glisse au piédestal
         if occ then -- piédestal occupé : l'ancien commandant repart au banc (sinon disparaît en sandbox).
           self:stowUnit(occ)
         end
@@ -1406,7 +1587,7 @@ function Build:mousereleased(vx, vy, button)
     -- Unité EXISTANTE (board/banc/piédestal) -> piédestal. L'occupant repart vers l'ORIGINE du drag (swap propre).
     local occ = self.commanderSlot
     if occ then self:returnDragOrigin(d, occ) end
-    self.commanderSlot = { id = d.id, level = d.level or 1, char = d.char, d = d.d } -- ressort repris -> glisse au piédestal
+    self.commanderSlot = self:cloneOcc(d, { d = d.d }) -- ressort repris -> glisse au piédestal
     return
   end
 
@@ -1420,10 +1601,10 @@ function Build:mousereleased(vx, vy, button)
       if id then
         SFX.play("coin") -- ACHAT par drag sur une case/banc
         if toBoard then
-          self.slotRigs[si] = { id = id, level = 1, char = d.char, d = d.d }; self.board.slots[si].unit = id -- ressort repris -> glisse dans la case
+          self.slotRigs[si] = self:makeOcc(id, 1, { char = d.char, d = d.d, copyId = d.copyId, mutations = d.mutations }); self.board.slots[si].unit = id -- ressort repris -> glisse dans la case
           self:popPlaced(self.slotRigs[si]) -- APPARITION sur la case (lâcher du drag) : frémissement + « place »
         else
-          self.bench[bi] = { id = id, level = 1, char = d.char, d = d.d } -- ressort repris -> glisse au banc
+          self.bench[bi] = self:makeOcc(id, 1, { char = d.char, d = d.d, copyId = d.copyId, mutations = d.mutations }) -- ressort repris -> glisse au banc
           self:popPlaced(self.bench[bi]) -- APPARITION au banc (lâcher du drag) : frémissement + « place »
         end
         self:checkMerges() -- 3 copies (même id+niveau, plateau OU banc) -> fusion niveau+1 (arme pendingLevelRelic 1×/round)
@@ -1434,7 +1615,11 @@ function Build:mousereleased(vx, vy, button)
       -- level-up auto si tout est plein (retour user 2026-06). Un DRAG raté (lâché loin, ex. case verrouillée/
       -- occupée) ne fait RIEN (comportement historique préservé -> le test « pas d'achat sur case verrouillée »).
       local moved = d.pressX and ((vx - d.pressX) * (vx - d.pressX) + (vy - d.pressY) * (vy - d.pressY)) or 1e9
-      if moved <= 36 then self:autoBuy(d.fromShop) end
+      if moved <= 36 then
+        if not self:autoBuy(d.fromShop) then SFX.play("error") end
+      else
+        SFX.play("error")
+      end
     end
     return
   end
@@ -1444,14 +1629,14 @@ function Build:mousereleased(vx, vy, button)
     -- -> CASE PLATEAU : place / swap (l'occupant repart vers l'ORIGINE du drag : plateau ou banc).
     local occ = self.slotRigs[si]
     if occ then self:returnDragOrigin(d, occ) end
-    self.slotRigs[si] = { id = d.id, level = d.level or 1, char = d.char, d = d.d } -- ressort repris -> glisse dans la case
+    self.slotRigs[si] = self:cloneOcc(d, { d = d.d }) -- ressort repris -> glisse dans la case
     self.board.slots[si].unit = d.id
     SFX.play("drop") -- DROP : on POSE l'unité sur une case (doux, grave, aucun bruit)
   elseif bi then
     -- -> SLOT BANC : place / swap.
     local occ = self.bench[bi]
     if occ then self:returnDragOrigin(d, occ) end
-    self.bench[bi] = { id = d.id, level = d.level or 1, char = d.char, d = d.d } -- ressort repris -> glisse au banc
+    self.bench[bi] = self:cloneOcc(d, { d = d.d }) -- ressort repris -> glisse au banc
     SFX.play("drop") -- DROP : on range l'unité au banc
   else
     -- Lâché HORS plateau ET banc : VENTE (remboursement) si run ; sinon l'unité disparaît (sandbox).
@@ -1480,7 +1665,7 @@ end
 
 -- Repose un drag à SON origine SANS swap (refus de drop : non-chef sur le piédestal). Reconstruit l'entrée.
 function Build:returnDrag(d)
-  local u = { id = d.id, level = d.level or 1, char = d.char, d = d.d } -- ressort repris -> glisse de retour à l'origine
+  local u = self:cloneOcc(d, { d = d.d }) -- ressort repris -> glisse de retour à l'origine
   if d.fromSlot then
     self.slotRigs[d.fromSlot] = u; self.board.slots[d.fromSlot].unit = d.id
   elseif d.fromBench then
@@ -1494,7 +1679,7 @@ end
 -- Range une unité (occ) dans le 1er slot de banc libre, sinon la 1re case plateau débloquée vide ; sinon elle
 -- disparaît (sandbox / tout plein). Sert quand un achat-promotion évince l'ancien commandant du piédestal.
 function Build:stowUnit(occ)
-  for i = 1, BENCH_SIZE do
+  for i = 1, self:benchCapacity() do
     if not self.bench[i] then self.bench[i] = occ; return true end
   end
   for i = 1, 9 do
@@ -1559,7 +1744,8 @@ function Build:buildComp(side)
   for i = 1, 9 do
     if self.slotRigs[i] then
       local c = self.board.shape.cells[i]
-      placed[#placed + 1] = { slot = i, id = self.slotRigs[i].id, col = c.x, row = c.y, level = self.slotRigs[i].level or 1 }
+      placed[#placed + 1] = { slot = i, id = self.slotRigs[i].id, col = c.x, row = c.y,
+        level = self.slotRigs[i].level or 1, mutations = Mutations.clone(self.slotRigs[i].mutations) }
     end
   end
   if #placed == 0 then return {} end
@@ -1675,7 +1861,7 @@ function Build:buildComp(side)
   local function auraEffects(id, slot)
     local mc = mimicCopies[slot]
     local level = (self.slotRigs[slot] and self.slotRigs[slot].level) or 1
-    local needsLevelEffects = level > 1 and UnitResolver.hasAuthoredLevel(id)
+    local needsLevelEffects = level > 1
     if not (rotGrowth[slot] or grantBleed[slot] or mc or needsLevelEffects) then return nil end
     local out = {}
     for _, e in ipairs(UnitResolver.effectsFor(id, level)) do
@@ -1947,7 +2133,7 @@ function Build:buildComp(side)
     -- W1 — RAINBOW : bonus PLAT (déjà borné par le count cappé + déjà scalé par le niveau au bake), ajouté
     -- APRÈS la couche multiplicative (comme un relic_flat_hp). nil = inerte -> hp/dmg base -> golden-safe.
     local rf = rainbowFlat[p.slot]
-    comp[#comp + 1] = { id = p.id, slot = p.slot, level = p.level,
+    local spec = { id = p.id, slot = p.slot, level = p.level,
       hp = math.floor(stats.hp * sf + 0.5) + (rf and rf.hp or 0),
       dmg = math.floor(stats.dmg * sf + 0.5) + (rf and rf.dmg or 0), cd = stats.cd,
       depth = b.maxC - p.col, col = p.col, row = p.row, effects = auraEffects(p.id, p.slot),
@@ -1964,6 +2150,7 @@ function Build:buildComp(side)
         reflect = casters[p.slot].reflect, overcharge = casters[p.slot].overcharge,
         targetSlots = casters[p.slot].targetSlots } or nil,
       x = x, y = y, facing = facing }
+    comp[#comp + 1] = Mutations.applyToSpec(spec, p.mutations)
   end
 
   -- ── C3 — LE COMMANDANT au comp (K4) : ajouté APRÈS le board, AVEC ses flags d'intouchabilité. L'arène le
@@ -1987,12 +2174,13 @@ function Build:buildComp(side)
     -- « le chef qui regarde de loin », distinct des combattants, jamais sur eux. (Ancien bug : commanderRect.x*4
     -- = coord DESIGN passée comme VIRTUEL -> ré-×4 par arena_draw -> hors écran.)
     local cmdX, cmdY = self:commanderCombatPos(side, comp)
-    comp[#comp + 1] = { id = cmd.id, slot = nil, level = cmd.level or 1,
+    local cmdSpec = { id = cmd.id, slot = nil, level = cmd.level or 1,
       hp = stats.hp, dmg = stats.dmg, cd = stats.cd,
       depth = -1, row = 0, effects = #cEff > 0 and cEff or nil,
       isCommander = true, untargetable = true, cdMult = COMMANDER_CD_MULT,
       x = cmdX, y = cmdY,
       facing = facing }
+    comp[#comp + 1] = Mutations.applyToSpec(cmdSpec, cmd.mutations)
   end
   return comp
 end
@@ -2011,7 +2199,7 @@ function Build:buildRightComp(enc, levelBump)
     local lvl = math.min(MAX_LEVEL, (e.level or 1) + levelBump)
     local stats = UnitResolver.statsFor(e.id, lvl)
     local x, y = Place.pos(e.col, e.row, 1, b)
-    local effects = (lvl > 1 and UnitResolver.hasAuthoredLevel(e.id)) and UnitResolver.effectsFor(e.id, lvl) or nil
+    local effects = (lvl > 1) and UnitResolver.effectsFor(e.id, lvl) or nil
     comp[#comp + 1] = { id = e.id, level = lvl,
       hp = stats.hp, dmg = stats.dmg, cd = stats.cd,
       depth = b.maxC - e.col, row = e.row,
@@ -2028,7 +2216,8 @@ function Build:snapshotUnits()
     local sr = self.slotRigs[i]
     if sr then
       local c = self.board.shape.cells[i]
-      out[#out + 1] = { id = sr.id, level = sr.level or 1, col = c.x, row = c.y }
+      out[#out + 1] = { id = sr.id, level = sr.level or 1, col = c.x, row = c.y,
+        mutations = Mutations.clone(sr.mutations) }
     end
   end
   return out
@@ -2132,7 +2321,7 @@ function Build:update(frameDt)
     if sr.bounce then sr.bounce.t = sr.bounce.t + frameDt / 60; if sr.bounce.t > sr.bounce.dur then sr.bounce = nil end end
     if sr.pop then sr.pop.t = sr.pop.t + frameDt / 60; if sr.pop.t > sr.pop.dur then sr.pop = nil end end -- POSE : vibration d'apparition
   end
-  for i = 1, BENCH_SIZE do -- anime les rigs du BANC (réserve)
+  for i = 1, self:benchCapacity() do -- anime les rigs du BANC (réserve)
     local sr = self.bench[i]
     if sr then
       Rig.update(sr.char, self.t, frameDt)
@@ -2169,53 +2358,227 @@ local function baseAfflDps(id, kind, level)
   return sum
 end
 
+local function auraPercent(value, signed)
+  local n = math.floor((value or 0) * 100 + 0.5)
+  return (signed and n >= 0 and "+" or "") .. tostring(n) .. "%"
+end
+
+local function auraAdd(value)
+  local n = math.floor((value or 0) + 0.5)
+  return (n >= 0 and "+" or "") .. tostring(n)
+end
+
+local function auraKindColor(kind)
+  local c = Theme.c
+  if kind == "shield" or kind == "guard" or kind == "armor" then return c.armor or c.steel or c.ink3 end
+  if kind == "multicast" then return c.echo or c.bloodL end
+  if kind == "mimicry" then return Theme.type("arcane").color end
+  if kind == "heal" or kind == "lifesteal" then return c.heal or c.regen or c.gold end
+  if kind == "growth" or kind == "stat" then return c.gold end
+  return c[kind] or c.gold
+end
+
+function Build:auraColor(kind)
+  return auraKindColor(kind)
+end
+
+function Build:auraPoint(ref)
+  if ref == "commander" and self.commanderRect then
+    local r = self.commanderRect
+    return { x = r.x + r.w / 2, y = r.y + r.h / 2 }
+  end
+  return type(ref) == "number" and self.pos[ref] or nil
+end
+
+local function auraUpperAscii(s)
+  return tostring(s or ""):gsub("[a-z]", string.upper)
+end
+
+function Build:auraSourceName(lk)
+  if lk.sourceKind == "commander" or lk.from == "commander" then
+    local cmd = self.commanderSlot
+    return cmd and auraUpperAscii(T("unit." .. cmd.id .. ".name")) or T("ui.command_word")
+  elseif lk.sourceKind == "relic" then
+    return lk.sourceId and auraUpperAscii(T("relic." .. lk.sourceId .. ".name")) or T("ui.relics")
+  elseif type(lk.from) == "number" and self.slotRigs[lk.from] then
+    return auraUpperAscii(T("unit." .. self.slotRigs[lk.from].id .. ".name"))
+  end
+  return "?"
+end
+
+function Build:auraTargetName(slot)
+  local sr = self.slotRigs[slot]
+  return sr and auraUpperAscii(T("unit." .. sr.id .. ".name")) or "?"
+end
+
+local function statAuraVisual(stat, value, targetId, targetLevel)
+  local v = value or 0
+  if stat == "dmgReduce" then return "armor", "-" .. math.floor(v * 100 + 0.5) .. "%"
+  elseif stat == "atkInc" then return "empower", auraPercent(v, true)
+  elseif stat == "haste" then return "haste", auraPercent(v, true)
+  elseif stat == "multicast" then return "multicast", "x" .. (1 + math.floor(v))
+  elseif stat == "regen" then return "regen", auraAdd(v)
+  elseif stat == "lifesteal" then return "heal", auraPercent(v, false)
+  elseif stat == "statInc" then return "growth", auraPercent(v, true)
+  elseif stat == "focusWith" then return "empower", "FOCUS"
+  elseif stat == "poisonInc" or stat == "burnInc" or stat == "bleedInc" or stat == "rotInc" then
+    local kind = stat:gsub("Inc$", "")
+    local add = targetId and math.floor(baseAfflDps(targetId, kind, targetLevel or 1) * v + 0.5) or 0
+    if add > 0 then return kind, "+" .. add end
+    return nil, nil
+  end
+  return nil, nil
+end
+
+local function auraValueText(kind, label)
+  return InfluencePanel.formatValue(kind, label)
+end
+
+local function grantTeamVisual(params)
+  params = params or {}
+  if params.burnNoDecay then return "burn", "∞" end
+  if params.bleedNoExpire then return "bleed", "∞" end
+  if params.poisonNoCap then return "poison", "CAP" end
+  if params.shockChain then return "shock", "+" .. tostring(params.shockChain) end
+  if params.plagueAmp then return "empower", auraPercent(params.plagueAmp, true) end
+  if params.markEnemiesVuln then return "empower", auraPercent(params.markEnemiesVuln, true) end
+  if params.stripEnemyShield then return "guard", "-" .. math.floor(params.stripEnemyShield * 100 + 0.5) .. "%" end
+  if params.rotEnemies then return "rot", "+" .. tostring(params.rotEnemies.base or 1) end
+  if params.slowEnemies then return "haste", "-" .. math.floor(params.slowEnemies * 100 + 0.5) .. "%" end
+  if params.pierceHeal then return "heal", "-" .. math.floor(params.pierceHeal * 100 + 0.5) .. "%" end
+  if params.invulnT then return "guard", "START" end
+  if params.teamExecute then return "empower", "EXEC" end
+  return "empower", "TEAM"
+end
+
 -- ── LIENS D'AURA pour l'AFFICHAGE (refonte « Build Screen » : « les interactions visibles en temps réel ») ──
--- Pour chaque case occupée SOURCE d'une aura d'adjacence (combat_start / target=neighbors), un lien
--- { from, to, kind, label } vers chaque voisin OCCUPÉ. C'est le MIROIR de la logique de bake de buildComp
--- (auras simples) : ici on RÉCOLTE pour DESSINER (arêtes colorées + chips chiffrés + readout de fiche) au
--- lieu de baker sur la cible. PUR (lecture data), réévalué chaque frame (cheap : ≤9 cases).
--- LABEL = VALEUR RÉELLE plate (retour user) : +N bouclier (flat) ; pour les amplificateurs poison/burn, le
--- bonus CONCRET reçu par CE voisin = sa dps de base × le multiplicateur (pas un % abstrait) -> colle au texte
--- de la carte ; si le voisin ne pose pas l'affliction (bonus 0), la synergie est inerte -> AUCUN lien dessiné.
+-- Collecte tous les bonus directs lisibles en build : auras de créatures, commandant et effets team type
+-- grant_team. Les reliques sont ajoutées dans l'inspecteur de hover pour éviter un réseau permanent illisible.
 function Build:resolveAuraLinks()
   local links = {}
+  local byCell, byColRow = {}, {}
   for i = 1, 9 do
     local sr = self.slotRigs[i]
     if sr and self.board.slots[i].unlocked then
-      for _, e in ipairs(UnitResolver.effectsFor(sr.id, sr.level or 1)) do
-        local sm = UnitResolver.legacyEffectLevelMult(e, sr.level or 1) -- authored level effects already carry final values
-        if e.trigger == "combat_start" and e.target == "neighbors" then
-          local pa = e.params or {}
-          local kind, fixed, inc
-          if e.op == "shield_aura" then kind = "shield"; fixed = "+" .. math.floor((pa.value or 0) * sm + 0.5)
-          elseif e.op == "aura_poison_dps" then kind = "poison"; inc = (pa.inc or 0.5) * sm
-          elseif e.op == "aura_burn_dps" then kind = "burn"; inc = (pa.inc or 0.5) * sm
-          elseif e.op == "aura_rot_growth" then kind = "rot"; fixed = "+" .. math.floor((pa.bonus or 0) * sm + 0.5)
-          elseif e.op == "aura_grant_bleed" then kind = "bleed"; fixed = "+" .. math.floor((pa.dps or 1) * sm + 0.5)
-          -- K1 aura_stat (9c) : amplificateurs agnostiques (modifient un % du voisin -> label en % faute de
-          -- valeur plate au niveau du chip). multicast = entier NON scalé (cap dur en combat) -> "x N coups".
-          elseif e.op == "aura_stat" then
-            local st, v = pa.stat, (pa.value or 0)
-            if st == "dmgReduce" then kind = "armor"; fixed = "-" .. math.floor(v * 100 + 0.5) .. "%"
-            elseif st == "atkInc" then kind = "empower"; fixed = "+" .. math.floor(v * sm * 100 + 0.5) .. "%"
-            elseif st == "haste" then kind = "haste"; fixed = "+" .. math.floor(v * sm * 100 + 0.5) .. "%"
-            elseif st == "multicast" then kind = "echo"; fixed = "x" .. (1 + math.floor(v))
-            end
-          end
-          if kind then
-            for _, nb in ipairs(self.board:neighbors(i)) do
-              local nbr = self.slotRigs[nb]
-              if nbr and self.board.slots[nb].unlocked then
-                local label = fixed
-                if inc then -- amplificateur : bonus PLAT concret = dps de base du voisin × multiplicateur (0 -> rien)
-                  local add = math.floor(baseAfflDps(nbr.id, kind, nbr.level or 1) * inc + 0.5)
-                  label = (add > 0) and ("+" .. add) or nil
-                end
-                if label then links[#links + 1] = { from = i, to = nb, kind = kind, label = label } end
-              end
-            end
-          end
+      local cell = self.board.shape.cells[i]
+      byCell[i] = { slot = i, id = sr.id, level = sr.level or 1, col = cell.x, row = cell.y }
+      byColRow[cell.x .. ":" .. cell.y] = i
+    end
+  end
+
+  local function addTarget(out, slot, seen)
+    if slot and byCell[slot] and not seen[slot] then seen[slot] = true; out[#out + 1] = slot end
+  end
+  local function resolveTargets(target, srcSlot)
+    target = target or "neighbors"
+    local out, seen = {}, {}
+    if target == "neighbors" then
+      if srcSlot then
+        for _, nb in ipairs(self.board:neighbors(srcSlot)) do addTarget(out, nb, seen) end
+      end
+    elseif target == "ahead" or target == "behind" or target == "above" or target == "below" then
+      local src = srcSlot and byCell[srcSlot]
+      if src then
+        local dc = (target == "ahead" and 1) or (target == "behind" and -1) or 0
+        local dr = (target == "below" and 1) or (target == "above" and -1) or 0
+        addTarget(out, byColRow[(src.col + dc) .. ":" .. (src.row + dr)], seen)
+      end
+    elseif target == "team" then
+      for i = 1, 9 do addTarget(out, i, seen) end
+    elseif type(target) == "string" and target:sub(1, 5) == "role:" then
+      addTarget(out, self:resolveRoleSlot(target:sub(6)), seen)
+    elseif type(target) == "string" and target:sub(1, 5) == "tier:" then
+      local n = tonumber(target:sub(6))
+      for i, q in pairs(byCell) do if (Units[q.id].rank or 0) == n then addTarget(out, i, seen) end end
+    elseif type(target) == "string" and target:sub(1, 6) == "level:" then
+      local n = tonumber(target:sub(7))
+      for i, q in pairs(byCell) do if (q.level or 1) == n then addTarget(out, i, seen) end end
+    elseif type(target) == "string" and target:sub(1, 5) == "type:" then
+      local ty = target:sub(6)
+      for i, q in pairs(byCell) do if Units[q.id] and Units[q.id].type == ty then addTarget(out, i, seen) end end
+    end
+    table.sort(out)
+    return out
+  end
+
+  local function addLink(from, to, kind, label, sourceKind, sourceId)
+    if to and kind and label then
+      links[#links + 1] = { from = from, to = to, kind = kind, label = label,
+        valueText = auraValueText(kind, label), sourceKind = sourceKind or "unit", sourceId = sourceId }
+    end
+  end
+
+  local function addEffectLinks(e, from, id, level, sourceKind)
+    if not e or e.trigger ~= "combat_start" then return end
+    local pa = e.params or {}
+    local sm = UnitResolver.legacyEffectLevelMult(e, level or 1)
+    local target = e.target or pa.target or "neighbors"
+    if e.op == "shield_aura" then
+      for _, to in ipairs(resolveTargets(target, from)) do
+        addLink(from, to, "shield", auraAdd((pa.value or 0) * sm), sourceKind, id)
+      end
+    elseif e.op == "aura_poison_dps" or e.op == "aura_burn_dps" then
+      local kind = (e.op == "aura_poison_dps") and "poison" or "burn"
+      local inc = (pa.inc or 0.5) * sm
+      for _, to in ipairs(resolveTargets(target, from)) do
+        local dst = byCell[to]
+        local add = dst and math.floor(baseAfflDps(dst.id, kind, dst.level) * inc + 0.5) or 0
+        if add > 0 then addLink(from, to, kind, "+" .. add, sourceKind, id) end
+      end
+    elseif e.op == "aura_rot_growth" then
+      for _, to in ipairs(resolveTargets(target, from)) do
+        addLink(from, to, "rot", auraAdd((pa.bonus or 0) * sm), sourceKind, id)
+      end
+    elseif e.op == "aura_grant_bleed" then
+      for _, to in ipairs(resolveTargets(target, from)) do
+        addLink(from, to, "bleed", auraAdd((pa.dps or 1) * sm), sourceKind, id)
+      end
+    elseif e.op == "aura_stat" then
+      local value = (pa.stat == "multicast") and (pa.value or 0) or ((pa.value or 0) * sm)
+      for _, to in ipairs(resolveTargets(target, from)) do
+        local dst = byCell[to]
+        local kind, label = statAuraVisual(pa.stat, value, dst and dst.id, dst and dst.level)
+        addLink(from, to, kind, label, sourceKind, id)
+      end
+    elseif e.op == "aura_shield" then
+      local label = pa.cdr and ("-" .. math.floor(pa.cdr * 100 + 0.5) .. "% CD")
+        or (pa.valueInc and auraPercent(pa.valueInc, true)) or "SH"
+      for _, to in ipairs(resolveTargets(target, from)) do addLink(from, to, "shield", label, sourceKind, id) end
+    elseif e.op == "repeat_ability" then
+      local who = pa.who or "ahead"
+      local targets = resolveTargets(who == "neighbors" and "neighbors" or "ahead", from)
+      for _, to in ipairs(targets) do
+        local dst = byCell[to]
+        local hasHit = false
+        for _, ne in ipairs(UnitResolver.effectsFor(dst.id, dst.level)) do
+          if ne.trigger == "on_hit" and not ne.viaCopy then hasHit = true; break end
         end
+        if hasHit then addLink(from, to, "mimicry", "COPY", sourceKind, id) end
+      end
+    elseif e.op == "amplify_auras" then
+      for _, to in ipairs(resolveTargets(pa.target or "team", from)) do
+        addLink(from, to, "mimicry", auraPercent(pa.frac or 0, true), sourceKind, id)
+      end
+    elseif e.op == "aura_per_unique_type" then
+      addLink(from, from, "growth", "+TYPE", sourceKind, id)
+    end
+  end
+
+  for i, q in pairs(byCell) do
+    for _, e in ipairs(UnitResolver.effectsFor(q.id, q.level)) do
+      addEffectLinks(e, i, q.id, q.level, "unit")
+    end
+  end
+
+  local cmd = self.commanderSlot
+  if cmd and self:commanderUnlocked() then
+    local cb = UnitResolver.commandBonusFor(cmd.id, cmd.level or 1)
+    if cb then
+      if cb.op == "aura_stat" then
+        addEffectLinks(cb, "commander", cmd.id, cmd.level or 1, "commander")
+      elseif cb.op == "grant_team" then
+        local kind, label = grantTeamVisual(cb.params)
+        for _, to in ipairs(resolveTargets("team", nil)) do addLink("commander", to, kind, label, "commander", cmd.id) end
       end
     end
   end
@@ -2235,8 +2598,25 @@ function Build:computeUi()
     ui.cmdRange, ui.cmdRangeLabel, ui.cmdRangeVars = self:commandRange()
   end
   ui.auraLinks = self:resolveAuraLinks() -- « qui buffe qui » : arêtes colorées (drawBack) + chips (drawOverlay)
+  ui.networkInspect = self.forceNetworkInspect or ctrlHeld()
+  local hoverUnit = ui.hover and self.slotRigs[ui.hover] and ui.hover or nil
+  local dropUnit = ui.dropTarget and self.slotRigs[ui.dropTarget] and ui.dropTarget or nil
+  local commanderUnit = ui.commanderHover and self.commanderSlot and "commander" or nil
+  ui.networkFocus = ui.networkInspect and (hoverUnit or dropUnit or commanderUnit) or nil
+  ui.networkShowAll = ui.networkInspect and not ui.networkFocus
   self.uiState = ui -- champ distinct de la méthode (sinon self.uiState renverrait la méthode quand vide)
   return ui
+end
+
+function Build:auraLinkActive(lk, ui)
+  if not (lk and ui) then return false end
+  if not ui.networkInspect then return false end
+  if ui.networkShowAll then return true end
+  local focus = ui.networkFocus
+  if not focus then return false end
+  if focus == "commander" then return lk.from == "commander" or lk.sourceKind == "commander" end
+  if lk.from == focus or lk.to == focus then return true end
+  return false
 end
 
 -- ── Pre-pass natif (espace design) : atmosphère + arêtes + FONDS (cases / panneau / cartes) ──
@@ -2280,19 +2660,26 @@ function Build:drawBack(view)
       end
     end
   end
-  -- ARÊTES D'AURA (refonte « Build Screen ») : « qui buffe qui » EN PERMANENCE, colorées par TYPE d'aura
-  -- (poison/burn/bleed/rot/shield) + lueur additive. Couche d'info posée PAR-DESSUS les arêtes du graphe ->
-  -- la synergie positionnelle se lit d'un coup d'œil sans survoler. Les chips chiffrés se posent en overlay.
-  for _, lk in ipairs(ui.auraLinks or {}) do
-    local pf, pt = self.pos[lk.from], self.pos[lk.to]
-    local col = c[lk.kind] or c.gold
-    if love.graphics.setBlendMode then
-      love.graphics.setBlendMode("add"); Draw.setColor({ col[1], col[2], col[3], 0.32 })
-      love.graphics.setLineWidth(6); love.graphics.line(pf.x * 4, pf.y * 4, pt.x * 4, pt.y * 4)
-      love.graphics.setBlendMode("alpha")
+  -- Mode inspection réseau (Ctrl) : les liens d'aura ne polluent plus le hover normal des cartes.
+  -- Ctrl + unité = liens liés à cette unité ; Ctrl sans unité = stress view de tout le réseau.
+  if ui.networkInspect then
+    for _, lk in ipairs(ui.auraLinks or {}) do
+      if self:auraLinkActive(lk, ui) then
+        local pf, pt = self:auraPoint(lk.from), self:auraPoint(lk.to)
+        if pf and pt and (pf.x ~= pt.x or pf.y ~= pt.y) then
+          local col = self:auraColor(lk.kind)
+          local allMode = ui.networkShowAll
+          if love.graphics.setBlendMode then
+            love.graphics.setBlendMode("add"); Draw.setColor({ col[1], col[2], col[3], allMode and 0.10 or 0.20 })
+            love.graphics.setLineWidth(allMode and 6 or 8); love.graphics.line(pf.x * 4, pf.y * 4, pt.x * 4, pt.y * 4)
+            love.graphics.setBlendMode("alpha")
+          end
+          Draw.setColor({ col[1], col[2], col[3], allMode and 0.46 or 0.88 })
+          love.graphics.setLineWidth(allMode and 2 or 3)
+          love.graphics.line(pf.x * 4, pf.y * 4, pt.x * 4, pt.y * 4)
+        end
+      end
     end
-    Draw.setColor(col); love.graphics.setLineWidth(2.5)
-    love.graphics.line(pf.x * 4, pf.y * 4, pt.x * 4, pt.y * 4)
   end
   love.graphics.setLineWidth(1); Draw.reset()
 
@@ -2372,7 +2759,7 @@ function Build:drawBack(view)
   -- BANC (réserve, rangée sous le plateau) : même atome Slot (drop/hover/selected/empty) + pip type/niveau si
   -- occupé. MASQUÉ en inspection figée (pas de réserve à manipuler).
   if not self.locked then
-    for i = 1, BENCH_SIZE do
+    for i = 1, self:benchCapacity() do
       local r = self.benchSlots[i]
       local bx, by, bw = r.x * 4, r.y * 4, r.w * 4
       local sr = self.bench[i]
@@ -2383,8 +2770,7 @@ function Build:drawBack(view)
   end
 
   -- C4 — CASE DU COMMANDANT (case SIMPLE, src/ui/commandercell.lua) : DISTINCTE du graphe, AUCUNE arête vers le
-  -- board. Visible quand débloquée OU pendant l'offre (la case apparaît au round 3 ; déposer une unité dessus
-  -- l'auto-accepte). Le FOND de la case + le header « COMMANDER » se dessinent ICI, DERRIÈRE le rig du commandant
+  -- board. Visible dès le début de la run. Le FOND de la case + le header « COMMANDER » se dessinent ICI, DERRIÈRE le rig du commandant
   -- (rendu dans la case par drawWorld) ; le hint « vide » et l'étiquette de portée au drag vivent en overlay.
   local pedOffer = run and run.pendingCommanderGrant
   if not self.locked and self.pedRect and self:commanderCellShown() then
@@ -2573,7 +2959,7 @@ function Build:drawWorld()
   end
   -- RIGS du BANC (réserve) : créatures stockées, rendu vivant à échelle réduite, pieds calés au bas du slot.
   local BENCH_SCALE = 0.3
-  for i = 1, BENCH_SIZE do
+  for i = 1, self:benchCapacity() do
     local sr = self.bench[i]
     if sr then
       -- ⚠ drawWorld dessine sur le canvas VIRTUEL (320×180) : les coords sont en VIRTUEL. POSITION = le RESSORT
@@ -2602,7 +2988,7 @@ function Build:drawWorld()
   end
   -- C4 — RIG DU COMMANDANT dans la case : box-fit dans la case simple (un cran plus grand qu'un troupier ->
   -- le chef est un peu plus imposant), pieds calés au bas, AVEC une légère respiration (lift). Visible seulement
-  -- si la case est remplie (commanderSlot existe = grant accepté). Le décor (case + header) = drawBack.
+  -- si la case est remplie (commanderSlot existe). Le décor (case + header) = drawBack.
   if self.commanderSlot and self.commanderRect and self:commanderUnlocked() then
     local sr = self.commanderSlot
     local r = self.commanderRect
@@ -2799,7 +3185,7 @@ function Build:drawOverlay(view)
       if o then self:drawShopCard(i, rect, o, ui.shopHover == i) end
     end
     self:drawShopXpBar(run) -- rail de tier (5 crans) au pied de la colonne THE OFFERING
-    self:drawEcoButton("build.reroll", self.rerollBtn, T("ui.reroll_label"), Run.REROLL_COST, run:canReroll())
+    self:drawEcoButton("build.reroll", self.rerollBtn, T("ui.reroll_label"), run:currentRerollCost(), run:canReroll())
     -- Bouton REFUSER : visible seulement quand un grant de slot attend (sinon les slots ne s'achètent plus).
     if run.pendingSlotGrant then
       self:drawEcoButton("build.decline", self.declineBtn, T("ui.refuse_label"), Run.SLOT_DECLINE_GOLD, true)
@@ -2811,7 +3197,7 @@ function Build:drawOverlay(view)
     self:drawEcoButton("build.raise",
       self.raiseBtn,
       atMax and T("ui.tier_max") or T("ui.buyxp_label"),
-      atMax and nil or run.BUY_XP_COST,
+      atMax and nil or run:currentBuyXpCost(),
       (not atMax) and run:canBuyXp())
   end
 
@@ -2833,31 +3219,34 @@ function Build:drawOverlay(view)
     { hover = over and enabled, disabled = not enabled, feel = Feel.state("build.combat"),
       id = "build.combat", mouse = { mx = self.mx * 4, my = self.my * 4 }, t = self.t / 60 })
 
-  -- Reliques rendues dans le bandeau de run (haut) ; ici on ne gère que l'infobulle au survol (prioritaire sur unité).
-  local relIdx = run and self:relicAt(self.mx, self.my)
-  if relIdx then
-    self:drawRelicTooltip(run.relics[relIdx].id)
-  elseif run and self.xpBarRect and inRect(self.mx, self.my, self.xpBarRect) then
-    -- Survol de la barre d'XP -> cotes par rang du tier courant (enseigne « à quoi sert monter »).
-    self:drawOddsTooltip(run)
-  elseif self:commanderAt(self.mx, self.my) and self.commanderSlot and not self.drag then
-    -- C4 — SURVOL DU PIÉDESTAL (rempli) : la MÊME fiche de monstre qu'une unité du board (MonsterCard), qui
-    -- contient déjà le bandeau « AT COMMAND » détaillant l'aura -> on COMPREND ce que fait le commandant (fix du
-    -- retour user : « le hover ne marche pas dessus »). Les cases commandées pulsent en or en parallèle (drawBack).
-    self:drawTooltip(self.commanderSlot.id, nil, { context = "commander" })
-  else
-    local id, boardSlot
-    local oi = self:shopAt(self.mx, self.my)
-    if oi then id = run.shop[oi].id
+  -- En mode Ctrl réseau, on masque les cartes/sidecars : le curseur devient un outil de lecture des liens.
+  if not (ui and ui.networkInspect) then
+    -- Reliques rendues dans le bandeau de run (haut) ; ici on ne gère que l'infobulle au survol (prioritaire sur unité).
+    local relIdx = run and self:relicAt(self.mx, self.my)
+    if relIdx then
+      self:drawRelicTooltip(run.relics[relIdx].id)
+    elseif run and self.xpBarRect and inRect(self.mx, self.my, self.xpBarRect) then
+      -- Survol de la barre d'XP -> cotes par rang du tier courant (enseigne « à quoi sert monter »).
+      self:drawOddsTooltip(run)
+    elseif self:commanderAt(self.mx, self.my) and self.commanderSlot and not self.drag then
+      -- C4 — SURVOL DU PIÉDESTAL (rempli) : la MÊME fiche de monstre qu'une unité du board (MonsterCard), qui
+      -- contient déjà le bandeau « AT COMMAND » détaillant l'aura -> on COMPREND ce que fait le commandant (fix du
+      -- retour user : « le hover ne marche pas dessus »). Les cases commandées pulsent en or en parallèle (drawBack).
+      self:drawTooltip(self.commanderSlot.id, nil, { context = "commander", occ = self.commanderSlot })
     else
-      local si = self:slotAt(self.mx, self.my)
-      if si and self.slotRigs[si] then id = self.slotRigs[si].id; boardSlot = si
+      local id, boardSlot, occ
+      local oi = self:shopAt(self.mx, self.my)
+      if oi then id = run.shop[oi].id
       else
-        local bi = self:benchAt(self.mx, self.my)
-        if bi and self.bench[bi] then id = self.bench[bi].id end
+        local si = self:slotAt(self.mx, self.my)
+        if si and self.slotRigs[si] then id = self.slotRigs[si].id; boardSlot = si; occ = self.slotRigs[si]
+        else
+          local bi = self:benchAt(self.mx, self.my)
+          if bi and self.bench[bi] then id = self.bench[bi].id; occ = self.bench[bi] end
+        end
       end
+      if id then self:drawTooltip(id, boardSlot, { occ = occ }) end
     end
-    if id then self:drawTooltip(id, boardSlot) end
   end
 
   self:drawFx() -- GAME FEEL : bursts achat/vente/level-up PAR-DESSUS tout (transitoires)
@@ -3402,8 +3791,7 @@ end
 -- dans le gap entre deux cases avec la ligne visible de chaque côté. L'ICÔNE d'affliction n'y est PAS (le type
 -- est déjà porté par la COULEUR de l'arête + du bord + de la lueur) ; elle vit dans le readout de la fiche.
 function Build:drawAuraChip(cx, cy, kind, label)
-  local c = Theme.c
-  local col = c[kind] or c.gold
+  local col = self:auraColor(kind)
   local f = Theme.value(10)
   local tw = (f and f:getWidth(label)) or (#label * 6)
   local padX, h = 5, 15
@@ -3423,18 +3811,37 @@ end
 -- comme en V) -> jamais plus sur une case que l'autre, la ligne reste visible de part et d'autre. Cas
 -- BIDIRECTIONNEL (2 liens sur la même arête, ex. bouclier<->bouclier) : chacun légèrement vers SA source.
 function Build:drawAuraChips(ui)
-  if not (ui and ui.auraLinks) then return end
+  if not (ui and ui.auraLinks and ui.networkInspect) then return end
+  local function linkKey(a, b)
+    local sa, sb = tostring(a), tostring(b)
+    if sa < sb then return sa .. ">" .. sb end
+    return sb .. ">" .. sa
+  end
   local count = {}
   for _, lk in ipairs(ui.auraLinks) do
     local a, b = lk.from, lk.to
-    count[(a < b) and (a * 16 + b) or (b * 16 + a)] = (count[(a < b) and (a * 16 + b) or (b * 16 + a)] or 0) + 1
+    if a ~= b then
+      local k = linkKey(a, b)
+      count[k] = (count[k] or 0) + 1
+    end
   end
   for _, lk in ipairs(ui.auraLinks) do
-    local pf, pt = self.pos[lk.from], self.pos[lk.to]
-    if pf and pt then
-      local a, b = lk.from, lk.to
-      local t = (count[(a < b) and (a * 16 + b) or (b * 16 + a)] >= 2) and 0.37 or 0.5
-      self:drawAuraChip((pf.x + (pt.x - pf.x) * t) * 4, (pf.y + (pt.y - pf.y) * t) * 4, lk.kind, lk.label)
+    if self:auraLinkActive(lk, ui) then
+      local pf, pt = self:auraPoint(lk.from), self:auraPoint(lk.to)
+      if pf and pt and (pf.x ~= pt.x or pf.y ~= pt.y) then
+        local a, b = lk.from, lk.to
+        local t = ((count[linkKey(a, b)] or 0) >= 2) and 0.37 or 0.5
+        local mx, my = (pf.x + (pt.x - pf.x) * t) * 4, (pf.y + (pt.y - pf.y) * t) * 4
+        local dx, dy = (pt.x - pf.x), (pt.y - pf.y)
+        local len = math.sqrt(dx * dx + dy * dy)
+        if len > 0 then
+          local px, py = -dy / len, dx / len
+          mx, my = mx + px * 14, my + py * 14
+        end
+        mx = math.max(28, math.min(Draw.W - 28, mx))
+        my = math.max(TOPCHROME_H + 12, math.min(BAR.y * 4 - 12, my))
+        self:drawAuraChip(mx, my, lk.kind, lk.valueText or auraValueText(lk.kind, lk.label))
+      end
     end
   end
 end
@@ -3465,96 +3872,192 @@ end
 -- EXPOSURE) — l'inspecteur du design, mais ANCRÉ AU CURSEUR (décision user : pas de panneau fixe à droite).
 function Build:drawTooltip(id, boardSlot, opts)
   opts = opts or {}
+  local occ = opts.occ or (boardSlot and self.slotRigs[boardSlot]) or nil
+  local level = opts.level or (occ and occ.level) or 1
+  local unit = opts.unit or UnitResolver.unitForLevel(id, level)
   local tagOpts = opts.tagOpts or (opts.context and { context = opts.context }) or nil
+  local networkHint = opts.networkHint
+  if networkHint == nil then networkHint = boardSlot ~= nil or opts.context == "commander" end
   local box = MonsterCard.draw(self.view, self.palette, id, self.mx * 4, self.my * 4, self.t / 60,
-    { rig = self.previewRigs[id], keywordHint = true, tagOpts = tagOpts })
+    { rig = self.previewRigs[id], keywordHint = true, networkHint = networkHint, tagOpts = tagOpts, unit = unit, level = level })
+  local sidecar
   if box and boardSlot and self.slotRigs[boardSlot] then
-    self:drawBoardInspectorExtra(box, boardSlot)
+    sidecar = self:drawBoardInspectorExtra(box, boardSlot)
   end
   local showKeywords = opts.showKeywords or self.forceKeywordGlossary
     or (love and love.keyboard and love.keyboard.isDown and love.keyboard.isDown("lshift", "rshift"))
   if box and showKeywords then
-    CardGlossary.drawMonster(self.view, box, id, self.t / 60,
-      { showKeywords = true, scroll = self.tagGlossaryScroll or 0, tagOpts = tagOpts })
+    CardGlossary.drawMonster(self.view, InfluencePanel.union(box, sidecar), id, self.t / 60,
+      { showKeywords = true, scroll = self.tagGlossaryScroll or 0, tagOpts = tagOpts, unit = unit })
   end
+end
+
+function Build:slotMatchesRelicTarget(slot, target)
+  local sr = self.slotRigs[slot]
+  if not sr then return false end
+  target = target or "team"
+  if target == "team" then return true end
+  if target == "role:front" then return self:resolveRoleSlot("front") == slot end
+  if target == "role:back" then return self:resolveRoleSlot("back") == slot end
+  if target == "role:center" then return self:resolveRoleSlot("center") == slot end
+  if type(target) == "string" and target:sub(1, 5) == "type:" then
+    return Units[sr.id] and Units[sr.id].type == target:sub(6)
+  end
+  if target == "ahead" or target == "behind" or target == "above" or target == "below" then
+    local cells = self.board.shape.cells
+    local byKey = {}
+    for i = 1, 9 do
+      if self.slotRigs[i] then
+        local c = cells[i]
+        byKey[c.x .. ":" .. c.y] = i
+      end
+    end
+    local dc = (target == "ahead" and 1) or (target == "behind" and -1) or 0
+    local dr = (target == "below" and 1) or (target == "above" and -1) or 0
+    for i = 1, 9 do
+      if self.slotRigs[i] then
+        local c = cells[i]
+        if byKey[(c.x + dc) .. ":" .. (c.y + dr)] == slot then return true end
+      end
+    end
+  end
+  return false
+end
+
+function Build:relicAuraRowsForSlot(slot)
+  local run = self.host and self.host.run
+  if not (run and run.relics and self.slotRigs[slot]) then return {} end
+  local sr = self.slotRigs[slot]
+  local rows = {}
+  local placed = self:placedCount()
+  local function add(id, kind, value)
+    if kind and value then
+      rows[#rows + 1] = {
+        kind = kind,
+        text = T("ui.aura_takes", { name = auraUpperAscii(T("relic." .. id .. ".name")) }),
+        value = value,
+        valueText = auraValueText(kind, value),
+        sourceKind = "relic",
+        sourceId = id,
+      }
+    end
+  end
+  local function addIfTarget(id, target, kind, value)
+    if self:slotMatchesRelicTarget(slot, target) then add(id, kind, value) end
+  end
+  for _, rr in ipairs(run.relics) do
+    local id = rr.id or rr
+    local relic = RelicsData[id]
+    local p = relic and (relic.params or {})
+    if relic and relic.op == "relic_aura_stat" then
+      if self:slotMatchesRelicTarget(slot, p.target or "team") then
+        local kind, label = statAuraVisual(p.stat, p.value or 0, sr.id, sr.level or 1)
+        add(id, kind, label)
+      end
+    elseif relic and relic.op == "relic_affliction_inc" then
+      local kind = p.family
+      local addDps = kind and math.floor(baseAfflDps(sr.id, kind, sr.level or 1) * (p.inc or 0) + 0.5) or 0
+      if addDps > 0 then add(id, kind, "+" .. addDps) end
+    elseif relic and relic.op == "relic_more_dmg" then
+      add(id, "empower", auraPercent(p.mult or 0, true))
+    elseif relic and relic.op == "relic_flat_hp" then
+      add(id, "growth", auraAdd(p.value or 0))
+    elseif relic and relic.op == "relic_dmg_reduce" then
+      add(id, "guard", "-" .. math.floor((p.frac or 0) * 100 + 0.5) .. "%")
+    elseif relic and relic.op == "relic_haste" then
+      add(id, "haste", auraPercent(p.value or 0, true))
+    elseif relic and relic.op == "relic_few_units" and placed <= (p.max or 3) then
+      add(id, "growth", auraPercent(math.max(p.dmgInc or 0, p.hpInc or 0), true))
+    elseif relic and relic.op == "relic_rainbow" then
+      add(id, "growth", "TYPE")
+    elseif relic and relic.op == "relic_second_breath" then
+      add(id, "guard", "1 HP")
+    elseif relic and relic.op == "relic_amplify_auras" then
+      addIfTarget(id, p.target or "team", "mimicry", auraPercent(p.frac or 0, true))
+    end
+  end
+  return rows
 end
 
 -- ── INSPECTEUR DE BOARD (refonte « Build Screen ») : sous la fiche d'une unité POSÉE, un panneau
 -- AURAS (« qui je buffe / qui me buffe », chiffré + icône, lu des liens d'aura) + EXPOSURE (rang
 -- d'exposition au ciblage de colonne, dérivé de la forme). Ancré à la fiche (cardBox) : dessous si la
 -- place le permet, sinon dessus. PUR-RENDER (golden neutre). ──
-function Build:drawBoardInspectorExtra(cardBox, slot)
-  local c = Theme.c
+function Build:influenceDataForSlot(slot)
   local links = (self.uiState and self.uiState.auraLinks) or {}
-  -- (1) lignes AURAS : gives (cette case = SOURCE, une ligne par voisin -> chaque bonus CONCRET est exact)
-  -- puis takes (liens entrants).
-  local rows = {}
+  local gives, receives, position = {}, {}, {}
   for _, lk in ipairs(links) do
     if lk.from == slot and self.slotRigs[lk.to] then
-      rows[#rows + 1] = { kind = lk.kind, text = T("ui.aura_gives", { names = upperAscii(T("unit." .. self.slotRigs[lk.to].id .. ".name")) }), value = lk.label }
+      gives[#gives + 1] = {
+        kind = lk.kind,
+        value = lk.label,
+        valueText = lk.valueText or auraValueText(lk.kind, lk.label),
+        source = T("ui.influence_to", { name = self:auraTargetName(lk.to) }),
+        detail = T("ui.influence_direct_link"),
+        badge = T("ui.influence_aura"),
+      }
     end
   end
   for _, lk in ipairs(links) do
-    if lk.to == slot and self.slotRigs[lk.from] then
-      rows[#rows + 1] = { kind = lk.kind, text = T("ui.aura_takes", { name = upperAscii(T("unit." .. self.slotRigs[lk.from].id .. ".name")) }), value = lk.label }
+    if lk.to == slot and lk.from ~= slot then
+      receives[#receives + 1] = {
+        kind = lk.kind,
+        value = lk.label,
+        valueText = lk.valueText or auraValueText(lk.kind, lk.label),
+        source = T("ui.influence_from", { name = self:auraSourceName(lk) }),
+        detail = (lk.sourceKind == "commander") and T("ui.influence_commander_source") or T("ui.influence_direct_link"),
+        badge = (lk.sourceKind == "commander") and T("ui.influence_commander") or T("ui.influence_aura"),
+      }
     end
   end
-  -- (2) exposition : front-ness dérivée de la colonne (depth = maxCol - cell.x) sur les cases OCCUPÉES.
+  for _, r in ipairs(self:relicAuraRowsForSlot(slot)) do
+    receives[#receives + 1] = {
+      kind = r.kind,
+      value = r.value,
+      valueText = r.valueText or auraValueText(r.kind, r.value),
+      source = T("ui.influence_from", { name = self:auraSourceName({ sourceKind = "relic", sourceId = r.sourceId }) }),
+      detail = T("ui.influence_relic_source"),
+      badge = T("ui.influence_relic"),
+    }
+  end
+
   local cell = self.board.shape.cells[slot]
   local minC, maxC = math.huge, -math.huge
   for i = 1, 9 do
-    if self.slotRigs[i] then local cc = self.board.shape.cells[i]; if cc.x < minC then minC = cc.x end; if cc.x > maxC then maxC = cc.x end end
-  end
-  local expoFrac = 1 - (maxC - cell.x) / math.max(1, maxC - minC)
-  local filled = math.max(1, math.min(3, math.floor(expoFrac * 3 + 0.999)))
-  local expoLab = (expoFrac >= 0.66) and T("ui.expo_front") or ((expoFrac >= 0.33) and T("ui.expo_mid") or T("ui.expo_back"))
-
-  -- (3) mesure + position (attachée à la fiche : dessous si possible, sinon dessus).
-  local W, PAD, ROW_H = cardBox.w, 13, 19
-  local headF, valF = Theme.label(8), Theme.value(11)
-  local hasAuras = #rows > 0
-  local h = PAD + 12 + PAD -- exposition (≈12) + marges
-  if hasAuras then h = h + headF:getHeight() + 8 + #rows * ROW_H + 10 end
-  local x = math.floor(cardBox.x)
-  local y = cardBox.y + cardBox.h + 6
-  if y + h > Draw.H then y = cardBox.y - h - 6 end
-  if y < 4 then y = 4 end
-  y = math.floor(y)
-
-  Panel.draw(x, y, W, h, { fill1 = c.stone800, fill2 = c.stone900, border = c.iron })
-  local bx, rightX, cy = x + PAD, x + W - PAD, y + PAD
-
-  if hasAuras then
-    Draw.text(T("ui.auras_on_cell"), bx, cy, c.ink3, headF)
-    Draw.textR(T("ui.links_count", { n = #rows }), rightX, cy, c.ink4, headF)
-    cy = cy + headF:getHeight() + 8
-    for _, r in ipairs(rows) do
-      local col = c[r.kind] or c.gold
-      local icon = (r.kind ~= "shield") and Keywords.icon(r.kind) or nil
-      local ix = bx
-      if icon and icon.image and love.graphics then
-        love.graphics.setColor(1, 1, 1, 1); love.graphics.draw(icon.image, ix, math.floor(cy + ROW_H / 2 - icon.h / 2)); ix = bx + icon.w + 6
-      elseif love.graphics and love.graphics.polygon then
-        Draw.setColor(col); love.graphics.polygon("fill", ix, cy + 5, ix + 7, cy + 5, ix + 7, cy + 10, ix + 3.5, cy + 14, ix, cy + 10); ix = bx + 12; Draw.reset()
-      else ix = bx + 12 end
-      local vw = valF:getWidth(r.value)
-      Draw.text(r.value, rightX - vw, cy + math.floor((ROW_H - valF:getHeight()) / 2), col, valF)
-      local txt, tf = fitText(r.text, (rightX - vw - 6) - ix, Theme.body, 12, 10)
-      Draw.text(txt, ix, cy + math.floor((ROW_H - (tf and tf:getHeight() or 12)) / 2), c.ink2, tf)
-      cy = cy + ROW_H
+    if self.slotRigs[i] then
+      local cc = self.board.shape.cells[i]
+      if cc.x < minC then minC = cc.x end
+      if cc.x > maxC then maxC = cc.x end
     end
-    cy = cy + 10
   end
-  -- EXPOSURE : label + 3 segments + rang (saveur).
-  Draw.text(T("ui.exposure"), bx, cy + 1, c.ink4, headF)
-  local segX = bx + headF:getWidth(T("ui.exposure")) + 10
-  for k = 1, 3 do
-    local sx = segX + (k - 1) * 15
-    if k <= filled then Panel.vgrad(sx, cy, 12, 9, { 0x7a / 255, 0x14 / 255, 0x10 / 255, 1 }, { 0x3a / 255, 0x0a / 255, 0x08 / 255, 1 })
-    else Draw.rect(sx, cy, 12, 9, c.stone850, c.stone700, 1) end
-  end
-  Draw.textR(expoLab, rightX, cy, c.ink4, Theme.flavor(11))
-  Draw.reset()
+  local expoFrac = cell and (1 - (maxC - cell.x) / math.max(1, maxC - minC)) or 0
+  local expoLab = (expoFrac >= 0.66) and T("ui.expo_front") or ((expoFrac >= 0.33) and T("ui.expo_mid") or T("ui.expo_back"))
+  position[#position + 1] = {
+    kind = "state",
+    valueText = T("ui.exposure"),
+    source = T("ui.influence_position", { name = expoLab }),
+    detail = T("ui.influence_links_summary", { out = #gives, inc = #receives }),
+    badge = T("ui.influence_position_badge"),
+  }
+
+  local sr = self.slotRigs[slot]
+  return {
+    title = T("ui.influence_title"),
+    subtitle = sr and T("unit." .. sr.id .. ".name") or nil,
+    sections = {
+      { title = T("ui.influence_receives"), rows = receives },
+      { title = T("ui.influence_gives"), rows = gives },
+      { title = T("ui.influence_position_title"), rows = position },
+    },
+  }
+end
+
+function Build:drawBoardInspectorExtra(cardBox, slot)
+  self.influenceScroll = self.influenceScroll or {}
+  local box = InfluencePanel.draw(self.view, cardBox, self:influenceDataForSlot(slot),
+    { scroll = self.influenceScroll[slot] or 0 })
+  if box then self.influenceScroll[slot] = box.scroll or 0 end
+  return box
 end
 
 -- Infobulle de relique (survol de la rangée) = Panel propre (même langage que src/scenes/relicpick.lua) :

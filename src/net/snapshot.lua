@@ -12,15 +12,19 @@
 local Units = require("src.data.units")
 local UnitResolver = require("src.core.unit_resolver")
 local Place = require("src.combat.place")
+local Mutations = require("src.run.mutations")
 
 local Snapshot = {}
 local SEP_FIELD, SEP_UNIT, SEP_ATTR = "\t", ";", ","
 
--- Capture : build LOGIQUE (liste {id, level, col, row}) + sigil + seed + tier/version -> snapshot figé.
+-- Capture : build LOGIQUE (liste {id, level, col, row, mutations?}) + sigil + seed + tier/version -> snapshot figé.
 function Snapshot.capture(units, shape, seed, opts)
   opts = opts or {}
   local u = {}
-  for i, x in ipairs(units) do u[i] = { id = x.id, level = x.level or 1, col = x.col, row = x.row } end
+  for i, x in ipairs(units) do
+    u[i] = { id = x.id, level = x.level or 1, col = x.col, row = x.row,
+      mutations = Mutations.clone(x.mutations) }
+  end
   return { version = tostring(opts.version or "0"), tier = opts.tier or 0,
     seed = seed or 0, shape = shape or "carre", units = u }
 end
@@ -30,7 +34,12 @@ end
 function Snapshot.encode(s)
   local parts = {}
   for _, x in ipairs(s.units) do
-    parts[#parts + 1] = table.concat({ x.id, x.level, x.col, x.row }, SEP_ATTR)
+    local mut = Mutations.encode(x.mutations)
+    if mut then
+      parts[#parts + 1] = table.concat({ x.id, x.level, x.col, x.row, mut }, SEP_ATTR)
+    else
+      parts[#parts + 1] = table.concat({ x.id, x.level, x.col, x.row }, SEP_ATTR)
+    end
   end
   return table.concat({ s.version, s.tier, s.seed, s.shape, table.concat(parts, SEP_UNIT) }, SEP_FIELD)
 end
@@ -41,9 +50,10 @@ function Snapshot.decode(str)
   if not v then return nil end
   local units = {}
   for chunk in (ustr or ""):gmatch("[^;]+") do
-    local id, lvl, col, row = chunk:match("^([%w_]+),(%-?%d+),(%-?%d+),(%-?%d+)$")
+    local id, lvl, col, row, mut = chunk:match("^([%w_]+),(%-?%d+),(%-?%d+),(%-?%d+),?([%w_+]*)$")
     if id then
-      units[#units + 1] = { id = id, level = tonumber(lvl), col = tonumber(col), row = tonumber(row) }
+      units[#units + 1] = { id = id, level = tonumber(lvl), col = tonumber(col), row = tonumber(row),
+        mutations = Mutations.decode(mut) }
     end
   end
   return { version = v, tier = tonumber(tier) or 0, seed = tonumber(seed) or 0, shape = shape, units = units }
@@ -56,7 +66,10 @@ function Snapshot.toComp(s, side)
   local facing = (side < 0) and 1 or -1
   local placed = {}
   for _, x in ipairs(s.units) do
-    if Units[x.id] then placed[#placed + 1] = { id = x.id, level = x.level or 1, col = x.col, row = x.row } end
+    if Units[x.id] then
+      placed[#placed + 1] = { id = x.id, level = x.level or 1, col = x.col, row = x.row,
+        mutations = Mutations.clone(x.mutations) }
+    end
   end
   if #placed == 0 then return {} end
   local b = Place.bounds(placed)
@@ -64,10 +77,11 @@ function Snapshot.toComp(s, side)
   for _, p in ipairs(placed) do
     local stats = UnitResolver.statsFor(p.id, p.level)
     local px, py = Place.pos(p.col, p.row, side, b)
-    local effects = (p.level or 1) > 1 and UnitResolver.hasAuthoredLevel(p.id) and UnitResolver.effectsFor(p.id, p.level) or nil
-    comp[#comp + 1] = { id = p.id, level = p.level,
+    local effects = (p.level or 1) > 1 and UnitResolver.effectsFor(p.id, p.level) or nil
+    local spec = { id = p.id, level = p.level,
       hp = stats.hp, dmg = stats.dmg, cd = stats.cd,
       depth = b.maxC - p.col, row = p.row, effects = effects, x = px, y = py, facing = facing }
+    comp[#comp + 1] = Mutations.applyToSpec(spec, p.mutations)
   end
   return comp
 end

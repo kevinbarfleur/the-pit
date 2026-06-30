@@ -2,7 +2,7 @@
 -- MOTEUR DE SCÉNARIOS d'équilibrage (Phase C.0) — garde-fous :
 --   1. COMMON : DESIGNED (counters intentionnels) + invest (Compcost) + résolution catalogue/bandes +
 --      percentile + archetypeOf + JSON diff-able (clés triées).
---   2. SMOKE de chaque MODE (invest/policy/godroll/commander/counter) à N MINIMAL via le driver unifié
+--   2. SMOKE de chaque MODE (invest/policy/godroll/commander/counter/economy/tank/pacing/sweep/coherence/mechanics/bossrush/bossrush_run) à N MINIMAL via le driver unifié
 --      (luajit tools/sim.lua <mode> 1) : tourne sans crash, écrit son report-<mode>.json (JSON parsable),
 --      et le P7 god-roll RESPECTE ses garde-fous (caps moteur : multicast bake <= cap, zéro 1-swing -> assert
 --      DUR dans le mode lui-même ; si un cap sautait, le smoke échouerait avec exit!=0).
@@ -71,17 +71,160 @@ local ok, err = pcall(function()
   local OUT = "runs/_test"
   local ENV = "PIT_SCEN_OUT=" .. OUT .. " "
   os.execute("rm -rf " .. OUT .. " && mkdir -p " .. OUT)
-  local MODES = { "invest", "policy", "godroll", "commander", "counter" }
+  local MODES = { "invest", "policy", "godroll", "commander", "counter", "economy", "tank", "pacing", "sweep", "coherence", "mechanics", "bossrush", "bossrush_run" }
   for _, m in ipairs(MODES) do
-    local code = os.execute(ENV .. "luajit tools/sim.lua " .. m .. " 1 >/dev/null 2>&1")
+    local extraEnv = ""
+    if m == "bossrush" then
+      extraEnv = "PIT_BOSSRUSH_COMPS=bruiser_carre PIT_ABOMINATIONS=leviathan "
+    elseif m == "bossrush_run" then
+      extraEnv = "PIT_POLICIES=greedy_stats PIT_BOSSRUSH_RUN_ECONOMIES=baseline PIT_ABOMINATIONS=leviathan PIT_BOSSRUSH_RUN_ELIGIBILITY=all "
+    elseif m == "economy" then
+      extraEnv = "PIT_OPPONENT_MODE=generated PIT_PLAN_TARGETS=rot_bleed_rat_core PIT_PLAN_TARGET_SPECS='spec_support=rot_hound:1;relics=grave_cap;commander=clot_mender:2;board=3' "
+    end
+    local code = os.execute(ENV .. extraEnv .. "luajit tools/sim.lua " .. m .. " 1 >/dev/null 2>&1")
     -- os.execute renvoie true (5.2+) ou 0 (5.1) au succes ; on accepte les deux conventions.
     assert(code == 0 or code == true, "mode " .. m .. " : driver tourne sans crash (exit 0)")
     local f = io.open(OUT .. "/report-" .. m .. ".json", "r")
     assert(f, "mode " .. m .. " : report-" .. m .. ".json produit")
     local body = f:read("*a"); f:close()
     assert(jsonLooksObject(body), "mode " .. m .. " : report-" .. m .. ".json est un objet JSON")
+    if m == "coherence" then
+      assert(body:find("__leveled", 1, true),
+        "mode coherence : variantes levelees produites pour les compos fixes")
+      assert(body:find("__filled", 1, true),
+        "mode coherence : variantes remplies produites pour les noyaux sous-remplis")
+      assert(body:find('"id":"marrow_drinker","level":3', 1, true),
+        "mode coherence : variante levelee peut prioriser le pivot bleed->rot")
+      assert(body:find('"filled_from":"cross_bleed_rot"', 1, true),
+        "mode coherence : cross_bleed_rot peut etre teste avec fillers naturels")
+      assert(body:find('"filled_resolutions"', 1, true),
+        "mode coherence : les noyaux sous-remplis ont un diagnostic de resolution par fillers")
+      assert(body:find('"foe_breakdown"', 1, true),
+        "mode coherence : chaque ligne expose le diagnostic par adversaire")
+      assert(body:find('"rank_pressure"', 1, true),
+        "mode coherence : chaque ligne expose la pression d'acces par rang")
+      assert(body:find('"duplicate_pressure"', 1, true),
+        "mode coherence : chaque ligne expose la pression de copies")
+    elseif m == "economy" then
+      assert(body:find('"plan_access"', 1, true),
+        "mode economy : accessibilite des plans cibles reportee")
+      assert(body:find('"first_held_level_round"', 1, true),
+        "mode economy : trajectoire d'accessibilite des plans reportee")
+      assert(body:find('"combat_by_board_level_band"', 1, true),
+        "mode economy : combat par bande de couverture de plan reporte")
+      assert(body:find('"forced_winrate"', 1, true),
+        "mode economy : oracle combat force des plans cibles reporte")
+      assert(body:find('"acquisition_funnel"', 1, true),
+        "mode economy : funnel acquisition des plans cibles reporte")
+      assert(body:find('"support_access"', 1, true),
+        "mode economy : accessibilite des supports reliques/commandants reportee")
+      assert(body:find('"focused_offer_run_rate"', 1, true),
+        "mode economy : offres de reliques focus reportees")
+      assert(body:find('"focused_candidate_run_rate"', 1, true),
+        "mode economy : candidats commandants focus reportes")
+      assert(body:find('"xp_gate_blocks_per_run"', 1, true),
+        "mode economy : blocages de barriere XP reportes")
+      assert(body:find('"sold_before_merge_rate"', 1, true),
+        "mode economy : pertes de paires par vente reportees")
+      assert(body:find('"terminal_causes"', 1, true),
+        "mode economy : causes terminales des paires non resolues reportees")
+      assert(body:find('"third_copy_access"', 1, true),
+        "mode economy : accessibilite de la troisieme copie reportee")
+      assert(body:find('"pair_support_offers_per_run"', 1, true),
+        "mode economy : offres support de paire reportees")
+      assert(body:find('"final_duplicate_saturation"', 1, true)
+        and body:find('"final_low_rank_duplicate_run_rate"', 1, true),
+        "mode economy : saturation finale en duplicatas low-rank reportee")
+      assert(body:find('"spec_support"', 1, true)
+        and body:find('"relics":["grave_cap"]', 1, true)
+        and body:find('"commander":"clot_mender"', 1, true),
+        "mode economy : PIT_PLAN_TARGET_SPECS accepte relics+commander dans oracle")
+      assert(body:find('"summary"', 1, true)
+        and body:find('"profile_rows"', 1, true)
+        and body:find('"policy_rows_top"', 1, true)
+        and body:find('"policy_rows_bottom"', 1, true)
+        and body:find('"target_rows"', 1, true),
+        "mode economy : resume compact profils/policies/cibles reporte")
+      assert(body:find('"held_level_75_hit_rate"', 1, true)
+        and body:find('"board_p75_99_winrate"', 1, true),
+        "mode economy : resume compact expose les seuils de realisation des plans")
+      assert(body:find('"position_complete_rate"', 1, true)
+        and body:find('"avg_board_slot_coverage"', 1, true)
+        and body:find('"avg_peak_board_slot_level_coverage"', 1, true),
+        "mode economy : resume compact expose la realisation positionnelle des plans")
+    elseif m == "pacing" then
+      assert(body:find('"duration_fit"', 1, true),
+        "mode pacing : score de fit duration reporte")
+      assert(body:find('"duration_fit_score"', 1, true),
+        "mode pacing : score de fit duration expose dans le resume")
+      assert(body:find('"early_by_enemy_top"', 1, true),
+        "mode pacing : adversaires responsables des combats early trop courts reportes")
+      assert(body:find('"early_by_enemy_signature_top"', 1, true),
+        "mode pacing : signatures exactes des adversaires early trop courts reportees")
+      assert(body:find('"early_short_fight_diagnostics"', 1, true),
+        "mode pacing : diagnostic causal des combats early sous 5s reporte")
+    elseif m == "sweep" then
+      assert(body:find('"duration_fit"', 1, true),
+        "mode sweep : score de fit duration reporte")
+      assert(body:find('"duration_fit_score"', 1, true),
+        "mode sweep : score de fit duration expose dans le resume")
+      assert(body:find('"early_by_enemy_top"', 1, true),
+        "mode sweep : adversaires responsables des combats early trop courts reportes")
+      assert(body:find('"early_by_enemy_signature_top"', 1, true),
+        "mode sweep : signatures exactes des adversaires early trop courts reportees")
+      assert(body:find('"early_short_fight_diagnostics"', 1, true),
+        "mode sweep : diagnostic causal des combats early sous 5s reporte")
+      assert(body:find('"recommendations"', 1, true),
+        "mode sweep : recommandations de pacing/economie reportees")
+      assert(body:find('"selection_score"', 1, true),
+        "mode sweep : score de selection des recommandations reporte")
+    elseif m == "bossrush" then
+      assert(body:find('"boss_score_damage"', 1, true),
+        "mode bossrush : score de degats boss reporte")
+      assert(body:find('"cleared_blockers"', 1, true),
+        "mode bossrush : nettoyage des generaux reporte")
+      assert(body:find('"recommendations"', 1, true),
+        "mode bossrush : recommandations/warnings reportes")
+    elseif m == "mechanics" then
+      assert(body:find('"simple_affliction_l1_rate"', 1, true),
+        "mode mechanics : taux affliction simple reporte")
+      assert(body:find('"low_variety_rate"', 1, true),
+        "mode mechanics : taux de faible variete reporte")
+      assert(body:find('"level_effect_progression_rate"', 1, true),
+        "mode mechanics : progression effective des effets niveau 2/3 reportee")
+      assert(body:find('"redesign_first"', 1, true),
+        "mode mechanics : liste de redesign prioritaire reportee")
+      assert(body:find('"no_effect_progression"', 1, true),
+        "mode mechanics : liste sans progression d'effet reportee")
+      assert(body:find('"simple_affliction_priority"', 1, true),
+        "mode mechanics : dette simple-affliction priorisee reportee")
+    elseif m == "bossrush_run" then
+      assert(body:find('"finalSupportedBoard"', 1, true) == nil,
+        "mode bossrush_run : pas de dump interne verbeux dans le rapport")
+      assert(body:find('"score_damage_per_run"', 1, true),
+        "mode bossrush_run : score PvE par run reporte")
+      assert(body:find('"entry_rate"', 1, true),
+        "mode bossrush_run : taux d'entree postgame reporte")
+      assert(body:find('"economy_policy"', 1, true),
+        "mode bossrush_run : matrice economie/politique reportee")
+      assert(body:find('"opponent_mode"', 1, true),
+        "mode bossrush_run : configuration adversaire run reportee")
+    end
   end
-  print("  scenarios : SMOKE OK (5 modes tournent via le driver + ecrivent un rapport JSON ; garde-fous god-roll tenus)")
+  print("  scenarios : SMOKE OK (13 modes tournent via le driver + ecrivent un rapport JSON ; garde-fous god-roll tenus)")
+
+  -- Alias ergonomiques du sweep : les noms dedies doivent filtrer le grid comme les noms generiques.
+  local sweepAliasCode = os.execute(ENV ..
+    "PIT_SWEEP_ECONOMIES=baseline PIT_SWEEP_PACES=hp2_cd15_f24 luajit tools/sim.lua sweep 1 >/dev/null 2>&1")
+  assert(sweepAliasCode == 0 or sweepAliasCode == true, "sweep aliases : driver tourne sans crash")
+  local sf = io.open(OUT .. "/report-sweep.json", "r")
+  assert(sf, "sweep aliases : report-sweep.json produit")
+  local sweepBody = sf:read("*a"); sf:close()
+  assert(sweepBody:find('"baseline"', 1, true), "sweep aliases : economie baseline incluse")
+  assert(sweepBody:find('"hp2_cd15_f24"', 1, true), "sweep aliases : pace hp2_cd15_f24 incluse")
+  assert(not sweepBody:find('"sap_cost"', 1, true), "sweep aliases : economies non demandees filtrees")
+  assert(not sweepBody:find('"live_hp2_cd1_f17"', 1, true), "sweep aliases : paces non demandees filtrees")
+  print("  scenarios : SWEEP ALIASES OK (PIT_SWEEP_ECONOMIES/PACES filtrent le grid)")
 
   -- 3) DÉTERMINISME : un mode relance a meme N -> rapport IDENTIQUE (regle d'or). On teste le plus rapide.
   os.execute(ENV .. "luajit tools/sim.lua godroll 1 >/dev/null 2>&1")
@@ -101,7 +244,7 @@ local ok, err = pcall(function()
 end)
 
 if ok then
-  print("=> SCENARIOS OK : moteur de scenarios (common + 5 modes + determinisme + golden de meta).")
+  print("=> SCENARIOS OK : moteur de scenarios (common + 13 modes + determinisme + golden de meta).")
 else
   print("=> SCENARIOS FAIL :")
   print(err)

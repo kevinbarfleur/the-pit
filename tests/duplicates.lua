@@ -33,6 +33,16 @@ local ok, err = pcall(function()
   assert(u.level == 2 and u.hp == 54 and u.dmg == 5,
     ("stats niveau 2 : hp=%d dmg=%d (attendu 54/5)"):format(u.hp, u.dmg))
 
+  -- 2b) MUTATION D'INSTANCE : une copie mutée transmet une seule mutation au survivant de fusion.
+  local bm = fresh()
+  bm:placeId(1, "marauder", 1, { mutations = { "echo_touched" } })
+  bm:placeId(2, "marauder")
+  bm:placeId(3, "marauder")
+  bm:checkMerges()
+  local mut = bm:buildComp(-1)[1]
+  assert(mut.level == 2 and mut.mutations and mut.mutations[1] == "echo_touched" and mut.multicast == 2,
+    "fusion: mutation d'instance preservee et bakee dans le spec combat")
+
   -- 3) NIVEAU 1 = IDENTITÉ (golden-safe) : sans fusion, stats inchangées.
   local b1 = fresh(); b1:placeId(5, "marauder")
   local c1 = b1:buildComp(-1)

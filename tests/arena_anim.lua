@@ -65,6 +65,13 @@ local ok, err = pcall(function()
   -- 8) la mort NE retombe JAMAIS en idle, même au-delà de DEATH_DUR (figée à son âge ; ph plafonnée à 1 dans draw)
   for _ = 1, DUR.death + 30 do rd:update(1.0, 1) end
   assert(rd.anim[A].state == "death", "death ne retombe pas en idle (latch après DEATH_DUR)")
+  local deadAge = rd.dead[A]
+  assert(deadAge and deadAge > 0, "dead fade age avance")
+
+  -- 8b) spawned/summon preserve : le vrai callback bus ne doit PAS relancer le fade des cadavres.
+  arena.bus:emit("spawned", arena.units)
+  assert(rd.anim[A] and rd.anim[A].state == "death", "spawned preserve garde le latch death")
+  assert(rd.dead[A] == deadAge, "spawned preserve garde l'âge du fade de mort")
 
   -- 9) rebuild() purge l'état d'anim (nouveau combat -> table vierge)
   rd:rebuild()

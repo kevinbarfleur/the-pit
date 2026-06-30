@@ -50,6 +50,21 @@ local ok, err = pcall(function()
   assert(rat3.params.dps == 2 and rat3.params.aggravateMult == 1.5,
     "gnaw_rat level 3 gains bleed aggravate clutch rider")
 
+  local rot3 = Resolver.effectsFor("rot_hound", 3)[1]
+  assert(rot3.params.base == 4 and rot3.params.growth == 4 and rot3.params.capDps == 14
+    and rot3.params.maxHpFrac == 0.20 and rot3.params.passiveRamp == 1,
+    "rot_hound L3 strengthens the rot tank-counter curve")
+
+  local pecker3 = Resolver.effectsFor("carrion_pecker", 3)
+  assert(pecker3[1].params.base == 3 and pecker3[1].params.growth == 3
+    and pecker3[1].params.capDps == 8 and pecker3[1].params.passiveRamp == 1
+    and pecker3[2].params.value == 6,
+    "carrion_pecker L3 gains a low-rank rot reroll clutch")
+
+  local husk3 = Resolver.effectsFor("husk", 3)[1]
+  assert(husk3.op == "aura_stat" and husk3.target == "team" and husk3.params.value == 0.08,
+    "husk level 3 turns front guard into team wall clutch")
+
   -- Build comp must materialize authored level effects; otherwise Arena would
   -- fall back to raw Units[id].effects and silently play level 1.
   do
@@ -65,10 +80,49 @@ local ok, err = pcall(function()
   -- legacy source-level multiplier.
   do
     local b = fresh()
+    b:placeId(5, "husk", 3)
+    b:placeId(2, "marauder", 1)
+    local husk = compById(b:buildComp(-1), "husk")
+    local mar = compById(b:buildComp(-1), "marauder")
+    assert(husk and mar and math.abs((husk.dmgReduce or 0) - 0.08) < 1e-9
+      and math.abs((mar.dmgReduce or 0) - 0.08) < 1e-9,
+      "husk L3 team wall bakes dmgReduce on the team")
+  end
+
+  do
+    local b = fresh()
     b:placeId(5, "shieldbearer", 2)
     b:placeId(2, "marauder")
     local mar = compById(b:buildComp(-1), "marauder")
     assert(mar and mar.shield == 11, "shieldbearer L2 shield = 11, not double-scaled")
+  end
+
+  -- Units without authored level patches still need their power-bearing
+  -- ability values to grow. Otherwise only HP/DMG would scale, which makes
+  -- level-ups feel fake for affliction/support pieces.
+  do
+    local l3 = Resolver.effectsFor("leech_thorn", 3)
+    local bleed = effectByOp({ effects = l3 }, "bleed")
+    assert(bleed and bleed.levelScaled and bleed.params.dps == 6 and bleed.params.slowPct == 0.10,
+      "generic level scaling: leech_thorn L3 bleed dps scales, slowPct stays stable")
+  end
+
+  do
+    local b = fresh()
+    b:placeId(5, "leech_thorn", 3)
+    local spec = compById(b:buildComp(-1), "leech_thorn")
+    local bleed = effectByOp(spec, "bleed")
+    assert(bleed and bleed.params.dps == 6,
+      "buildComp materializes generic scaled level effects, not raw level-1 effects")
+  end
+
+  do
+    local b = fresh()
+    b:placeId(5, "templar", 3)
+    b:placeId(2, "marauder", 1)
+    local mar = compById(b:buildComp(-1), "marauder")
+    assert(mar and math.abs((mar.dmgReduce or 0) - 0.36) < 1e-9,
+      "generic level scaling: templar L3 aura_stat value scales once, not twice")
   end
 
   do
@@ -87,8 +141,44 @@ local ok, err = pcall(function()
     b:placeId(2, "marauder")
     local mar = compById(b:buildComp(-1), "marauder")
     local bleed = effectByOp(mar, "bleed")
-    assert(bleed and bleed.params.dps == 3 and bleed.params.dur == 210,
+    assert(bleed and bleed.params.dps == 3 and bleed.params.dur == 240,
       "clot_mender L3 grants level-aware bleed")
+  end
+
+  do
+    local rhCmd = Resolver.commandBonusFor("rot_hound", 3)
+    local cmCmd = Resolver.commandBonusFor("clot_mender", 3)
+    assert(rhCmd and rhCmd.params.value == 0.26 and cmCmd and cmCmd.params.value == 0.26,
+      "rot/bleed bridge command bonuses scale at L3")
+  end
+
+  do
+    local md3 = Resolver.effectsFor("marrow_drinker", 3)[1]
+    assert(md3 and md3.params.base == 5 and md3.params.growth == 4 and md3.params.capDps == 16,
+      "marrow_drinker L3 strengthens bleed->rot conversion")
+  end
+
+  do
+    local dt3 = Resolver.effectsFor("decay_tender", 3)[1]
+    local nl3 = Resolver.effectsFor("necro_leech", 3)[1]
+    assert(dt3 and dt3.params.bonus == 3, "decay_tender L3 increases rot growth aura")
+    assert(nl3 and nl3.params.base == 4 and nl3.params.growth == 4 and nl3.params.maxHpFrac == 0.45,
+      "necro_leech L3 strengthens rot amputation")
+  end
+
+  do
+    local witch3 = Resolver.effectsFor("witch", 3)[1]
+    local mimic3 = Resolver.effectsFor("mimic_spawn", 3)[1]
+    local crown3 = Resolver.effectsFor("hollow_crown", 3)[1]
+    local krakenCmd3 = Resolver.commandBonusFor("deep_kraken", 3)
+    assert(witch3 and witch3.params.spread and witch3.params.dps == 3,
+      "witch L3 gains a poison spread clutch")
+    assert(mimic3 and mimic3.params.who == "neighbors",
+      "mimic_spawn L3 upgrades from ahead-only mimicry to neighbor mimicry")
+    assert(crown3 and crown3.params.frac == 0.30,
+      "hollow_crown L3 strengthens aura amplification")
+    assert(krakenCmd3 and krakenCmd3.params.value == 0.20,
+      "deep_kraken L3 command scales the unfused-beast payoff")
   end
 
   -- grant_team command bonuses can now scale by commander level.
@@ -109,6 +199,14 @@ local ok, err = pcall(function()
     local comp = Snapshot.toComp(snap, 1)
     local poison = effectByOp(comp[1], "poison")
     assert(poison and poison.params.spread, "snapshot toComp materializes authored level effects")
+  end
+
+  do
+    local snap = Snapshot.capture({ { id = "leech_thorn", level = 3, col = 1, row = 1 } }, "carre", 8)
+    local comp = Snapshot.toComp(snap, 1)
+    local bleed = effectByOp(comp[1], "bleed")
+    assert(bleed and bleed.params.dps == 6,
+      "snapshot toComp materializes generic scaled level effects")
   end
 
   print("  unit_resolver : stats shared / level effects / build + command + snapshot propagation OK")

@@ -505,6 +505,657 @@ coute 5 gold.
 Pour trancher proprement, il faut mesurer la pression economique au lieu de
 debattre au ressenti.
 
+Etat implementation 2026-06-26:
+
+- `src/run/economy.lua` expose des profils opt-in pour simulation:
+  - `baseline`;
+  - `sap_cost` avec `costByRank = {2, 3, 4, 5, 6}`;
+  - `early_curve` avec revenu `6/6/8/8/8/10...`;
+  - `tiered_reroll` avec reroll `1/1/2/2/3`;
+  - `sap_cost_tiered_reroll`.
+- `RunState.new(seed, { economy = profileId })` applique ces variantes sans
+  changer le comportement live par defaut.
+- `tools/sim.lua economy [N]` ecrit `runs/report-economy.json` et compare les
+  profils sur les politiques reelles du `Rundriver`. Les seeds sont maintenant
+  apparies par run/profil pour que les policies comparees demarrent du meme
+  monde et divergent seulement par leurs actions.
+- Les metriques deja emises couvrent: `full_shop_cost_ratio`,
+  `full_shop_afford_rate`, `early_full_shop_afford_rate`,
+  `desired_buy_all_rate`, `desired_gold_afford_rate`,
+  `desired_slot_limited_rate`, `virtual_bench` pour tester des capacites de
+  reserve supplementaires `0/2/4/6` au-dessus du plateau + banc reel du driver
+  (`0` = gameplay actuel), `gold_leftover_wasted` via
+  `avg_leftover_gold`, `gold_pressure`, `spend_split`, `rerolls_per_run`,
+  `xp_buys_per_run`, `sells_per_run`, `sell_gold_per_run`,
+  `bench_sells_per_run`, `board_sells_per_run`, `pair_buys_per_run`,
+  `merge_buys_per_run`, accept/refus de slots, ventilation par tier, cohorts
+  `legacy_all` / `broad_naive` / `broad_prune` / `broad_plan` / `committed` /
+  `committed_plan`, `archetype_commitment_rate` et
+  `avg_archetype_commit_round`, plus la separation par archetype entre runs ou
+  le plan est forme et runs ou il ne l'est pas.
+- Le `Rundriver` utilise maintenant le banc existant de la scene build
+  (`Build:autoBuy`: plateau vide -> banc -> fusion si plein), au lieu de poser
+  les achats uniquement sur le plateau.
+- `Rundriver:sellBench` permet aux policies de vendre une reserve comme le
+  joueur le fait par drag hors plateau/banc; les ventes sont tracees dans les
+  metriques d'economie.
+- `Policies.analysisSet` ajoute des variantes `_prune` de `greedy`, `econ` et
+  `tall`: elles gardent les niveaux 2+, les paires proches de fusion, les
+  pieces premium ou les pieces du plan, et vendent surtout les singletons du
+  banc qui ne servent pas un merge immediat.
+- `Policies.analysisSet` ajoute aussi des variantes `_plan` qui scorent les
+  offres par paires, fusion immediate, rang/cout et appartenance au plan. Elles
+  peuvent vendre une faible unite de board seulement si l'offre achetee vaut
+  clairement mieux et si le board reste au-dessus d'un plancher de survie.
+
+Run local a `N=20` runs/politique/profil apres instrumentation des offres
+desirees, du banc reel et du commitment d'archetype:
+
+- `baseline`: ratio shop/or moyen `0.67`, shop complet achetable `89.0%`,
+  offres desirees achetables `21.9%`, desirees affordables en or `84.9%`,
+  bloquees par espace `75.7%`, desirees achetables avec +4 reserve virtuelle
+  `50.8%`, encore bloquees par espace avec +4 `42.4%`, commitment archetype
+  `80.0%`, wins moyens `4.17`, leftover `9.66`.
+- `sap_cost`: ratio `1.09`, shop complet achetable `62.5%`,
+  offres desirees achetables `18.9%`, desirees affordables en or `65.2%`,
+  bloquees par espace `75.3%`, desirees achetables avec +4 reserve virtuelle
+  `48.0%`, encore bloquees par espace avec +4 `36.7%`, commitment archetype
+  `73.8%`, wins moyens `4.08`, leftover `8.27`.
+- `early_curve`: ratio `0.75`, shop complet achetable `87.8%`,
+  offres desirees achetables `22.0%`, desirees affordables en or `84.4%`,
+  bloquees par espace `72.6%`, desirees achetables avec +4 reserve virtuelle
+  `50.2%`, encore bloquees par espace avec +4 `41.7%`, commitment archetype
+  `71.2%`, wins moyens `3.97`, leftover `9.08`.
+
+Interpretation provisoire:
+
+- La courbe de revenu reduit un peu le surplus, mais elle ne corrige presque pas
+  le probleme pedagogique du tier 1 tant que le shop complet coute 5g.
+- Le profil `sap_cost` est le premier levier qui transforme vraiment "je peux
+  tout acheter" en arbitrage sur le shop complet.
+- Brancher le vrai banc dans le driver a augmente les performances moyennes
+  (baseline `3.20 -> 4.17` wins moyens dans ce smoke) et le taux d'achat des
+  offres desirees (`14.2% -> 21.9%`). Le simulateur precedent etait donc trop
+  pessimiste sur l'accessibilite de run.
+- Meme avec le banc live, l'espace reste une contrainte majeure pour les
+  policies larges: `desired_slot_limited_rate` reste autour de `73-76%`. La
+  decision economique doit donc se lire avec `desired_gold_afford` ET les
+  metriques d'espace; `desired_buy_all_rate` seul reste insuffisant.
+- Ajouter quatre slots virtuels supplementaires ferait remonter les achats
+  desires a environ `50%`, mais il resterait encore `35-42%` de rounds
+  limites par l'espace. Cela suggere que le probleme n'est pas seulement "banc
+  trop petit"; il vient aussi des policies qui desirent trop d'offres a la fois
+  et du manque de tri/vente/merge intelligent.
+- Les policies `committed_*` sont presque resolues par le banc reel: elles
+  achetent souvent `85-100%` de leurs pieces desirees et restent contraintes
+  surtout par l'acces de tier/archetype, pas par la reserve. Les strategies
+  `greedy`, `econ` et surtout `tall_dense` restent beaucoup plus sensibles a
+  l'espace.
+- Les plans `poison`, `burn` et `rot` commit souvent autour des rounds 2-3.
+  `tank` reste beaucoup plus difficile: il n'a aucun rang 1, commit tard
+  autour du round 5, et gagne peu. C'est un vrai signal d'accessibilite et/ou
+  de tuning, pas seulement un probleme d'or.
+- Ces chiffres restent un smoke de design a `N=20`; monter `N` et raffiner les
+  policies avant de figer un changement live.
+
+Run local suivant a `N=20` runs/politique/profil avec 12 policies
+(`legacy_all` = les 9 policies precedentes; `broad_prune` = greedy/econ/tall
+avec nettoyage de banc):
+
+- Profil `baseline`, cohort `legacy_all`: wins moyens `4.17`, offres desirees
+  achetables `21.9%`, bloquees par espace `75.7%`.
+- Profil `baseline`, cohort `broad_naive`: wins moyens `7.38`, offres desirees
+  achetables `7.7%`, bloquees par espace `92.3%`, +4 reserve virtuelle
+  `47.6%`.
+- Profil `baseline`, cohort `broad_prune`: wins moyens `8.03`, offres desirees
+  achetables `12.8%`, bloquees par espace `87.2%`, +4 reserve virtuelle
+  `68.9%`, `28.6` ventes/run.
+- Profil `sap_cost`, cohort `broad_naive`: wins moyens `7.50`, offres desirees
+  achetables `8.4%`, bloquees par espace `91.6%`, +4 reserve virtuelle
+  `49.6%`.
+- Profil `sap_cost`, cohort `broad_prune`: wins moyens `7.50`, offres desirees
+  achetables `14.7%`, bloquees par espace `85.3%`, +4 reserve virtuelle
+  `70.1%`, `24.2` ventes/run.
+
+Interpretation ajoutee:
+
+- Le pruning prouve que le simulateur precedent etait encore trop naif sur le
+  banc pour les strategies larges: `tall_dense` passe par exemple de `5.1` a
+  `6.7` wins moyens en baseline, et `econ` / `greedy` gagnent un peu.
+- Le pruning ne suffit pas a faire disparaitre le probleme: meme avec vente de
+  singletons, les cohorts larges restent bloquees par l'espace `85-87%` du
+  temps. Cela pointe vers une combinaison de selection de shop trop large,
+  manque de plan de paires, absence de vraie priorisation de board, et peut-etre
+  taille de reserve.
+- Il ne faut donc pas buff automatiquement le banc tout de suite. La prochaine
+  passe doit distinguer: space vraiment insuffisant, policy trop gourmande,
+  pieces gardees sans plan, et manque d'incitation a des lignes de build plus
+  lisibles.
+- Le diagnostic `tank` est plus net avec `completion_given_plan` /
+  `avg_wins_given_plan`: en baseline, `tank` forme son plan dans `7/20` runs
+  seulement, au round moyen `5.57`, et ne monte qu'a `1.43` wins moyens une
+  fois forme. En `sap_cost`, il ne forme son plan que `5/20` runs et reste a
+  `0` win moyen meme quand le plan est forme. Ce n'est donc pas un simple
+  probleme d'espace: il faut soit un seed tank rang 1, soit une policy de rush
+  tank beaucoup plus survivable, soit un buff mecanique du shell tank.
+
+Dernier run local a `N=20` runs/politique/profil avec 19 policies et seeds
+apparies (`broad_plan` = greedy/econ/tall avec paires + priorisation de board;
+`committed_plan` = committed avec la meme logique):
+
+- Global `baseline`: wins moyens `5.16`, completion `6.1%`, shop complet
+  achetable `94.6%`, offres desirees achetables `23.6%`, bloquees par espace
+  `75.4%`, +4 reserve virtuelle `69.6%`, leftover `9.11`, pression or `35.1%`.
+- Global `sap_cost`: wins moyens `4.32`, completion `5.8%`, shop complet
+  achetable `66.8%`, offres desirees achetables `22.6%`, bloquees par espace
+  `74.9%`, +4 reserve virtuelle `67.8%`, leftover `8.68`, pression or `48.5%`.
+- Global `early_curve`: wins moyens `4.84`, completion `9.7%`, shop complet
+  achetable `93.8%`, offres desirees achetables `22.8%`, bloquees par espace
+  `75.0%`, +4 reserve virtuelle `69.0%`, leftover `9.64`, pression or `41.2%`.
+- Cohort `baseline/broad_naive`: wins `7.35`, completion `5.0%`, desired
+  buy-all `8.2%`, espace limite `91.8%`, paires `4.0`/run, fusions `3.7`/run.
+- Cohort `baseline/broad_prune`: wins `7.92`, completion `5.0%`, desired
+  buy-all `11.2%`, espace limite `88.8%`, `26.6` ventes/run, paires `6.9`,
+  fusions `6.0`.
+- Cohort `baseline/broad_plan`: wins `8.78`, completion `21.7%`, desired
+  buy-all `14.6%`, espace limite `85.4%`, `17.3` ventes/run dont `0.62`
+  board/run, paires `7.8`, fusions `6.4`, +4 reserve virtuelle `87.6%`.
+- Cohort `sap_cost/broad_naive`: wins `6.90`, completion `10.0%`, desired
+  buy-all `8.7%`, espace limite `91.3%`.
+- Cohort `sap_cost/broad_prune`: wins `7.32`, completion `11.7%`, desired
+  buy-all `11.8%`, espace limite `88.2%`, `19.9` ventes/run.
+- Cohort `sap_cost/broad_plan`: wins `7.77`, completion `10.0%`, desired
+  buy-all `17.2%`, espace limite `82.7%`, `13.3` ventes/run dont `0.30`
+  board/run, paires `7.5`, fusions `6.3`.
+- `committed_plan` n'est pas encore une revolution: en baseline il passe de
+  `2.16` a `2.21` wins moyens et garde le meme commitment global `76.2%`.
+  Son interet est surtout methodologique: il prouve que la logique de paires ne
+  degrade pas les plans committed quand aucune vente n'est necessaire.
+- `tank` reste l'outlier: en baseline, seulement `2/20` runs tank forment le
+  plan, round moyen `6`, completion `0%`, wins moyens `0.95`. En `sap_cost`,
+  seulement `3/20` forment le plan, wins moyens `0.05`. Le probleme tank est
+  donc un probleme d'accessibilite/power du shell, pas un probleme de banc.
+
+Interpretation ajoutee apres pair-planning:
+
+- Le simulateur est plus proche d'un joueur: il garde mieux les paires, complete
+  plus de fusions et vend moins que le pruning pur.
+- `broad_plan` change fortement le diagnostic du banc: avec une meilleure
+  selection, +4 reserve virtuelle monterait les achats desires a `87%` environ
+  sur les strategies larges, mais le jeu actuel reste encore limite par l'espace
+  `82-85%` du temps. On doit donc continuer a ameliorer decision/paires avant
+  de toucher la taille du banc live.
+- `sap_cost` reste le meilleur levier de pression economique (`66.8%` shop
+  complet achetable contre `94.6%` baseline), mais il reduit les wins moyens
+  tant que certains shells, surtout tank, ne sont pas plus accessibles.
+
+Ajout apres le scenario `tank` (`tools/sim.lua tank 20`) :
+
+- Le diagnostic tank est maintenant separe en trois hypotheses testables :
+  acces, pilotage et puissance mecanique.
+- Le shell actuel reste tres faible : a pacing live (`hp x2 / cooldown x1`),
+  `current_plan` fait `0%` completion, `0.90` wins moyens, `25%` plan commit
+  et seulement `25%` de final boards vraiment tanks.
+- Le shell `survival_shell` gagne tres fort (`55%` completion, `9.55` wins
+  moyens), mais son actual final tank commit est `0%`. C'est donc un faux ami :
+  acheter des corps low-rank robustes sauve la run, mais ne cree pas une
+  identite tank lisible.
+- `husk_seed` commit souvent (`90%`) mais reste a `0.00` wins live et `0%`
+  final tank commit. Husk n'est pas une bonne graine tank sans mecanique
+  defensive explicite.
+- `demon_seed` est meilleur (`3.95` wins live, jusqu'a `6.00` en `hp2_cd4`),
+  mais reste plutot un seed bruiser/lifesteal qu'une vraie entree tank.
+- Le buff sim-only de payoff tank ne regle pas l'acces : il agit apres avoir
+  trouve des tanks, donc il ne resout pas le trou de rang 1.
+- Conclusion economie/design : il ne faut pas juger `sap_cost` ou une courbe
+  de revenu tant que tank n'a pas une entree low-rank lisible. Sinon on risque
+  d'attribuer a l'economie un probleme qui vient du roster.
+
+Ajout pacing combat :
+
+- Le scenario tank mesure maintenant les durees en secondes (`ticks / 60`) et
+  le taux de combats sous 5 secondes.
+- Sur `current_plan`, le live donne environ `9.81s` early en moyenne, `9.02s`
+  median global, `15.10s` p90, et `10%` d'early fights sous `5s`.
+- `cooldown x2` supprime les early fights sous `5s` et monte l'early moyen a
+  `17.19s`, mais touche deja la fatigue dans environ `51%` des combats.
+- `cooldown x3/x4` pousse presque tout en fatigue (`~89-94%` sur current tank).
+  Un `cd x4` global serait donc trop brutal sans deplacer aussi le seuil de
+  fatigue/overtime et retuner DoT/shields.
+- Prochain test recommande : ajouter ces metriques de duree au scenario global
+  non-tank, puis balayer `cd x1.5` / `cd x2` avec fatigue plus tardive.
+
+Ajout apres le scenario global `pacing` (`tools/sim.lua pacing 10`) :
+
+- Les metriques de duree sont maintenant mutualisees dans
+  `tools/scenarios/common.lua`; le `Rundriver` peut forward un override
+  lab-only de fatigue vers le moteur de match.
+- Le live global donne dans ce batch : completion `7.9%`, wins moyens `5.29`,
+  early moyen `9.91s`, early fights sous `5s` a `11.6%`, p50 `9.13s`,
+  p90 `14.63s`, fatigue `5.3%`.
+- `cd x1.5` avec fatigue a `17s` allonge bien (`12.52s` early, p50 `12.25s`)
+  mais monte deja la fatigue a `21.6%`.
+- `cd x2` avec fatigue a `17s` est trop brutal pour le seuil actuel :
+  p50 `16.23s`, p90 `24.48s`, fatigue `45.6%`.
+- `cd x1.5` avec fatigue a `24s` est le meilleur candidat preliminaire :
+  completion `18.9%`, wins `5.77`, early moyen `13.59s`, early sous `5s`
+  `6.8%`, p50 `12.33s`, p90 `20.45s`, fatigue `4.8%`.
+- `cd x2` avec fatigue a `24s` reste peut-etre trop lent ou trop sensible a
+  l'usure : p50 `16.03s`, p90 `25.90s`, fatigue `14.4%`.
+- Conclusion provisoire : ne pas partir sur `cd x4`. La prochaine fenetre de
+  tuning credible est plutot `cd x1.35` a `x1.65` avec fatigue autour de
+  `22-26s`, a retester a plus grand N apres correction de l'entree tank.
+
+Ajout outil autonome :
+
+- `tools/sim.lua sweep [N]` croise maintenant economie, pacing et politiques
+  dans une meme grille deterministe. C'est le mode a utiliser pour verifier les
+  interactions avant une decision live.
+- Les variables de controle utiles sont :
+  `PIT_POLICIES`, `PIT_ECON_PROFILES`, `PIT_BENCH_CAPS`, `PIT_PACE_IDS`,
+  `PIT_PACE_PROFILES`, `PIT_TANK_VARIANTS`, `PIT_HP_MULT`,
+  `PIT_COMMANDER_MODE`.
+- Pour les batchs `sweep`, les alias dedies sont aussi acceptes :
+  `PIT_SWEEP_ECONOMIES`, `PIT_SWEEP_PACES`, `PIT_SWEEP_PACE_PROFILES`. Ils
+  evitent de confondre un filtre local de sweep avec les variables generiques
+  des autres scenarios.
+- `PIT_COMMANDER_MODE` vaut `ignore` par defaut pour garder les baselines
+  historiques. `auto` accepte le piédestal et place le meilleur porteur
+  existant de `commandBonus`; `decline` refuse pour l'or.
+- Format custom pacing :
+  `PIT_PACE_PROFILES=id:hpMult:cdMult:fatigueStart[:fatigueBase[:fatigueRamp]],...`
+- Le rapport economie expose maintenant un funnel de fusion approximatif :
+  `pair_buys_per_run`, `merge_buys_per_run`, `merge_per_pair_buy`, globalement
+  et par tier. C'est une alerte rapide sur les reroll comps qui achetent des
+  paires sans arriver au niveau superieur.
+- `economy` et `sweep` comptent aussi `commander_placements_per_run` et
+  `relic_picks_per_run`, pour tester commandants/reliques dans les memes
+  rapports que l'economie.
+- Apres l'entree live de `husk` en tank rang 1, l'acces tank est meilleur, mais
+  la conclusion importante est plus fine : une comp tank saine doit probablement
+  etre mesuree comme `frontline anchor + payload protege`, pas comme un board
+  majoritairement tank.
+- Dans le probe N=20, `payload_shell` en live donne `55%` completion et `9.50`
+  wins moyens avec `100%` de shell final, mais seulement `60%` de front-tank
+  anchor. C'est fort, mais pas encore une identite tank assez lisible.
+
+Ajout batch long avec commandants (`runs/long-2026-06-27`,
+`PIT_COMMANDER_MODE=auto`) :
+
+- `pacing N=50` confirme que `cd x1.5 + fatigue 24s` est le meilleur candidat
+  prudent : completion `15.8%`, wins `6.20`, early `12.77s`, early sous `5s`
+  `7.9%`, p50 `11.73s`, p90 `19.40s`, fatigue `2.8%`.
+- Le live garde trop de combats courts en early : `17.4%` sous `5s`.
+- `cd x2 + fatigue 24s` peut monter la completion dans le sweep integre, mais
+  la fatigue monte vers `11%`. C'est utile comme stress test, pas comme premier
+  candidat live.
+- `sweep N=30` ne valide pas encore `sap_cost` comme changement live :
+  `baseline + cd1.5/f24` bat `sap_cost + cd1.5/f24` dans ce batch (`5.93`
+  wins vs `5.52`, `12.3%` completion vs `8.6%`). L'economie stricte doit etre
+  retestee apres amelioration des shells faibles et du timing de policy.
+- `tank N=50` confirme que le probleme tank restant n'est pas seulement l'acces :
+  `current_plan` live fait `0%` completion / `1.64` wins, `husk_seed` live
+  `0%` / `1.54`, tandis que `payload_shell` live fait `64%` / `9.62` mais avec
+  seulement `52%` de front-tank anchor.
+- Le probe `payload_arranged` ajoute un placement front deterministe et une
+  metrique `prot%` (`front tank + payload derriere`). Il monte `prot%` de
+  `52%` a `96%` en live et `94%` en `cd1.5/f24`, mais les wins restent proches
+  de `payload_shell`. Conclusion : le placement corrige la lisibilite/protection,
+  pas l'equilibrage. Le shell payload est deja fort ; il faut maintenant rendre
+  l'identite tank plus intentionnelle.
+- `economy N=30` avec commandants signale `sap_cost_tiered_reroll` comme profil
+  economie a retester : completion `12.3%`, wins `5.61`, full-shop afford
+  `67.9%`, pression or `0.52`, leftover `6.85`. Contrairement a `sap_cost`
+  seul, il remet de la pression sans faire chuter autant les resultats.
+- Les rapports economie exposent maintenant `by_unit_merge` et
+  `unit_merge_watch`. En baseline N=30, la watchlist signale notamment
+  `emberling`, `byakhee`, `vanguard_drummer`, `arcane_seer`, `rat_warren`,
+  `rear_goad`, `corruptor`, `pyre_herald` comme paires peu converties dans ce
+  batch. Ce sont des pistes d'investigation, pas des verdicts automatiques.
+
+Ajout batch autonomie (`runs/long-2026-06-27b`) :
+
+- Le funnel de paires a ete remplace dans `economy` et `sweep` par une premiere
+  vraie lecture lifecycle : `merge_lifecycle.resolve_rate`,
+  `avg_rounds_to_merge`, paires non resolues et watchlist par unite. Ce n'est
+  pas encore une identite de copie vendue/perdue, mais c'est meilleur que
+  `merge_per_pair_buy` seul.
+- `economy N=40`, commandants auto, profils `baseline`, `early_curve`,
+  `sap_cost_tiered_reroll` :
+  - `baseline` : completion `9.3%`, wins `5.75`, full-shop afford `93.7%`,
+    pression `0.35`, leftover `9.52`, pair resolve `76.4%`.
+  - `early_curve` : completion `4.5%`, wins `5.26`, full-shop afford `94.4%`,
+    pression `0.42`, leftover `9.97`, pair resolve `77.9%`.
+  - `sap_cost_tiered_reroll` : completion `10.1%`, wins `5.41`, full-shop
+    afford `69.1%`, pression `0.52`, leftover `8.01`, pair resolve `76.9%`.
+- Lecture : `sap_cost_tiered_reroll` est le meilleur candidat de pression, mais
+  il ne bat pas baseline en wins moyens dans ce batch. La bonne prochaine etape
+  n'est pas de le passer live immediatement, mais de le garder comme candidat
+  principal pendant que les policies/roster corrigent les shells sous-puissants.
+- `sweep N=20`, live pacing vs `hp2_cd15_f24` :
+  - `baseline` passe de `7.4%` completion live a `11.1%` en `cd1.5/f24`.
+  - `early_curve` tombe de `8.9%` live a `6.6%` en `cd1.5/f24`.
+  - `sap_cost_tiered_reroll` passe de `5.8%` live a `8.2%` en `cd1.5/f24`.
+  - La fatigue reste basse (`~2-3%`), donc `cd1.5/f24` reste le candidat
+    pacing prudent.
+- Nouveau mode `tools/sim.lua coherence [N]` : la puissance est encore trop peu
+  reliee a la coherence semantique. `coherence N=36`, matches `8`, donne une
+  correlation coherence/winrate de seulement `0.075`. Les piles endgame cheres
+  expliquent une partie des low-coherence winners; les vrais signaux a lire
+  sont `cheap_strong` et `high_coherence_weak`.
+- Outliers a inspecter : `mid_tank`, `mid_shock` et plusieurs generated mixed
+  mid piles surperforment; `cross_bleed_rot`, `rot_carre_perfect`,
+  `shock_nuke_croix`, `burn_ligne_perfect`, `bleed_lock_anneau` sous-performent
+  malgre une coherence lisible. Cela pointe vers un probleme de reward des
+  plans DoT/cross-tag par rapport aux shells defensifs/good-stuff midgame.
+- Mise a jour suivante : le score de coherence sait maintenant lire des
+  reliques comme amplificateurs semantiques (`subscores.relic`, `relicEdges`)
+  et le scenario `coherence` peut generer des variantes avec reliques adaptees.
+  Attention : cela ne modele pas encore le timing d'obtention des reliques dans
+  une run. Pour l'economie, il faut encore mesurer l'acces reel aux reliques et
+  ne pas confondre "la relique rend le plan coherent" avec "le joueur peut
+  l'obtenir assez souvent au bon moment".
+- Mise a jour `level_fit` : le scenario `coherence` genere maintenant des
+  variantes levellees des compos fixes et separe les faibles sous-leveles dans
+  `underleveled_high_coherence_weak`. C'est important pour l'economie : un plan
+  coherent ne doit pas etre juge faible sans verifier si le joueur avait investi
+  assez de copies/XP pour son stade.
+- Mise a jour `board_fit` : les compos coherentes mais sous-remplies sont
+  separees dans `underfilled_high_coherence_weak`. Pour les runs, cela veut
+  dire qu'il faut differencier "noyau de synergie trouve" et "board complet
+  pret a gagner".
+- Mise a jour watchlist : le report `coherence` ecrit maintenant
+  `outlier_unit_frequency`, ce qui permet d'identifier les unites qui reviennent
+  souvent dans les piles peu coherentes mais fortes.
+- Mise a jour champ mid : ajout de `mid_rot` comme probe anti-mur. Meme avec
+  les nouveaux level-ups rot (`rot_hound`, `decay_tender`, `necro_leech`),
+  `mid_tank` reste a `100%` dans le batch `rot-level-midfield`. Il faut donc
+  traiter le mur mid comme un vrai sujet de counter/efficacite, pas comme un
+  simple artefact economique.
+- Mise a jour economie post-rot : `runs/long-2026-06-27l/post-rot-economy`
+  confirme que `sap_cost_tiered_reroll` cree une vraie pression
+  (`67.8%` shop complet achetable, ratio de pression `1.02`) mais reste moins
+  performant que baseline dans ce batch (`4.7%` completion, `5.21` wins contre
+  `8.1%` et `5.58`). Il ne faut donc pas le promouvoir comme economie live
+  sans corriger le throughput de build.
+- Mise a jour pacing post-rot : `runs/long-2026-06-27l/post-rot-sweep` garde
+  `hp2_cd15_f24` comme candidat prudent (`8.3%` completion, `6.05` wins,
+  combat p50 `11.52s`, fatigue `2.5%`). Le profil plus lourd `hp2_cd2_f24`
+  ameliore la duree lisible et la completion baseline (`13.2%`, `6.20` wins,
+  p50 `15.22s`) mais monte a `13.0%` de fatigue ; c'est un plafond
+  exploratoire, pas une recommandation par defaut.
+- Mise a jour coherence/fillers : `tools/sim.lua coherence` genere maintenant
+  des variantes `__filled` pour les noyaux fixes sous-remplis et expose
+  `filled_resolutions`. Dans `runs/long-2026-06-27m/fill-variants`,
+  `cross_bleed_rot` passe de `0%` brut / `28.6%` levelle mais sous-rempli a
+  `85.7%` une fois rempli et levelle, mais son cout monte a `96` or-equivalent.
+  Lecture economie : ce n'est pas forcement un mauvais plan, c'est peut-etre un
+  endpoint late tres cher dont il faut mesurer l'accessibilite.
+- Mise a jour accessibilite de plan : `tools/sim.lua economy` expose maintenant
+  `plan_access` et accepte `PIT_PLAN_TARGET_SPECS`. Sur
+  `runs/long-2026-06-27n/plan-access-targeted-v5`, la politique cible
+  `committed_cross_bleed_rot_plan` survit correctement (`8.75` wins baseline)
+  mais n'atteint que `22.5%` de couverture unite et `13.8%` de couverture
+  niveau pour l'endpoint `cross_bleed_rot_filled`; `complete_rate` reste `0%`.
+  Lecture : le probleme est l'accessibilite/progression, pas la puissance du
+  board force-build.
+- Mise a jour trajectoire de plan : `plan_access` expose maintenant le peak
+  board/holdings, les premiers rounds ou le plan atteint `25/50/75/100%` de
+  couverture niveau, les pertes avant/apres seuil, et le winrate par bande de
+  couverture board. Sur `runs/long-2026-06-27n/plan-trajectory-v1`, la policy
+  `committed_cross_bleed_rot_plan` n'atteint `25%` de couverture niveau tenue
+  que dans `6.7%` des runs baseline (`30%` en holdings sous
+  `sap_cost_tiered_reroll`) et n'atteint jamais `50%`. Lecture : le plan n'est
+  pas "trouve puis perdu"; il n'entre presque jamais en phase de transition
+  reelle. Le signal tier est plus parlant : en baseline, tier 4 a `91.5%` de
+  rounds desired slot-limited malgre l'or disponible, et tier 5 `100%`.
+  Prochaine question : funnel d'apparition/achat par unite cible, puis oracle
+  combat force-build attache au meme target id.
+- Mise a jour oracle de plan : chaque target `plan_access` porte maintenant un
+  `oracle` force-build (cout, coherence/subscores, rounds testes, winrate et
+  duree). Sur `runs/long-2026-06-27n/plan-oracle-v1`,
+  `cross_bleed_rot_filled` coute toujours `96` or-equivalent, a une coherence
+  moyenne (`0.552`, tags `1.0`, position `0.3`, level_plan `0.069`), gagne
+  force-build aux rounds 8 et 10 (`100%` vs `gorge_pack`/`drowned_legion`), mais
+  perd aux rounds 12 et 14 (`0%` vs `pit_sovereign`). Lecture : il ne faut pas
+  seulement ameliorer son accessibilite ; en endpoint late sans relique/command,
+  il manque aussi une source de scaling ou une meilleure transition vers le
+  mur de fin.
+- Mise a jour adversaires de lab : `tools/sim.lua economy` accepte maintenant
+  `PIT_OPPONENT_MODE=generated`. Le mode par defaut reste `static` pour
+  comparer les anciens rapports, mais `generated` passe par `OppGen.generate`
+  comme le live quand aucun ghost n'est disponible. Les conclusions late-game
+  basees sur le vieux mur statique `pit_sovereign` doivent donc etre
+  revalidees en mode generated avant d'etre transformees en buffs/nerfs.
+- Mise a jour specs de cible : `PIT_PLAN_TARGET_SPECS` accepte des supports
+  explicites au format
+  `id=unit:level+unit:level;relics=relic_a+relic_b;commander=unit:level;sigil=carre;board=8`.
+  Les oracles appliquent ces reliques et ce commandant, ce qui permet de tester
+  un endpoint soutenu par ses vrais multiplicateurs plutot qu'une liste brute
+  d'unites.
+- Premier comparatif static/generated : le meme slice N=64 rot/bleed core avec
+  events, `policy_space_missing_copy`, `PIT_EVENT_UNIT_RELIC_MARGIN=1000` et
+  `pair_completion_light` donne `31.2%` de completion de run en mode static
+  (`8.95` wins, `68.4%` combat winrate) contre `89.8%` en mode generated
+  (`9.88` wins, `91.0%` combat winrate). La completion exacte du plan reste
+  basse dans les deux modes (`0%` board static, `0.8%` generated). Lecture :
+  les adversaires generes representent mieux la pression live actuelle, tandis
+  que le mode static reste un stress-test volontairement dur.
+- Knobs de pression OppGen : les panels economy acceptent
+  `PIT_OPPGEN_ROUND_BONUS`, `PIT_OPPGEN_TIER_BONUS`,
+  `PIT_OPPGEN_SIZE_BONUS` et `PIT_OPPGEN_LEVEL_MULT`. Les defaults sont
+  neutres et le live ne change pas. Prochain objectif : trouver une bande de
+  pression generated ou les policies generales ne gagnent pas automatiquement,
+  avant de toucher aux valeurs des creatures.
+- Premier sweep pression : sur le broad panel N=32 generated, le profil neutre
+  est a `59.4%` completion / `8.09` wins. `PIT_OPPGEN_LEVEL_MULT=2` descend a
+  `38.4%` / `7.40` wins et semble le meilleur candidat de depart. Ajouter
+  `PIT_OPPGEN_SIZE_BONUS=1` est brutal (`27.7%` avec level x1.5, `16.1%` avec
+  tier+1/level x2). Lecture : calibrer d'abord le niveau adverse, pas la taille.
+- Audit diversite mecanique : `tools/sim.lua mechanics` mesure le roster par
+  axes d'effets. Apres les passes Batodex/SAP et redesign-first level-ups,
+  etat courant : `110` unites, `33` unites L1 encore en affliction simple
+  (`30.0%`), `0` low-variety (`0.0%`), `68` unites avec level-up authored
+  (`61.8%`) et `28` clutch level 3 (`25.5%`). La dette "capacite qui ne
+  progresse pas" est resorbee pour le roster actuel; les prochaines decisions
+  doivent venir des simulations, pas d'un batch de diversite mecanique.
+- Mise a jour funnel acquisition : `plan_access.acquisition_funnel` detaille les
+  offres vues, l'or, la place, les achats, paires/fusions, ventes et le premier
+  round vu par unite cible. Sur
+  `runs/long-2026-06-27n/acquisition-funnel-v3`, baseline +
+  `committed_cross_bleed_rot_plan` voit seulement `39.6%` des unites cibles par
+  run (`3.17/8` unites cibles distinctes), achete `3.87` pieces/run, n'a aucun
+  probleme d'or (`100%` gold-affordable), tres peu de misses policy (`0.1/run`)
+  et aucune vente cible. Les vrais blocages sont la place (`2.0` misses
+  space/run) et surtout l'apparition des pieces premium : `pit_maw` vu dans
+  `10%` des runs, `marrow_drinker` `6.7%`, `wither_bloom` `16.7%`,
+  `blight_spreader` `16.7%`. Lecture : cette comp ne peut pas etre un endpoint
+  naturel avec autant de pieces rares/premium sans stepping-stones, meilleure
+  odds curve, support de relique/command, ou target simplifie.
+- Test stepping-stone : ajout de `rot_bleed_mid` au catalogue et aux targets
+  economie par defaut. Sur `runs/long-2026-06-27n/stepping-target-v1`, cette
+  version 6 slots / sans rang 5 coute `24` or-equivalent (`cost_score 0.422`),
+  atteint `25%` de couverture niveau held dans `93.3%` des runs baseline et
+  `50%` dans `40%` (`60%` sous `sap_cost_tiered_reroll`). Son oracle gagne les
+  rounds 4/6 mais tombe face aux rounds 8/10 (`58.3%` force-build). Lecture :
+  c'est un bon palier enseignable, pas un finisher. Le design devrait traiter
+  `cross_bleed_rot_filled` comme evolution late supportee par command/relique,
+  pas comme premiere cible que le joueur doit assembler.
+- Mise a jour support de plan : `plan_access.support_access` separe maintenant
+  les supports de reliques/commandants `focused` des supports generiques. Sur
+  `runs/long-2026-06-27n/support-access-v1`, `committed_cross_bleed_rot_plan`
+  voit un support focused pour `rot_bleed_mid` dans `80%` des runs baseline et
+  l'utilise dans `55%`; sous `sap_cost_tiered_reroll`, ces chiffres tombent a
+  `50%` vus / `20%` utilises. Les reliques les plus pertinentes vues sont
+  `grave_cap`, `weeping_nail`, `link_cable`, `plague_communion`; cote
+  commandants, `gash_fiend`, `razorkin`, `necro_leech`, `rot_hound` ressortent.
+  Lecture : le pont rot/bleed a deja des supports lisibles, mais la selection
+  actuelle de relique/commandant n'est pas target-aware et laisse passer trop de
+  supports focalises.
+- Mise a jour L3 rot/bleed : `carrion_pecker` gagne une progression authored
+  L2/L3, `rot_hound` et `clot_mender` deviennent des clutch L3 et leurs bonus
+  de commandement montent a `0.26`. Sur
+  `runs/long-2026-06-27n/rot-bleed-l3-v1`, aucun nouveau L3
+  `carrion_pecker`/`rot_hound`/`clot_mender` n'apparait dans `cheap_strong`.
+  Le target env `rot_bleed_bridge_late` coute `74` or-equivalent, a une
+  coherence `0.663`, gagne encore les rounds 8/10 force-build mais perd les
+  rounds 12/14 (`50%` oracle). En run baseline, sa couverture held `50%` ne
+  monte qu'a `2.5%` (`20%` sous `sap_cost_tiered_reroll`) et `marrow_drinker`
+  reste le verrou dur : vu dans `7.5%` des runs baseline, achete `0/run` car
+  non-playable quand il apparait. Lecture : les clutch L3 sont sains mais ne
+  suffisent pas ; il faut soit une politique de place target-aware, soit un
+  pont late qui ne depend pas d'un rang 5 unique.
+- Mise a jour target-aware policy : `committed_unit_set_plan` distingue
+  maintenant les unites coeur du plan des fillers de support, choisit les
+  reliques et commandants par score de coherence target, et peut vendre un
+  filler support pour acheter une piece coeur. Sur
+  `runs/long-2026-06-27n/target-aware-policy-v1`, le target
+  `rot_bleed_bridge_late` progresse nettement sans changer les regles du jeu :
+  en baseline, le buy-rate des offres target passe de `81.2%` a `92.9%`, la
+  couverture held `50%` passe de `2.5%` a `27.5%`, et les supports focused
+  vus/utilises passent de `85%/47.5%` a `85%/85%`. Les missed picks/placements
+  focused tombent a `0`. Sous `sap_cost_tiered_reroll`, la couverture held
+  `50%` passe de `20%` a `37.5%`, mais les victoires restent plus basses.
+  Lecture : le simulateur-joueur etait bien trop bete sur les supports ; ce
+  verrou est corrige. Le verrou restant est structurel : `marrow_drinker` reste
+  vu dans seulement `15%` des runs baseline (`12.5%` sous SAP) et ne peut donc
+  pas porter a lui seul la transition late rot/bleed.
+- Mise a jour XP/tier policy : deux variantes diagnostiques ont ete ajoutees,
+  `committed_cross_bleed_rot_late_plan` (rush rang 5) et
+  `committed_cross_bleed_rot_staged_plan` (rang 3 early, rang 4 round 7, rang 5
+  round 10). Sur `runs/long-2026-06-27n/staged-tier-policy-v1`, le rush brut
+  voit beaucoup plus `marrow_drinker` (`60%` baseline) mais detruit le plan
+  global (`7.4` wins, held `50%` seulement `2.5%`). Le staged garde le meme
+  nombre de wins/completion que le plan actuel en baseline (`8.5`, `10%`) et
+  voit plus `marrow_drinker` (`32.5%`), mais ne bat pas le seuil held `50%`
+  (`25%` contre `27.5%` pour le plan actuel). Sous SAP, staged reste plus faible
+  que le plan actuel (`6.98` wins contre `7.18`, held `50%` `27.5%` contre
+  `37.5%`). Lecture : l'acceleration de boutique seule ne regle pas la
+  transition late rot/bleed. Le prochain levier doit etre un pivot de rang plus
+  bas, une cible late sans dependance unique a rang 5, ou une logique de
+  reroll/XP conditionnee a la couverture reelle du plan.
+- Mise a jour pivot sans rang 5 : ajout de `rot_bleed_rat_core` au catalogue
+  de compositions et aux targets economie par defaut. Le batch
+  `runs/long-2026-06-27n/socrates-pivots-v1` compare trois endpoints sans
+  `marrow_drinker`. `rot_bleed_rat_core`
+  (`carrion_pecker:3+rot_hound:3+gnaw_rat:3+clot_mender:2+razorkin:2+gash_fiend:2`)
+  est le meilleur signal : cout `57`, max rang `3`, oracle `100%`, couverture
+  held `50%` en baseline `60%` sous le plan actuel (`65%` sous staged) et
+  `75%` sous SAP plan. Les endpoints rang 4 (`rot_bleed_rank4_lock` et
+  `rot_core_r4_spread`) restent a `50%` oracle et atteignent beaucoup moins
+  souvent held `50%`. Lecture : la meilleure suite rot/bleed n'est pas un
+  rush rang 5, mais un axe reroll bas rang avec des L3 clutch lisibles.
+- Check coherence du pivot rat-core :
+  `runs/long-2026-06-27n/rat-core-coherence-v1` confirme que
+  `rot_bleed_rat_core` existe bien dans le panel catalogue (`coherence 0.754`,
+  `winrate 100%`, `cout 57`, `cost_score 0.657`) et monte a `coherence 0.812`
+  avec `grave_cap`. Il ne tombe pas dans `cheap_strong`, donc le premier signal
+  n'est pas "rat-core est trop peu cher", mais "rat-core est un endpoint
+  coherent et performant". Les vraies alertes `cheap_strong` restent des boards
+  mid moins chers (`17-31` or), notamment tank/shock et
+  `rot_bleed_mid__leveled` (`30` or, `winrate 100%`). Decision actuelle :
+  garder `rot_bleed_rat_core` comme cible reroll testable, eviter un nerf
+  reflexe, et investiguer d'abord les mid boards trop efficaces sous leur cout.
+- Mise a jour du modele de cout : ajout de `rankPressure` dans `Compcost`.
+  Le rapport `runs/long-2026-06-27n/cheap-mid-foe-breakdown-v1` montrait que
+  plusieurs alertes gagnaient contre tout le champ mid, mais une partie etait
+  mal classee "cheap" parce qu'une piece rang 4 niveau 1/2 restait lue comme
+  peu couteuse en or brut. `rankPressure` ajoute un plancher d'accessibilite
+  pour les rangs 4/5 et le rapport coherence expose maintenant
+  `weighted_score`, `rank_pressure` et `foe_breakdown`. Sur
+  `runs/long-2026-06-27n/rank-pressure-coherence-v2`, `cheap_strong` passe de
+  `37` a `7`. Les faux positifs tank/shock a rang 4 sortent de la liste ; les
+  vraies alertes restantes sont surtout `rot_bleed_mid__leveled`,
+  `rot_bleed_mid`, quelques boards bleed/bruiser low-rank, et des noyaux poison
+  mid qui gagnent sous leur cout.
+- Mise a jour pression de copies : ablation locale de `rot_bleed_mid__leveled`
+  montre que le saut `75% -> 100%` vient surtout de l'ajout d'un quatrieme L2
+  (`clot_mender` central), meme si l'aura L2 est ramenee aux valeurs L1. Le
+  probleme est donc au moins autant une sous-estimation du cout d'acces aux
+  copies qu'un probleme de wording ou de valeur d'aura. `Compcost` expose
+  maintenant `duplicatePressure` et l'utilise comme plancher de `score` pour
+  les boards denses en L2/L3.
+  Sur `runs/long-2026-06-27n/duplicate-pressure-coherence-v1`, `cheap_strong`
+  passe de `7` a `5`, et `rot_bleed_mid__leveled` sort de cette liste
+  (`cost_score 0.50`, `duplicate_pressure 0.50`) sans toucher aux valeurs de
+  monstre. `rot_bleed_mid` reste une vraie alerte (`cost_score 0.425`,
+  `winrate 75%`) mais il perd encore contre `mid_tank` et `cross_venom_pyre` :
+  a surveiller, pas a nerfer sans test economie/accessibilite.
+- Mise a jour timing XP/reroll : `committed_unit_set_plan` accepte maintenant
+  `xpCoverageGate`, une barriere optionnelle qui autorise le rush jusqu'a un
+  rang plancher puis bloque les achats d'XP tant que la couverture reelle du
+  plan n'a pas atteint un seuil unites/niveaux. Le rapport economie expose
+  `xp_gate_blocks_per_run`, `xp_gate_block_round_rate`,
+  `avg_xp_gate_unit_coverage` et `avg_xp_gate_level_coverage`. Le batch
+  `runs/long-2026-06-27n/coverage-gated-xp-v2` montre que
+  `committed_cross_bleed_rot_coverage_plan` coupe le rush staged (`2.5` achats
+  XP/run en baseline contre `5.0`) sans gain net de couverture par rapport au
+  plan cible actuel. Conclusion : l'ancien plan rang 5 n'est pas seulement mal
+  time ; il est structurellement fragile parce que `marrow_drinker` reste trop
+  rare ou trop tardif.
+- Le meme batch ajoute `committed_rot_bleed_rat_core_plan`, cible dediee au
+  pivot low-rank `rot_bleed_rat_core`. En baseline, il monte les wins moyens a
+  `8.225`, atteint `50%` de couverture tenue du rat-core dans `80%` des runs,
+  et finit a `0.633` de couverture niveau tenue, contre `0.532` et `62.5%` pour
+  le plan cross generique. Sous `sap_cost`, il atteint meme `92.5%` de runs a
+  `50%` de couverture tenue. Lecture : le pivot rat-core est le meilleur chemin
+  testable actuel pour rot/bleed ; le rang 5 doit rester une evolution premium,
+  pas le coeur obligatoire du plan.
+- Mise a jour cycle de paires : les evenements de vente du `Rundriver`
+  embarquent maintenant le niveau vendu, et `merge_lifecycle` expose
+  `sold_before_merge` / `sold_before_merge_rate` au global, par unite, et dans
+  la watchlist. C'est un diagnostic par evenement, pas une identite exacte de
+  copie : il detecte une vente ulterieure compatible avec une paire formee
+  avant son merge. Sur
+  `runs/long-2026-06-27n/pair-loss-rat-core-v1`, le taux reste a `0` sur les
+  politiques ciblees. Donc les paires non resolues des plans engages ne sont
+  pas principalement detruites par revente ; elles restent surtout bloquees par
+  pression de trajectoire. Les plans engages resolvent environ `49-60%` des
+  paires, contre `85-93%` pour `greedy_stats`. Le plan rat-core atteint souvent
+  `50%` de couverture tenue (`75-92.5%` selon economie avec sa policy dediee),
+  mais le `75%` reste faible (`0-15%`) et la completion totale reste a `0`.
+  Prochain levier : regler espace/reroll/stage thresholds, pas seulement
+  interdire la vente de paires.
+- Mise a jour support-gate rat-core : le diagnostic "strict target only" a ete
+  teste puis rejete. En version reroll forte
+  (`runs/long-2026-06-27n/rat-core-strict-policy-v1`), la couverture `75%`
+  augmente beaucoup mais le plan depense environ `33-37` rerolls/run et perd du
+  tempo. En version reroll standard
+  (`runs/long-2026-06-27n/rat-core-strict-policy-v2`), les wins chutent trop
+  parce que le board manque de supports early. Le compromis retenu est
+  `committed_rot_bleed_rat_core_gated_plan` : acheter les supports rot/bleed
+  tant que le board a moins de `4` corps ou que la couverture niveau rat-core
+  est sous `50%`, puis ne plus acheter que le coeur. Sur
+  `runs/long-2026-06-27n/rat-core-gated-policy-v1`, la baseline garde les memes
+  wins/completion que le plan standard (`8.267`, `11.7%`), reduit les manques
+  d'espace (`2.32 -> 2.05`), monte la couverture niveau finale tenue
+  (`0.631 -> 0.642`) et ameliore `held75` (`10% -> 15%`). Lecture : les
+  supports sont bons pour le tempo early, mais doivent etre stages pour ne pas
+  concurrencer le coeur apres commitment.
+- Mise a jour lecture des outliers : la pression de copies tient mieux compte
+  des boards mid avec plusieurs L2. Une seule L2 reste au plancher `0.30`, deux
+  L2 dans six slots lisent environ `0.40`, et trois L2 environ `0.50`. Le
+  rapport coherence expose aussi `win_cost_delta`, et `low_coherence_strong`
+  ignore les boards tres investis qui ne surperforment pas leur cout. Sur
+  `runs/long-2026-06-27n/coherence-cost-aware-outliers-v1`,
+  `rot_bleed_mid` sort de `cheap_strong`, `low-coh strong` passe de `3` a `0`,
+  et il ne reste que deux `cheap_strong` generes par bandes
+  (`mid_poison__leveled`, `mid_rot__leveled`) avec delta modere autour de
+  `0.21` et des counters nets (`mid_tank`, `mid_shock`,
+  `cross_venom_pyre`). Lecture : ne pas nerfer le pivot rot/bleed catalogue a
+  ce stade ; les alertes restantes servent surtout a calibrer les bandes.
+- Mise a jour pacing fin : le sweep
+  `runs/long-2026-06-27n/pacing-fine-candidates-v1` compare
+  `baseline/sap_cost/early_curve`, six policies, et les profils cooldown autour
+  de la zone credible. Le meilleur candidat live preliminaire est
+  `cd1.5_f26` (`hp x2`, cooldown x1.5, fatigue a 26s) : baseline early
+  `14.87s`, p50 `11.97s`, p90 `19.42s`, fatigue `1.8%`, wins `8.47` ; SAP
+  early `14.96s`, p90 `19.40s`, fatigue `1.5%` ; early curve early `14.70s`,
+  fatigue `2.5%`. `cd1.35_f24` reste l'alternative prudente, et `cd1.65`
+  devient plutot un stress test car son p90 depasse souvent `21s`. Conclusion :
+  ne pas appliquer un `cd x4` global ; si on change le live, tester d'abord
+  `cd x1.5` avec fatigue repoussee vers `26s`.
+
 Metrics recommandees :
 
 - `full_shop_cost_ratio` : cout du shop entier / gold disponible par round.
@@ -515,11 +1166,182 @@ Metrics recommandees :
 - `spend_split` : part unites / rerolls / XP / declines.
 - `reroll_rate_by_tier` : nombre de rerolls par tier shop.
 - `xp_buy_rate_by_tier` : quand l'XP est achetee.
+- `xp_gate_blocks_per_run` / `xp_gate_block_round_rate` : combien de fois une
+  politique retient l'XP parce que sa couverture de plan est trop basse.
 - `bench_overflow_rate` : cas ou l'or existe mais l'espace manque.
 - `slot_decline_ev` : valeur reelle de refuser un slot selon round.
 - `archetype_commit_round` : round ou le build devient identifiable.
 - `committed_archetype_completion` : taux ou poison/tank/rot/etc. arrivent a
   constituer leur plan avant mort/victoire.
+- `merge_lifecycle.resolve_rate` : paires formees qui deviennent vraiment une
+  fusion.
+- `merge_lifecycle.avg_rounds_to_merge` : delai moyen entre paire et fusion.
+- `merge_lifecycle.watch` : unites qui generent des paires mais les convertissent
+  mal.
+- `merge_lifecycle.sold_before_merge_rate` : part de paires suivies d'une vente
+  compatible avant merge. Diagnostic approximatif tant que les copies n'ont pas
+  d'identite unique.
+- `level_fit` : adequation entre les niveaux reels du board et le niveau attendu
+  pour le stade teste.
+- `board_fit` : nombre d'unites posees / slots attendus pour le stade ou le
+  board-level declare.
+- `outlier_unit_frequency` : frequence par unite dans les outliers
+  `cheap_strong`, `low_coherence_strong`, `high_coherence_weak`, etc.
+- `filled_resolutions` : pour un noyau coherent mais sous-rempli, comparaison
+  entre le noyau brut et sa meilleure variante remplie/nivellee ; a croiser
+  avec le cout et les runs economie pour savoir si le plan est atteignable.
+- `duplicate_pressure` : pression d'acces aux copies necessaires aux L2/L3 ;
+  a lire avec `rank_pressure` pour eviter les faux "cheap" sur des boards tres
+  leveles.
+- `win_cost_delta` : `winrate - cost_score`, utile pour separer un vrai
+  overperform d'un board cher qui gagne parce qu'il est tres investi.
+- `plan_access` : couverture finale d'un target plan en run reelle
+  (unites, niveaux, complete rate, ratio d'or final). Indispensable pour
+  separer "endpoint fort" de "endpoint accessible".
+- `plan_access.first_held_level_round` / `first_board_level_round` :
+  premier round moyen ou une cible atteint `25/50/75/100%` de couverture niveau.
+- `plan_access.combat_by_board_level_band` : winrate et ticks moyens quand le
+  board est a `<25`, `25-49`, `50-74`, `75-99`, ou `100%` de la cible.
+- `plan_access.losses_by_board_level_threshold` : pertes avant/apres chaque
+  seuil, pour detecter les morts pendant la transition.
+- `plan_access.oracle` : combat force-build du target complet contre des rounds
+  PvE representatifs. Sert a separer "plan inaccessible" de "plan faible meme
+  quand complet".
+- `plan_access.acquisition_funnel` : offres/achats/manques par unite cible,
+  pour distinguer rarete de shop, manque de place, manque d'or, erreur de
+  policy, ou vente destructive.
+- `supportUntilLevelCoverage` sur une politique cible : seuil a partir duquel
+  les supports thematiques cessent d'etre achetes pour laisser l'espace et l'or
+  aux unites du coeur.
+- `plan_access.support_access` : offres/picks de reliques, fenetres/placements
+  de commandants, split focused/generic, et timing par rapport aux seuils de
+  couverture du plan.
+- `summary.profile_rows`, `summary.policy_rows_top`,
+  `summary.policy_rows_bottom`, `summary.target_rows` : lecture compacte du
+  mode economie. Ces lignes sont aussi ecrites dans `ref-economy.json`, ce qui
+  permet a un agent de comparer profils/policies/cibles sans charger tout le
+  `plan_access` detaille.
+
+## Dernier panel utile
+
+Panel `runs/long-2026-06-28b/economy-summary-n32` :
+
+- adversaires generes avec `PIT_OPPGEN_LEVEL_MULT=2`;
+- events actifs, unite event ciblee en `policy_missing_copy`, cap `1`;
+- economies comparees : `baseline`, `pair_completion_light`, `sap_cost`,
+  `sap_cost_pair_completion`;
+- policies : broad plans + rot/bleed + cross bleed/rot.
+
+Resultat economie :
+
+- `baseline` : `44.9%` completion, `8.77` wins, `90.5%` full-shop afford,
+  `52.5%` desired-buy-all, `70.4%` merge-per-pair, `7.10` gold leftover.
+- `pair_completion_light` : `57.0%` completion, `9.27` wins, full-shop afford
+  stable (`90.9%`), desired-buy-all `62.0%`, merge-per-pair `95.7%`,
+  leftover `5.71`.
+- `sap_cost` : `37.9%` completion, `8.64` wins, full-shop afford tombe a
+  `52.8%`, desired-buy-all `56.3%`, merge-per-pair `68.0%`, leftover `5.34`.
+- `sap_cost_pair_completion` : `53.9%` completion, `9.10` wins, full-shop
+  afford `52.2%`, desired-buy-all `67.3%`, merge-per-pair `95.3%`,
+  leftover `3.27`.
+
+Lecture :
+
+- `pair_completion_light` est actuellement le meilleur levier pour soutenir les
+  level-ups sans rendre l'early encore plus gratuit : il augmente les merges et
+  la completion sans changer le cout des unites.
+- `sap_cost` cree enfin une pression d'achat claire, mais sans support de
+  paires il baisse trop la completion dans ce panel.
+- `sap_cost_pair_completion` est le candidat le plus interessant pour une
+  economie plus tendue : vraie pression d'or, moins de gold perdu, et niveau de
+  merge comparable au pity baseline. A tester avec plus de runs avant une
+  decision live.
+- Les lignes `committed_rot_bleed_rat_core_deep_reroll_plan` dominent encore
+  les policies (`96.9%` completion sous `pair_completion_light`, `93.8%` sous
+  `sap_cost_pair_completion`). C'est coherent avec l'objectif de low-rank
+  reroll, mais il faut verifier que ce n'est pas le seul plan naturel fort.
+- Les plans `cross_bleed_rot` restent peu accessibles (`6.3%` a `25%`
+  completion selon economie/policy dans les bottom rows). La barriere est
+  surtout une couverture de cible basse, pas un manque d'or pur.
+
+Panel de confirmation `runs/long-2026-06-28c/economy-candidates-n96` :
+
+- `baseline` : `41.9%` completion, `8.89` wins, `90.1%` full-shop afford,
+  `50.7%` desired-buy-all, `70.7%` merge-per-pair, `7.18` gold leftover.
+- `pair_completion_light` : `59.5%` completion, `9.37` wins, `91.5%`
+  full-shop afford, `60.6%` desired-buy-all, `94.0%` merge-per-pair, `5.80`
+  leftover.
+- `sap_cost` : `33.5%` completion, `8.61` wins, `51.8%` full-shop afford,
+  `54.1%` desired-buy-all, `67.1%` merge-per-pair, `5.14` leftover.
+- `sap_cost_pair_completion` : `52.3%` completion, `9.12` wins, `52.6%`
+  full-shop afford, `65.8%` desired-buy-all, `93.8%` merge-per-pair, `3.35`
+  leftover.
+
+Conclusion confirmee : `sap_cost_pair_completion` est le meilleur candidat de
+base pour une economie plus tendue, mais il laisse encore la ligne
+`committed_rot_bleed_rat_core_deep_reroll_plan` tres haute (`85.4%`
+completion, `9.83` wins). Cette ligne gagne sans completer exactement son
+endpoint : elle assemble surtout un paquet de duplicatas low-rank
+`carrion_pecker`/`gnaw_rat`/supports, avec environ `0.64-0.72` de couverture
+niveau rat-core.
+
+Nouveau probe ajoute dans `src/run/economy.lua` :
+
+- `pair_completion_tiered_reroll` : pair-completion + reroll `1/1/2/2/3`
+  selon le tier boutique ;
+- `sap_cost_pair_completion_tiered_reroll` : couts SAP-like + pair-completion
+  + reroll tiered.
+
+Panel `runs/long-2026-06-28c/reroll-tax-ablation-n64` :
+
+- sous couts baseline, tiered reroll ne reduit pas le deep-reroll
+  (`96.9% -> 98.4%` completion dans ce panel), car l'or reste trop permissif ;
+- sous couts SAP-like, tiered reroll baisse la deep-reroll
+  (`90.6% -> 78.1%`) sans tuer le no-XP cap-2 (`57.8% -> 59.4%`) ni les broad
+  plans dans ce panel ;
+- le profil agrege `sap_cost_pair_completion_tiered_reroll` reste jouable :
+  `66.9%` completion sur ce subset de policies, `94.8%` merge-per-pair,
+  `2.98` leftover.
+
+Lecture actuelle : si on veut controler le spam deep-reroll sans nerfer les
+creatures low-rank, le meilleur candidat est
+`sap_cost_pair_completion_tiered_reroll`, pas un nerf direct de
+`gnaw_rat`/`carrion_pecker`. Il faut encore le tester sur un panel plus large
+avant de l'appliquer au live.
+
+Instrumentation ajoutee apres ce constat :
+
+- `tools/scenarios/economy.lua` expose maintenant
+  `final_duplicate_saturation`, avec un focus `low_rank` rang 1-2 ;
+- les resumes compacts ajoutent `final_low_rank_duplicate_run_rate`,
+  `final_low_rank_duplicate_slots_per_run`,
+  `final_low_rank_duplicate_level_points_per_run` et les top units ;
+- mini-panel `N=32` sur `sap_cost_pair_completion` vs
+  `sap_cost_pair_completion_tiered_reroll` : le tax baisse la completion du
+  deep-reroll (`93.8% -> 75.0%`) mais ne supprime pas sa structure finale
+  (`100%` de runs avec duplicatas low-rank dans les deux cas). Les principaux
+  duplicatas restent `carrion_pecker` et `gnaw_rat`.
+
+Lecture nuancee : le reroll-tax controle l'acces au win/postgame, pas encore
+l'identite du board final. Si on juge que les boards multi-copies low-rank sont
+trop homogenes, il faudra tester un garde-fou de structure ou des counters de
+combat, pas seulement une taxe d'economie.
+
+Stress adversaire avec le profil taxé :
+
+- `runs/long-2026-06-28d/economy-oppgen-levelmult225-n64` :
+  completion agregee `43.4%`, `8.93` wins, combat winrate `73.0%` ;
+  `greedy_plan` reste a `81.3%`, `econ_plan` a `79.7%`,
+  `committed_rot_bleed_rat_core_deep_reroll_plan` descend a `67.2%`.
+- `runs/long-2026-06-28d/economy-oppgen-levelmult25-n64` :
+  completion agregee `37.7%`, `8.77` wins, combat winrate `70.9%` ;
+  `greedy_plan`/`econ_plan` tombent a `71.9%`, deep-reroll reste a `65.6%`,
+  et `tall_dense_plan` tombe a `34.4%`.
+
+Lecture : `PIT_OPPGEN_LEVEL_MULT=2.25` est un meilleur candidat de stress que
+`2.5`. Il reduit nettement le deep-reroll sans ecraser les broad plans. `2.5`
+est une borne haute : il punit davantage les plans generalistes et tall que le
+deep-reroll lui-meme, donc ce n'est pas un bon premier réglage.
 
 Policies minimales :
 

@@ -53,21 +53,32 @@ local function rollRank(odds, rng)
   return 1
 end
 
+local function clamp01(x)
+  if x < 0 then return 0 end
+  if x > 1 then return 1 end
+  return x
+end
+
 -- Génère un adversaire scalé. opts = { round, tier, slots, rng (seedé OBLIGATOIRE), odds (table run.ODDS) }.
+-- `roundBonus`, `tierBonus`, `sizeBonus`, and `levelMult` are lab pressure knobs.
+-- Defaults keep the live path identical.
 function OppGen.generate(opts)
   opts = opts or {}
   local rng = opts.rng
-  local round = math.max(1, opts.round or 1)
+  local round = math.max(1, (opts.round or 1) + (opts.roundBonus or 0))
   local slots = math.max(2, math.min(9, opts.slots or 3))
+  local sizeBonus = math.max(0, opts.sizeBonus or 0)
+  local tierBonus = opts.tierBonus or 0
+  local levelMult = opts.levelMult or 1
   local byRank = poolByRank()
 
   -- TIER EFFECTIF = max(tier joueur, plancher de round) -> escalade même si le joueur ne monte pas en tier.
   local roundTier = math.max(1, math.min(5, 1 + math.floor(round / 3)))
-  local tier = math.max(1, math.min(5, math.max(opts.tier or 1, roundTier)))
+  local tier = math.max(1, math.min(5, math.max(opts.tier or 1, roundTier) + tierBonus))
   local odds = opts.odds and opts.odds[tier]
 
   -- TAILLE : ~ la capacité du joueur (slots), bornée par une courbe de round (l'early reste petit).
-  local size = math.min(slots, math.max(2, 1 + math.floor((round + 2) / 2)))
+  local size = math.min(slots, math.max(2, 1 + math.floor((round + 2) / 2) + sizeBonus))
 
   -- SÉLECTION : par unité, un rang via les odds, puis un id aléatoire du rang (repli rangs voisins si vide).
   local picks = {}
@@ -86,8 +97,8 @@ function OppGen.generate(opts)
   local levels = {}
   for i = 1, #picks do
     local lvl = 1
-    if round >= 9 and rng:random() < (round - 8) * 0.05 then lvl = 3
-    elseif round >= 5 and rng:random() < (round - 4) * 0.07 then lvl = 2 end
+    if round >= 9 and rng:random() < clamp01((round - 8) * 0.05 * levelMult) then lvl = 3
+    elseif round >= 5 and rng:random() < clamp01((round - 4) * 0.07 * levelMult) then lvl = 2 end
     levels[i] = lvl
   end
 
@@ -109,8 +120,17 @@ function OppGen.generate(opts)
     if not cell then break end
     units[#units + 1] = { id = picks[i], col = cell.col, row = cell.row, level = levels[i] }
   end
+  local signatureParts = {}
+  for _, u in ipairs(units) do
+    signatureParts[#signatureParts + 1] = tostring(u.id) .. ":L" .. tostring(u.level or 1)
+  end
 
-  return { key = "pit_spawn", generated = true, units = units }
+  return {
+    key = "pit_spawn",
+    generated = true,
+    units = units,
+    signature = "generated:" .. table.concat(signatureParts, "+"),
+  }
 end
 
 return OppGen

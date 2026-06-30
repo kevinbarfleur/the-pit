@@ -7,6 +7,10 @@ package.path = "./?.lua;" .. package.path
 love = require("tests.mock_love")
 
 local RunState = require("src.run.state")
+local Units = require("src.data.units")
+local RunEvents = require("src.data.run_events")
+local EventRewards = require("src.run.event_rewards")
+local I18n = require("src.core.i18n")
 
 local function shopIds(r)
   local t = {}
@@ -32,6 +36,87 @@ local ok, err = pcall(function()
     r.relicFromLevelThisRound = true -- simule la conso du round (une fusion a déjà offert)
     r:startRound()
     assert(r.relicFromLevelThisRound == false, "Lot 5 : startRound rearme la recompense de level-up")
+  end
+
+  -- ── Profils d'economie : le comportement par defaut est le profil live courant,
+  -- tandis que l'ancien modele reste disponible via "baseline" pour comparaison.
+  do
+    local live = RunState.new(100)
+    assert(live.economy.id == "sap_cost_pair_completion_tiered_reroll",
+      "profil eco live: SAP cost + pair completion + tiered reroll")
+    live.shopTier = 3
+    assert(live:currentRerollCost() == 2, "profil live: reroll tier 3 coute 2")
+
+    local legacy = RunState.new(100, { economy = "baseline" })
+    local legacyFull = 0
+    for _, o in ipairs(legacy.shop) do legacyFull = legacyFull + o.cost end
+    assert(legacy.economy.id == "baseline" and legacyFull == 5,
+      "profil baseline explicite: ancien tier-1 complet = 5 gold")
+
+    local sap = RunState.new(101, { economy = "sap_cost" })
+    assert(sap.economy.id == "sap_cost", "profil eco: id sap_cost")
+    local full = 0
+    for _, o in ipairs(sap.shop) do
+      assert(Units[o.id].rank == 1, "sap_cost round 1: tier 1 -> rang 1")
+      assert(o.cost == 2, "sap_cost round 1: rang 1 coute 2")
+      full = full + o.cost
+    end
+    assert(full == 10, "sap_cost: shop tier 1 complet = 10 gold")
+    assert(sap:sellRefund(sap.shop[1].id) == 1, "sap_cost: sell refund suit le cout profile (50%, min 1)")
+
+    local curve = RunState.new(102, { economy = "early_curve" })
+    assert(curve.gold == 6, "early_curve: round 1 donne 6 gold")
+    curve:startRound()
+    assert(curve.round == 2 and curve.gold == 6, "early_curve: round 2 donne 6 gold")
+    curve:startRound()
+    assert(curve.round == 3 and curve.gold == 8, "early_curve: round 3 donne 8 gold")
+
+    local rr = RunState.new(103, { economy = "tiered_reroll" })
+    rr.shopTier = 3
+    rr.gold = 5
+    assert(rr:currentRerollCost() == 2, "tiered_reroll: tier 3 reroll coute 2")
+    assert(rr:reroll() and rr.gold == 3, "tiered_reroll: deduit le cout profile")
+
+    local custom = RunState.new(104, { economy = { id = "custom_test", base = "sap_cost", goldByRound = { [1] = 7 } } })
+    assert(custom.economy.id == "custom_test" and custom.gold == 7, "profil custom: override goldByRound")
+    assert(custom.shop[1].cost == 2, "profil custom: herite costByRank de sap_cost")
+
+    local xp = RunState.new(105, { economy = {
+      id = "xp_test",
+      passiveShopXpPerRound = 0,
+      buyXpCost = 5,
+      buyXpAmount = 2,
+      xpToLevel = { [1] = 3, [2] = 6, [3] = 9, [4] = 12 },
+    } })
+    assert(xp:xpToNext() == 3, "profil custom XP: seuil T1 surcharge")
+    xp:startRound()
+    assert(xp.round == 2 and xp.shopTier == 1 and xp.shopXp == 0, "profil custom XP: passive 0 respectee")
+    xp.gold = 10
+    assert(xp:currentBuyXpCost() == 5 and xp:currentBuyXpAmount() == 2, "profil custom XP: cout/montant BUY XP surcharges")
+    assert(xp:buyXp() and xp.gold == 5 and xp.shopTier == 1 and xp.shopXp == 2, "profil custom XP: premier achat reste sous seuil")
+    assert(xp:buyXp() and xp.gold == 0 and xp.shopTier == 2 and xp.shopXp == 1, "profil custom XP: deuxieme achat franchit T1 avec trop-plein")
+  end
+
+  -- ── Support de complétion de paire : quand le build possède deux copies
+  -- niveau 1, le profil live peut injecter une troisième copie dans la boutique.
+  do
+    local ps = RunState.new(202606281, {
+      economy = { id = "test_pair_support", pairCompletionSupport = { maxPerRound = 1, minRound = 1 } },
+    })
+    ps.shop = {
+      { id = "husk", cost = 1, sold = false },
+      { id = "rot_hound", cost = 1, sold = false },
+      { id = "bore_worm", cost = 1, sold = false },
+      { id = "marauder", cost = 1, sold = false },
+      { id = "templar", cost = 1, sold = false },
+    }
+    local okSupport, id, slot, replaced = ps:applyPairCompletionSupport({ "spore_tick" }, "test")
+    assert(okSupport and id == "spore_tick" and slot == 5 and replaced == "templar",
+      "pair support: injecte une troisieme copie dans le dernier slot libre")
+    assert(ps.shop[5].support == "pair_completion" and ps.shop[5].replacedId == "templar",
+      "pair support: marque l'offre supportee")
+    assert(ps:applyPairCompletionSupport({ "spore_tick" }, "test") == false,
+      "pair support: une seule injection par round")
   end
 
   -- ── DÉTERMINISME : même seed + mêmes actions -> état strictement identique ──
@@ -391,7 +476,7 @@ local ok, err = pcall(function()
       assert(rp.gold == GR + 3, "paupers_boon : +3 or/round (got " .. rp.gold .. ")")
       -- vente PLEINE (grave_robbers_cut) : remboursement = coût plein (sellFrac 1.0 ; base = 50%).
       local rs = RunState.new(7); rs.relics = { { id = "grave_robbers_cut" } }
-      assert(rs:sellRefund("gravewarden") == Units["gravewarden"].cost, "grave_robbers_cut : remboursement plein")
+      assert(rs:sellRefund("gravewarden") == rs:unitCost("gravewarden"), "grave_robbers_cut : remboursement plein")
       -- or SUR VICTOIRE (tithe_bowl) : +2 DIFFÉRÉ au round suivant (pas immédiat).
       local rt = RunState.new(7); rt.relics = { { id = "tithe_bowl" } }
       rt:resolve(true); rt:startRound()
@@ -516,6 +601,177 @@ local ok, err = pcall(function()
     end
 
     print("  cadence : canal 3 (jalon w3/w6) + minTier plancher + garde de trio + anti double-comptage OK")
+  end
+
+  -- ── RUN EVENTS : couche experimentale du marchand tous les 3 combats. Les rencontres sont thematiques, mais
+  -- les rewards sont materialises explicitement (pas de surprise cachee). Les mutations peuvent exister en data,
+  -- mais ne se materialisent qu'en opt-in avec une cible d'instance explicite. ──
+  do
+    assert(#RunEvents.order <= RunEvents.MAX_ACTIVE, "run events : 8 max actifs")
+    local allowed = { relic = true, unit = true, mutation = true, gold = true, shop_xp = true, shop_tier_up = true }
+    for _, id in ipairs(RunEvents.order) do
+      local ev = RunEvents.events[id]
+      assert(ev and ev.id == id, "run events : id declare dans events")
+      assert(ev.choices and #ev.choices >= 2, "run events : au moins 2 choix pour " .. id)
+      assert(I18n.has("runevent." .. id .. ".title"), "run events : title i18n pour " .. id)
+      assert(I18n.has("runevent." .. id .. ".body"), "run events : body i18n pour " .. id)
+      local relicChoices, nonRelicChoices = 0, 0
+      for _, choice in ipairs(ev.choices) do
+        local kind = choice.reward and choice.reward.kind
+        assert(allowed[kind], "run events : reward actif supporte (" .. tostring(kind) .. ")")
+        assert(I18n.has("runevent." .. id .. ".choice." .. choice.id .. ".label"),
+          "run events : label i18n pour " .. id .. "/" .. choice.id)
+        assert(I18n.has("runevent." .. id .. ".choice." .. choice.id .. ".body"),
+          "run events : body i18n pour " .. id .. "/" .. choice.id)
+        if kind == "relic" then relicChoices = relicChoices + 1
+        elseif kind ~= "mutation" then nonRelicChoices = nonRelicChoices + 1 end
+        if kind == "unit" then
+          assert((choice.reward.level or 1) <= 2, "run events : aucune unite niveau 3 offerte")
+        end
+      end
+      assert(relicChoices >= 1, "run events : chaque event garde au moins une lane relique")
+      assert(nonRelicChoices >= 1, "run events : chaque event garde au moins une lane non-relique")
+    end
+
+    local function eventSig(seed)
+      local r = RunState.new(seed)
+      r.wins, r.losses = 2, 1
+      local ev = r:rollRunEvent()
+      local parts = { ev and ev.id or "nil" }
+      for _, c in ipairs((ev and ev.choices) or {}) do
+        local rw = c.reward
+        parts[#parts + 1] = table.concat({
+          c.id, rw.kind or "", rw.id or "", tostring(rw.amount or ""), tostring(rw.level or "")
+        }, ":")
+      end
+      return table.concat(parts, "|")
+    end
+    assert(eventSig(6060) == eventSig(6060), "run events : meme seed -> meme event materialise")
+
+    local targeted = RunState.new(60605)
+    targeted.wins, targeted.losses = 2, 1
+    local exclude = {}
+    for _, id in ipairs(RunEvents.order) do
+      if id ~= "hollow_carcass" then exclude[id] = true end
+    end
+    local tev = targeted:rollRunEvent({
+      exclude = exclude,
+      unitPriority = function(id) return (id == "marauder") and 1000 or 0 end,
+    })
+    local targetedReward
+    for _, c in ipairs((tev and tev.choices) or {}) do
+      if c.reward and c.reward.kind == "unit" then targetedReward = c.reward end
+    end
+    assert(targetedReward and targetedReward.id == "marauder" and targetedReward.targeted,
+      "run events : ciblage optionnel d'unite respecte le pool eligible")
+
+    local filtered = RunState.new(60606)
+    filtered.wins, filtered.losses = 2, 1
+    local fev = filtered:rollRunEvent({
+      exclude = exclude,
+      unitFilter = function() return false end,
+    })
+    for _, c in ipairs((fev and fev.choices) or {}) do
+      assert(c.reward.kind ~= "unit", "run events : filtre optionnel peut retirer une lane unite")
+    end
+
+    local mutated = RunState.new(60607)
+    mutated.wins, mutated.losses = 2, 1
+    local mutationExclude = {}
+    for _, id in ipairs(RunEvents.order) do
+      if id ~= "wounded_thing" then mutationExclude[id] = true end
+    end
+    local mev = mutated:rollRunEvent({
+      exclude = mutationExclude,
+      mutationTarget = function()
+        return { copyId = 42, where = "board", slot = 5, id = "marauder", level = 2 }
+      end,
+    })
+    local mutationReward
+    for _, c in ipairs((mev and mev.choices) or {}) do
+      if c.reward and c.reward.kind == "mutation" then mutationReward = c.reward end
+    end
+    assert(mutationReward and mutationReward.id == "blood_fed" and mutationReward.target.copyId == 42,
+      "run events : lane mutation opt-in materialise une cible explicite")
+
+    local fakeBuild = {
+      bench = {},
+      slotRigs = {},
+      board = { slots = {} },
+      benchCapacity = function() return 1 end,
+    }
+    for i = 1, 9 do fakeBuild.board.slots[i] = { unlocked = i <= 3 } end
+    assert(EventRewards.canGrantUnit(fakeBuild, "marauder", 1),
+      "run events live : une unite est proposable si un slot libre existe")
+    fakeBuild.bench[1] = { id = "skeleton", level = 1 }
+    fakeBuild.slotRigs[1], fakeBuild.slotRigs[2], fakeBuild.slotRigs[3] =
+      { id = "marauder" }, { id = "bandit" }, { id = "demon" }
+    assert(not EventRewards.canGrantUnit(fakeBuild, "marauder", 1),
+      "run events live : pas de choix unite si aucun slot ne peut recevoir proprement")
+
+    local contextBuild = {
+      bench = {},
+      slotRigs = { [1] = { id = "rot_hound", level = 1 } },
+      board = { slots = {} },
+      benchCapacity = function() return 2 end,
+    }
+    for i = 1, 9 do contextBuild.board.slots[i] = { unlocked = i <= 3 } end
+    local contextualRun = RunState.new(60609)
+    contextualRun.wins, contextualRun.losses = 2, 1
+    local contextExclude = {}
+    for _, id in ipairs(RunEvents.order) do
+      if id ~= "bone_choir" then contextExclude[id] = true end
+    end
+    local contextOpts = EventRewards.rollOptions(contextBuild)
+    contextOpts.exclude = contextExclude
+    local cev = contextualRun:rollRunEvent(contextOpts)
+    local contextReward
+    for _, c in ipairs((cev and cev.choices) or {}) do
+      if c.reward and c.reward.kind == "unit" then contextReward = c.reward end
+    end
+    assert(contextReward and contextReward.id == "rot_hound" and contextReward.targeted,
+      "run events live : les rewards unite privilegient les copies deja possedees")
+
+    local goldRewardRun = RunState.new(60608)
+    goldRewardRun.gold = 0
+    assert(EventRewards.apply(goldRewardRun, nil, { kind = "gold", amount = 6 }, { deferGold = true }),
+      "run events live : l'or post-combat peut etre differe")
+    goldRewardRun:startRound()
+    assert(goldRewardRun.gold == RunState.GOLD_PER_ROUND + 6,
+      "run events live : l'or differe arrive dans la prochaine build phase")
+
+    local r = RunState.new(6061)
+    r.wins, r.losses = 3, 1
+    local seen = {}
+    for _ = 1, math.min(4, #RunEvents.order) do
+      local ev = r:rollRunEvent()
+      assert(ev and not seen[ev.id], "run events : pas de repetition tant que le pool eligible suffit")
+      seen[ev.id] = true
+      for _, c in ipairs(ev.choices) do
+        assert(c.reward and c.reward.kind, "run events : chaque choix porte une recompense concrete")
+        if c.reward.kind == "unit" then
+          assert(Units[c.reward.id], "run events : unite materialisee existe")
+          assert((c.reward.level or 1) <= 2, "run events : unite materialisee max niveau 2")
+        end
+      end
+    end
+
+    local rg = RunState.new(6062)
+    local g0 = rg.gold
+    assert(rg:applyRunEventReward({ kind = "gold", amount = 5 }) and rg.gold == g0 + 5,
+      "run events : reward gold applique")
+    local rt = RunState.new(6063)
+    local tier0 = rt.shopTier
+    assert(rt:applyRunEventReward({ kind = "shop_tier_up", amount = 1 }) and rt.shopTier == tier0 + 1,
+      "run events : reward shop_tier_up applique")
+    local rx = RunState.new(6064)
+    local xp0 = rx.shopXp
+    assert(rx:applyRunEventReward({ kind = "shop_xp", amount = 1 }) and rx.shopXp == xp0 + 1,
+      "run events : reward shop_xp applique")
+    assert(select(2, rx:applyRunEventReward({ kind = "unit", id = "marauder", level = 2 })) == "external_reward",
+      "run events : reward unite reste externalise vers Build")
+
+    print("  run events : 8 max / rewards explicites / determinisme / no mutation active OK")
   end
 
   -- ── Invariants sous fuzz d'actions seedées ──

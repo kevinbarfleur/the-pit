@@ -1401,17 +1401,1536 @@ Next implementation targets:
    - 50%;
    - 75%;
    - 100%.
-2. Add economy/run policies that emit:
-   - `buy_all_rate`;
-   - `gold_leftover_wasted`;
+2. Expand the economy/run report. First implementation exists:
+   - `src/run/economy.lua`;
+   - `tools/sim.lua economy [N]`;
+   - `runs/report-economy.json`;
+   - `force_level_fast` policy now exercises XP buying.
+   It already emits:
+   - `full_shop_afford_rate` / `early_full_shop_afford_rate`;
+   - true `desired_buy_all_rate`, plus `desired_gold_afford_rate` and
+     `desired_slot_limited_rate`;
+   - `virtual_bench` rates for hypothetical extra reserve capacities `0/2/4/6`
+     above the real board+bench capacity; cap `0` is the current gameplay
+     model;
+   - `gold_leftover_wasted` via `avg_leftover_gold`;
    - `gold_pressure`;
    - `spend_split`;
    - `reroll_rate_by_tier`;
    - `xp_buy_rate_by_tier`;
-   - `archetype_commit_round`;
-   - `committed_archetype_completion`.
-3. Integrate relic tags and relic access into coherence scoring.
-4. Expand authored level-ups beyond the initial 6 units before drawing broad
-   balance conclusions.
+   - `sells_per_run` / `sell_gold_per_run`;
+   - `bench_sells_per_run`, `board_sells_per_run`;
+   - `pair_buys_per_run`, `merge_buys_per_run`;
+   - cohorts `legacy_all`, `broad_naive`, `broad_prune`, `broad_plan`,
+     `committed`, `committed_plan`;
+   - `archetype_commitment_rate`;
+   - `avg_archetype_commit_round`;
+   - per-archetype split: `plan_formed_runs`, `plan_unformed_runs`,
+     `avg_wins_given_plan`, `avg_wins_without_plan`,
+     `completion_given_plan`, `completion_without_plan`.
+   Latest N=20 learning:
+   - the first pass missed the existing build-scene bench; `Rundriver` now uses
+     `Build:autoBuy`, so purchases go board -> real bench -> merge if full;
+   - `sap_cost` still creates the clearest economic pressure:
+     full-shop affordability drops from `89.0%` baseline to `62.5%`;
+   - `early_curve` barely changes full-shop affordability (`87.8%`) while
+     `cost=rank` remains active;
+   - with the real bench wired, desired-offer buy-all rises to `21.9%`
+     baseline and `18.9%` sap_cost, and average wins rise materially;
+   - adding four extra virtual reserve slots would raise desired-offer buy-all
+     to about `50%`, but a large space limit remains, so the problem is also
+     policy selectivity / sell / merge intelligence, not only bench size;
+   - committed archetype policies can usually buy their wanted pieces with the
+     real bench, while greedy/econ/tall policies remain very space-sensitive;
+   - tank is still the outlier: no rank-1 tank, late commitment, weak outcomes.
+   Latest N=20 learning after adding `_prune` broad policies:
+   - `Rundriver:sellBench` now models the player selling reserves and records
+     sale metrics;
+   - `Policies.analysisSet` keeps the legacy 9 policies and adds
+     `greedy_prune`, `econ_prune`, `tall_dense_prune`;
+   - in `baseline`, broad naive policies average `7.38` wins, `7.7%`
+     desired-offer buy-all, and `92.3%` space-limited desired rounds;
+   - in `baseline`, broad prune policies average `8.03` wins, `12.8%`
+     desired-offer buy-all, `87.2%` space-limited desired rounds, and sell
+     `28.6` bench units/run;
+   - in `sap_cost`, broad pruning raises desired-offer buy-all from `8.4%` to
+     `14.7%`, but space limitation remains `85.3%`;
+   - conclusion: bench pruning fixes a player-policy naivety and especially
+     helps tall/econ, but it does not justify a bench-size change by itself.
+     The next pass needs smarter pair planning / board prioritization before a
+     gameplay economy change is locked.
+   Per-archetype learning from the same N=20:
+   - `tank` in baseline forms the plan only `7/20` times, around round `5.57`,
+     and averages only `1.43` wins even when formed;
+   - `tank` in `sap_cost` forms only `5/20` times and averages `0` wins even
+     when formed;
+   - this is not a bench-space issue. Tank needs either a rank-1 seed, a
+     smarter survivable rush policy, or actual mechanical power in the tank
+     shell before it can be evaluated as a healthy archetype.
+   Latest N=20 learning after adding paired seeds and `_plan` policies:
+   - `tools/scenarios/economy.lua` and `tools/scenarios/policy.lua` now use
+     paired world seeds per run/profile. Policies start from the same run seed
+     and diverge through their own actions, which makes policy comparisons less
+     noisy.
+   - `Rundriver` records `benchSells`, `boardSells`, `pairBuys`, and
+     `mergeBuys`; `buy` counts whether a purchase creates a second copy or
+     completes a level-up merge.
+   - `Policies.analysisSet` now has 19 policies: legacy 9, `_prune` broad
+     policies, `_plan` broad policies, and `_plan` committed archetype policies.
+     Later autonomy pass extends the current set to 20 by adding
+     `committed_cross_bleed_rot_plan`, a target+support policy for a specific
+     rot/bleed endpoint.
+   - `_plan` policies score offers by immediate merge, pair creation, rank/cost
+     and plan membership. They sell bench singletons only for high-value offers
+     and can sell one weak board unit when the board stays above a survival
+     floor and the offer is clearly better.
+   - in paired `baseline`, broad naive averages `7.35` wins, `8.2%`
+     desired-offer buy-all, `91.8%` space-limited desired rounds, `4.0`
+     pair buys/run, and `3.7` merge buys/run;
+   - in paired `baseline`, broad prune averages `7.92` wins, `11.2%`
+     desired-offer buy-all, `88.8%` space-limited rounds, `26.6` sells/run,
+     `6.9` pair buys/run, and `6.0` merge buys/run;
+   - in paired `baseline`, broad plan averages `8.78` wins, `21.7%`
+     completion, `14.6%` desired-offer buy-all, `85.4%` space-limited rounds,
+     only `17.3` sells/run, `0.62` board sells/run, `7.8` pair buys/run, and
+     `6.4` merge buys/run;
+   - in paired `sap_cost`, broad plan improves desired-offer buy-all to
+     `17.2%` versus `11.8%` prune and `8.7%` naive, while selling less than
+     prune (`13.3` vs `19.9` sells/run);
+   - global `sap_cost` still creates the strongest economy pressure
+     (`66.8%` full-shop affordability vs `94.6%` baseline) but drops average
+     wins while weak shells remain unresolved;
+   - `tank` is unchanged by planning: baseline tank forms only `2/20` plans,
+     round `6`, completion `0%`, `0.95` wins average; `sap_cost` tank forms
+     `3/20` plans and averages `0.05` wins. This is an accessibility/power
+     defect in the tank shell, not a reserve-management defect.
+   Latest N=20 learning after adding `tools/sim.lua tank [N]`:
+   - `src/lab/rundriver.lua` now supports lab-only `compMutator`,
+     `leftMutator`, and `rightMutator` overlays. These let us test pacing and
+     candidate balance changes without mutating live roster data.
+   - `tools/scenarios/tank.lua` crosses six tank hypotheses with five pacing
+     profiles and writes `runs/report-tank.json`:
+     `current_plan`, `survival_shell`, `husk_seed`, `demon_seed`,
+     `current_power_plus`, `husk_seed_power_plus` x
+     `live_hp2_cd1`, `hp2_cd2`, `hp2_cd3`, `hp2_cd4`, `hp3_cd2`.
+   - Current tank remains weak: live pacing, current policy, `0%` completion,
+     `0.90` wins average, `25%` plan commitment, `25%` actual final tank
+     commitment.
+   - A broad survivable filler shell is very strong (`55%` completion and
+     `9.55` wins at live pacing), but it is not actually tank:
+     actual final tank commitment is `0%`. This is a useful negative result.
+     Robust low-rank fillers can save runs, but they do not create a readable
+     tank identity.
+   - `husk` as a simulated rank-1 tank seed forms the policy plan often
+     (`90%`) but wins `0.00` at live pacing and never reaches actual tank
+     final commitment. Husk is not a viable seed without real tank mechanics.
+   - `demon` as a simulated seed is more promising (`3.95` wins live,
+     `6.00` wins at `hp2_cd4`) but still has low actual tank final commitment
+     (`15-30%`). It behaves like a strong bruiser seed, not a clean tank seed.
+   - A simple sim-only tank payoff overlay (`+15%` tank HP, `+0.06`
+     damage-reduction, +shield payoff) does not fix access. It only applies
+     after real tanks are found, so it cannot solve the missing rank-1 entry
+     point by itself.
+   - Conclusion: the next roster design pass should add or convert a true
+     low-rank tank identity with an explicit defensive mechanic, then retest.
+     Merely telling the policy to buy robust bodies produces a different
+     archetype, not tank.
+   Pacing learning from the same report:
+   - External reference: Riot's TFT patch notes explicitly treat combat pacing
+     as a live balance target. Patch 15.3 says the set was continuing a goal
+     of slowing combat pacing and nerfed units/items/artifacts accordingly:
+     https://teamfighttactics.leagueoflegends.com/en-us/news/game-updates/teamfight-tactics-patch-15-3-notes/
+     This is not a direct target duration for The Pit, but it validates making
+     fight duration a first-class simulation metric.
+   - Live baseline already has early current-tank fights around `9.81s` average
+     with `10%` of early fights under `5s`. The issue is not universal early
+     shortness in this narrow tank probe, but it may still appear in bursty
+     non-tank matchups and must be measured globally.
+   - `cooldown x2` roughly doubles current-tank pacing (`17.19s` early average)
+     and removes early under-5s fights, but it triggers fatigue in about `51%`
+     of current-tank fights. This is a candidate only if fatigue timing is also
+     retuned.
+   - `cooldown x3/x4` pushes most fights into fatigue (`~89-94%` current tank
+     fatigue touch rate). A blind global `cd x4` would be too blunt unless
+     the fatigue/overtime model is moved later and DoT/shield cadence is
+     rebalanced around it.
+   - Recommended next step: add duration reporting to a global policy/meta
+     scenario, then test `cd x1.5` and `cd x2` with a later fatigue threshold
+     before any live roster-wide cooldown change.
+   Latest N=10 global pacing learning after adding `tools/sim.lua pacing [N]`:
+   - `tools/scenarios/common.lua` now owns shared duration helpers
+     (`durationSet`, `addRoundDuration`, `finishDurationSet`) and the lab
+     cooldown mutator. `Rundriver` forwards an optional lab-only
+     `fatigue = { start, base, ramp }` profile into `Match.run`.
+   - The new `pacing` scenario crosses the full `Policies.analysisSet` with:
+     live `hp2/cd1/fatigue17`, `cd1.5/fatigue17`, `cd2/fatigue17`,
+     `cd1.5/fatigue24`, and `cd2/fatigue24`.
+   - Preliminary N=10 results:
+     - live: completion `7.9%`, avg wins `5.29`, early avg `9.91s`,
+       early under-5s `11.6%`, p50 `9.13s`, p90 `14.63s`, fatigue `5.3%`;
+     - `cd1.5/fatigue17`: early avg `12.52s`, under-5s `7.4%`, p50
+       `12.25s`, p90 `20.08s`, but fatigue jumps to `21.6%`;
+     - `cd2/fatigue17`: early avg `16.34s`, under-5s `4.2%`, p50 `16.23s`,
+       p90 `24.48s`, but fatigue is too high at `45.6%`;
+     - `cd1.5/fatigue24`: strongest preliminary candidate: completion
+       `18.9%`, avg wins `5.77`, early avg `13.59s`, under-5s `6.8%`,
+       p50 `12.33s`, p90 `20.45s`, fatigue only `4.8%`;
+     - `cd2/fatigue24`: early avg `16.65s`, p50 `16.03s`, p90 `25.90s`,
+       fatigue `14.4%`; it may be too slow or too fatigue-sensitive.
+   - Interpretation: do not test `cd x4` further as a first live candidate.
+     The next serious sweep should center around `cd x1.35` to `x1.65` with
+     fatigue around `22-26s`, and should be rerun at higher N after the tank
+     rank-1 identity pass.
+   Latest implementation update after the first tank rank-1 identity pass:
+   - `husk` is now a live rank-1 tank seed, not only a simulated probe:
+     `aggro = 40`, combat-start `dmgReduce` on `role:front`, L2 strengthens
+     the value, and L3 turns it into a small team wall.
+   - This fixes tank access in the run driver: `current_plan` live pacing now
+     forms the policy plan and strict tank final board in about `75%` of N=20
+     runs. It still has `0%` completion and only `0.90` average wins, so the
+     remaining defect is not access alone.
+   - `tools/scenarios/tank.lua` now reports three separate final-board readings:
+     `shell%` = tested plan final commit, `tank%` = strict majority-tank board,
+     and `anchor%` = at least one tank on the front column. This matters
+     because a healthy tank comp should usually mean "frontline anchor plus
+     damage payload", not "every slot is a tank".
+   - New `payload_shell` result at N=20, live pacing: `55%` completion,
+     `9.50` average wins, `100%` shell final commit, `0%` strict tank commit,
+     and `60%` front-tank anchor. Interpretation: tank + payload is powerful,
+     but the current policy is mostly buying a strong mixed shell, not a
+     readable tank archetype yet.
+   - `demon_seed` remains a strong bruiser-ish tank-adjacent line
+     (`7.40` avg wins live, `85%` strict tank final commit), but it is not the
+     clean low-rank wall fantasy by itself.
+   - Design implication: do not solve tank by demanding majority-tank boards.
+     Define tank archetype health as `anchor present + payload protected +
+     defensive mechanics matter`. The next pass should add/report explicit
+     protected-payload metrics and then tune husk/tank supports around that.
+   Latest tooling update:
+   - `tools/sim.lua sweep [N]` now crosses economy profiles, pacing profiles,
+     and policy filters in one deterministic grid. It writes
+     `runs/report-sweep.json` plus the `sweep` block in `runs/report-ref.json`.
+   - Environment controls:
+     - `PIT_POLICIES=greedy_plan,committed_tank_plan`
+     - `PIT_ECON_PROFILES=baseline,sap_cost,early_curve`
+       (or sweep-specific alias `PIT_SWEEP_ECONOMIES=...`)
+     - `PIT_BENCH_CAPS=0,2,4,6`
+     - `PIT_PACE_IDS=live_hp2_cd1_f17,hp2_cd15_f24`
+       (or sweep-specific alias `PIT_SWEEP_PACES=...`)
+     - `PIT_PACE_PROFILES=id:hpMult:cdMult:fatigueStart[:fatigueBase[:fatigueRamp]],...`
+       (or sweep-specific alias `PIT_SWEEP_PACE_PROFILES=...`)
+     - `PIT_TANK_VARIANTS=current_plan,payload_shell`
+     - `PIT_COMMANDER_MODE=ignore|decline|auto`
+   - `PIT_COMMANDER_MODE` defaults to `ignore` to preserve historical
+     baselines. Use `auto` for runs that should model the commander pedestal:
+     it accepts the pedestal and moves the best existing `commandBonus` carrier
+     from bench first, then board; if none exists, it declines for gold.
+   - Economy reports now include an approximate merge funnel:
+     `pair_buys_per_run`, `merge_buys_per_run`, and `merge_per_pair_buy`,
+     globally and by shop tier. This is not yet a per-unit pair lifecycle, but
+     it is enough to detect profiles that buy pairs without converting them.
+   - `sweep` and `economy` also report commander placements and relic picks per
+     run, so commandants/relic access can be included in balance passes without
+     separate instrumentation.
+   Long batch, commandants enabled (`PIT_SCEN_OUT=runs/long-2026-06-27`,
+   `PIT_COMMANDER_MODE=auto`):
+   - `tools/sim.lua pacing 50`: best pacing compromise is currently
+     `hp2_cd15_f24`: completion `15.8%`, avg wins `6.20`, early avg `12.77s`,
+     early under-5s `7.9%`, p50 `11.73s`, p90 `19.40s`, fatigue `2.8%`.
+     `hp2_cd2_f24` is slower (early `15.88s`, p50 `14.48s`) but fatigue is
+     much higher (`10.8%`) without better avg wins in the global pacing report.
+     Live has too many short early fights (`17.4%` under `5s`).
+   - `tools/sim.lua sweep 30`: `hp2_cd2_f24` often gives the highest completion
+     in the integrated grid (`baseline` `16.8%`, `early_curve` `17.9%`), but it
+     carries around `11%` fatigue. Treat it as a stress candidate, not the first
+     live pacing candidate. `hp2_cd15_f24` is the safer candidate.
+   - Economy interaction in the sweep is not solved by `sap_cost` alone:
+     `sap_cost + hp2_cd15_f24` averages `5.52` wins and `8.6%` completion,
+     below `baseline + hp2_cd15_f24` at `5.93` wins and `12.3%` completion in
+     this batch. The stricter economy should not be locked before weak shells
+     and policy timing improve.
+   - `tools/sim.lua tank 50`: strict tank lines remain weak even after live
+     `husk` (`current_plan` live: `0%` completion, `1.64` avg wins; `husk_seed`
+     live: `0%`, `1.54`). `payload_shell` live is strong (`64%` completion,
+     `9.62` avg wins, `100%` shell final commit), but only `52%` front-tank
+     anchor and `0%` strict majority-tank. This confirms that the next tank
+     work must define and improve "protected payload" rather than add more pure
+     tank mass.
+   - Follow-up tank placement probe: `tools/scenarios/tank.lua` now includes
+     `protected_payload_rate` (`prot%`) and `payload_arranged`, a lab-only
+     variant that swaps a tank into the front column when possible. In N=50
+     targeted runs with `PIT_COMMANDER_MODE=auto`, `payload_arranged` raises
+     protected payload from `52%` to `96%` live and `94%` at `cd1.5/f24`, while
+     win outcomes stay close to `payload_shell` (`~9.64-9.70` wins). Learning:
+     placement fixes readability/protection but the payload shell is already
+     powerful; the next design problem is making the tank identity meaningful
+     and not just a broad good-stuff shell.
+   - `tools/sim.lua economy 30` with commandants enabled now records
+     per-unit pair/merge events. `sap_cost_tiered_reroll` is the most promising
+     economy pressure candidate in this batch: completion `12.3%`, avg wins
+     `5.61`, full-shop afford `67.9%`, gold pressure `0.52`, leftover `6.85`.
+     It produces more pressure without dropping wins like plain `sap_cost`.
+   - Unit merge watchlists are now available under
+     `profiles.<id>.unit_merge_watch` and `by_unit_merge`. Baseline N=30 flags
+     units such as `emberling`, `byakhee`, `vanguard_drummer`, `arcane_seer`,
+     and `rat_warren` as pair-heavy but merge-poor in this sample. These are
+     not automatic nerf/buff decisions; they are targets for reroll-policy and
+     roster-access investigation.
+   New update (`runs/long-2026-06-27b`, commandants enabled where relevant):
+   - `economy` and `sweep` now include true pair lifecycle metrics:
+     `merge_lifecycle.resolve_rate`, `avg_rounds_to_merge`, unresolved pair
+     counts, and per-unit watchlists. This replaces the old raw
+     `merge_per_pair_buy` as the first signal to read.
+   - `tools/sim.lua coherence [N]` is now a scenario mode. It bins fixed and
+     generated teams by semantic coherence, then measures win-rate, combat
+     length, and cost against representative band fields. Outliers include
+     full unit/slot/level lists so generated failures are reproducible.
+   - `src/lab/coherence.lua` now reads economy profiles from
+     `src/run/economy.lua`; the real profile ids are `baseline`, `sap_cost`,
+     `early_curve`, `tiered_reroll`, and `sap_cost_tiered_reroll`. Legacy
+     aliases (`current`, `sap_like`, `curved_income`) still resolve, but new
+     reports should use the run profile ids.
+   - Tank coherence was corrected: `guard_frontline`, `sustain_wall`, and
+     `frontline_wall` edges make readable defensive shells visible to the
+     semantic model. This fixed a false low-coherence reading on `mid_tank`
+     without changing gameplay.
+   - `coherence N=36`, `PIT_COHERENCE_MATCHES=8`: coherence/winrate
+     correlation is only `0.075`. Buckets: `00_25` wins `57.8%`, `25_50`
+     `39.2%`, `50_75` `58.5%`. Interpretation: power is still too weakly tied
+     to readable plans. Many low-coherence strong outliers are expensive
+     endgame piles, so inspect `cheap_strong` and `high_coherence_weak` before
+     making roster decisions.
+   - Cheap strong examples from the coherence report: `mid_tank` (`100%`
+     winrate in this field), generated mixed mid piles, `gen_focused_mid_shock`,
+     `gen_focused_mid_burn`, `gen_focused_mid_bleed`, and `mid_shock`.
+     High-coherence weak examples include `cross_bleed_rot`, `rot_carre_perfect`,
+     `shock_nuke_croix`, `burn_ligne_perfect`, and `bleed_lock_anneau`.
+     Immediate design read: mid defensive/good-stuff shells are over-rewarded,
+     while several readable DoT/cross-tag showcase comps are under-rewarded.
+   - `economy N=40`, profiles `baseline`, `early_curve`,
+     `sap_cost_tiered_reroll`: `sap_cost_tiered_reroll` is still the best
+     pressure candidate in this slice. It reaches completion `10.1%`, avg wins
+     `5.41`, full-shop afford `69.1%`, gold pressure `0.52`, leftover `8.01`.
+     Baseline has higher avg wins (`5.75`) but lower pressure and much more
+     affordance (`93.7%` full-shop afford). `early_curve` underperforms here
+     (`4.5%` completion, `5.26` wins).
+   - `sweep N=20`, same economies, live pacing vs `hp2_cd15_f24`: the safer
+     pacing candidate remains `hp2_cd15_f24`. Baseline improves from `7.4%`
+     completion live to `11.1%` with `cd1.5/f24`; `sap_cost_tiered_reroll`
+     improves from `5.8%` to `8.2%`. Fatigue stays low (`~2-3%`) in this grid.
+   Relic coherence follow-up:
+   - `src/lab/coherence.lua` now derives lightweight semantic profiles for
+     relics. Relic ops such as affliction amplification, aura stats, haste,
+     few-units bonuses, rainbow/type-mix bonuses, thorns, cleave, execute,
+     percent-HP strike, and relic-added effects can now create explicit
+     `relicEdges` against matching units.
+   - `scoreTeam(..., { relics = { ... } })` now returns `subscores.relic` and
+     `relicEdges`. The relic score adds only a small bonus to final coherence;
+     it is meant to validate "this relic supports this plan", not to hide a bad
+     unit graph.
+   - `tools/sim.lua coherence [N]` creates matching relic variants for fixed
+     authored candidates by default. Disable this with
+     `PIT_COHERENCE_RELIC_VARIANTS=0` when comparing pure unit/commandant
+     coherence. Compact rows now include selected relic ids.
+   - Smoke reading after the relic pass: a small `coherence 1` run produces
+     65 candidates, includes rows such as `mid_tank__tide_caller`,
+     `end_poison__kings_bowl`, and `end_shock_multicast__forked_tongue`, and
+     keeps the scenario deterministic. This is not a balance verdict yet; it
+     confirms the report can now separate "readable plan without relic" from
+     "readable plan with matching relic".
+   Level-fit follow-up:
+   - `tools/sim.lua coherence [N]` now also generates deterministic
+     `__leveled` variants for fixed catalogue/band candidates. This prevents a
+     common false read where a clean endgame plan is marked weak simply because
+     the authored catalogue version has every unit at level 1.
+   - The report now includes `level_fit` and `underleveled` per row, plus
+     bucket/stage `avg_level_fit`. `high_coherence_weak` excludes clearly
+     underleveled rows; those move to
+     `underleveled_high_coherence_weak`. Disable this expansion with
+     `PIT_COHERENCE_LEVEL_VARIANTS=0` for old-style comparisons.
+   - New filtered read (`runs/long-2026-06-27e/relics-leveled-filtered`,
+     `coherence N=36`, matches `8`): candidates `228`, correlation `0.189`,
+     buckets `00_25` win `54.8%`, `25_50` win `45.5%`, `50_75` win `61.0%`,
+     `75_100` win `47.0%`. The important change is interpretability:
+     actionable `high_coherence_weak` falls to `3` rows instead of being filled
+     by raw level-1 endgame catalogue comps.
+   - Current true high-coherence weak targets after filtering:
+     `cross_bleed_rot__leveled`, `cross_bleed_rot__leveled__grave_cap`, and
+     `tank_carre_mid__leveled__tide_caller`. The first two point at a likely
+     bleed->rot conversion/payoff weakness; the third says a small mid tank
+     shell with a matching relic is readable but still not strongly rewarded.
+   - `low_coherence_strong` remains large (`25` rows), mostly generated mixed
+     piles with high investment or efficient midgame good-stuff. This is now
+     the bigger systemic signal: raw stats/high-rank piles can beat readable
+     plans too often.
+   Marrow/board-fit follow-up:
+   - `marrow_drinker` now has the documented level-aware conversion scaling:
+     L2 `base 4 / growth 3 / cap 14`, L3 `base 5 / growth 4 / cap 16`.
+   - Leveled fixed candidates now prioritize high-rank/level-authored pivots
+     before central slot convenience. Example: `cross_bleed_rot__leveled` puts
+     `marrow_drinker` at L3 instead of always putting the central aura at L3.
+   - The report now includes `board_fit` and `underfilled` per row, plus
+     bucket/stage `avg_board_fit`. Rows that are coherent and weak but do not
+     fill enough of their declared board move to
+     `underfilled_high_coherence_weak`.
+   - New filtered read (`runs/long-2026-06-27g/fit-filtered`, `coherence N=36`,
+     matches `8`): correlation `0.200`, `high_coherence_weak` is now only `1`
+     row, `underfilled_high_coherence_weak` has `2` rows, and
+     `underleveled_high_coherence_weak` has `20` rows. The only true readable
+     weak row left is `tank_carre_mid__leveled__tide_caller`; `cross_bleed_rot`
+     should not be judged until a filled-board variant exists.
+   Outlier watchlist follow-up:
+   - `tools/sim.lua coherence` now writes `outlier_unit_frequency` for
+     `high_coherence_weak`, `low_coherence_strong`, `cheap_strong`, and
+     `expensive_weak`. Each row reports count, average level, average winrate,
+     stages, and archetypes.
+   - New read (`runs/long-2026-06-27h/unit-frequency`, same settings): the
+     `cheap_strong` midgame watchlist is led by `gravewarden`, `leech_thorn`,
+     `thunderhead`, `skeleton`, `marauder`, `witch`, and `stormcaller`. This
+     points at efficient midgame good-stuff/tank-shock shells rather than one
+     isolated offender.
+   - `low_coherence_strong` is led by `marauder`, `demon`, `brood_mother`,
+     `skeleton`, and `mimic_spawn`. This says high-stat/bruiser/summon/copy
+     packages can win without looking like a readable affliction plan. The next
+     design pass should either classify that as a real "bruiser/summon/copy"
+     plan in coherence, or reduce the raw efficiency if it remains too generic.
+   Summon/mimicry and mid-field follow-up:
+   - The coherence graph now creates edges for `summon` + faint payoff,
+     summon-line stacking, `repeat_ability` + on-hit carriers, and
+     `amplify_auras` + aura-style units. This moves some summon/mimicry winners
+     out of the lowest coherence bucket and raises graph coverage from `2257`
+     to `2433` level-1 edges.
+   - `src/lab/bands.lua` now includes `mid_rot` and the mid field includes it
+     as an intended mid-caliber anti-wall probe. This removes the lone
+     `high_coherence_weak` row from the coherence report, but does not by
+     itself solve mid-tank dominance.
+   - `rot_hound`, `decay_tender`, and `necro_leech` now have the documented
+     level-aware rot scaling. Batch
+     `runs/long-2026-06-27k/rot-level-midfield` still shows `mid_tank` at
+     `100%` winrate in the representative field while `mid_rot` remains around
+     `42.9%` (`59.4%` for the leveled variant). Learning: the tank problem is
+     not only "rot levels were missing"; the midgame likely needs either a
+     stronger explicit anti-wall piece/composition or a direct efficiency pass
+     on the wall package.
+   Economy/pacing follow-up:
+   - `runs/long-2026-06-27l/post-rot-economy`, `economy 30`, commander auto:
+     baseline remains stronger in this slice (`8.1%` completion, `5.58` avg
+     wins, `93.8%` full-shop afford). `sap_cost_tiered_reroll` creates real
+     pressure (`67.8%` afford, pressure ratio `1.02`) but falls to `4.7%`
+     completion and `5.21` avg wins. Do not promote it as default yet.
+   - `runs/long-2026-06-27l/post-rot-sweep`, `sweep 12`: `hp2_cd15_f24`
+     remains the safer pacing candidate for baseline (`8.3%` completion,
+     `6.05` wins, p50 combat `11.52s`, fatigue `2.5%`). The heavier
+     `hp2_cd2_f24` creates more readable-length fights and better baseline
+     completion (`13.2%`, `6.20` wins, p50 `15.22s`) but fatigue jumps to
+     `13.0%`. Treat it as an exploratory upper bound, not a default.
+   Fill-variant follow-up:
+   - `tools/sim.lua coherence` now creates optional `__filled` variants
+     (`PIT_COHERENCE_FILL_VARIANTS=0` disables them) for underfilled fixed
+     nuclei. The report includes `filled_resolutions`, which compares a weak
+     underfilled nucleus against its best filled + adequately leveled version.
+   - `runs/long-2026-06-27m/fill-variants`, `coherence 12`, shows why this
+     matters: `cross_bleed_rot` raw stays dead (`0%` winrate, `board_fit 0.625`)
+     and the leveled-but-underfilled row only reaches `28.6%`; the filled +
+     leveled version reaches `85.7%`. This reframes it as a viable late
+     invested rot/bleed nucleus, not simply a bad idea.
+   - Cost caveat: the successful filled version costs `96` gold-equivalent in
+     the current comp-cost model (`cost_score 0.809`) and uses
+     `pit_maw`, `wither_bloom`, and `blight_spreader` as fillers. It is a
+     late-game endpoint; economy simulations still need to prove whether a
+     player can reach it naturally.
+   Plan-access follow-up:
+   - `tools/sim.lua economy` now reports `plan_access` for default critical
+     targets and optional `PIT_PLAN_TARGET_SPECS` entries. It measures final
+     board unit coverage, level coverage, complete rate, final-gold ratio,
+     peak board/held coverage, first `25/50/75/100%` level-coverage rounds,
+     losses before/after each threshold, and combat winrate by board coverage
+     band against a target plan.
+   - A custom target spec for the filled rot/bleed endpoint
+     (`cross_bleed_rot_filled=pit_maw:2+razorkin+gash_fiend+clot_mender+marrow_drinker:3+wither_bloom:2+blight_spreader:2+hookjaw`)
+     confirms the access problem. In
+     `runs/long-2026-06-27n/plan-access-targeted-v5`, `committed_rot_plan`
+     reaches `0%` of the target units because the broad rot policy ignores the
+     bleed enablers. The new `committed_cross_bleed_rot_plan` now secures a
+     body before XP, keeps rot/bleed support units for tempo, and reaches about
+     `22.5%` unit coverage and `13.8%` level coverage in baseline, with
+     `8.75` average wins, but still never completes the endpoint.
+   - Learning: the endpoint is combat-viable when force-built, but not naturally
+     accessible under current shop/economy/policy pressure. The next useful
+     work is not a direct buff to `cross_bleed_rot`; it is better target-aware
+     reroll/XP timing and/or cheaper stepping-stone units that let the player
+     progress toward the endpoint without dying.
+   - Trajectory update: `runs/long-2026-06-27n/plan-trajectory-v1` shows the
+     same endpoint almost never enters a real transition state. Under baseline,
+     `committed_cross_bleed_rot_plan` reaches held `25%` level coverage in only
+     `6.7%` of runs and never reaches `50%`; under `sap_cost_tiered_reroll`,
+     held `25%` improves to `30%`, but board `25%` is still only `6.7%`, and
+     `50%` remains `0%`. The tier breakdown points to space pressure rather
+     than gold: baseline tier 4 desired offers are `91.5%` slot-limited while
+     still gold-affordable, and tier 5 is `100%` slot-limited.
+   - Oracle update: each `plan_access` target now carries a forced-combat
+     `oracle` with cost, coherence/subscores, tested PvE rounds, winrate, and
+     duration. In `runs/long-2026-06-27n/plan-oracle-v1`,
+     `cross_bleed_rot_filled` has `0.552` coherence and costs `96`
+     gold-equivalent. It wins forced fights at rounds 8 and 10 (`100%` vs
+     `gorge_pack`/`drowned_legion`) but loses at rounds 12 and 14 (`0%` vs
+     `pit_sovereign`), for `50%` total forced winrate over the oracle window.
+     This means the target is both poorly accessible and not a complete
+     late-endpoint without additional commander/relic/scaling support.
+   - Acquisition-funnel update: `plan_access.acquisition_funnel` now reports
+     target offers, gold affordability, playable-space rate, buys, pair/merge
+     buys, sells, first-seen rounds, and per-unit miss reasons. In
+     `runs/long-2026-06-27n/acquisition-funnel-v3`, baseline +
+     `committed_cross_bleed_rot_plan` sees only `39.6%` of distinct target
+     units per run (`3.17/8`), buys `3.87` target pieces/run, has no gold issue
+     (`100%` gold-affordable), almost no policy misses (`0.1/run`), and no
+     target sells. The blockers are space (`2.0` missed-space offers/run) and
+     rare piece access: `pit_maw` seen in only `10%` of runs, `marrow_drinker`
+     `6.7%`, `wither_bloom` `16.7%`, and `blight_spreader` `16.7%`.
+     Interpretation: this cannot be a natural endpoint in the current economy
+     unless it gets stepping-stone versions, support from commander/relic
+     access, better odds/tier timing, or a simpler target definition.
+   - Stepping-stone target: `rot_bleed_mid` was added to the composition
+     catalog and to default economy plan targets. The env-only probe
+     `runs/long-2026-06-27n/stepping-target-v1` showed this 6-slot, no-rank-5
+     plan is much more teachable: `25%` held level coverage in `93.3%` of
+     baseline runs, `50%` in `40%` (`60%` under `sap_cost_tiered_reroll`),
+     target-unit seen rate `71.7%`, and cost `24` gold-equivalent. Its oracle
+     still falls off at rounds 8/10 (`58.3%` forced winrate overall), so it is
+     a midgame bridge, not a finisher. The late `cross_bleed_rot_filled` target
+     should be treated as an evolved version that needs commander/relic/scaling
+     support.
+   - Support-access update: `plan_access.support_access` now records focused vs
+     generic relic and commander support. `Rundriver` emits `relic_offer`,
+     `relic_pick`, `commander_window`, and `commander_place` events when
+     `recordEvents=true`; economy reports classify each support through
+     `Coherence.scoreTeam`. In
+     `runs/long-2026-06-27n/support-access-v1`, baseline +
+     `committed_cross_bleed_rot_plan` sees focused support for `rot_bleed_mid`
+     in `80%` of runs and uses it in `55%`; under
+     `sap_cost_tiered_reroll`, this falls to `50%` seen / `20%` used. Relevant
+     focused relics were `grave_cap`, `weeping_nail`, `link_cable`,
+     `plague_communion`; focused commanders surfaced as `gash_fiend`,
+     `razorkin`, `necro_leech`, and `rot_hound`. Interpretation: support exists
+     but current relic/commander choice is not target-aware enough.
+   - Rot/bleed L3 update: `carrion_pecker` now has authored L2/L3 rot/heal
+     scaling, while `rot_hound` and `clot_mender` are marked as L3 clutch
+     pieces with command scaling to `0.26`. In
+     `runs/long-2026-06-27n/rot-bleed-l3-v1`, no new
+     `carrion_pecker`/`rot_hound`/`clot_mender` L3 appeared in `cheap_strong`.
+     The env target
+   `rot_bleed_bridge_late=clot_mender:2+razorkin:2+gash_fiend:2+hookjaw+rot_hound:3+carrion_pecker:3+marrow_drinker:2+necro_leech:2`
+   costs `74` gold-equivalent, has `0.663` coherence, wins force-build at
+   rounds 8/10, but still loses rounds 12/14 (`50%` oracle). Run access is
+   still the larger blocker: baseline held `50%` coverage is only `2.5%`
+   (`20%` under `sap_cost_tiered_reroll`), and `marrow_drinker` was seen in
+   only `7.5%` of baseline runs and bought `0/run` because it was not
+   playable when offered. Interpretation: the L3 bridge is safe, but late
+   rot/bleed still needs target-aware space management or a lower-rank late
+   pivot.
+   - Target-aware policy update: `committed_unit_set_plan` now separates exact
+     core targets from support fillers, picks relics and commanders against
+     the target's coherence graph, and can sell support fillers to buy core
+     pieces. Batch
+     `runs/long-2026-06-27n/target-aware-policy-v1` shows this fixes the
+     decision-quality problem: baseline target-offer buy-rate improves from
+     `81.2%` to `92.9%`, held `50%` coverage from `2.5%` to `27.5%`, and
+     focused support used/run from `47.5%` to `85%` with no missed focused
+     relic/commander opportunities. SAP also improves held `50%` from `20%`
+     to `37.5%`, but keeps lower wins. Remaining blocker: `marrow_drinker`
+     remains too rare (`15%` seen in baseline, `12.5%` under SAP), so late
+     rot/bleed still needs better XP/reroll timing, a lower-rank pivot, or an
+     alternate endpoint that is not pinned to one rank-5 unit.
+   - XP/tier-policy probe: two diagnostic variants were added. The brute
+     `committed_cross_bleed_rot_late_plan` rushes rank 5; the staged
+     `committed_cross_bleed_rot_staged_plan` stays rank 3 early, then targets
+     rank 4 at round 7 and rank 5 at round 10. In
+     `runs/long-2026-06-27n/staged-tier-policy-v1`, brute late access sees
+     `marrow_drinker` much more often (`60%` baseline) but collapses the plan
+     (`7.4` wins, held `50%` only `2.5%`). Staged is healthier but still not
+     better than the current target-aware plan: baseline wins/completion stay
+     `8.5`/`10%`, `marrow_drinker` seen rises to `32.5%`, but held `50%` is
+     `25%` versus the current plan's `27.5%`; SAP staged is also worse than
+     current SAP. Learning: the issue is not simply "get to rank 5 sooner".
+     The late bridge needs a lower-rank pivot, an alternate endpoint, or
+     XP/reroll decisions gated by actual target coverage.
+   - Lower-rank pivot update: `rot_bleed_rat_core` was added to the composition
+     catalog and to default economy plan targets. It uses
+     `carrion_pecker:3+rot_hound:3+gnaw_rat:3+clot_mender:2+razorkin:2+gash_fiend:2`
+     as a clean low-rank reroll endpoint. Batch
+     `runs/long-2026-06-27n/socrates-pivots-v1` shows it is the best tested
+     no-`marrow_drinker` target: cost `57`, max rank `3`, oracle forced
+     winrate `100%`, baseline held `50%` coverage `60%` under the current
+     target-aware policy (`65%` under staged), and SAP held `50%` `75%`.
+     Rank-4 alternatives (`rot_bleed_rank4_lock`, `rot_core_r4_spread`) stay at
+     `50%` oracle and much lower held `50%`. Learning: rot/bleed should expose
+     a real low-rank reroll endpoint, while the old rank-5 conversion can
+     remain an optional premium evolution rather than the main late bridge.
+   - Rat-core coherence check: `runs/long-2026-06-27n/rat-core-coherence-v1`
+     confirms the catalog `rot_bleed_rat_core` row is coherent and strong
+     (`coherence 0.754`, forced-panel `winrate 100%`, `gold 57`,
+     `cost_score 0.657`; `grave_cap` raises coherence to `0.812`). It is not
+     flagged as `cheap_strong`, so do not immediately nerf the endpoint just
+     because it wins the forced panel. The active red flags are still cheaper
+     midgame boards, especially tank/shock entries around `17-27` gold and
+     `rot_bleed_mid__leveled` (`30` gold, `100%` in this panel). Next balance
+     work should distinguish "expensive coherent payoff" from "cheap mid board
+     overperforming under its cost".
+   - Cost-model correction: `Compcost` now returns `rankPressure` and uses it
+     as an access floor for `score`; coherence rows also expose
+     `weighted_score`, `rank_pressure`, and `foe_breakdown`. This fixed a major
+     read error: rank-4/5 boards were previously flagged as cheap because the
+     score mostly read raw gold. In
+     `runs/long-2026-06-27n/rank-pressure-coherence-v2`, `cheap_strong` drops
+     from `37` to `7`. The remaining cheap-strong rows are now mostly genuine
+     low/mid-rank candidates (`rot_bleed_mid__leveled`, `rot_bleed_mid`, some
+     generated bleed/bruiser/poison boards), while tank/shock rank-4 access
+     false positives leave the list.
+   - Duplicate-pressure correction: ablation of `rot_bleed_mid__leveled` showed
+     the `75% -> 100%` jump is mostly caused by adding a fourth L2
+     (`clot_mender` at center) to an already leveled mid board; reverting the
+     L2 aura values alone did not fix it. `Compcost` now returns
+     `duplicatePressure` and uses it as another access floor for `score`, and
+     coherence rows expose `duplicate_pressure`. This should reduce false
+     "cheap" reads on boards that require many duplicated copies before we
+     reach for data nerfs. In
+     `runs/long-2026-06-27n/duplicate-pressure-coherence-v1`, `cheap_strong`
+     drops from `7` to `5`; `rot_bleed_mid__leveled` leaves the cheap list at
+     `cost_score 0.50`, while base `rot_bleed_mid` remains a watch item
+     (`75%` winrate, but still loses to `mid_tank` and `cross_venom_pyre`).
+   - XP coverage-gate update: `committed_unit_set_plan` now supports
+     `xpCoverageGate`, which can let a policy reach a base shop rank and then
+     block further XP buys until real target coverage reaches unit/level
+     thresholds. Economy reports expose `xp_gate_blocks_per_run`,
+     `xp_gate_block_round_rate`, `avg_xp_gate_unit_coverage`, and
+     `avg_xp_gate_level_coverage`. In
+     `runs/long-2026-06-27n/coverage-gated-xp-v2`,
+     `committed_cross_bleed_rot_coverage_plan` cuts baseline XP from the staged
+     plan's `5.0/run` to `2.5/run`, with about `4.675` XP-gate blocks/run, but
+     does not materially improve the old rank-5 target. Interpretation: late
+     cross rot/bleed is not just an XP timing issue; `marrow_drinker` remains
+     too rare/late for the core endpoint.
+   - Rat-core target policy update:
+     `committed_rot_bleed_rat_core_plan` directly targets
+     `clot_mender:2+razorkin:2+gash_fiend:2+rot_hound:3+carrion_pecker:3+gnaw_rat:3`.
+     In `coverage-gated-xp-v2`, baseline improves to `8.225` wins, `80%` held
+     `50%` rat-core coverage, and `0.633` final held level coverage. SAP-cost
+     reaches `92.5%` held `50%`. Interpretation: use rat-core as the active
+     rot/bleed reroll baseline; keep rank-5 conversion as premium evolution
+     unless a later economy/pass makes it reliably reachable.
+   - Pair-lifecycle diagnostic update: `Rundriver` sell events now include the
+     sold unit level, and `merge_lifecycle` reports `sold_before_merge` plus
+     `sold_before_merge_rate` globally, by unit, and in the watch list. This is
+     an event-level diagnostic, not exact per-copy identity: it counts later
+     sales compatible with a formed pair before its matching merge. Batch
+     `runs/long-2026-06-27n/pair-loss-rat-core-v1` shows
+     `sold_before_merge_rate = 0` across the targeted policies. Learning:
+     unresolved pairs in the committed rot/bleed plans are not mainly caused by
+     destructive resale after pair formation. The bigger issue is trajectory
+     pressure: committed plans resolve only about `49-60%` of pairs, while
+     `greedy_stats` resolves about `85-93%`; rat-core reaches held `50%`
+     coverage often (`75-92.5%` depending economy under its dedicated policy)
+     but held `75%` remains low (`0-15%`) and full completion stays `0`.
+     Therefore the next lever is better space/reroll targeting and stage
+     thresholds, not just "never sell pairs".
+   - Rat-core support-gate update: a pure strict rat-core policy was tested and
+     rejected. With heavy reroll (`rat-core-strict-policy-v1`) it improved
+     held `75%` coverage but spent about `33-37` rerolls/run and lost tempo;
+     with the standard reroll cap (`rat-core-strict-policy-v2`) it collapsed
+     wins because the board lacked enough early support. The retained candidate
+     is `committed_rot_bleed_rat_core_gated_plan`: it allows rot/bleed supports
+     early, then stops buying them once held rat-core level coverage reaches
+     `50%` unless the board still has fewer than `4` bodies. In
+     `runs/long-2026-06-27n/rat-core-gated-policy-v1`, baseline wins/completion
+     match the current rat-core plan (`8.267`, `11.7%`) while space misses fall
+     `2.32 -> 2.05`, avg final held level coverage rises `0.631 -> 0.642`, and
+     held `75%` improves `10% -> 15%`. SAP and tiered variants show the same
+     direction: small or neutral win changes, better coverage, fewer space
+     misses. Learning: the right lever is not removing supports, but staging
+     them so they stop competing with the core after the run has committed.
+   - Cost-aware outlier update: duplicate-pressure density was raised so
+     multi-L2 mid boards are no longer underpriced (`three L2 in six slots`
+     reads about `0.50` instead of `0.425`, while one L2 remains at the
+     `0.30` floor). Coherence rows now expose `win_cost_delta`, and
+     `low_coherence_strong` requires a positive cost-adjusted overperformance
+     (`>= 0.10`) instead of flagging expensive stat boards that merely win at
+     high investment. In `runs/long-2026-06-27n/coherence-cost-aware-outliers-v1`,
+     `rot_bleed_mid` leaves `cheap_strong`, `low_coh strong` drops `3 -> 0`,
+     and the remaining `cheap_strong` rows are only generated band variants
+     (`mid_poison__leveled`, `mid_rot__leveled`) with moderate deltas around
+     `0.21` and clear losses into `mid_tank`, `mid_shock`, and
+     `cross_venom_pyre`.
+   - Fine pacing sweep update:
+     `runs/long-2026-06-27n/pacing-fine-candidates-v1` crossed
+     `baseline/sap_cost/early_curve`, six focused policies, and cooldown/fatigue
+     profiles around the previous candidate range. The best first live
+     candidate is `cd1.5_f26` (`hp x2`, cooldown x1.5, fatigue at 26s):
+     baseline early avg `14.87s`, p50 `11.97s`, p90 `19.42s`, fatigue `1.8%`,
+     wins `8.47`; SAP early avg `14.96s`, p90 `19.40s`, fatigue `1.5%`; early
+     curve early avg `14.70s`, fatigue `2.5%`. `cd1.35_f24` is the conservative
+     alternative (early around `13-14s`, fatigue `1.5-2.5%`), while `cd1.65`
+     starts pushing p90 above `21s` and should remain a stress candidate. Do
+     not jump to the old suggested `cd x4`: prior tank/pacing runs already
+     showed it overuses fatigue.
+   - Pacing scoring and live application update:
+     `Common.durationFit(duration)` now scores fight duration against the
+     current target envelope: early average `13-16s`, all-fight p50 `11-14s`,
+     p90 `<=22s`, fatigue-touch `<=5%`, and early under-5s `<=6%`. `pacing`
+     and `sweep` reports expose both `duration_fit` diagnostics and direct
+     `duration_fit_score` fields. `sweep` also writes `recommendations` with
+     `selection_score = duration_fit_score + bounded wins/completion deltas vs
+     live`, so long batches can be read without hand-sorting cells.
+   - Broad pacing confirmation:
+     `runs/long-2026-06-27n/pacing-fit-broad-v1` crossed all analysis policies
+     at N=30 over `baseline/sap_cost/early_curve` and focused pace candidates.
+     Live pacing is confirmed too short (`baseline`: fit `0.626`, early avg
+     `10.04s`, p50 `9.53s`, fatigue `6.5%`; `early_curve`: fit `0.546`, early
+     avg `9.24s`). `cd1.5_f24` is the best baseline/early-curve compromise
+     (`baseline` fit `0.987`, wins `6.25`, completion `11.3%`, early `13.88s`,
+     p50 `12.8s`, fatigue `4.9%`; `early_curve` fit `0.982`, wins `6.06`,
+     completion `10.8%`). `cd1.5_f26` is slightly better under `sap_cost`
+     (`fit 0.961`, wins `6.04`, completion `8.8%`, fatigue `3.2%`) and reduces
+     fatigue in baseline (`2.6%`) while keeping early/p50 in target. `cd1.65`
+     improves some win counts but is more fragile: baseline p90 reaches `23.4s`
+     and fatigue `6.1%`, so keep it as a stress candidate, not the live default.
+   - Live pacing implementation:
+     `src/run/pacing.lua` is now the source of truth for live combat pacing and
+     player-facing cooldown display. The active `live` profile is
+     `live_hp2_cd15_f26` (`hp x2`, cooldown x1.5, fatigue at `1560` ticks /
+     `26s`). `Combat.new`/`restart` use this profile, while unit data remains
+     authored at base cooldown. Monster cards, the gallery, and shield-caster
+     mechanic text use `Pacing.formatCooldown(...)`, so displayed CD matches the
+     real live combat cadence. `PIT_LIVE_PACE=legacy` can temporarily switch
+     the app back to `hp x2 / cooldown x1 / fatigue17` for comparison. The
+     simulation tools remain explicitly parameterized: `Rundriver` and
+     `Match.run` accept `cooldownMult`, and `pacing`/`sweep`/`tank` pass it as
+     an arena option instead of mutating specs.
+   - Real bench-capacity sweep:
+     `Build`/`Rundriver` now accept lab-only `benchSize` while live remains at
+     `4` slots. `tools/sim.lua economy` accepts `PIT_BENCH_SIZES=4,6,8` and
+     writes separate profile keys such as `baseline_bench6`, so reports can
+     compare true reserve capacity instead of only the old virtual
+     `PIT_BENCH_CAPS` affordability diagnostic. In
+     `runs/long-2026-06-27n/bench-real-v1` (all analysis policies, N=20),
+     larger benches do what expected on access (`baseline` desired-buy-all
+     `35.7% -> 42.7% -> 50.8%` and slot-limit `63.5% -> 56.6% -> 48.2%` for
+     bench `4/6/8`), but they do not automatically improve wins or completion
+     (`6.47/8.2%`, `6.27/10.4%`, `6.32/6.4%`). Learning: reserve capacity is
+     a real acquisition lever, but it must be paired with better policy/staging;
+     otherwise it can dilute deployed tempo.
+   - Rat-core reroll-policy breakthrough:
+     Two additional analysis policies were added for the current reroll target:
+     `committed_rot_bleed_rat_core_no_xp_plan` and
+     `committed_rot_bleed_rat_core_deep_reroll_plan`. They buy no XP manually
+     and rely on passive shop-tier progression; the deep-reroll variant raises
+     the per-round reroll cap to `5`. In
+     `runs/long-2026-06-27n/bench-rat-policy-v1` (baseline, N=80), deep-reroll
+     is the first strong rat-core policy: bench4 reaches `50%` completion,
+     `9.50` avg wins, `11.66` pair buys/run, `9.11` merges/run, and
+     `78.1%` merge-per-pair. Bench6 remains strong but lower (`46.25%`,
+     `9.43` wins), while bench8 drops (`28.75%`, `9.25` wins) despite higher
+     held-level coverage. Learning: this comp wants aggressive reroll tempo
+     more than extra bench size. The best current hypothesis is live bench4
+     plus explicit reroll archetype support, not a blind reserve-size increase.
+   - Shop-XP parameterization and slow-tier probe:
+     `Economy` now exposes simulation-tunable `passiveShopXpPerRound`,
+     `passiveShopXpByRound`, `buyXpAmount`, and `xpToLevel`; `RunState` still
+     exports the live defaults but reads these values through the resolved
+     economy profile. A new analysis profile, `slow_shop_xp`, uses thresholds
+     `{3,6,9,12}` so passive tier 3 arrives around round 10 instead of round 8.
+     The UI BUY XP button also reads `run:currentBuyXpCost()` so lab/custom
+     profiles cannot display the wrong price. In
+     `runs/long-2026-06-27n/shop-xp-global-v1` (all policies, N=30),
+     `slow_shop_xp` improves merge conversion (`71.7% -> 74.7%`) and slightly
+     improves gold affordability, but lowers completion (`13.3% -> 7.3%`),
+     wins (`6.71 -> 6.09`), and relic picks (`2.01 -> 1.77`). In the focused
+     rat-core run `runs/long-2026-06-27n/shop-xp-rat-core-v1` (N=80), it again
+     improves desired access (`69.3% -> 72.0%`) and merge conversion
+     (`69.1% -> 73.1%`) but slightly lowers wins/completion (`8.63/21.6% ->
+     8.41/18.1%`). The strongest deep-reroll policy stays basically stable
+   (`50%` completion baseline vs `48.75%` slow XP) while resolving more pairs
+   (`78.1% -> 84.3%`). Learning: slower shop tiers are useful as a diagnostic
+   and may help low-rank reroll access, but they are not a live economy
+   recommendation alone because they delay high-rank support and reduce run
+   conversion. Prefer targeted reroll policy/support changes before changing
+   the default shop XP curve.
+   - Exact merge-copy lifecycle:
+     `Rundriver` now assigns a lab-only `copyId` to every bought/placed unit and
+     `Build` emits optional merge-observer events when `checkMerges` or
+     full-board catalyst merges resolve. Economy reports can now expose
+     `exact_pairs`, `exact_resolved`, and `exact_resolve_rate`, matching a pair
+     to the real copies that merged instead of only matching by unit id, level,
+     and later round. A micro rat-core run produced `34` exact pairs with
+     `85.3%` exact resolution; this unlocks the next pass: distinguish pairs
+     that failed because the third copy never appeared, because one exact copy
+     was sold, or because board/bench tempo crowded them out.
+   - Exact merge terminal causes:
+     the next pass is now implemented. `Rundriver` exposes `finalCopies`
+     (`copyId`, id, level, board/bench slot), and `Common.addMergeLifecycle`
+     classifies unresolved exact pairs into `terminal_causes`:
+     `sold_exact_copy`, `held_to_run_end`, `crowded_out`, `no_third_copy`, and
+     `unknown`, with counts and rates globally, by unit, and in the watch list.
+     This is still a diagnostic layer only; it does not mutate run behavior.
+   - Terminal-cause first read:
+     `runs/long-2026-06-27o/terminal-causes`, N=8 over baseline/early_curve/
+     sap_cost and reroll/rat-core/broad policies, showed the unresolved pairs
+     are overwhelmingly retained rather than thrown away:
+     baseline `444` pairs / `130` unresolved / `70.7%` resolve, early_curve
+     `448` / `100` / `77.7%`, sap_cost `427` / `117` / `72.6%`; in all three
+     profiles unresolved terminal causes were `100% held_to_run_end`, `0%`
+     sold, `0%` crowded out. Current read: the active reroll problem is mostly
+     third-copy arrival/timing and shop odds, not players selling exact pair
+     pieces. Watch units include `wailing_shade`, `gash_fiend`, `hookjaw`,
+     `rot_hound`, and `bore_worm` depending on economy profile.
+   - Third-copy access diagnostic:
+     `merge_lifecycle` now also exposes `third_copy_access` for unresolved
+     exact pairs: `never_offered`, `offered_policy_skipped`,
+     `offered_space_blocked`, `offered_gold_blocked`, and `unknown`, globally,
+     by unit, and in the watch list. This is an offer-window diagnostic: reroll
+     events currently record the new shop but not the exact gold after every
+     intermediate action, so affordability for mid-round rerolls is a
+     conservative approximation. In
+     `runs/long-2026-06-27o/third-copy-access` (N=8 over baseline/
+     early_curve/sap_cost and reroll/rat-core/broad policies), most unresolved
+     pairs simply never saw a later third copy: baseline `119/130` unresolved
+     (`91.5%`), early_curve `93/100` (`93.0%`), sap_cost `99/117`
+     (`84.6%`). Policy-skipped offers are secondary (`8.5%`, `7.0%`,
+     `15.4%` respectively); space and gold blocks were `0%` in this panel.
+     Current read: the next live knobs should be shop odds, targeted reroll
+     support, or freeze/hold mechanics for pair-completion windows, not raw
+     gold affordability or anti-sell policy fixes.
+   - Pair-completion support experiment:
+     the lab now has opt-in economy profiles that apply a run-driver-only shop
+     support rule after rolls: if the player holds exactly two level-1 copies
+     of a unit and no current shop offer completes that pair, the driver can
+     replace one unfrozen offer with the missing third copy. Profiles added:
+     `pair_completion_light`, `pair_completion_delayed`,
+     `sap_cost_pair_completion`, and `sap_cost_pair_completion_delayed`.
+     The delayed variants wait for two missed shop windows before injecting the
+     pair-completion offer. This is not live gameplay yet; it is a balance-lab
+     probe for pity/shop targeting. `tools/scenarios/economy.lua` now uses the
+     same world seed for every profile in a bench/run pair, so profile
+     comparisons are paired instead of being partially seed-noisy.
+   - Pair-completion first read:
+     `runs/long-2026-06-27p/pair-completion-paired-n30` (N=30, baseline/
+     pair-completion/SAP-cost profiles, same policies) showed the support does
+     exactly solve the level-up access problem but does not automatically
+     improve run completion. Baseline moved from `75.9%` merge resolution to
+     `93.8%` with `pair_completion_light` and `91.9%` with delayed support;
+     SAP-cost moved from `74.2%` to `94.2%`/`92.6%`. Average wins rose slightly
+     (`8.44 -> 8.57` baseline-light, `8.18 -> 8.37` SAP-light), but completion
+     stayed flat/slightly lower (`19.5% -> 18.1%`, `11.4% -> 11.0%`). Current
+     read: pair-completion support is promising for making level-ups feel
+     attainable, but by itself it can overfeed duplicate investment and should
+     be paired with better policy/tuning around when a level-up is worth more
+     than board stabilization. Do not ship this as a raw always-on rule yet.
+   - Level-up coverage audit:
+     added `tools/levelup_report.lua`, a deterministic headless report that
+     writes `runs/report-levelups.json` and lists authored level-up coverage,
+     clutch/transformative flags, coverage by rank, and priority candidates for
+     the next authored deltas. First read: only `12/110` monsters currently
+     have authored ability level-ups; low/mid rank coverage is `11/75`; only
+     `6` units are marked level-3 clutch and `0` are marked transformative.
+     Rank coverage is very uneven: rank 1 `4/12`, rank 2 `2/32`, rank 3
+     `5/31`, rank 4 `0/25`, rank 5 `1/10`. Top low-rank candidates that still
+     need authored progression include `ash_moth`, `demon`, `live_wire`,
+     `marauder`, and `skeleton`, followed by rank-2 plan pieces like
+     `bore_worm`, `byakhee`, `chitin_drone`, and `cinder_cur`. Current read:
+     before final economy conclusions, expand level-up deltas enough that
+     low-rank reroll and mid-rank bridge comps have real L2/L3 hooks.
+   - First low-rank level-up expansion:
+     expanded `src/data/unit_levels.lua` with conservative authored deltas for
+     `marauder`, `skeleton`, `demon`, `ash_moth`, `live_wire`, `cinder_cur`,
+     `bore_worm`, `byakhee`, and `chitin_drone`. These changes only use
+     existing mechanics/params already understood by the resolver and cards:
+     first-hit/execute values, thorns, lifesteal, burn, shock, rot, bleed,
+     poison, and command aura values. Level-up coverage is now `21/110`;
+     low/mid coverage is `20/75`; level-3 clutch coverage is now `12`, up from
+     `6`. Rank 1 is now mostly covered (`9/12`), while rank 2+ still needs a
+     lot of work. Targeted audits passed (`tests/effect_audit.lua`,
+     `tests/unit_resolver.lua`, `tests/coherence.lua`, and
+     `tools/levelup_report.lua`). A short economy smoke after the pass,
+     `runs/long-2026-06-27q/levelup-reroll-pass-n24`, did not show a gross
+     regression: baseline `25.0%` completion / `8.63` avg wins / `79.3%`
+     merge resolution; pair-completion profiles still mainly act as merge
+     accelerators (`94-95%` merge resolution) without becoming an obvious
+     completion buff. Current read: continue expanding rank-2/rank-3 bridge
+     progressions, then rerun larger panels before live economy decisions.
+   - Rank-2 bridge level-up expansion:
+     added L2/L3 ability deltas for the visible bridge pieces that appear in
+     reference plans: `emberling`, `pyre_tender`, `razorkin`, `gash_fiend`,
+     `hookjaw`, `coil_viper`, `stormcaller`, `thunderhead`, `static_swarm`,
+     `flesh_warband`, `bone_choir`, `arcane_seer`, `abyss_maw`,
+     `order_marshal`, `vanguard_drummer`, and `rear_goad`. This lifts authored
+     coverage to `37/110`, low/mid coverage to `36/75`, rank-2 coverage to
+     `22/32`, and L3 clutch coverage to `17`. The pass intentionally uses only
+     existing resolver/card params: DoT dps/duration, slow, shock cap/volt,
+     vulnerability marks, type/position auras, regen, haste, and command aura
+     values. Targeted audits passed (`tests/unit_resolver.lua`,
+     `tests/effect_audit.lua`, `tests/coherence.lua`,
+     `tools/levelup_report.lua`).
+   - Rank-2 economy smoke:
+     `runs/long-2026-06-27r/rank2-levelup-pass-n16` crossed four economy
+     profiles with targeted broad/committed policies after the rank-2 pass. It
+     is not N-to-N comparable with earlier wider panels, but it did not show an
+     immediate completion spike: baseline `13.2%` completion / `6.94` avg wins
+     / `71.3%` merge resolution; pair-completion-light `13.2%` / `7.22` /
+     `92.0%`; pair-completion-delayed `12.5%` / `7.13` / `89.8%`; `sap_cost`
+     `9.7%` / `6.59` / `68.0%`. Current read: level-up value is now more
+     legible for rank-2 bridge pieces, but economy/access still controls
+     whether those levels appear in real runs.
+   - PvE bossrush/scoring prototype:
+     the user added `docs/generation/generateur-abominations.html`, a seeded
+     visual generator for ten abomination families. The lab now has a pure data
+     bridge for these designs: each abomination is represented as one huge boss
+     plus three killable generals. The generals stand in front of the boss and
+     block the existing deterministic targeting; once every non-boss right-side
+     unit and summon is dead, a scoring window starts and the lab counts damage
+     dealt to the boss. This models the desired endgame fantasy: after a winning
+     run, the player should be able to test the build against thematic PvE
+     abominations, clear the support threats, then chase a satisfying damage
+     score on an enormous target.
+   - Bossrush implementation shape:
+     `src/data/abominations.lua` holds the lab catalogue, `src/lab/bossrush.lua`
+     runs deterministic bossrush fights without render/audio/wall-clock state,
+     and `tools/sim.lua bossrush` writes `report-bossrush.json` with clear rate,
+     survival rate, full scoring-window rate, boss kill rate, average boss
+     damage, score damage, score DPS, and score damage by cause. Environment
+     filters are `PIT_BOSSRUSH_COMPS` and `PIT_ABOMINATIONS`, so future sweeps
+     can isolate a single boss family, archetype, or policy.
+   - Bossrush first read:
+     in `runs/long-2026-06-27n/bossrush-prototype-v5` with twenty seeds per
+     comp/boss, `poison_diamant_perfect` dominates current PvE scoring
+     (`100%` clear/survival/full-window, `701.3` average score damage,
+     `35.06` score DPS). `cross_venom_pyre` is second (`98.5%` clear, `76.5%`
+     full-window, `480.1` score damage). Shock, burn, bleed, and rot can clear
+     some bosses but score far lower; tank/shield boards sometimes survive but
+     do not produce a full scoring window; brute bruiser fails the mode. Boss
+     side tuning is now in a readable range after reducing Leviathan, Kraken,
+     Brasier, and Ruche.
+   - Bossrush boss-family read:
+     `kraken` and `brasier` are the cleanest current scoring bosses (`66.7%`
+     and `40%` full-window respectively), while `idole` and `ossuaire` often
+     let teams clear but punish the transition into scoring (`66.7%`/`65%`
+     clear but only `26.7%`/`15.6%` full-window). `ruche` moved from a hard wall
+     to a real swarm/cleave check (`43.3%` clear, `13%` full-window): poison
+     converts it fully, cross gets a narrow score window, shock/ward can clear
+     without surviving the score phase. `devoreur`, `floraison`, `leviathan`,
+     `regard`, and `vermine` sit in the hard-but-readable band.
+   - Bossrush balance warning:
+     the current endpoint heavily favors poison/cross sustained DPS. That is
+     acceptable as a first endgame-scoring prototype, but not as a final boss
+     meta: future boss/relic work should add boss families that test poison
+     ramp, cleanse/anti-stack, burst windows, shield stripping, and cleave
+     separately so "best PvE score" does not collapse into one affliction.
+     `tools/sim.lua bossrush` now writes a `recommendations` section; in v5 it
+     raises `dominant_scoring_archetype` for `poison_diamant_perfect`
+     (`1.46x` the second score) and a `post_clear_attrition_boss` watch on
+     `ossuaire`.
+   - PvE design learning:
+     bossrush creates a new axis that PvP win rate cannot measure. A build can
+     win normal rounds, survive long fights, or generate a boss score, and those
+     are not the same thing. This is useful for endgame retention because it
+     gives completed builds another payoff surface without forcing the normal
+     PvP loop to become a DPS-meter game. The next product step is not only more
+     balance data: it is a juicy score presentation layer, with sequential
+     damage events, count-up, pitch-rising audio, shake/juice proportional to
+     score bursts, and boss-specific visual reactions. Keep the simulation pure;
+     put the Balatro-like feedback in the live presentation layer.
+   - Bossrush connected to real run access:
+     the catalogue-only bossrush panel is now paired with a run-connected mode,
+     `tools/sim.lua bossrush_run`. `Rundriver` exposes `finalSupportedBoard`
+     so the postgame fight can use the actual final board plus acquired relics
+     and placed commander. This matters because a perfect catalogue composition
+     can look powerful while being unreachable under the current economy, and a
+     weaker-looking broad policy can become the better postgame line simply
+     because it enters bossrush more often.
+   - Bossrush-run report shape:
+     `tools/sim.lua bossrush_run [N]` runs policy/economy trajectories first,
+     then sends eligible final boards into abominations. It reports
+     `completion`, `entry_rate`, `score_damage_per_run`,
+     `score_damage_per_entry`, `clear_rate`, `full_score_window_rate`,
+     `by_economy`, `by_policy`, `by_boss`, an `economy_policy` matrix, ranked
+     lines, samples with relics/commander, and recommendations. Env controls:
+     `PIT_BOSSRUSH_RUN_ECONOMIES`, `PIT_POLICIES`, `PIT_ABOMINATIONS`,
+     `PIT_BOSSRUSH_RUN_ELIGIBILITY=completed|all`,
+     `PIT_BOSSRUSH_SCORE_SECONDS`, `PIT_BOSSRUSH_HP_MULT`, and
+     `PIT_BOSSRUSH_CD_MULT`.
+   - First run-connected read:
+     a small N=5 panel in `runs/long-2026-06-27o/bossrush-run-smoke` crossed
+     `baseline`, `sap_cost`, and `early_curve` against four abominations and
+     nine policies. The strongest score-per-run came from broad plans under
+     `early_curve`: `greedy_plan` (`60%` completion/entry,
+     `5700.4` score/run, `9500.7` score/entry) and `econ_plan` (`60%`
+     completion/entry, `5502.6` score/run). `baseline` broad plans entered
+     less often but still scored when they completed. `sap_cost` had zero
+     postgame entries in this tiny panel, so its stricter economy currently
+     reads as an access wall for bossrush rather than a scoring verdict.
+     Interpretation: do not tune PvE score from catalogue comps alone; keep
+     completion/entry rate and economy pressure in the same report.
+   - Rank-2 post-win scoring smoke:
+     after the rank-2 level-up pass, a small connected panel
+     `runs/long-2026-06-27s/rank2-levelup-bossrush-run-n6` crossed
+     `baseline`, `pair_completion_light`, and `early_curve` across four
+     abominations and six policies. The top score-per-run lines were still
+     broad `early_curve` plans (`greedy_plan` `50%` entry, `4607.7`
+     score/run; `econ_plan` `50%` entry, `4479.2` score/run), mainly because
+     they entered bossrush more often. The report raised only the
+     `low_postgame_entry_rate` watch (`13.9%` overall entry). Current read:
+     PvE score remains access-gated; do not over-tune boss HP or affliction
+     counters until economy/policy reachability is measured on larger paired
+     panels.
+   - Expanded rank-2 bossrush-run read:
+     `runs/long-2026-06-27t/bossrush-run-rank2-n18` crossed `baseline`,
+     `pair_completion_light`, `pair_completion_delayed`, and `early_curve`
+     with nine broad/committed policies against four abominations. Overall
+     entry was still low (`12.5%`), while boss clear was `100%`, survival
+     `99.4%`, and full scoring-window rate `89.5%`. The top line was
+     `pair_completion_light` + `greedy_plan` (`27.8%` entry, `2934.3`
+     score/run, `10563.4` score/entry), followed by baseline broad plans.
+     By economy, `pair_completion_light` had the best score/run (`983.2`)
+     mostly by improving final-board quality, not by massively improving entry;
+     baseline entered slightly more often (`14.2%` vs `13.0%`) but scored less
+     per entry. Current read: pair-completion support remains promising as a
+     final-board quality lever, but the postgame loop is still too access-gated
+     to tune boss families from score/ranking alone.
+   - Active memory guard:
+     bossrush/scoring is a new payoff layer, not the whole balance project. The
+     next passes must still keep the older open axes in view: economy pressure,
+     shop XP/tier timing, bench/board pressure, exact pair lifecycle, level-up
+     power scaling, relic and commander access, pacing/TTK, wording/tag
+     coherence, and generated coherent/semi-coherent/incoherent teams.
+   - Relic/commander access report update:
+     `tools/scenarios/economy.lua` now keeps the full
+     `plan_access.support_access` detail but also writes a compact
+     `support_summary` for each target and `plan_support_watch` for each
+     economy/profile. The summary exposes focused support seen/used rates,
+     offer-to-pick gaps, focused relic and commander access, valid win-delta
+     comparisons only when both support/no-support groups exist, and top
+     focused relics/commanders by actual run access. This closes the previous
+     gap where relic support existed in coherence scoring but was too buried in
+     the economy report to guide tuning quickly.
+   - Support-summary read:
+     `runs/long-2026-06-27u/support-summary-cmd-n16` crossed `baseline`,
+     `pair_completion_light`, `pair_completion_delayed`, and `early_curve`
+     with commandants enabled, five broad/committed policies, and the
+     `rot_bleed_rat_core`, `cross_bleed_rot`, and `rot_bleed_mid` targets.
+     Pair-completion light was the best tested line (`21.2%` completion,
+     `8.85` avg wins, `94.4%` merge resolution), followed by delayed
+     pair-completion (`20.0%`, `8.66`, `92.7%`) and baseline (`18.8%`,
+     `8.45`, `74.7%`). Early curve stayed lower (`15.0%`, `8.14`, `71.0%`).
+     Focused support is now measurable: across the tracked plans, support was
+     seen in about `62.5-66.3%` of runs and used in `46.3-51.3%`; relic
+     offer-to-pick gaps remain `13.8-17.5%`. Commandant support appeared and
+     was placed in `18.8%` of baseline/pair-completion runs, with no placement
+     gap; the top focused commanders were `gash_fiend`, `clot_mender`, and
+     `razorkin`, while the top focused relics were `grave_cap`,
+     `weeping_nail`, and `plague_communion`.
+   - Support-summary interpretation:
+     exact target completion is still `0%` for these three plan targets even
+     when overall run completion improves. `rot_bleed_rat_core` reaches only
+     about `0.29-0.30` final level coverage in baseline/pair-completion, and
+     `cross_bleed_rot` about `0.19-0.20`. The next issue is therefore not just
+     "was support offered"; it is "did the policy convert offered support and
+     pair completion into the intended final board". Current minimal next
+     levers: target-aware relic picks, commander choice scoring against the
+     committed target, and a stricter late-board replacement policy that keeps
+     the reroll core while selling temporary support at the right time.
+   - Target-prioritized pair support:
+     `src/lab/rundriver.lua` now lets a policy reorder pair-completion
+     candidates before generic economy support replaces a shop slot. Committed
+     plan policies use this to prioritize target units, with higher-rank target
+     pairs first so scarce bridge pieces like `clot_mender`, `gash_fiend`, and
+     `razorkin` are not starved by abundant rank-1 pairs. In
+     `runs/long-2026-06-27u/rat-reroll-target-priority-n24`, the change nudged
+     target acquisition upward under `pair_completion_light`:
+     `rot_bleed_rat_core` aggregate level coverage moved to about `0.652`,
+     final held coverage to about `0.744`, merge resolution to `91.9%`, and
+     missed-space pressure down to `1.88` target offers/run. It still did not
+     produce stable exact board completion; one line reached held completion
+     without board completion. Current read: priority is worth keeping because
+     it matches how a player forces a plan, but the next missing feature is
+     late-board deployment/replacement, not more raw pair access.
+   - Late-board deployment pass:
+     `Rundriver` now exposes deterministic bench/board moves for lab policies:
+     `moveBenchToBoard` and `moveBoardToBench` mirror the live drag/swap model
+     without render, audio, wall-clock state, or random input. Committed target
+     policies now run a conservative deploy step after buying/rerolling: target
+     units sitting on the bench fill empty board slots first, then may swap over
+     non-core level-1 temporary units. The economy report exposes
+     `board_deploys_per_run` and `board_swaps_per_run` so future panels can
+     distinguish "owned but never placed" from "not actually assembled".
+   - Deployment read:
+     `runs/long-2026-06-27u/rat-reroll-deploy-n24` repeated the previous
+     `rot_bleed_rat_core` comparison across `baseline`,
+     `pair_completion_light`, and `pair_completion_delayed`. Relative to
+     `rat-reroll-target-priority-n24`, the target deployment rule raised final
+     board level coverage for the gated policy from `0.564 -> 0.669` in
+     baseline, `0.592 -> 0.711` in delayed pair completion, and
+     `0.642 -> 0.744` in light pair completion. The best current line is
+     `pair_completion_light + committed_rot_bleed_rat_core_gated_plan`:
+     `4.17%` exact board completion, `8.33%` exact held completion,
+     `0.744` final board level coverage, `0.783` final held level coverage,
+     `2.71` board deploys/run, and `2.38` board swaps/run.
+   - Deployment interpretation:
+     this confirms a real policy bug was present: supported pieces were often
+     owned before they were actually deployed. The remaining gap is now smaller
+     and more specific. Some "held complete but board incomplete" cases are not
+     just an idle-bench bug; they look like unresolved level/copy pressure or
+     board-capacity pressure where extra target levels exist as bench copies but
+     cannot become a legal final board without another merge or another slot.
+     The next lever should therefore inspect terminal merge causes and slot
+     timing before blindly adding more shop support.
+   - Connected bossrush smoke after deployment:
+     a tiny post-win panel,
+     `runs/long-2026-06-27u/rat-reroll-deploy-bossrush-run-completed-n6`,
+     crossed `pair_completion_light` with the gated and deep-reroll
+     `rot_bleed_rat_core` policies against `kraken`, `brasier`, `ruche`, and
+     `ossuaire`. `committed_rot_bleed_rat_core_deep_reroll_plan` reached
+     `50%` normal-run completion/entry and scored `4887.0` damage/run
+     (`9774.0` per entry, `100%` clear/full-window). The gated policy had
+     `0%` post-win entry in this small sample. This keeps the earlier bossrush
+     lesson intact: current PvE scoring is still primarily access-gated by run
+     completion and final-board quality, not by boss-side tuning.
+   - Target-specific merge lifecycle:
+     the economy report now writes `target_merge_lifecycle` inside each
+     `plan_access.<target>` row. This filters pair/merge lifecycle metrics to
+     the actual units of the tracked plan, instead of mixing target copies with
+     temporary support pairs. This matters because the global lifecycle can
+     show high `offered_policy_skipped` from non-core pairs, while the target
+     funnel itself is already buying almost every relevant offer.
+   - Target merge read:
+     `runs/long-2026-06-27u/rat-reroll-target-merge-n24` reproduces the
+     deployment panel with the new filtered lifecycle. On the best current
+     `pair_completion_light + committed_rot_bleed_rat_core_gated_plan` line,
+     target pairs resolve at `94.79%`; only `10` target pairs remain
+     unresolved across 24 runs. Of those unresolved target pairs, `70%` never
+     saw the third copy again after the pair existed and `30%` were offered but
+     skipped by policy. This confirms the remaining blocker is mostly
+     third-copy availability/timing for target copies, with a smaller
+     target-priority edge case, not generic support access.
+   - Pair-support density profiles:
+     `src/run/economy.lua` now has opt-in lab profiles
+     `pair_completion_dense` and `pair_completion_dense_delayed`, both allowing
+     up to two pair-completion shop replacements per round. They are not in
+     `Economy.order`, so they do not change the default scenario grid or live
+     economy; they exist to isolate "third-copy odds/timing" from normal
+     economy pressure.
+   - Bench-size vs pair-density read:
+     `runs/long-2026-06-27u/rat-reroll-bench-density-n16` crossed
+     `pair_completion_light`/`pair_completion_dense` with bench sizes 4 and 6
+     for the `rot_bleed_rat_core` gated/deep-reroll policies. Bench size 6 is
+     the stronger lever in this small panel: completion moved from `31.2%` to
+     `46.9%` at the profile aggregate level, and `deep_reroll` went
+     `56.25% -> 75%` completion. Dense pair support improved target-pair
+     resolution (`deep_reroll` bench6 `94.47% -> 97.97%`; aggregate merge
+     `90.1% -> 95.1%`) but did not improve completion beyond the bench6 result.
+     The gated policy still only reached `6.25%` exact board completion and
+     `18.75%` run completion under bench6. Current read: extra reserve space is
+     probably a real run-access lever; denser pair pity is useful for diagnosis
+     but not obviously a live tuning knob yet.
+   Remaining additions:
+   - use `rot_bleed_rat_core` as the baseline reroll target for the next
+     balance pass, but investigate cheap mid-board outliers before nerfing it;
+   - revisit protected payload placement and the remaining cheap mid-board
+     outliers now that XP/reroll timing has a measurable coverage gate;
+   - use terminal-cause reporting to decide whether reroll help should come
+     from shop odds, targeted offers, freeze/lock, or bench policy rather than
+     assuming all unresolved pairs are a bench-space issue;
+   - keep expanding bossrush-run from a small smoke panel to longer paired
+     economy/policy sweeps, but only as one axis among economy, combat, and
+     accessibility;
+   - run events reward layer:
+     the first experimental model now lives in `src/data/run_events.lua` and is
+     documented in `docs/research/run-events-reward-loop.md`. It keeps the
+     win-3/win-6 relic milestones intact. By default the lab also keeps the
+     every-3-combats merchant as a relic offer for comparability; with
+     `runEvents=true` or scenario env `PIT_RUN_EVENTS=1`, that same merchant
+     window becomes a deterministic thematic event. Active reward kinds are
+     relic, unit, gold, shop XP, and shop tier. Units can be level 1 or rare
+     level 2, never level 3. Monster mutations are intentionally not active yet
+     because they need a first-class instance model before they can be safe for
+     merges, snapshots, combat, and UI.
+   - event pacing check:
+     `N=64`, `rot_bleed_rat_core`, gated/deep-reroll policies, classic merchant
+     vs `PIT_RUN_EVENTS=1`. Live pacing stays stable with events: classic
+     merchant `27.3%` completion, `8.83` wins, duration fit `0.988`, early
+     average `13.40s`, p50 `10.75s`, p90 `17.05s`, fatigue `0.3%`; events
+     `26.6%` completion, `8.78` wins, fit `0.988`, early `13.40s`, p50
+     `10.77s`, p90 `17.40s`, fatigue `0.5%`. Conclusion: events are not a
+     combat-pacing risk in this slice. The next event work should focus on
+     reward EV, relic access, exact-board completion, and unit churn.
+   - product direction for the next gameplay enrichment:
+     the recurring relic merchant has become a small cryptic event surface with
+     fallback to the old relic offer if no clean event choice can be
+     materialized. The event prose can be grim and indirect, but every choice
+     must clearly display the actual reward. Reward lanes can include relics,
+     level-1 units, rare level-2 units, gold, shop XP, and shop tier. Mutated
+     units remain a phase-2 opt-in profile after persistent unit instances
+     exist (`id + level + copyId + mutations[]`), with merge, snapshot,
+     tooltip, bossrush, and economy tests before live activation.
+     Foundation update: `src/run/mutations.lua` now defines stable mutation
+     ids, build board/bench/commander instances preserve `mutations[]` through
+     drag/drop/stow/merge, snapshots serialize them backward-compatibly, and
+     lab unit rewards can carry them in copy state. They are still not active
+     in the 8 live run events until targeting, EV, card/tooltip display, and
+     policy valuation are tested.
+     Opt-in lab update: `PIT_RUN_EVENT_MUTATIONS=1` materializes mutation
+     choices only when the driver can attach an exact copy target. In the first
+     N=64 rot/bleed panel, uncapped mutation preference reached `1.02`
+     mutations/run but dropped event relics to `1.35/run` and completion to
+     `31.2%`; `PIT_EVENT_MUTATION_PICK_CAP=1` improved relics to `1.64/run`
+     but completion stayed `31.2%`. Read: plumbing is safe (`0` mutation
+     failures), but live mutation lanes still need rarity/policy/value tuning.
+     Live product update: the every-3-combats merchant window now attempts a
+     cryptic run event first, using `src/run/event_rewards.lua` to apply
+     explicit rewards. Victory milestones and level-up rewards remain pure
+     relic ceremonies. Live event units are filtered out unless board/bench
+     space can receive them cleanly; event gold is deferred through
+     `_pendingGold` so it survives the next-round gold reset. Mutations still
+     do not materialize live because no mutation target is passed by `main.lua`.
+     Simulation alignment update: `PIT_EVENT_UNIT_TARGETING=space` mirrors the
+     live board/bench capacity filter; `policy_space` and
+     `policy_space_missing_copy` combine that filter with policy priority and
+     the missing-copy experiment.
+   - event-unit diagnostics:
+     `Rundriver` now classifies unit rewards as single, pair-completer, or
+     merge-completer, and records whether the granted copy lands on bench or
+     board. `tools/sim.lua economy` exposes
+     `event_unit_progress_rate`, `event_unit_single_rate`,
+     `event_unit_pair_rate`, `event_unit_merge_rate`,
+     `event_unit_bench_rate`, and `event_unit_board_rate`. In the first N=64
+     focused panel (`pair_completion_light`, `rot_bleed_rat_core`,
+     gated/deep-reroll policies, `PIT_RUN_EVENTS=1`), event units are safe but
+     weakly targeted: `0.71` units/run, `0%` failure, only `12.1%` immediate
+     pair-or-merge progress, `87.9%` singles, `94.5%` bench placement. Read:
+     do not raise unit-lane frequency yet; test target-filtered unit rewards
+     or rare level-2/mutation lanes later.
+   - event-unit targeting experiment:
+     `PIT_EVENT_UNIT_TARGETING=policy` is now a lab-only option for the economy
+     scenario. It lets a policy priority-score eligible event unit rewards
+     before materialization; default behavior remains random within the event
+     reward rank band. In the first N=64 rot/bleed panel, targeting improved
+     unit reward progress from `12.1%` to `57.5%` and final held level coverage
+     from `73.1%` to `75.7%`, but it also shifted choices from relics to units
+     (`2.10 -> 1.57` event relics/run, `0.71 -> 1.20` event units/run) and
+     completion moved `32.8% -> 31.3%`. Read: target-filtering is promising for
+     reward quality, but live tuning should preserve relic-lane density or cap
+     unit-over-relic preference.
+   - capped event-unit preference:
+     `PIT_EVENT_UNIT_PICK_CAP` is now a lab-only economy scenario option. It
+     caps successful unit rewards per run before policies value relic lanes
+     over units again. In the N=64 rot/bleed slice, cap `1` preserved relic
+     density (`2.05` relics/run) and kept high unit quality (`50.0%`
+     pair-or-merge progress), but completion stayed `31.3%`. Cap `0` performed
+     best in this slice: `33.6%` completion, `8.97` wins, `2.74` event
+     relics/run, no event units. Current read: for exact reroll plans, event
+     units need a special payoff (missing-copy-only, rare level-2, or future
+     mutation) before they beat relic opportunity cost.
+   - missing-copy event-unit materialization:
+     `PIT_EVENT_UNIT_TARGETING=policy_missing_copy` combines policy priority
+     with a copy-chain filter: an event unit is only materialized if the run
+     already owns a same-id, same-level copy. In the same N=64 rot/bleed slice,
+     reward quality became clean (`100%` pair-or-merge progress, `0%` singles,
+     `0%` failure; `65.6%` pair completions and `34.4%` merge completions), but
+     completion stayed weak at `31.2%` and relic density fell to `1.76/run`.
+     Current read: this is a useful quality floor for future unit events, not a
+     live default. Unit lanes should remain special: rare level-2, mutation
+     carrier, or explicitly framed as a high-value event spike, while ordinary
+     build-defining access still needs enough relic lanes.
+   - live-capacity event-unit alignment:
+     `PIT_EVENT_UNIT_TARGETING=space` now mirrors the live board/bench capacity
+     filter in simulation. The latest N=64 rot/bleed panel compared
+     `policy_space` and `policy_space_missing_copy` under
+     `pair_completion_light`: both stayed at `31.2%` completion with `0` unit
+     failures. `policy_space` produced `1.57` event relics/run, `1.20` units/run,
+     and `57.5%` unit progress. `policy_space_missing_copy` produced `1.76`
+     event relics/run, `1.02` units/run, and `100%` unit progress, but still no
+     exact-plan completion lift in this slice. Current read: the capacity filter
+     is correct and safe, but the limiting factor remains relic opportunity
+     cost. Treat `space_missing_copy` as the current unit-quality floor for
+     special events, not as permission to increase ordinary unit frequency.
+   - event-unit relic-margin guard:
+     `PIT_EVENT_UNIT_RELIC_MARGIN` is now a lab-only policy parameter. It does
+     not remove unit choices from events; it requires a unit reward to beat an
+     offered relic by an explicit score margin before the policy picks it. In
+     the N=64 rot/bleed panel, `policy_space + margin500` barely moved reward
+     mix (`1.60` relics/run, `1.16` units/run). `policy_space + margin1000`
+     recovered more relic density (`1.84` relics/run, `0.92` units/run) and
+     raised focused relic pick-rate to `67.9%`. The cleanest current contract is
+     `policy_space_missing_copy + margin1000`: `2.06` relics/run, `0.71`
+     units/run, `100%` unit progress, focused relic offer/pick both `69.5%`.
+     Completion still stayed at `31.2%`, so this is a reward-EV guardrail, not
+     a solved balance pass.
+   - live-like opponent mode + supported plan specs:
+     `tools/sim.lua economy` can now run with `PIT_OPPONENT_MODE=generated`.
+     The default remains `static` so old panels stay comparable, but
+     `generated` mirrors the live cold-start path through `OppGen.generate`
+     instead of the old static encounter table. This matters because late
+     `plan_access` oracles were repeatedly hitting the static `pit_sovereign`
+     wall at rounds 12/14; that can overstate late failure for some targets.
+     Re-run important late endpoints in generated mode before nerfing or
+     buffing around those old oracle rows.
+   - `PIT_PLAN_TARGET_SPECS` also accepts support fields now:
+     `id=unit:level+unit:level;relics=relic_a+relic_b;commander=unit:level;sigil=carre;board=8`.
+     The oracle applies those relics/commander through the same comp conversion
+     path used by the lab, so force-build endpoints can finally represent
+     "this build plus its intended support", not just raw units.
+   - first static-vs-generated comparison:
+     `/tmp/thepit-static-core-n64` and `/tmp/thepit-generated-core-n64` reran
+     the same N=64 rot/bleed core slice with
+     `PIT_EVENT_UNIT_TARGETING=policy_space_missing_copy` and
+     `PIT_EVENT_UNIT_RELIC_MARGIN=1000` (`128` total runs after two committed
+     plan policies collapse into `committed_plan`). Static opponents produced
+     `31.2%` run completion, `8.95` average wins, and `68.4%` combat winrate.
+     Generated opponents produced `89.8%` run completion, `9.88` average wins,
+     and `91.0%` combat winrate. Exact target completion remained low in both
+     modes (`0%` board complete static, `0.8%` generated; held complete `0%`
+     vs `2.3%`). Read: the plan can win the live-like generated pressure
+     without reaching its exact target definition, while static encounters are
+     still a much harsher regression harness. Use both views: generated for
+     live-product tuning, static for stress tests.
+   - generated-opponent pressure knobs:
+     Economy panels can now tune generated opponents without changing the live
+     default path: `PIT_OPPGEN_ROUND_BONUS`, `PIT_OPPGEN_TIER_BONUS`,
+     `PIT_OPPGEN_SIZE_BONUS`, and `PIT_OPPGEN_LEVEL_MULT`. Defaults are
+     neutral (`0/0/0/1`). The report writes the active `oppgen_pressure` into
+     `config`, so sweeps are comparable. Use these knobs to find a generated
+     pressure band whose broad policies do not auto-complete the run, before
+     touching unit numbers.
+   - first pressure sweep:
+     the broad N=32 generated panel moved from `59.4%` overall run completion
+     (`8.09` wins) at neutral pressure to `38.4%` (`7.40` wins) with only
+     `PIT_OPPGEN_LEVEL_MULT=2`. Adding `PIT_OPPGEN_SIZE_BONUS=1` was much
+     harsher (`27.7%` with `levelMult=1.5`, `16.1%` with `tier+1/levelMult=2`).
+     Read: level pressure is the first safe knob; size pressure should be used
+     later or only in high-depth/boss contexts.
+   - mechanic diversity audit:
+     `tools/sim.lua mechanics` now writes a roster-level report. Current audit:
+     `110` units, `40` simple-affliction L1 units (`36.4%`), `32` low-variety
+     units (`29.1%`), `37` authored level-up units (`33.6%`), and `17` level-3
+     clutch units (`15.5%`). This confirms the user's concern: the game has
+     support/position/payoff axes, but a large slice of the public L1 roster
+     still reads as "apply one affliction".
+   - Batodex/SAP bridge pass:
+     Batodex data is now normalized under `docs/inspiration/batodex/`
+     (`80` monsters, `74` non-mythical references, `58` trinkets, `32`
+     items). The current design weighting is explicit: Batodex/SAP are the
+     baseline for compact readable triggers and position/support hooks; The
+     Bazaar is only a secondary spice source for occasional rare/high-tier
+     effects. A first roster pass changed `rot_grub`, `wailing_shade`,
+     `pyre_herald`, `web_recluse`, `siphon_jelly`, `bile_spitter`, and
+     `rust_sentinel` from "affliction only" toward one extra positional/support
+     hook each, using existing `aura_stat` ops only. A second, less intrusive
+     pass authored level scaling for mid-rank units that already had readable
+     base identities (`kiln_warden`, `bloodletter`, `tendon_render`,
+     `vein_splitter`, `plague_bearer`, `acid_maw`, `patient_worm`,
+     `hollow_gut`, `stormlord`, `dynamo_priest`, `arc_warden`,
+     `storm_anchor`). That audit was `33/110` simple-affliction L1 units
+     (`30.0%`), `12/110` low-variety units (`10.9%`), `56/110` authored
+     level-up units (`50.9%`), and `22/110` level-3 clutch units (`20.0%`).
+   - redesign-first level-up cleanup:
+     the remaining low-variety list (`witch`, `plague_doctor`, `venom_censer`,
+     `wither_bloom`, `gravewarden`, `ink_horror`, `deep_kraken`,
+     `carrion_choir`, `bone_harvest`, `mimic_spawn`, `echo_flesh`,
+     `hollow_crown`) now has authored ability progression without changing
+     their level-1 readability. The new audit is `33/110` simple-affliction L1
+     units (`30.0%`), `0/110` low-variety units (`0.0%`), `68/110` authored
+     level-up units (`61.8%`), and `28/110` level-3 clutch units (`25.5%`).
+     `deep_kraken` and `galvanizer` command text was also corrected to match
+     actual tuned data values (`15%` and `14%`). Read: mechanical-diversity debt
+     is no longer the next bottleneck; continue with sim/economy/coherence
+     evidence before changing more creature data. Short generated validation
+   stayed stable: TTK avg `519` ticks, no unit >2 sigma outlier, afflictions
+   still `25.5%` of damage, and coherence buckets slope from `41.4%`
+   low-coh winrate to `75.7%` high-coh winrate (`corr=0.314`).
+- economy/bossrush connected panel after the level-up pass:
+  `tools/sim.lua economy` now writes a compact `summary` with
+  `profile_rows`, `policy_rows_top`, `policy_rows_bottom`, and `target_rows`.
+  This same compact view is the `ref-economy.json` payload, so future agents can
+  compare profiles without loading the full multi-MB `plan_access` block.
+  Panel `runs/long-2026-06-28b/economy-summary-n32` confirms:
+  `pair_completion_light` raises completion (`44.9% -> 57.0%`) and
+  merge-per-pair (`70.4% -> 95.7%`) without increasing full-shop affordability;
+  `sap_cost` creates real pressure but under-completes alone (`37.9%`);
+  `sap_cost_pair_completion` is the best candidate for a tense economy
+  (`53.9%` completion, `95.3%` merge-per-pair, `3.27` leftover gold). The
+  rot/bleed rat-core deep-reroll line is now extremely successful
+  (`96.9%` completion under `pair_completion_light`, `93.8%` under
+  `sap_cost_pair_completion`), which may be intended low-rank reroll identity
+  but must be compared against other natural plans.
+- `tools/sim.lua bossrush_run` now accepts the same generated-opponent and event
+  knobs as the economy scenario (`PIT_OPPONENT_MODE`, `PIT_OPPGEN_*`,
+  `PIT_EVENT_UNIT_TARGETING`, unit caps, mutation caps, relic margin). Panel
+  `runs/long-2026-06-28b/bossrush-run-n10` used generated opponents with
+  `levelMult=2` and events enabled. It reached `59.3%` postgame entry,
+  `100%` general clear, `99.2%` survival, and `87.1%` full scoring-window
+  survival. Top score/run was `pair_completion_light +
+  committed_rot_bleed_rat_core_deep_reroll_plan` (`24,235.9`), with
+  `sap_cost_pair_completion` close behind on the same policy (`22,442.2`) and
+  better entry (`100%`). Read: bossrush is now a useful score lab, but the
+  current abomination frontlines are not yet a meaningful gate once a run
+  enters. Next PVE work should differentiate boss families and scoring identity,
+  not just improve access.
+  A quick stress sweep showed HP alone is not the right first knob:
+  `bossrush-run-hp15-n6` and `bossrush-run-hp2-n6` still had `100%` clear.
+  `bossrush-run-hp2-cd05-n6` finally differentiated the PVE pressure
+  (`97.6%` clear, `89.1%` survival, `62.0%` full window). `ossuaire` became the
+  clearest survival check, while `brasier`/`kraken`/`ruche` became more killable
+  score targets. Read: tune abomination cadence/threat patterns before simply
+  increasing boss HP.
+- economy candidate confirmation and reroll-tax probe:
+  `runs/long-2026-06-28c/economy-candidates-n96` confirms the N=32 read.
+  `pair_completion_light` is the strongest access/merge lever
+  (`59.5%` completion, `94.0%` merge-per-pair), while
+  `sap_cost_pair_completion` is the best tense-economy candidate
+  (`52.3%` completion, `52.6%` full-shop afford, `93.8%` merge-per-pair,
+  `3.35` leftover gold). The rot/bleed deep-reroll line still overperforms
+  (`85.4%` completion under `sap_cost_pair_completion`) without completing the
+  exact endpoint, mostly by fielding multiple low-rank duplicate carries such
+  as `carrion_pecker` and `gnaw_rat`.
+  Two lab-only profiles were added: `pair_completion_tiered_reroll` and
+  `sap_cost_pair_completion_tiered_reroll`. The targeted ablation
+  `runs/long-2026-06-28c/reroll-tax-ablation-n64` shows the tiered reroll tax
+  only matters when combined with SAP-like unit costs: baseline costs stay too
+  permissive, but `sap_cost_pair_completion_tiered_reroll` lowers the
+  deep-reroll line from `90.6%` to `78.1%` completion while preserving high
+  merge conversion (`94.8%` aggregate merge-per-pair). This is now the best
+  non-creature-nerf candidate for controlling reroll spam.
+  A small bossrush stress panel
+  `runs/long-2026-06-28c/bossrush-reroll-tax-n8` keeps postgame scoring alive
+  under the taxed profile, but lowers entry/score-run as expected. Treat it as
+  a tradeoff signal, not a final verdict because N is small.
+- final duplicate saturation instrumentation:
+  `tools/scenarios/economy.lua` now reports `final_duplicate_saturation` and
+  compact fields for final low-rank duplicate boards. A targeted N=32 probe on
+  `sap_cost_pair_completion` vs `sap_cost_pair_completion_tiered_reroll`
+  confirms the metric catches the observed pattern: `carrion_pecker` and
+  `gnaw_rat` are the top duplicate units, and the deep-reroll line has `100%`
+  final low-rank duplicate boards under both profiles. The reroll tax lowered
+  deep-reroll completion (`93.8% -> 75.0%`) but did not erase the multi-copy
+  board identity. Read: economy tax controls reachability; structural
+  homogeneity needs a separate test if it becomes a design problem.
+- opponent pressure sweep on the taxed profile:
+  `runs/long-2026-06-28d/economy-oppgen-levelmult225-n64` keeps
+  `greedy_plan`/`econ_plan` high (`81.3%` / `79.7%`) while lowering
+  `committed_rot_bleed_rat_core_deep_reroll_plan` to `67.2%`.
+  `runs/long-2026-06-28d/economy-oppgen-levelmult25-n64` pushes aggregate
+  completion lower (`37.7%`) but starts hurting broad and tall plans more than
+  it hurts deep-reroll (`65.6%`). Current read: if generated-opponent pressure
+  becomes a tuning knob, `levelMult=2.25` is the better next candidate and
+  `2.5` is a high-stress bound, not a first live setting.
+- bossrush check for the current candidate:
+  `runs/long-2026-06-28d/bossrush-run-taxed-levelmult225-hp2-cd05-n8` combines
+  `sap_cost_pair_completion_tiered_reroll`, generated opponents
+  `levelMult=2.25`, events, and `hp x2 / cd x0.5` boss stress. Bossrush remains
+  viable: `greedy_plan` and `econ_plan` enter at `87.5%` and score about
+  `25.7k-25.9k` per run, while deep-reroll enters at `62.5%` and scores about
+  `19.7k` per run. Read: the candidate shifts postgame access/score away from
+  deep-reroll without killing the scoring loop.
+- Batodex-like level-1 positional bridge pass:
+  six rank-2 units that still read as pure level-1 affliction applicators now
+  have one modest placement hook each, using only existing `aura_stat` support:
+  `razorkin` gives the ally behind `Bleed +6%`, `cinder_cur` gives neighbors
+  `Haste +2%`, `pyre_tender` gives the ally ahead `Burn +8%`, `thunderhead`
+  gives the ally behind `Empower +6%`, `chitin_drone` gives neighbors
+  `Poison +5%`, and `byakhee` gives the ally above `Haste +4%`. Their level 2
+  and 3 deltas scale these hooks slightly, so the ability upgrade is not only
+  raw HP/DMG or the main affliction value. The wording in `src/i18n/en.lua` was
+  updated to use canonical terms (`Burn`, `Bleed`, `Poison`, `Shock`, `Haste`,
+  `Empower`). With the corrected mechanics classifier below, audit after the
+  pass is `11/110` truly basic simple-affliction L1 units (`10.0%`), with
+  rank-2 basic count `5/32`; support axes `48`, position axes `38`,
+  directional axes `9`, and low-variety remains `0%`. Targeted validation
+  passed `tests/auras.lua`, `tests/tags.lua`, `tests/unit_resolver.lua`, and
+  `tools/sim.lua mechanics`. A small N=32 economy guard under
+  `sap_cost_pair_completion_tiered_reroll` +
+  generated opponents `levelMult=2.25` remained in the expected band:
+  aggregate completion `54.9%`, `9.17` wins, `95.5%` merge-per-pair,
+  `2.51` leftover. Top low-rank duplicate pressure is still driven mainly by
+  `carrion_pecker`/`gnaw_rat`, not by the six adjusted units.
+- mechanics report prioritization:
+  `tools/scenarios/mechanics.lua` now reads resolved fact `values` as well as
+  raw `params`, classifies parameter-level twists (`spread`, `ignite`,
+  `shieldEat`, `chain`, `transfer`, `persist`, `weaken`, etc.), and only marks
+  a unit as `simple_affliction_l1` when it has exactly one basic affliction
+  with no support/position/payoff/twist axis. It also splits that debt into
+  low-rank, mid-rank, and high-rank buckets and exposes
+  `simple_affliction_priority` for the next design pass. Current read:
+  `11` simple L1 units remain, split as `8` low-rank, `2` mid-rank, and `1`
+  high-rank (`deep_kraken`). The next creature-design input is therefore much
+  narrower: `vein_splitter`, `stormlord`, and `deep_kraken`.
+- mid/high simple-affliction cleanup:
+  the narrowed priority list was handled with one modest placement hook each:
+  `vein_splitter` gives the ally ahead `Bleed +7%`, `stormlord` gives the ally
+  behind `Haste +5%`, and `deep_kraken` gives neighbors `Poison +10%`. Level 2
+  and 3 deltas scale those hooks (`+8%/+10%`, `+6%/+7%`, `+12%/+15%`). The
+  mechanics audit now reports only `8/110` truly basic simple-affliction L1
+  units (`7.3%`), all low-rank; `simple_affliction_priority` is empty, with
+  `0` mid-rank and `0` high-rank basic units. The remaining low-rank basics are
+  acceptable candidates for readable early/shop pieces unless future sim data
+  shows they are overpicked or underperforming. The N=32 economy guard under
+  `sap_cost_pair_completion_tiered_reroll` + generated opponents
+  `levelMult=2.25` stayed unchanged at `54.9%` completion, `9.17` wins,
+  `95.5%` merge-per-pair, `2.51` leftover.
+- semantic wording guard:
+  `tests/effect_audit.lua` now verifies that every generated unit effect line
+  exposes the active mechanical tags derived from `Tags.forEffect`, with only
+  explicit structural exceptions (`Aura`, `Shield`, `Faint`, and generic
+  `Type` when a specific `Flesh/Bone/Arcane/Abyss/Order` tag is shown). This
+  caught two small readability issues: `type:*` auras now expose both generic
+  and specific type tags at fact level, and scavenge/stat-gain-on-ally-death
+  lines now show the canonical `Growth` tag. The Poison no-cap command wording
+  also no longer prints the misleading `+0s` duration when there is no duration
+  bonus.
+- post-wording candidate panels:
+  `runs/long-2026-06-28e/economy-post-wording-n128` reran the current candidate
+  (`sap_cost_pair_completion_tiered_reroll`, generated opponents
+  `levelMult=2.25`, events, commander auto) at `N=128`. Aggregate completion is
+  `51.7%`, `9.04` wins, `93.6%` merge-per-pair, `2.92` leftover. By policy:
+  `greedy_plan` and `econ_plan` both sit at `77%` completion; `tall_dense_plan`
+  at `51%`; `committed_rot_bleed_rat_core_no_xp_plan` at `50%`;
+  `committed_rot_bleed_rat_core_deep_reroll_plan` at `69%`; the two constrained
+  cross bleed/rot plans are still low (`20%` and `18%`). Read: the candidate is
+  viable and no longer makes the deep-reroll line globally dominant, but the
+  rat-core policies still end with `99-100%` low-rank duplicate saturation when
+  they succeed, so structural homogeneity remains a separate watch item.
+  `runs/long-2026-06-28e/bossrush-run-post-wording-n16` kept the current PVE
+  stress (`boss hp x2`, `boss cd x0.5`) alive: `greedy_plan`/`econ_plan` enter
+  at `94%` and score about `28.4k` per run (`30.3k` per entry), deep-reroll
+  enters at `75%` and scores `22.7k` per run (`30.3k` per entry), while
+  `tall_dense_plan` is weak in postgame (`31%` entry, `4.96k` per run). Boss
+  spread is differentiated: `ossuaire` is the survival wall (`51%` survival,
+  `0%` kill), while `brasier`/`kraken` are high-score/high-kill checks.
+- mutation lane caution:
+  `runs/long-2026-06-28e/economy-mutation-cap1-n96` tested opt-in event
+  mutations with `PIT_RUN_EVENT_MUTATIONS=1` and `PIT_EVENT_MUTATION_PICK_CAP=1`.
+  Aggregate economy completion rose to `56.0%` with `0.47` mutations/run, but
+  the same N=12 bossrush comparison is worse than no-mutation: no-mutation
+  `greedy_plan`/`econ_plan` enter at `91.7%` and score `28.2k`/`28.1k` per run,
+  while mutation-cap1 drops to `75.0%`/`83.3%` and `22.3k`/`24.9k`. Deep-reroll
+  also drops (`23.1k -> 19.4k` per run). Read: mutation plumbing is safe and
+  potentially interesting, but it currently steals too much postgame quality
+  from relic/event opportunity cost. Keep mutations lab-only until the reward
+  policy can value them contextually or make them rarer/more explicitly
+  build-defining.
+- current pacing read:
+  `runs/long-2026-06-28e/pacing-current-n32` confirms the active live profile
+  (`hp x2`, `cd x1.5`, fatigue `26s`) still solves the original too-short-fight
+  problem: early average `13.03s`, `<5s` only `0.4%`, p50 `9.73s`, p90
+  `15.15s`, fatigue `0.2%`, fit `0.937`. The old `cd x1` profile reads much
+  worse (`fit 0.549`, early `9.63s`). A fine-tuning candidate exists:
+  `hp2_cd165_f26` improves fit to `0.978` with early `14.18s`, p50 `10.57s`,
+  p90 `16.37s`, fatigue `1.2%`. The integrated
+  `runs/long-2026-06-28e/sweep-current-pacing-n20` over the current economy
+  also prefers `hp2_cd165_f26` (`21%` completion vs `15-16%`, fit `1.000`),
+  but this is still a small panel. Read: do not revisit `cd x4`; the only
+  credible future pacing tweak is a cautious live move from `cd x1.5` to
+  around `x1.65` if visual feel/playtest wants slightly longer fights.
+3. Use the new compact economy summary first, and only drill into full
+   `plan_access` / `support_access` when a row shows a concrete anomaly.
+4. Use `plan_support_watch` rows in the next economy/bossrush panels to separate
+   "support never offered", "support offered but not picked", and "support
+   picked but plan still inaccessible".
 5. Start massive simulation only after the generator can intentionally produce
    coherent, semi-coherent, and incoherent teams.

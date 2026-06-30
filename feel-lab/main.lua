@@ -1,8 +1,7 @@
 -- feel-lab/main.lua — ORCHESTRATEUR du FEEL LAB (mini-projet isolé : `love feel-lab`).
--- Câble TOUT ce qui répond à la demande : shell persistant (« un seul jeu ») + pile de scènes + transitions
--- enrobantes + pile de modales unifiée + toasts + juice global (screen-shake trauma² + hitstop) + son
--- procédural. RENDER pur ; aucune dépendance au jeu principal (DA copiée). Pipeline pixel-perfect du jeu :
--- monde DESIGN 1280×720 (= virtuel 320×180 ×4) blitté en scale, texte net en résolution native.
+-- Shell persistant + scenes propres + transitions + juice global (screen-shake trauma² + hitstop) + son
+-- procedural. RENDER pur ; aucune dependance SIM. Pipeline pixel-perfect du jeu :
+-- monde DESIGN 1280×720 (= virtuel 320×180 ×4) blitte en scale, texte net en resolution native.
 
 local Theme      = require("lib.theme")
 local Draw       = require("lib.draw")
@@ -13,20 +12,18 @@ local B          = require("lib.behavior")
 local Shell      = require("lib.shell")
 local Stack      = require("lib.scenestack")
 local Transition = require("lib.transition")
-local ModalStack = require("lib.modalstack")
-local Modals     = require("lib.modals")
 local Particles  = require("lib.particles")
 local PostFX     = require("lib.postfx")
 
 local ROOMS = {
   menu        = require("rooms.menu"),
-  interaction = require("rooms.interaction"),
+  contract    = require("rooms.contract"),
   components  = require("rooms.components"),
-  transitions = require("rooms.transitions"),
-  modals      = require("rooms.modals"),
+  flow        = require("rooms.flow"),
+  impact      = require("rooms.impact"),
+  particles   = require("rooms.particles"),
   sound       = require("rooms.sound"),
   levelup     = require("rooms.levelup"),
-  combat_lab  = require("rooms.combat_lab"),
 }
 
 local VW, VH = 320, 180
@@ -36,10 +33,26 @@ local view = { scale = 4, ox = 0, oy = 0 }
 local app = {}
 app.stack      = Stack.new()
 app.transition = Transition.new()
-app.modals     = ModalStack.new()
-app.toasts     = {}
 app.sfxOn      = true
 app.mx, app.my = -1, -1
+
+function app:shellContext()
+  local top = self.stack:top()
+  return {
+    title = top and top.title or "Feel Lab",
+    canBack = self.current and self.current ~= "menu",
+    mx = self.mx, my = self.my,
+    status = { sfx = self.sfxOn, profile = B.profile, fps = love.timer.getFPS(),
+               fx = self.postfx and self.postfx.on },
+    hint = "Esc back · F11 fullscreen · F9 shader",
+  }
+end
+
+function app:drawSurface(v, captureBack)
+  self.stack:draw(v)
+  local back = Shell.drawFront(v, self:shellContext())
+  if captureBack then self._backRect = back end
+end
 
 -- pixels fenêtre -> espace DESIGN 1280×720 (inverse du blit : screen = ox + design*scale/4)
 function app:toDesign(x, y)
@@ -49,13 +62,58 @@ function app:toDesign(x, y)
 end
 
 -- navigue vers une room avec transition enrobante (switch + snapshot de l'ancienne)
-function app:go(name, kind)
+local function currentViewMetrics()
+  if app.view then return app.view.scale or 4, app.view.ox or 0, app.view.oy or 0 end
+  if love and love.graphics and love.graphics.getDimensions then
+    local sw, sh = love.graphics.getDimensions()
+    local scale = math.max(1, math.min(sw / VW, sh / VH))
+    return scale, math.floor((sw - VW * scale) / 2), math.floor((sh - VH * scale) / 2)
+  end
+  return 4, 0, 0
+end
+
+function app:designToScreen(x, y)
+  local scale, ox, oy = currentViewMetrics()
+  local s = scale / 4
+  return ox + x * s, oy + y * s
+end
+
+function app:designRectToScreen(r)
+  local scale, ox, oy = currentViewMetrics()
+  local s = scale / 4
+  return {
+    x = ox + (r.x or 0) * s,
+    y = oy + (r.y or 0) * s,
+    w = (r.w or 0) * s,
+    h = (r.h or 0) * s,
+  }
+end
+
+function app:go(name, kind, opts)
   if self.transition.active then return end
   local ctor = ROOMS[name]; if not ctor then return end
   local room = ctor.new(self)
+  opts = opts or {}
+  if opts.originRectDesign and not opts.originDesign then
+    local r = opts.originRectDesign
+    opts.originDesign = { x = (r.x or 0) + (r.w or 0) / 2, y = (r.y or 0) + (r.h or 0) / 2 }
+  end
+  if opts.originRectDesign and not opts.originRectScreen then
+    opts.originRectScreen = self:designRectToScreen(opts.originRectDesign)
+  end
+  if opts.originDesign and not opts.originScreen then
+    local sx, sy = self:designToScreen(opts.originDesign.x or 640, opts.originDesign.y or 540)
+    opts.originScreen = { x = sx, y = sy }
+  end
+  if opts.originRectScreen and not opts.originScreen then
+    local r = opts.originRectScreen
+    opts.originScreen = { x = (r.x or 0) + (r.w or 0) / 2, y = (r.y or 0) + (r.h or 0) / 2 }
+  end
   if self.view then
-    self.transition:start(kind or "fade_black", (kind == "fade_black" or not kind) and 0.36 or 0.3,
-      function() self.stack:draw(self.view) end)   -- snapshot de la room SORTANTE
+    local dur = (kind == "blood_rain" or kind == "blood_bloom" or kind == "blood_button") and 2.35
+      or ((kind == "fade_black" or not kind) and 0.36 or 0.3)
+    self.transition:start(kind or "fade_black", dur,
+      function() self:drawSurface(self.view, false) end, opts)   -- snapshot de la room SORTANTE + shell
   end
   self.stack:switch(room)
   self.current = name
@@ -66,30 +124,42 @@ function app:back()
   self:go("menu", "slide_right")
 end
 
-function app:toast(text, kind) self.toasts[#self.toasts + 1] = Modals.toast(text, kind) end
 function app:setSfx(on) self.sfxOn = on end
 
--- HARNAIS DE CAPTURE (dev) : `love feel-lab --shoot` rend chaque room + une modale, capture en PNG dans le
+-- HARNAIS DE CAPTURE (dev) : `love feel-lab --shoot` rend chaque room active, capture en PNG dans le
 -- save dir, puis quitte. RENDER-only, permet de juger À L'ŒIL sans bloquer l'écran. Séquence pilotée frame-à-frame.
 local shoot = { on = false, idx = 0, frame = 0, warm = 26 }
 shoot.shots = {
   { name = "menu" },
-  { name = "interaction" },
+  { name = "contract" },
+  { name = "contract", scenario = "blood_button", at = 16 },
+  { name = "contract", scenario = "blood_button", at = 38 },
+  { name = "contract", scenario = "blood_button", at = 78 },
+  { name = "contract", scenario = "blood_button", at = 118 },
+  { name = "contract", scenario = "blood_bloom", at = 92 },
+  { name = "contract", scenario = "blood_rain", at = 40 },
+  { name = "contract", scenario = "blood_rain", at = 92 },
+  { name = "contract", scenario = "blood_rain", at = 118 },
+  { name = "flow" },
+  { name = "flow", scenario = "rewards", at = 76 },
+  { name = "flow", scenario = "score", at = 220 },
   { name = "components" },
   { name = "components", scenario = "eyes", at = 34 },  -- survol simulé du CTA -> l'œil ouvert qui fixe la souris
+  { name = "impact", at = 46 },
+  { name = "impact", scenario = "poison", at = 46 },
+  { name = "impact", scenario = "bleed", at = 46 },
+  { name = "impact", scenario = "burn", at = 46 },
+  { name = "impact", scenario = "rot", at = 46 },
+  { name = "impact", scenario = "shock_pixel", at = 46 },
+  { name = "impact", scenario = "bloom", at = 46 },
+  { name = "particles", at = 44 },
+  { name = "particles", scenario = "seal", at = 36 },
   { name = "sound" },
-  { name = "transitions" },
-  { name = "modals" },
-  { name = "modals", modal = "confirm" },
-  { name = "modals", modal = "banner" },
   { name = "levelup" },
   { name = "levelup", scenario = "shop", at = 16 },     -- convergence + aspiration de la carte shop
-  { name = "levelup", scenario = "shop", at = 58 },     -- climax « TAAA » (burst + onde de choc)
-  { name = "levelup", scenario = "cascade", at = 120 }, -- climax escaladé du 2e palier (big)
-  { name = "combat_lab", at = 80 },  -- combat tournant (créatures animées + baseline chiffres/VFX)
-  -- Revue : chiffres A/B (100% plats) × VFX A/B (cast+impact directionnel). Décommenter pour re-capturer.
-  -- { name = "combat_lab", at = 6, setup = function(r) r:demoFill("A", "A") end },
-  -- { name = "combat_lab", at = 6, setup = function(r) r:demoFill("B", "B") end },
+  { name = "levelup", scenario = "shop", at = 86 },     -- climax « TAAA » + echo jackpot
+  { name = "levelup", scenario = "shop", at = 100 },    -- peak settle
+  { name = "levelup", scenario = "cascade", at = 150 }, -- climax escaladé du 2e palier (big)
 }
 
 local function setRoom(name)
@@ -104,7 +174,8 @@ function love.load(args)
   Theme.load()
   pcall(SFX.load)   -- garde (pas de device audio en CI/headless)
   Particles.load()  -- bake l'atlas de sprites de particules (nearest) une fois
-  app.postfx = PostFX.new()  -- surcouche cauchemardesque (dither/grain/palette-lock) — défaut ON
+  app.postfx = PostFX.new()  -- surcouche cauchemardesque (dither/grain/palette-lock) — togglable [F9]
+  if app.postfx then app.postfx.on = false end -- le lab juge d'abord les composants nets ; shader sur demande
   setRoom("menu")
   for _, a in ipairs(args or {}) do if a == "--shoot" then shoot.on = true end end
   if shoot.on and love.filesystem then love.filesystem.createDirectory("shots") end
@@ -129,17 +200,8 @@ end
 function applyShot()
   local sh = shoot.shots[shoot.idx]
   -- room sans transition (instantané)
-  while app.modals:any() do table.remove(app.modals.items) end
+  if app.transition then app.transition.active = false end
   setRoom(sh.name)
-  if sh.modal == "confirm" then
-    local m = app.modals:push(Modals.confirm{ title = "Abandon the run?", danger = true,
-      body = "Your descent ends here. The Pit keeps what you found.",
-      confirmLabel = "Abandon", cancelLabel = "Keep going" })
-    m.anim = 1
-  elseif sh.modal == "banner" then
-    local m = app.modals:push(Modals.banner{ kind = "victory", flavor = "The Pit yields. For now." })
-    m.anim = 1
-  end
   if sh.scenario then
     local r = app.stack:top()
     if r and r.scenario then r:scenario(sh.scenario) end
@@ -156,12 +218,6 @@ function love.update(dt)
   Feel.update(dt * 60)                      -- Feel raisonne en « frames » (÷60 en interne)
   Juice.update(dt)                          -- dt RÉEL (le hitstop doit finir même monde gelé)
   app.transition:update(dt)
-  app.modals:update(dt)
-  -- toasts (non-bloquants)
-  for i = #app.toasts, 1, -1 do
-    local tt = app.toasts[i]; tt.t = tt.t - dt
-    if tt.t <= 0 then table.remove(app.toasts, i) end
-  end
   -- room : gelée pendant transition et hitstop (mais Feel/Juice continuent)
   if not app.transition.active then
     app.stack:update(dt * Juice.timeScale())
@@ -190,28 +246,14 @@ function love.draw()
   love.graphics.translate(sw / 2, sh / 2); love.graphics.rotate(shr); love.graphics.translate(-sw / 2, -sh / 2)
   love.graphics.translate(shx * s, shy * s)
 
-  -- scène (ou transition entre deux scènes)
+  -- scène + shell (ou transition entre deux surfaces complètes)
   if app.transition.active then
-    app.transition:draw(function() app.stack:draw(view) end)
+    app._backRect = nil
+    app.transition:draw(function() app:drawSurface(view, false) end)
   else
-    app.stack:draw(view)
+    app:drawSurface(view, true)
   end
-
-  -- shell persistant (barre de titre + retour + pied) PAR-DESSUS le contenu
-  local top = app.stack:top()
-  app._backRect = Shell.drawFront(view, {
-    title = top and top.title or "Feel Lab",
-    canBack = app.current ~= "menu",
-    mx = app.mx, my = app.my,
-    status = { sfx = app.sfxOn, profile = B.profile, fps = love.timer.getFPS(),
-               fx = app.postfx and app.postfx.on },
-    hint = "Esc: back/close · F11: fullscreen · F9: nightmare shader · click everything",
-  })
   love.graphics.pop()
-
-  -- modales + toasts au-dessus de tout (pas de shake)
-  app.modals:draw(view)
-  Modals.drawToasts(view, app.toasts)
 
   if fxOn then app.postfx:endFrame(0) end   -- blit le canvas à travers le shader cauchemardesque
 end
@@ -221,7 +263,6 @@ function love.mousepressed(x, y, button)
   local dx, dy = app:toDesign(x, y)
   app.mx, app.my = dx, dy
   if app.transition.active then return end          -- bloque l'input pendant une transition (recherche §6)
-  if app.modals:any() then app.modals:mousepressed(dx, dy, button); return end
   if app._backRect and Shell.backHit(app._backRect, dx, dy) then
     Feel.press("shell_back", function() app:back() end, { delay = 0.05 }); return
   end
@@ -231,19 +272,16 @@ end
 function love.mousereleased(x, y, button)
   local dx, dy = app:toDesign(x, y)
   if app.transition.active then return end
-  if app.modals:any() then app.modals:mousereleased(dx, dy, button); return end
   app.stack:input("mousereleased", dx, dy, button)
 end
 
 function love.mousemoved(x, y)
   local dx, dy = app:toDesign(x, y)
   app.mx, app.my = dx, dy
-  if app.modals:any() then app.modals:mousemoved(dx, dy); return end
   app.stack:input("mousemoved", dx, dy)
 end
 
 function love.wheelmoved(dx, dy)
-  if app.modals:any() then app.modals:wheelmoved(dx, dy); return end
   app.stack:input("wheelmoved", dx, dy)
 end
 
@@ -252,7 +290,6 @@ function love.keypressed(key)
     love.window.setFullscreen(not love.window.getFullscreen(), "desktop"); return
   end
   if key == "f9" then if app.postfx then app.postfx:toggle() end; return end  -- bascule la surcouche shader
-  if app.modals:any() then app.modals:keypressed(key); return end
   if key == "escape" then
     if app.current ~= "menu" then app:back() else love.event.quit() end
     return

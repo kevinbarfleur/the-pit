@@ -67,7 +67,7 @@ function PACKS.oneiric()
   local function rev(sd, tail, mix) return Synth.reverb(sd, { tail = tail, mix = mix, damp = 0.65, room = 0.72 }) end
   register("hover",  rev(Synth.tone{ wave = "sine", freq = 185, dur = 0.15, a = 0.040, lp = 0.55, detune = 0.006, vol = 0.09, r = 0.09 }, 0.30, 0.27), { jitter = 0.03, vol = 0.6 })
   register("tick",   rev(Synth.tone{ wave = "sine", freq = 270, dur = 0.07, a = 0.020, lp = 0.50, vol = 0.07, r = 0.05 }, 0.20, 0.24), { jitter = 0.02, vol = 0.6 })
-  register("press",  rev(Synth.tone{ wave = "tri",  freq = 135, dur = 0.20, a = 0.032, slide = -16, lp = 0.55, detune = 0.008, sub = 0.20, vol = 0.16, r = 0.12 }, 0.36, 0.33), { jitter = 0.03 })
+  register("press",  rev(Synth.tone{ wave = "tri",  freq = 128, dur = 0.18, a = 0.006, slide = -18, lp = 0.57, detune = 0.008, sub = 0.28, vol = 0.19, r = 0.10 }, 0.34, 0.30), { jitter = 0.03 })
   register("click",  rev(Synth.tone{ wave = "sine", freq = 200, dur = 0.20, a = 0.018, harm = 0.14, sub = 0.18, lp = 0.60, detune = 0.006, vol = 0.16, r = 0.12 }, 0.42, 0.34), { jitter = 0.03 }) -- cloche douce GRAVE
   register("pop",    rev(Synth.tone{ wave = "tri",  freq = 250, dur = 0.22, a = 0.030, slide = -150, lp = 0.55, vol = 0.15, r = 0.12 }, 0.42, 0.34), { jitter = 0.04 })
   register("back",   rev(Synth.tone{ wave = "sine", freq = 185, dur = 0.26, a = 0.045, slide = -90, lp = 0.55, vol = 0.13, r = 0.13 }, 0.46, 0.34), { jitter = 0.03 })

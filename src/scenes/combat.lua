@@ -17,6 +17,7 @@
 local Arena = require("src.combat.arena")
 local ArenaDraw = require("src.render.arena_draw")
 local Chronicle = require("src.render.chronicle")
+local Bus = require("src.core.bus")
 local Ambient = require("src.fx.ambient")
 local Biome = require("src.fx.biome")    -- décor de biome parallaxe (refonte Combat Frame, phase 4) — EN PAUSE
 local NightmareBG = require("src.fx.nightmare_bg") -- fond cauchemardesque shader (remplace le biome, retour user)
@@ -32,9 +33,14 @@ local Feel = require("src.ui.feel")      -- JUICE : survol (glow/lift) + press (
 local Panel = require("src.ui.panel")    -- surfaces propres (résumé post-combat : ruban, cartes)
 local Overlay = require("src.ui.overlay") -- CHORÉGRAPHIE d'entrée unifiée (voile qui monte + groupe en back-ease)
 local Units = require("src.data.units")  -- type d'unité (pip de portrait) + noms
+local UnitResolver = require("src.core.unit_resolver")
 local MiniRig = require("src.render.minirig") -- frimousse de créature (portraits MVP / 1re perte du résumé)
 local Keywords = require("src.ui.keywords") -- icônes/couleurs d'afflictions dans le bilan par monstre
+local MonsterCard = require("src.render.monstercard")
+local CardGlossary = require("src.ui.card_glossary")
+local InfluencePanel = require("src.ui.influence_panel")
 local Run = require("src.run.state")     -- WIN_TARGET (descente) pour le ruban de stats
+local Pacing = require("src.run.pacing") -- pacing live centralise (hp/cooldown/fatigue + affichage CD)
 local SFX = require("src.audio.sfx")     -- SON (Oniric grave) : verdict VICTOIRE/DEFAITE — RENDER pur, no-op headless
 local T = require("src.core.i18n").t
 
@@ -53,6 +59,10 @@ local function inBtn(mx, my, r)
   return r and mx >= r.x and mx <= r.x + r.w and my >= r.y and my <= r.y + r.h
 end
 
+local function ctrlHeld()
+  return love and love.keyboard and love.keyboard.isDown and love.keyboard.isDown("lctrl", "rctrl")
+end
+
 -- Choix de BIOME déterministe par combat : le seed du combat -> une clé stable parmi les 4 décors (replays
 -- identiques, snapshot async cohérent). v1 = rotation seedée ; mapping THÉMATIQUE (par type d'adversaire
 -- dominant) à venir. Robuste si Biome.KEYS manque.
@@ -61,9 +71,27 @@ local function biomeFor(payload)
   return keys[1 + ((payload.seed or 11) % #keys)]
 end
 
+local function unitName(id) return (Units[id] and T("unit." .. id .. ".name")) or id end
+
+local function arenaOptions(payload)
+  local p = payload or {}
+  local opts = Pacing.arenaOptions(p.pacingProfile)
+  opts.left = p.left
+  opts.right = p.right
+  opts.autoReset = false
+  opts.seed = p.seed
+  return opts
+end
+
 function Combat.new(palette, vw, vh, host, payload)
   payload = payload or {}
-  local arena = Arena.new({ left = payload.left, right = payload.right, autoReset = false, seed = payload.seed })
+  local opts = arenaOptions(payload)
+  local earlyMurmurs = {}
+  local earlyBus = Bus.new()
+  local earlyFn = earlyBus:on("murmur", function(e) earlyMurmurs[#earlyMurmurs + 1] = e end)
+  opts.bus = earlyBus
+  local arena = Arena.new(opts)
+  earlyBus:off("murmur", earlyFn)
   local self = setmetatable({
     vw = vw, vh = vh, t = 0, host = host, palette = palette, payload = payload,
     daChrome = true, -- chrome DA portée par la scène (pas de HUD générique : cf. main.lua drawHud)
@@ -71,6 +99,7 @@ function Combat.new(palette, vw, vh, host, payload)
     titleKey = "scene.combat",
     hintKey = "ui.hint_combat",
     enemyKey = payload.enemyKey,
+    pacingId = Pacing.id(payload.pacingProfile),
     ambient = Ambient.new(payload.seed or 11), -- atmosphère "combat" (repli ultime)
     biome = USE_BIOME and Biome.new(biomeFor(payload), payload.seed or 11) or nil, -- décor de biome (EN PAUSE)
     nightmareBg = (not USE_BIOME) and NightmareBG.new(payload.seed or 11) or nil, -- fond cauchemardesque shader
@@ -81,17 +110,34 @@ function Combat.new(palette, vw, vh, host, payload)
     mx = -1, my = -1, -- curseur (espace design) : survol des boutons de fin + gaze des yeux du CTA
   }, Combat)
   self:_track() -- écoute le bus SIM (lecture seule) pour le post-mortem "pourquoi" (1.3)
+  for _, e in ipairs(earlyMurmurs) do self:_recordMurmur(e) end
   return self
 end
 
 function Combat:restart()
   -- Même seed -> bataille rejouée À L'IDENTIQUE (c'est déjà un replay déterministe).
-  self.arena = Arena.new(
-    { left = self.payload.left, right = self.payload.right, autoReset = false, seed = self.payload.seed })
+  self.arena = Arena.new(arenaOptions(self.payload))
   self.renderer = ArenaDraw.new(self.arena, self.palette)
   self._verdictPlayed = nil -- SON : un REPLAY rejoue son verdict (le bilan se ré-affiche)
   self._sumAnim = nil       -- ENTRÉE : un REPLAY rejoue la chorégraphie d'apparition du bilan
   self:_track()
+end
+
+function Combat:_recordMurmur(e)
+  if not (e and e.source and e.key) then return end
+  local rows = self.murmursByUnit and self.murmursByUnit[e.source]
+  if not rows then
+    rows = {}
+    self.murmursByUnit = self.murmursByUnit or {}
+    self.murmursByUnit[e.source] = rows
+  end
+  local x = unitName(e.source.id)
+  local y = e.partner and unitName(e.partner.id) or ""
+  rows[#rows + 1] = {
+    key = e.key,
+    text = T("whisper." .. e.key .. ".cryptic", { x = x, y = y }),
+    tick = self.arena and self.arena.t or 0,
+  }
 end
 
 -- 1.3 — Attribution causale : on ÉCOUTE le bus SIM (lecture seule, comme le renderer ; aucun effet sur
@@ -100,6 +146,7 @@ end
 function Combat:_track()
   self.killLog = {} -- ordre de tick : { victim, killer, cause, tick }
   self.lastHit = {} -- [victime] = { source, cause } : dernier coup encaissé
+  self.murmursByUnit = {} -- [unit] = lignes cryptiques deja declenchees (cachees partout ailleurs)
   self.summary = nil -- résumé "pourquoi", mémoïsé en fin de combat
   self.full = nil    -- résumé COMPLET (écran post-combat), mémoïsé en fin de combat
   -- Stats agrégées pour le résumé post-combat (refonte « Combat Screen » Frame 4). RENDER pur (lecture du
@@ -143,6 +190,7 @@ function Combat:_track()
   end)
   arena.bus:on("affliction_applied", function(e) bumpAff(e.source, e.family) end)
   arena.bus:on("spread", function(e) bumpAff(e.from, e.family) end)
+  arena.bus:on("murmur", function(e) self:_recordMurmur(e) end)
   arena.bus:on("death", function(u)
     local h = self.lastHit[u]
     self.unitDeathTime[u] = (arena.t or 0) / 60
@@ -183,6 +231,7 @@ function Combat:update(frameDt)
   Feel.hover("combat.spd1", inBtn(self.mx, self.my, self._btnSpd1))
   Feel.hover("combat.spd2", inBtn(self.mx, self.my, self._btnSpd2))
   Feel.hover("combat.skip", inBtn(self.mx, self.my, self._btnSkip))
+  Feel.hover("combat.pause", inBtn(self.mx, self.my, self._btnPause))
   if self.paused then return end -- combat GELÉ (sim + anims) -> reprise identique via Espace
   -- Fond animé : avancé UNE FOIS/frame (temps réel), JAMAIS multiplié par les pas de SKIP/2× (le décor ne doit
   -- pas s'accélérer). frameDt en unités-frame@60 -> /60 = secondes. Biome (en pause) OU fond cauchemardesque.
@@ -195,8 +244,8 @@ function Combat:update(frameDt)
     self:_step(frameDt)
     if self.arena.over then break end
   end
-  -- SON (RENDER pur) : 1 cue de coup lourd + 1 cue de mort par FRAME (le renderer a agrégé tous les events de
-  -- ces `steps`). Hors du loop -> jamais multiplié par SKIP/2×. No-op headless ; ne touche pas la SIM.
+  -- SON (RENDER pur) : accents de famille + coup lourd + mort, agrégés à 1/frame par le renderer. Hors du loop
+  -- -> jamais multiplié par SKIP/2×. No-op headless ; ne touche pas la SIM.
   self.renderer:flushAudio()
   if self.arena.over then self.skipping = false end
   if self.arena.over then
@@ -217,6 +266,241 @@ end
 -- La souris arrive en espace VIRTUEL (main.lua:toVirtual) ; les rects de fin + le gaze des yeux sont en
 -- espace DESIGN -> on convertit ×4 ICI (comme relicpick/runover). self.mx/self.my sont donc en DESIGN.
 function Combat:mousemoved(vx, vy) self.mx, self.my = vx * 4, vy * 4 end
+
+function Combat:wheelmoved(_, dy)
+  if self.arena.over and self.arena.overAge >= 20 then return end
+  if self.forceNetworkInspect or ctrlHeld() then return end
+  local u = self:unitAt(self.mx, self.my)
+  if not u then return end
+  self.influenceScroll = self.influenceScroll or {}
+  self.influenceScroll[u] = math.max(0, (self.influenceScroll[u] or 0) - (dy or 0) * 36)
+  return true
+end
+
+function Combat:unitAt(mx, my)
+  local vx, vy = (mx or self.mx) / 4, (my or self.my) / 4
+  local best, bestD
+  for _, u in ipairs(self.arena.units or {}) do
+    if u.alive then
+      local rx, top, bottom = u.isCommander and 18 or 17, u.isCommander and 34 or 38, 8
+      if vx >= u.x - rx and vx <= u.x + rx and vy >= u.y - top and vy <= u.y + bottom then
+        local d = (vx - u.x) * (vx - u.x) + (vy - (u.y - 16)) * (vy - (u.y - 16))
+        if not bestD or d < bestD then best, bestD = u, d end
+      end
+    end
+  end
+  return best
+end
+
+local function pct(v)
+  return (v >= 0 and "+" or "") .. tostring(math.floor(v * 100 + 0.5)) .. "%"
+end
+
+local function addRow(rows, kind, value, source, detail, badge)
+  rows[#rows + 1] = {
+    kind = kind,
+    value = value,
+    valueText = InfluencePanel.formatValue(kind, value),
+    source = source,
+    detail = detail,
+    badge = badge,
+  }
+end
+
+local function bonusFirstValue(u)
+  for _, e in ipairs(u.effects or {}) do
+    if e.trigger == "on_attack" and e.op == "bonus_first" then
+      return (e.params and e.params.value) or 0
+    end
+  end
+  return nil
+end
+
+function Combat:combatInfluenceData(u)
+  local state, mods, affl, expired, murmurs = {}, {}, {}, {}, {}
+  addRow(state, "state", tostring(math.max(0, math.floor(u.hp or 0))) .. "/" .. tostring(math.floor(u.maxHp or 0)),
+    T("ui.influence_current_hp"), nil, nil)
+  if (u.shield or 0) > 0 then
+    addRow(state, "shield", "+" .. tostring(math.floor(u.shield or 0)), T("ui.influence_source_shield"), nil, nil)
+  end
+  if not u.isCommander and not self.arena.over then
+    addRow(state, "state", string.format("%.1fs", math.max(0, (u.atkTimer or 0) / 60)),
+      T("ui.influence_next_attack"), nil, nil)
+  end
+  if u.target and u.target.alive then
+    addRow(state, "state", T("unit." .. u.target.id .. ".name"), T("ui.influence_target"), nil, nil)
+  end
+
+  local bf = bonusFirstValue(u)
+  if bf and bf > 0 then
+    if u.firstHit then
+      addRow(mods, "empower", "+" .. tostring(bf), T("ui.influence_first_attack"), nil, T("ui.influence_first_badge"))
+    else
+      addRow(expired, "empower", "+" .. tostring(bf), T("ui.influence_first_attack"), T("ui.influence_used"), T("ui.influence_first_badge"))
+    end
+  end
+  if (u.haste or 0) > 0 then addRow(mods, "haste", pct(u.haste), T("ui.influence_source_haste"), nil, nil) end
+  if (u.atkSlow or 0) > 0 then addRow(mods, "slow", "-" .. tostring(math.floor(u.atkSlow * 100 + 0.5)) .. "%", T("ui.influence_source_bleed_slow"), nil, nil) end
+  if (u.atkInc or 0) > 0 then addRow(mods, "empower", pct(u.atkInc), T("ui.influence_source_attack_damage"), nil, nil) end
+  if (u.dmgReduce or 0) > 0 then addRow(mods, "guard", "-" .. tostring(math.floor(u.dmgReduce * 100 + 0.5)) .. "%", T("ui.influence_source_damage_taken"), nil, nil) end
+  if (u.multicast or 0) > 0 then addRow(mods, "multicast", "+" .. tostring(math.floor(u.multicast)), T("ui.influence_source_extra_strike"), nil, nil) end
+  if (u.regen or 0) > 0 then addRow(mods, "regen", "+" .. tostring(u.regen) .. " HP/s", T("ui.influence_source_regen"), nil, nil) end
+  local life = (u.lifestealAura or 0) + (u.lifestealBonus or 0)
+  if life > 0 then addRow(mods, "heal", pct(life), T("ui.influence_source_lifesteal"), nil, nil) end
+  for _, k in ipairs({ "poison", "burn", "bleed", "rot" }) do
+    local v = u[k .. "Inc"] or 0
+    if v > 0 then addRow(mods, k, pct(v), T("ui.influence_damage_source", { name = Keywords.tagName(k) }), nil, nil) end
+  end
+
+  local dots = u.dots or {}
+  local poisonStacks = dots.poison or {}
+  local poisonDps = 0
+  for _, st in ipairs(poisonStacks) do poisonDps = poisonDps + (st.dps or 0) end
+  if poisonDps > 0 then
+    addRow(affl, "poison", tostring(poisonDps) .. " dps", T("ui.influence_stacks", { n = #poisonStacks }), nil, nil)
+  end
+  for _, k in ipairs({ "burn", "bleed", "rot" }) do
+    local d = dots[k]
+    if d then
+      local val = tostring(d.dps or d.base or 0) .. " dps"
+      local rem = d.remaining and T("ui.influence_seconds_left", { s = string.format("%.1f", math.max(0, d.remaining / 60)) }) or nil
+      addRow(affl, k, val, rem, (k == "bleed" and (u.atkSlow or 0) > 0) and T("ui.influence_slows_attacks") or nil, nil)
+    end
+  end
+  if dots.shock and (dots.shock.stacks or 0) > 0 then
+    addRow(affl, "shock", T("ui.influence_stacks", { n = dots.shock.stacks }), nil, nil, nil)
+  end
+
+  for _, m in ipairs(self.murmursByUnit[u] or {}) do
+    murmurs[#murmurs + 1] = {
+      kind = "whisper",
+      valueText = T("ui.influence_murmur_value"),
+      source = T("ui.influence_murmur_source"),
+      detail = m.text,
+      badge = T("ui.influence_murmur_badge"),
+    }
+  end
+
+  return {
+    title = T("ui.influence_title"),
+    subtitle = T("unit." .. u.id .. ".name"),
+    sections = {
+      { title = T("ui.influence_current_state"), rows = state },
+      { title = T("ui.influence_active_mods"), rows = mods },
+      { title = T("ui.influence_active_dots"), rows = affl },
+      { title = T("ui.influence_expired"), rows = expired },
+      { title = T("ui.influence_murmur_title"), rows = murmurs },
+    },
+  }
+end
+
+function Combat:combatCardUnit(u)
+  local level = (u.spec and u.spec.level) or 1
+  local data = UnitResolver.unitForLevel(u.id, level)
+  data.hp = tostring(math.max(0, math.floor(u.hp or 0))) .. "/" .. tostring(math.floor(u.maxHp or 0))
+  data.dmg = math.floor(u.dmg or data.dmg or 0)
+  data.cd = u.cd or data.cd
+  data.effects = u.effects or data.effects
+  data.level = level
+  return data, level
+end
+
+function Combat:drawCombatTooltip(view)
+  if self.arena.over and self.arena.overAge >= 20 then return end
+  if self.forceNetworkInspect or ctrlHeld() then return end
+  local u = self:unitAt(self.mx, self.my)
+  if not u then return end
+  local unit, level = self:combatCardUnit(u)
+  Draw.begin(view)
+  local box = MonsterCard.draw(view, self.palette, u.id, self.mx, self.my, self.t / 60,
+    { keywordHint = true, networkHint = true, unit = unit, level = level })
+  self.influenceScroll = self.influenceScroll or {}
+  local sidecar = box and InfluencePanel.draw(view, box, self:combatInfluenceData(u),
+    { scroll = self.influenceScroll[u] or 0 })
+  if sidecar then self.influenceScroll[u] = sidecar.scroll or 0 end
+  local showKeywords = love and love.keyboard and love.keyboard.isDown and love.keyboard.isDown("lshift", "rshift")
+  if box and showKeywords then
+    CardGlossary.drawMonster(view, InfluencePanel.union(box, sidecar), u.id, self.t / 60,
+      { showKeywords = true, scroll = self.tagGlossaryScroll or 0, unit = unit })
+  end
+  Draw.finish()
+end
+
+function Combat:_unitBySlot(team, slot)
+  for _, u in ipairs(self.arena.units or {}) do
+    if u.team == team and u.slot == slot and u.alive then return u end
+  end
+  return nil
+end
+
+function Combat:combatInfluenceLinksFor(focus)
+  local links, seen = {}, {}
+  local function add(a, b, kind)
+    if not (a and b and a.alive and b.alive) then return end
+    if a == b then return end
+    local key = tostring(a) .. ">" .. tostring(b) .. ":" .. tostring(kind or "empower")
+    if seen[key] then return end
+    seen[key] = true
+    links[#links + 1] = { a = a, b = b, kind = kind or "empower" }
+  end
+  local function sourceLinks(src)
+    if not (src and src.alive) then return end
+    if src.target and src.target.alive then add(src, src.target, "empower") end
+    if src.shieldCaster and src.shieldCaster.targets then
+      for _, t in ipairs(src.shieldCaster.targets) do add(src, t, "shield") end
+    end
+    if src.focusWith then
+      add(self:_unitBySlot(src.team, src.focusWith), src, "empower")
+    end
+  end
+
+  if focus then
+    sourceLinks(focus)
+    for _, src in ipairs(self.arena.units or {}) do
+      if src ~= focus and src.alive then
+        if src.target == focus then add(src, focus, "empower") end
+        if src.shieldCaster and src.shieldCaster.targets then
+          for _, t in ipairs(src.shieldCaster.targets) do
+            if t == focus then add(src, focus, "shield") end
+          end
+        end
+        if src.focusWith and self:_unitBySlot(src.team, src.focusWith) == focus then
+          add(focus, src, "empower")
+        end
+      end
+    end
+  else
+    for _, src in ipairs(self.arena.units or {}) do sourceLinks(src) end
+  end
+  return links
+end
+
+function Combat:drawCombatInfluenceLinks(view)
+  if not (self.forceNetworkInspect or ctrlHeld()) then return end
+  local u = self:unitAt(self.mx, self.my)
+  local allMode = not u
+  local links = self:combatInfluenceLinksFor(u)
+  if #links == 0 then return end
+  Draw.begin(view)
+  for _, lk in ipairs(links) do
+    local col = Theme.c[lk.kind] or Theme.c.gold
+    local ax, ay = lk.a.x * 4, (lk.a.y - 16) * 4
+    local bx, by = lk.b.x * 4, (lk.b.y - 16) * 4
+    if love.graphics.setBlendMode then
+      love.graphics.setBlendMode("add")
+      Draw.setColor({ col[1], col[2], col[3], allMode and 0.09 or 0.18 })
+      love.graphics.setLineWidth(allMode and 6 or 8)
+      love.graphics.line(ax, ay, bx, by)
+      love.graphics.setBlendMode("alpha")
+    end
+    Draw.setColor({ col[1], col[2], col[3], allMode and 0.44 or 0.82 })
+    love.graphics.setLineWidth(allMode and 2 or 2.5)
+    love.graphics.line(ax, ay, bx, by)
+  end
+  love.graphics.setLineWidth(1)
+  Draw.reset()
+  Draw.finish()
+end
 
 -- Décor de BIOME parallaxe (refonte Combat Frame) derrière les combattants pixel, + SCRIMS qui le poussent
 -- en arrière et gardent les sprites lisibles sur TOUT biome. Repli sur l'atmosphère "combat" si pas de biome.
@@ -337,6 +621,7 @@ function Combat:_drawControls()
   local hint = T("ui.chronicle_hint")
   Draw.textR(hint, Draw.W - 18, y - 5, c.ink4, f)
   local segs = {
+    { id = "pause", label = self.paused and T("ui.resume") or T("ui.pause"), on = self.paused },
     { id = "spd1", label = "1×", on = (self.speed == 1) and not self.skipping },
     { id = "spd2", label = "2×", on = (self.speed == 2) and not self.skipping },
     { id = "skip", label = T("ui.speed_skip"), on = self.skipping },
@@ -349,7 +634,10 @@ function Combat:_drawControls()
     local hot = inBtn(self.mx, self.my, r)
     Draw.rect(sx, r.y, s.w, 22, s.on and { 0x7a / 255, 0x1d / 255, 0x16 / 255, 1 } or { 0x10 / 255, 0x0d / 255, 0x16 / 255, 1 }, c.iron, 1)
     Draw.textC(s.label, sx + s.w / 2, y - 5, s.on and c.ctaText or (hot and c.ink2 or c.ink3), f)
-    if s.id == "spd1" then self._btnSpd1 = r elseif s.id == "spd2" then self._btnSpd2 = r else self._btnSkip = r end
+    if s.id == "pause" then self._btnPause = r
+    elseif s.id == "spd1" then self._btnSpd1 = r
+    elseif s.id == "spd2" then self._btnSpd2 = r
+    else self._btnSkip = r end
     sx = sx + s.w
   end
 end
@@ -366,8 +654,6 @@ local function causeColor(cause)
   if cause == "attack" or cause == "reflect" or cause == "thorns" then return c.bloodL end
   return c[cause] or c.ink2
 end
-local function unitName(id) return (Units[id] and T("unit." .. id .. ".name")) or id end
-
 -- Tuile de portrait (MVP / 1re perte) : socle laiton hachuré + VRAIE frimousse de la créature (MiniRig,
 -- centrée/clippée, déterministe par id) + petit pip de type en coin. `fallen` voile la tuile (1re perte =
 -- tombée). RENDER pur, headless-safe (MiniRig retombe sur une boîte de repli sous mock LÖVE).
@@ -691,7 +977,9 @@ function Combat:drawOverlay(view)
   if not self.arena.over then self:_drawControls() end   -- contrôles bas (vitesse + chronicle) pendant le combat
   Draw.finish()
 
+  if not (self.arena.over and self.arena.overAge >= 20) then self:drawCombatInfluenceLinks(view) end
   self.renderer:drawOverlay(view) -- noms d'unités + nombres flottants (gère sa propre transform)
+  self:drawCombatTooltip(view)
 
   -- Verdict + post-mortem + boutons (1.3 / 2A) : l'attribution causale est la précondition du ranked/rétention.
   -- On attend overAge >= 20 (laisse l'anim de mort se poser) avant d'afficher l'écran de fin.
@@ -725,6 +1013,7 @@ function Combat:mousepressed(vx, vy, button)
   self.mx, self.my = vx * 4, vy * 4 -- virtuel -> DESIGN (les rects sont en espace design)
   -- VITESSE (pendant le combat) : 1× / 2× / SKIP. Pas d'autre entrée tant que ce n'est pas conclu.
   if not self.arena.over then
+    if inBtn(self.mx, self.my, self._btnPause) then Feel.press("combat.pause"); self.paused = not self.paused; return end
     if inBtn(self.mx, self.my, self._btnSpd1) then Feel.press("combat.spd1"); self.speed, self.skipping = 1, false; return end
     if inBtn(self.mx, self.my, self._btnSpd2) then Feel.press("combat.spd2"); self.speed, self.skipping = 2, false; return end
     if inBtn(self.mx, self.my, self._btnSkip) then Feel.press("combat.skip"); self.skipping = true; return end

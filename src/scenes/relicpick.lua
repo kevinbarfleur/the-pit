@@ -27,17 +27,26 @@ local Theme = require("src.ui.theme")
 local Draw = require("src.ui.draw")
 local Layout = require("src.ui.layout")
 local Ambient = require("src.fx.ambient")
+local Panel = require("src.ui.panel")
 local Button = require("src.ui.button")      -- boutons propres : primary (BIND) / eco (REFUSE)
 local Dividers = require("src.ui.dividers")  -- filets laiton/sang propres (cassure d'en-tête)
+local Badge = require("src.ui.badge")
 local Feel = require("src.ui.feel")          -- JUICE : survol (glow/lift) + press (squash/flash)
 local Overlay = require("src.ui.overlay")    -- CHORÉGRAPHIE d'entrée unifiée (voile modéré qui monte + cartes back-ease)
 local SFX = require("src.audio.sfx")         -- SON (Oniric grave) : BIND d'une relique = payoff (success). No-op headless.
 local RelicCard = require("src.ui.relic_card") -- MOLÉCULE carte de relique (fond + icône animée + nom + effet + flavor)
 local CardGlossary = require("src.ui.card_glossary")
 local Relics = require("src.data.relics")    -- pour le PALIER de nature (band -> couleur de carte Argent/Or/Prismatique)
+local RelicGen = require("src.gen.relicgen")
+local Rarity = require("src.gen.rarity")
+local MonsterCard = require("src.render.monstercard")
+local Units = require("src.data.units")
+local UnitResolver = require("src.core.unit_resolver")
+local Mutations = require("src.run.mutations")
 local MechanicsText = require("src.ui.mechanics_text")
 local RunState = require("src.run.state")    -- pour DECLINE_RELIC_GOLD (or accordé au refus)
-local T = require("src.core.i18n").t
+local I18n = require("src.core.i18n")
+local T = I18n.t
 
 local Relicpick = {}
 Relicpick.__index = Relicpick
@@ -67,16 +76,181 @@ local CARD_TOP = 196               -- haut de la bande de cartes (sous l'en-têt
 local BIND_W, BIND_H = 320, 60     -- BIND THE FRAGMENT (Button primary)
 local DECLINE_W, DECLINE_GAP = 168, 24 -- REFUSE (Button eco) à DROITE du BIND, même ligne
 local FOOTER_BOTTOM = 696          -- la ligne de boutons s'ancre au-dessus de ce bord (safe zone)
+local EVENT_REWARD_ART_H = 68
+
+local REWARD_COLOR = {
+  relic = C.gold,
+  unit = C.ember,
+  gold = C.brassL,
+  shop_xp = Theme.type("arcane").color,
+  shop_tier_up = Theme.type("abyss").color,
+  mutation = C.blood,
+}
+
+local function hasKey(key) return I18n.has and I18n.has(key) end
+
+local function tx(key, fallback, vars)
+  if hasKey(key) then return T(key, vars) end
+  return fallback or key
+end
+
+local function mutationText(id, field)
+  local def = Mutations.byId[id]
+  local key = id and ("mutation." .. tostring(id) .. "." .. field) or nil
+  if key and hasKey(key) then return T(key) end
+  if field == "name" then return def and def.label or tostring(id) end
+  return def and def.desc or ""
+end
+
+local function wrapLines(font, str, limit)
+  if not (font and font.getWrap and str and str ~= "") then return 0 end
+  local _, lines = font:getWrap(str, limit)
+  return math.max(1, #lines)
+end
+
+local function rewardTitle(reward)
+  reward = reward or {}
+  if reward.kind == "relic" then
+    return reward.id and T("relic." .. reward.id .. ".name") or T("runevent.reward.kind.relic")
+  elseif reward.kind == "unit" then
+    local nm = reward.id and T("unit." .. reward.id .. ".name") or T("runevent.reward.kind.unit")
+    return T("runevent.reward.unit", { name = nm, level = reward.level or 1 })
+  elseif reward.kind == "gold" then
+    return T("runevent.reward.gold", { n = reward.amount or 0 })
+  elseif reward.kind == "shop_xp" then
+    return T("runevent.reward.shop_xp", { n = reward.amount or 0 })
+  elseif reward.kind == "shop_tier_up" then
+    return T("runevent.reward.shop_tier_up", { n = reward.amount or 1 })
+  elseif reward.kind == "mutation" then
+    local id = reward.id or reward.mutation
+    return T("runevent.reward.mutation", { name = mutationText(id, "name") })
+  end
+  return T("runevent.reward.unknown")
+end
+
+local function rewardDetail(reward)
+  reward = reward or {}
+  if reward.kind == "relic" then return reward.id and T("relic." .. reward.id .. ".effect") or "" end
+  if reward.kind == "unit" then
+    local u = Units[reward.id] or {}
+    return T("runevent.reward.unit_detail", {
+      rank = u.rank or 1,
+      cost = u.cost or u.rank or 1,
+    })
+  end
+  if reward.kind == "gold" then return T("runevent.reward.gold_detail") end
+  if reward.kind == "shop_xp" then return T("runevent.reward.shop_xp_detail") end
+  if reward.kind == "shop_tier_up" then return T("runevent.reward.shop_tier_up_detail") end
+  if reward.kind == "mutation" then
+    return mutationText(reward.id or reward.mutation, "desc")
+  end
+  return ""
+end
+
+local function rewardHasArt(reward)
+  reward = reward or {}
+  return (reward.kind == "relic" and reward.id and Relics[reward.id])
+    or (reward.kind == "unit" and reward.id and Units[reward.id])
+    or reward.kind == "gold"
+    or reward.kind == "shop_xp"
+    or reward.kind == "shop_tier_up"
+    or reward.kind == "mutation"
+end
+
+local function eventChoiceOpts(choice, eventId)
+  local reward = choice and choice.reward or {}
+  local label = tx(choice.labelKey, choice.id and choice.id:gsub("_", " "):upper() or T("relicpick.choose"))
+  local bodyKey = choice.bodyKey or (eventId and choice.id and ("runevent." .. eventId .. ".choice." .. choice.id .. ".body"))
+  return {
+    label = label,
+    body = tx(bodyKey or "", ""),
+    reward = reward,
+    rewardTitle = rewardTitle(reward),
+    rewardDetail = rewardDetail(reward),
+    accent = REWARD_COLOR[reward.kind] or C.iron,
+  }
+end
+
+local function measureEventCard(w, opts)
+  local bodyW = w - 34
+  local labelF = Theme.label(14)
+  local rewardF = Theme.subhead(18)
+  local bodyF = Theme.body(16)
+  local detailF = Theme.body(14)
+  local h = 26
+  h = h + (labelF and labelF:getHeight() or 14) + 18
+  h = h + wrapLines(bodyF, opts.body, bodyW) * (bodyF and bodyF:getHeight() or 16) + 18
+  h = h + 20
+  if rewardHasArt(opts.reward) then h = h + EVENT_REWARD_ART_H + 10 end
+  h = h + wrapLines(rewardF, opts.rewardTitle, bodyW) * (rewardF and rewardF:getHeight() or 18) + 8
+  h = h + wrapLines(detailF, opts.rewardDetail, bodyW) * (detailF and detailF:getHeight() or 14) + 24
+  return math.max(300, h)
+end
+
+local function drawRewardArt(view, palette, reward, x, y, w, h, t)
+  if not rewardHasArt(reward) then return 0 end
+  local boxW = math.min(132, w)
+  local bx = math.floor(x + (w - boxW) / 2)
+  local cx, cy = bx + boxW / 2, y + h / 2
+  Draw.rect(bx, y, boxW, h, C.stone900, C.iron, 1)
+  if reward.kind == "relic" then
+    local baked = RelicGen.cached(reward.id, palette)
+    if baked and baked.image and love.graphics then
+      local s = math.min((boxW - 18) / baked.w, (h - 12) / baked.h)
+      love.graphics.setColor(1, 1, 1, 1)
+      love.graphics.draw(baked.image,
+        math.floor(bx + boxW / 2 - baked.w * s / 2),
+        math.floor(y + h / 2 - baked.h * s / 2), 0, s, s)
+    else
+      Badge.diamond(bx + boxW / 2, y + h / 2, 9, C.gold, C.brass, C.brassS)
+    end
+  elseif reward.kind == "unit" then
+    local rank = (Units[reward.id] and Units[reward.id].rank) or 1
+    MonsterCard.drawCardPortrait(view, palette, reward.id, nil,
+      { x = bx + 4, y = y + 4, w = boxW - 8, h = h - 8 },
+      rank, Rarity.frame(rank), rank >= 4, t)
+  elseif reward.kind == "gold" then
+    Badge.diamond(cx - 18, cy, 11, C.brassL, C.brassD, C.brassS)
+    Badge.diamond(cx + 2, cy - 6, 7, C.gold, C.brassD, C.brassS)
+    Badge.diamond(cx + 18, cy + 7, 6, C.brass, C.brassD, nil)
+    Draw.textC(T("runevent.reward.art.gold", { n = reward.amount or 0 }), cx, y + h - 24, C.gold, Theme.value(13))
+  elseif reward.kind == "shop_xp" then
+    local n = math.max(1, math.min(5, math.floor((reward.amount or 0) / 2 + 0.5)))
+    for i = 1, 5 do
+      local px = cx - 34 + (i - 1) * 17
+      Draw.rect(px, cy - 10, 11, 20, i <= n and C.gold or C.stone800, i <= n and C.brassS or C.brassD, 1)
+    end
+    Draw.textC(T("runevent.reward.art.shop_xp"), cx, y + h - 22, C.gold, Theme.value(12))
+  elseif reward.kind == "shop_tier_up" then
+    Badge.rarity(cx - 46, cy - 16, 92, math.max(1, math.min(5, reward.amount or 1)), 5, 10)
+    Draw.textC(T("runevent.reward.art.shop_tier"), cx, y + h - 22, Theme.type("abyss").color, Theme.value(11))
+  elseif reward.kind == "mutation" then
+    local col = C.blood
+    Draw.setColor(col, 0.22)
+    love.graphics.circle("fill", cx, cy - 2, 24)
+    Draw.setColor(col, 0.80)
+    love.graphics.setLineWidth(2)
+    love.graphics.circle("line", cx, cy - 2, 20)
+    love.graphics.line(cx - 18, cy + 8, cx - 4, cy - 17, cx + 9, cy + 11, cx + 20, cy - 9)
+    love.graphics.setLineWidth(1)
+    Draw.textC(T("runevent.reward.art.mutation"), cx, y + h - 22, col, Theme.value(11))
+  end
+  return h
+end
 
 function Relicpick.new(palette, vw, vh, host, payload)
   payload = payload or {}
+  local event = payload.event
+  local eventMode = event ~= nil
   local self = setmetatable({
     vw = vw, vh = vh, t = 0, host = host, palette = palette,
     daChrome = true,
     titleKey = "scene.build", hintKey = "ui.empty",
-    choices = payload.choices or {},
+    eventMode = eventMode,
+    event = event,
+    choices = eventMode and ((event and event.choices) or {}) or (payload.choices or {}),
     -- SOURCE de l'offre (retour user 2026-06) : level-up (fusion build, midRound) vs marchand (post-combat /3).
-    source = payload.source or (payload.midRound and "levelup") or "merchant",
+    source = payload.source or (eventMode and "runevent") or (payload.midRound and "levelup") or "merchant",
     sel = nil, hover = nil,
     mx = 0, my = 0, -- souris en ESPACE DESIGN (×4 du virtuel)
     bindHover = false, declineHover = false,
@@ -87,16 +261,25 @@ function Relicpick.new(palette, vw, vh, host, payload)
   -- une fois (i18n résolu) puis on prend le MAX des hauteurs -> rangée homogène, aucun flavor sous le bord.
   self.cardOpts = {}
   local cardH = 0
-  for i, id in ipairs(self.choices) do
-    local opts = {
-      name = T("relic." .. id .. ".name"),
-      effect = table.concat(MechanicsText.relicLines(id), "\n"),
-      flavor = T("relic." .. id .. ".flavor"),
-      fam = RELIC_TYPE[id] or "bone",
-      band = Relics[id] and Relics[id].band, -- PALIER de nature -> couleur de carte (Argent/Or/Prismatique)
-    }
+  local cardW = (eventMode and #self.choices >= 4) and 268 or CARD_W
+  self.cardW = cardW
+  for i, choice in ipairs(self.choices) do
+    local id = choice
+    local opts
+    if eventMode then
+      opts = eventChoiceOpts(choice, event and event.id)
+      cardH = math.max(cardH, measureEventCard(cardW, opts))
+    else
+      opts = {
+        name = T("relic." .. id .. ".name"),
+        effect = table.concat(MechanicsText.relicLines(id), "\n"),
+        flavor = T("relic." .. id .. ".flavor"),
+        fam = RELIC_TYPE[id] or "bone",
+        band = Relics[id] and Relics[id].band, -- PALIER de nature -> couleur de carte (Argent/Or/Prismatique)
+      }
+      cardH = math.max(cardH, RelicCard.measure(cardW, opts))
+    end
     self.cardOpts[i] = opts
-    cardH = math.max(cardH, RelicCard.measure(CARD_W, opts))
   end
   self.cardH = math.max(cardH, 320) -- plancher : une carte n'est jamais ridiculement courte
 
@@ -104,10 +287,10 @@ function Relicpick.new(palette, vw, vh, host, payload)
   local n = #self.choices
   self.cards = {}
   if n > 0 then
-    local total = n * CARD_W + (n - 1) * GAP
+    local total = n * cardW + (n - 1) * GAP
     local band = { x = math.floor((Draw.W - total) / 2), y = CARD_TOP, w = total, h = self.cardH }
     local specs = {}
-    for i = 1, n do specs[i] = { size = CARD_W } end
+    for i = 1, n do specs[i] = { size = cardW } end
     local cols = Layout.row(band, specs, { gap = GAP, align = "stretch" })
     for i = 1, n do self.cards[i] = cols[i] end
   end
@@ -117,7 +300,9 @@ function Relicpick.new(palette, vw, vh, host, payload)
   -- BIND (primary, centré) + REFUSE (eco, à droite) sur la même ligne, ancrés au pied (safe zone).
   local bindY = FOOTER_BOTTOM - BIND_H
   self.bind = { x = math.floor((Draw.W - BIND_W) / 2), y = bindY, w = BIND_W, h = BIND_H }
-  self.decline = { x = self.bind.x + BIND_W + DECLINE_GAP, y = bindY, w = DECLINE_W, h = BIND_H }
+  if not eventMode then
+    self.decline = { x = self.bind.x + BIND_W + DECLINE_GAP, y = bindY, w = DECLINE_W, h = BIND_H }
+  end
 
   Feel.reset() -- repart au repos en (re)entrant (survol/press/respiration vierges)
   return self
@@ -132,7 +317,7 @@ function Relicpick:update(frameDt)
   Feel.update(frameDt) -- avance easings + respiration (les actions sont SYNCHRONES ici, cf. confirm/decline)
   -- cibles de survol des boutons (glow/lift montent en ease-out).
   Feel.hover("relicpick.bind", self.bindHover and self.sel ~= nil)
-  Feel.hover("relicpick.decline", self.declineHover)
+  if self.decline then Feel.hover("relicpick.decline", self.declineHover) end
 end
 
 function Relicpick:drawBack(view)
@@ -146,10 +331,35 @@ function Relicpick:drawWorld() end
 -- Une carte de relique PROPRE : la MOLÉCULE RelicCard (fond Panel + gemme de famille + nom + effet + flavor)
 -- en état "identified" (ou "selected" = liseré doré d'accent pour l'offre choisie), avec l'ARTEFACT baké
 -- posé en COEUR (dans la gemme = son écrin). Survol (sans sélection) = léger liseré laiton (affordance).
-function Relicpick:drawCard(i)
+function Relicpick:drawCard(i, view)
   local card = self.cards[i]
   local sel = (self.sel == i)
   local opts = self.cardOpts[i]
+
+  if self.eventMode then
+    Panel.draw(card.x, card.y, card.w, card.h, {
+      fill1 = C.stone800, fill2 = C.stone900,
+      accent = sel and C.gold or opts.accent,
+    })
+    local x, y, w = card.x + 17, card.y + 18, card.w - 34
+    local labelF = Theme.label(14)
+    local bodyF = Theme.body(16)
+    local rewardF = Theme.subhead(18)
+    local detailF = Theme.body(14)
+    Draw.textTrackedC(opts.label:upper(), card.x + card.w / 2, y, sel and C.gold or C.ink, labelF, 1.5)
+    y = y + (labelF and labelF:getHeight() or 14) + 18
+    y = y + Draw.textWrap(opts.body, x, y, w, C.ink2, bodyF, "left") + 18
+    Dividers.text(card.x + card.w / 2, y, w, T("runevent.reward_header"), 2)
+    y = y + 24
+    if rewardHasArt(opts.reward) then
+      y = y + drawRewardArt(view, self.palette, opts.reward, x, y, w, EVENT_REWARD_ART_H, self.t / 60) + 10
+    end
+    Draw.textWrap(opts.rewardTitle, x, y, w, opts.accent or C.gold, rewardF, "left")
+    y = y + wrapLines(rewardF, opts.rewardTitle, w) * (rewardF and rewardF:getHeight() or 18) + 8
+    Draw.textWrap(opts.rewardDetail, x, y, w, C.ink2, detailF, "left")
+    if not sel and self.hover == i then Draw.rect(card.x, card.y, card.w, card.h, nil, C.brass, 1) end
+    return
+  end
 
   -- état de la carte : sélectionnée = "selected" (liseré doré) ; sinon "identified". Le PALIER (band) teinte
   -- le liseré (Argent/Or/Prismatique) ET pose un label de palier -> la nature se lit d'un coup d'œil.
@@ -184,33 +394,54 @@ function Relicpick:drawOverlay(view)
   -- (PRÉSERVÉ : Theme.display) + filet laiton orné dessous (Dividers.brass). Hiérarchie par CASSE/COULEUR. ──
   -- KICKER = SOURCE de l'offre (dit POURQUOI on a la relique) : level-up doré (mis en avant) vs marchand sourd.
   local lv = (self.source == "levelup")
-  Draw.textTrackedC(T(lv and "relicpick.src_levelup" or "relicpick.src_merchant"),
-    Draw.W / 2, 70, lv and C.gold or C.ink3, Theme.flavor(15), 1)
-  Draw.textC(T("relicpick.title"), Draw.W / 2, 96, C.ink, Theme.display(50))
-  Dividers.brass(Draw.W / 2, 168, 360)
+  if self.eventMode then
+    Draw.textTrackedC(T("relicpick.src_event"), Draw.W / 2, 62, C.ink3, Theme.flavor(15), 1)
+    Draw.textC(T(self.event.titleKey), Draw.W / 2, 86, C.ink, Theme.display(42))
+    Draw.textWrap(T(self.event.bodyKey), 280, 118, 720, C.ink2, Theme.body(16), "center")
+  else
+    Draw.textTrackedC(T(lv and "relicpick.src_levelup" or "relicpick.src_merchant"),
+      Draw.W / 2, 70, lv and C.gold or C.ink3, Theme.flavor(15), 1)
+    Draw.textC(T("relicpick.title"), Draw.W / 2, 96, C.ink, Theme.display(50))
+  end
+  Dividers.brass(Draw.W / 2, self.eventMode and 182 or 168, 360)
 
   -- ── CARTES PROPRES (RelicCard) ──
-  for i = 1, #self.cards do self:drawCard(i) end
+  for i = 1, #self.cards do self:drawCard(i, view) end
   do
     local gi = self.hover or self.sel
     if gi and self.cards[gi] and self.choices[gi] then
-      CardGlossary.drawRelic(view, self.cards[gi], self.choices[gi], self.t / 60,
-        { force = self.forceKeywordGlossary, scroll = self.tagGlossaryScroll or 0 })
+      if self.eventMode then
+        local reward = self.choices[gi].reward or {}
+        if reward.kind == "relic" and reward.id then
+          CardGlossary.drawRelic(view, self.cards[gi], reward.id, self.t / 60,
+            { force = self.forceKeywordGlossary, scroll = self.tagGlossaryScroll or 0 })
+        elseif reward.kind == "unit" and reward.id then
+          local level = UnitResolver.clampLevel(reward.level or 1)
+          CardGlossary.drawMonster(view, self.cards[gi], reward.id, self.t / 60,
+            { unit = UnitResolver.unitForLevel(reward.id, level), force = self.forceKeywordGlossary,
+              scroll = self.tagGlossaryScroll or 0 })
+        end
+      elseif not self.eventMode then
+        CardGlossary.drawRelic(view, self.cards[gi], self.choices[gi], self.t / 60,
+          { force = self.forceKeywordGlossary, scroll = self.tagGlossaryScroll or 0 })
+      end
     end
   end
 
   -- ── BIND : Button PRIMARY (l'action unique). Actif si une carte est choisie. JUICE via Feel.state. ──
   local ok = self.sel ~= nil
   Button.draw(self.bind.x, self.bind.y, self.bind.w, self.bind.h, "primary",
-    ok and T("relicpick.bind") or T("relicpick.choose"),
+    ok and T(self.eventMode and "runevent.bind" or "relicpick.bind") or T("relicpick.choose"),
     { disabled = not ok, hover = self.bindHover and ok, feel = Feel.state("relicpick.bind"),
       id = "relicpick.bind", mouse = { mx = self.mx, my = self.my }, t = self.t / 60 })
 
   -- ── REFUSE : Button ECO (compact + coût = or accordé au refus). Toujours actif (indépendant du choix). ──
-  Button.draw(self.decline.x, self.decline.y, self.decline.w, self.decline.h, "eco",
-    T("relic.decline_label"),
-    { cost = RunState.DECLINE_RELIC_GOLD, hover = self.declineHover, feel = Feel.state("relicpick.decline"),
-      id = "relicpick.decline" })
+  if self.decline then
+    Button.draw(self.decline.x, self.decline.y, self.decline.w, self.decline.h, "eco",
+      T("relic.decline_label"),
+      { cost = RunState.DECLINE_RELIC_GOLD, hover = self.declineHover, feel = Feel.state("relicpick.decline"),
+        id = "relicpick.decline" })
+  end
 
   Overlay.popContent() -- fin de l'enrobage du groupe (back-ease)
   -- FADE-UP : wash sombre par-dessus, alpha = (1-anim)·force, qui s'efface à l'entrée -> l'offre « remonte du
@@ -262,6 +493,13 @@ function Relicpick:keypressed(key)
 end
 
 function Relicpick:confirm()
+  if self.eventMode then
+    if self.sel and self.host.finishRunEventPick then
+      SFX.play("success")
+      self.host.finishRunEventPick(self.sel)
+    end
+    return
+  end
   local id = self.choices[self.sel]
   if id and self.host.finishRelicPick then
     SFX.play("success") -- BIND : on scelle une relique (pad maj7 grave, rêveur) — payoff sémantique

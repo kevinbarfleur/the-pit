@@ -10,14 +10,19 @@
 
 local Palette  = require("src.core.palette")
 local RunState = require("src.run.state")
+local RunEvents = require("src.data.run_events")
 local OppGen   = require("src.data.oppgen") -- A4 : adversaire généré scalé (capture combat)
+local Compositions = require("src.data.compositions")
+local Compbuild = require("src.lab.compbuild")
 
 local Build     = require("src.scenes.build")
 local Combat    = require("src.scenes.combat")
 local Runover   = require("src.scenes.runover")
+local Bossrush  = require("src.scenes.bossrush")
 local Relicpick = require("src.scenes.relicpick")
 local Menu      = require("src.scenes.menu")
 local Gallery   = require("src.scenes.gallery")
+local Playground = require("src.scenes.playground")
 local GrimoireS = require("src.scenes.grimoire")
 local SystemMenu = require("src.ui.system_menu")
 local Draw      = require("src.ui.draw")
@@ -47,21 +52,18 @@ local function makeBuild(host)
   return b
 end
 
--- C4 — BUILD avec PIÉDESTAL pour juger le rendu du commandant (états vide/rempli/offre/survol portée). `mode`
+-- C4 — BUILD avec PIÉDESTAL pour juger le rendu du commandant (états vide/rempli/survol portée). `mode`
 -- pilote l'état du socle ; `hoverPed`/`hoverUnit` simulent un survol (curseur posé) ; `dragNonChief` simule un
 -- drag de refus. Réutilise makeBuild (board peuplé) -> on voit le board ET le socle dans la même capture.
 local function makeCommanderBuild(host, mode, opts)
   opts = opts or {}
   local b = makeBuild(host)
   local run = host.run
-  if mode == "offer" then
-    run.pendingCommanderGrant = true -- offre en attente (socle pulse en or, CTA « clique pour accepter »)
-  else
-    run.commanderUnlocked = true     -- piédestal débloqué (vide ou rempli)
-    if mode == "filled" or mode == "hover" then
-      -- galvanizer (Le Roi des Rats : commandBonus tier:1) -> sa portée éclaire les unités RANG-1 du board.
-      b.commanderSlot = { id = "galvanizer", level = 1, char = b:newRig("galvanizer") }
-    end
+  run.pendingCommanderGrant = false -- plus d'offre timée : le piédestal est always-on en live.
+  run.commanderUnlocked = true
+  if mode == "filled" or mode == "hover" then
+    -- galvanizer (Le Roi des Rats : commandBonus tier:1) -> sa portée éclaire les unités RANG-1 du board.
+    b.commanderSlot = { id = "galvanizer", level = 1, char = b:newRig("galvanizer") }
   end
   -- survol simulé : pose le curseur sur la NICHE (commanderRect, VIRTUEL). Le warm-up animera la pulsation.
   if mode == "hover" or mode == "offer" then
@@ -110,7 +112,7 @@ end
 function Builders.commander_empty(host)  return makeCommanderBuild(host, "empty") end
 function Builders.commander_filled(host) return makeCommanderBuild(host, "filled") end
 function Builders.commander_hover(host)  return makeCommanderBuild(host, "hover") end
-function Builders.commander_offer(host)  return makeCommanderBuild(host, "offer") end
+function Builders.commander_offer(host)  return makeCommanderBuild(host, "offer") end -- legacy alias : empty hovered.
 function Builders.commander_refuse(host) return makeCommanderBuild(host, "empty", { dragNonChief = true }) end
 
 function Builders.commander_spore_keywords(host)
@@ -216,6 +218,107 @@ function Builders.combat(host)
   return Combat.new(Palette, VW, VH, host, { left = left, right = right, enemyKey = b:encounterKeyFor(#enc.units), seed = 7 })
 end
 
+-- COMBAT_HOVER_INSPECT : validation du nouveau hover combat (carte + sidecar influences + pause).
+-- On engage la bataille quelques ticks, on place la souris sur une unite vivante, puis on gele la scene :
+-- le shot montre l'etat inspectable sans que la simulation continue pendant l'export.
+function Builders.combat_hover_inspect(host)
+  local cs = Builders.combat(host)
+  for _ = 1, 24 do cs:update(1.0); if cs.arena.over then break end end
+  local hover
+  for _, u in ipairs(cs.arena.units) do
+    if u.alive and u.team == "left" and not u.isCommander then hover = hover or u end
+  end
+  if hover then
+    cs.mx, cs.my = hover.x * 4, (hover.y - 16) * 4
+  end
+  cs.paused = true
+  cs.update = function() end
+  return cs
+end
+
+-- COMBAT_MURMUR_INSPECT : vitrine du panneau d'influences avec un murmure combat_start déjà actif.
+-- Le murmure reste absent des cartes/tags : seule la section basse du sidecar révèle une ligne cryptique.
+function Builders.combat_murmur_inspect(host)
+  local left = Compbuild.toComp(Compositions.byId.whisper_abyss_carre, -1)
+  local right = Compbuild.toComp(Compositions.byId.tank_carre, 1)
+  local cs = Combat.new(Palette, VW, VH, host, { left = left, right = right, enemyKey = "exhibition", seed = 1041 })
+  for _ = 1, 8 do cs:update(1.0); if cs.arena.over then break end end
+  local hover
+  for _, u in ipairs(cs.arena.units) do
+    if u.alive and u.team == "left" and u.id == "ink_horror" then hover = u; break end
+  end
+  hover = hover or cs.arena.units[1]
+  if hover then cs.mx, cs.my = hover.x * 4, (hover.y - 16) * 4 end
+  cs.paused = true
+  cs.update = function() end
+  return cs
+end
+
+function Builders.combat_network_focus(host)
+  local cs = Builders.combat_hover_inspect(host)
+  cs.forceNetworkInspect = true
+  return cs
+end
+
+function Builders.combat_network_all(host)
+  local cs = Builders.combat_hover_inspect(host)
+  cs.forceNetworkInspect = true
+  cs.mx, cs.my = -100, -100
+  return cs
+end
+
+-- COMBAT_IMPACTS : planche de validation des signatures d'impact (attaque/saignement/poison/choc/brûlure/
+-- pourriture). Injecte UNIQUEMENT des transients RENDER dans ArenaDraw puis gèle la scène : aucune SIM touchée.
+function Builders.combat_impacts(host)
+  local cs = Builders.combat(host)
+  for _ = 1, 10 do cs:update(1.0) end
+  local units = {}
+  for _, u in ipairs(cs.arena.units) do
+    if u.alive and not u.isCommander then units[#units + 1] = u end
+  end
+  local causes = { "attack", "bleed", "poison", "shock", "burn", "rot" }
+  local values = { 13, 9, 7, 11, 8, 6 }
+  for i, cause in ipairs(causes) do
+    local target = units[i] or units[#units]
+    local source = units[#units - i + 1] or units[1]
+    if target then
+      if source then cs.renderer:emitAttackMotion(source, target) end
+      cs.renderer:emitDamageFx({ target = target, source = source, cause = cause }, values[i])
+      cs.renderer:spawnDamageNumber({ target = target, source = source, cause = cause }, values[i])
+      cs.renderer:emitHurtMotion(source, target)
+    end
+  end
+  for _ = 1, 6 do cs.renderer:update(1.0, cs.t) end
+  cs.update = function() end
+  return cs
+end
+
+-- COMBAT_NUMBERS_STACK : stress test de lisibilité des dégâts. Force plusieurs nombres sur une même cible
+-- et une cible voisine pour vérifier le layout anti-superposition sans attendre une situation rare en combat.
+function Builders.combat_numbers_stack(host)
+  local cs = Builders.combat(host)
+  for _ = 1, 10 do cs:update(1.0) end
+  local targets, source = {}, nil
+  for _, u in ipairs(cs.arena.units) do
+    if u.alive and not u.isCommander then
+      if u.team == "left" then targets[#targets + 1] = u else source = source or u end
+    end
+  end
+  local primary = targets[2] or targets[1]
+  local secondary = targets[3] or targets[1]
+  local causes = { "attack", "poison", "poison", "poison", "burn", "burn", "shock", "bleed" }
+  local values = { 18, 3, 4, 5, 4, 6, 9, 7 }
+  for i, cause in ipairs(causes) do
+    local target = (i <= 6) and primary or secondary
+    if target then
+      cs.renderer:spawnDamageNumber({ target = target, source = source, cause = cause }, values[i])
+    end
+  end
+  for _ = 1, 8 do cs.renderer:update(1, cs.t) end
+  cs.update = function() end
+  return cs
+end
+
 -- C4 — COMBAT AVEC COMMANDANT (revue : le chef VISIBLE en retrait + AUCUNE barre de vie). Identique à
 -- Builders.combat, mais on couronne un galvanizer côté JOUEUR avant le bake -> le commandant entre au comp
 -- (isCommander/untargetable) et arena_draw le replace en VIRTUEL derrière la formation (commanderCombatPos).
@@ -294,6 +397,45 @@ function Builders.relicpick(host)
   return Relicpick.new(Palette, VW, VH, host, { choices = choices, midRound = true })
 end
 
+-- RUNEVENT : remplace le marchand post-combat par une rencontre thematique a rewards explicites.
+function Builders.runevent(host)
+  host.run = RunState.new(SEED)
+  host.run.wins, host.run.losses = 2, 1
+  local exclude = {}
+  for _, id in ipairs(RunEvents.order) do if id ~= "hollow_carcass" then exclude[id] = true end end
+  local event = host.run:rollRunEvent({ exclude = exclude })
+  return Relicpick.new(Palette, VW, VH, host, { event = event })
+end
+
+local function makeRunEventShot(host, eventId, opts)
+  opts = opts or {}
+  host.run = RunState.new(SEED)
+  host.run.wins = opts.wins or 5
+  host.run.losses = opts.losses or 1
+  local exclude = {}
+  for _, id in ipairs(RunEvents.order) do if id ~= eventId then exclude[id] = true end end
+  local rollOpts = { exclude = exclude }
+  if opts.mutations then
+    -- Export-only target: live mutation rewards still need Build/EventRewards to
+    -- provide a real instance. This just lets --shoot cover the visual lane.
+    rollOpts.mutationTarget = function()
+      return { copyId = 1, where = "board", slot = 5, id = "husk", level = 2 }
+    end
+  end
+  local event = host.run:rollRunEvent(rollOpts)
+  return Relicpick.new(Palette, VW, VH, host, { event = event })
+end
+
+function Builders.runevent_brood(host) return makeRunEventShot(host, "sealed_brood", { mutations = true }) end
+function Builders.runevent_economy(host) return makeRunEventShot(host, "ashen_well", { mutations = true }) end
+function Builders.runevent_shop_tier(host) return makeRunEventShot(host, "fossil_gate") end
+function Builders.runevent_unit_glossary(host)
+  local s = makeRunEventShot(host, "sealed_brood", { mutations = true })
+  s.hover = 2 -- unit reward in the current seeded brood event.
+  s.forceKeywordGlossary = true
+  return s
+end
+
 -- BUILD_RELIC_HOVER : board peuplé + 3 reliques au HUD + curseur posé sur une miniature -> POP-UP de la
 -- carte de relique ANIMÉE (RelicCard avec icône RelicAnim). Prouve au screenshot la pop-up de survol HUD.
 -- On choisit 3 reliques de PALIERS variés (Argent/Or/Prismatique) pour montrer la couleur de carte, et on
@@ -305,6 +447,32 @@ function Builders.build_relic_hover(host)
   -- socle de la relique #2 (design) : RELIC_B_X0=16, RELIC_B_Y=23, pas 30, côté 24 -> centre ≈ (58, 35).
   -- curseur en VIRTUEL = design/4 (relicAt multiplie par 4) : (14.5, 8.75) tombe au centre du 2e socle.
   b.mx, b.my = 58 / 4, 35 / 4
+  return b
+end
+
+-- BUILD_AURA_HOVER : board + commandant + reliques, curseur sur une unite affectee. Capture de regression pour
+-- les liens permanents d'aura et l'inspecteur "takes from" (unite, commandant, reliques).
+function Builders.build_aura_hover(host)
+  local b = makeBuild(host)
+  host.run.commanderUnlocked = true
+  b.commanderSlot = { id = "galvanizer", level = 1, char = b:newRig("galvanizer") }
+  host.run:grantRelic("aegis")
+  host.run:grantRelic("blood_banner")
+  local p = b.pos[4] -- marauder: voisin du templar + rang 1 commande par galvanizer + reliques team.
+  b.mx, b.my = p.x, p.y
+  return b
+end
+
+function Builders.build_aura_network_focus(host)
+  local b = Builders.build_aura_hover(host)
+  b.forceNetworkInspect = true
+  return b
+end
+
+function Builders.build_aura_network_all(host)
+  local b = Builders.build_aura_hover(host)
+  b.forceNetworkInspect = true
+  b.mx, b.my = -100, -100
   return b
 end
 
@@ -336,8 +504,79 @@ function Builders.settings(host) return makeSystemShot(host, "settings") end
 -- RUNOVER : écran de fin (ascension). On feed un run seedé + résultat.
 function Builders.runover(host)
   host.run = RunState.new(SEED)
+  host.run.wins = RunState.WIN_TARGET
+  host.run.losses = 2
+  host.run.round = RunState.WIN_TARGET + host.run.losses
+  host.run.shopTier = 5
   return Runover.new(Palette, VW, VH, host, { result = "win", run = host.run })
 end
+
+local function makeBossrushShot(host, bossKey, opts)
+  opts = opts or {}
+  host.run = RunState.new(SEED)
+  host.run.wins = RunState.WIN_TARGET
+  local Comps = require("src.data.compositions")
+  local Compbuild = require("src.lab.compbuild")
+  local comp = Comps.byId["poison_diamant_perfect"]
+  local left = comp and Compbuild.toComp(comp, -1) or nil
+  local scene = Bossrush.new(Palette, VW, VH, host, {
+    run = host.run,
+    left = left,
+    bossKey = bossKey or "brasier",
+    seed = SEED + 900,
+    instantScore = opts.instantScore,
+    scoreTicks = opts.scoreTicks,
+    tickCap = opts.tickCap,
+  })
+  if opts.finalScore and scene.result then
+    scene.shownScore = scene.result.boss_score_damage or 0
+    scene.scorePlayed = true
+  end
+  return scene
+end
+
+function Builders.bossrush(host) return makeBossrushShot(host, "brasier") end
+function Builders.bossrush_scoring(host)
+  local scene = makeBossrushShot(host, "brasier")
+  local guard = 0
+  while scene and not scene.result and guard < 1800 do
+    scene:update(1)
+    guard = guard + 1
+    if scene.scoreStartTick and (scene.scoreElapsed or 0) >= 150 and (scene.scoreDamage or 0) > 0 then break end
+  end
+  if scene then
+    scene.paused = true
+    scene.skipping = false
+  end
+  return scene
+end
+function Builders.bossrush_result(host) return makeBossrushShot(host, "brasier", { instantScore = true, finalScore = true }) end
+function Builders.bossrush_brasier(host) return makeBossrushShot(host, "brasier") end
+function Builders.bossrush_leviathan(host) return makeBossrushShot(host, "leviathan") end
+function Builders.bossrush_regard(host) return makeBossrushShot(host, "regard") end
+function Builders.bossrush_ossuaire(host) return makeBossrushShot(host, "ossuaire") end
+function Builders.bossrush_kraken(host) return makeBossrushShot(host, "kraken") end
+function Builders.bossrush_idole(host) return makeBossrushShot(host, "idole") end
+function Builders.bossrush_ruche(host) return makeBossrushShot(host, "ruche") end
+function Builders.bossrush_floraison(host) return makeBossrushShot(host, "floraison") end
+function Builders.bossrush_devoreur(host) return makeBossrushShot(host, "devoreur") end
+function Builders.bossrush_vermine(host) return makeBossrushShot(host, "vermine") end
+
+local function makePlaygroundShot(host, opts)
+  opts = opts or {}
+  if not host.goto then host.goto = function() end end
+  local pg = Playground.new(Palette, VW, VH, host)
+  if opts.boss then
+    pg:setFilter("tag:boss")
+    for i, sc in ipairs(pg.scenarios or {}) do
+      if sc.id == "boss_brasier" then pg:select(i); break end
+    end
+  end
+  return pg
+end
+
+function Builders.playground(host) return makePlaygroundShot(host) end
+function Builders.playground_boss(host) return makePlaygroundShot(host, { boss = true }) end
 
 -- GRIMOIRE : codex persistant en deux colonnes. Pour la capture : onglet BESTIAIRE, entrée de haut tier
 -- sélectionnée, fiche fixe à droite au niveau III. Full-unlock DEV pour ne pas dépendre de la sauvegarde.
@@ -434,9 +673,12 @@ end
 local M = {}
 
 -- Liste des noms de scènes capturables (ordre stable, pour --shoot=all et les messages d'erreur).
-M.names = { "menu", "build", "combat", "combat_react", "summary", "relicpick", "runover", "grimoire", "grimoire_glossary", "grimoire_relics",
+M.names = { "menu", "build", "combat", "combat_hover_inspect", "combat_murmur_inspect", "combat_network_focus", "combat_network_all", "combat_impacts", "combat_numbers_stack", "combat_react", "summary", "relicpick", "runevent", "runevent_brood", "runevent_economy", "runevent_shop_tier", "runevent_unit_glossary", "runover", "playground", "playground_boss", "bossrush", "bossrush_scoring", "bossrush_result", "bossrush_brasier",
+  "bossrush_leviathan", "bossrush_regard", "bossrush_ossuaire", "bossrush_kraken", "bossrush_idole",
+  "bossrush_ruche", "bossrush_floraison", "bossrush_devoreur", "bossrush_vermine",
+  "grimoire", "grimoire_glossary", "grimoire_relics",
   "grimoire_bestiary",
-  "gallery", "designsystem", "build_relic_hover", "build_freeze", "system", "settings",
+  "gallery", "designsystem", "build_relic_hover", "build_aura_hover", "build_aura_network_focus", "build_aura_network_all", "build_freeze", "system", "settings",
   "anim_attack", "anim_death", "anim_hurt",
   "combat_commander",
   "commander_empty", "commander_filled", "commander_hover", "commander_offer", "commander_refuse",

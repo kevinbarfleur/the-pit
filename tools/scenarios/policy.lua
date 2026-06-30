@@ -15,7 +15,9 @@ local Policies = require("src.lab.policies")
 
 local N = require("tools.scenarios.argn")(100)
 local BASE_SEED = 920000
-local HPM = tonumber(os.getenv("PIT_HP_MULT"))
+local HPM = Common.envNumber("PIT_HP_MULT", nil)
+local COMMANDER_MODE = Common.env("PIT_COMMANDER_MODE") or "ignore"
+local RUN_EVENTS = Common.envBool("PIT_RUN_EVENTS", false)
 
 -- ── Jeu de politiques évalué. On déplie defaultSet (wide/tall + 4 DoT committed + baseline) ; le random
 -- baseline reçoit un RNG SEEDÉ DÉDIÉ (re-seedé par run pour la reproductibilité — sinon son état dériverait
@@ -23,16 +25,8 @@ local HPM = tonumber(os.getenv("PIT_HP_MULT"))
 local function makePolicies(runIndex)
   -- RNG du baseline DÉRIVÉ du run (seed stable) -> chaque run du baseline est rejouable indépendamment.
   local brng = love.math.newRandomGenerator(7000 + runIndex)
-  return {
-    Policies.greedy_stats,
-    Policies.econ_streak,
-    Policies.tall_dense(5),
-    Policies.committed_archetype("poison", "diamant"),
-    Policies.committed_archetype("burn", "ligne"),
-    Policies.committed_archetype("rot", "carre"),
-    Policies.committed_archetype("tank", "carre"),
-    Policies.random_baseline(brng),
-  }
+  local pols = Policies.analysisSet(brng)
+  return Common.filteredRows(pols, Common.envCsv("PIT_POLICIES"), "name")
 end
 
 -- agrégat par NOM de politique
@@ -52,9 +46,9 @@ print(string.format("== P2 PROGRESSIONS PAR POLITIQUE : %d runs/politique ==", N
 for run = 1, N do
   local pols = makePolicies(run)
   for _, p in ipairs(pols) do
-    -- seed de run DÉPENDANT de (politique, run) -> chaque politique voit un MONDE différent mais reproductible.
-    local seed = BASE_SEED + run * 131 + (#p.name) -- mélange simple stable (pas de RNG ici : pur déterminisme)
-    local traj = Rundriver.run(seed, p, { hpMult = HPM })
+    -- Seed apparié par run : toutes les politiques démarrent du même monde, puis divergent par leurs actions.
+    local seed = BASE_SEED + run * 131
+    local traj = Rundriver.run(seed, p, { hpMult = HPM, commanderMode = COMMANDER_MODE, runEvents = RUN_EVENTS })
     local a = A(p.name)
     a.runs = a.runs + 1
     a.roundsSum = a.roundsSum + #traj.rounds
@@ -119,6 +113,7 @@ for _, r in ipairs(rows) do
     avg_wins = r.avg_wins, combat_winrate = r.combat_wr, avg_gold = r.avg_gold, avg_score = r.avg_score }
 end
 local payload = { mode = "policy", runs_per_policy = N, baseline_completion = baseComp,
+  config = { hp_mult = HPM, commander_mode = COMMANDER_MODE, run_events = RUN_EVENTS, policies = Common.env("PIT_POLICIES") },
   beat_baseline = beatBaseline, any_complete = anyComplete, policy_completion = pc }
 -- résumé de méta : completion par politique (compact, diff stable).
 local refComp = {}

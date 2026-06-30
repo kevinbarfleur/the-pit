@@ -1,0 +1,418 @@
+[
+  {
+    "cost": 0,
+    "description": "Lower the shop rank",
+    "id": "basic_bait",
+    "name": "Basic Bait",
+    "rarity": {
+      "color": "#70707a",
+      "label": "Common"
+    },
+    "sourceUrl": "https://batodex.com/items/basic_bait",
+    "sources": null,
+    "tier": 1
+  },
+  {
+    "cost": 0,
+    "description": "Give 2 random monsters +5 Damage",
+    "id": "cake",
+    "name": "Cake",
+    "rarity": {
+      "color": "#70707a",
+      "label": "Common"
+    },
+    "sourceUrl": "https://batodex.com/items/cake",
+    "sources": null,
+    "tier": 1
+  },
+  {
+    "cost": 0,
+    "description": "Reduce the cost of monsters in your shop by 5",
+    "id": "coupon",
+    "name": "Coupon",
+    "rarity": {
+      "color": "#70707a",
+      "label": "Common"
+    },
+    "sourceUrl": "https://batodex.com/items/coupon",
+    "sources": null,
+    "tier": 1
+  },
+  {
+    "cost": 0,
+    "description": "Gain 1 free reroll",
+    "id": "fake_coin",
+    "name": "Fake Coin",
+    "rarity": {
+      "color": "#70707a",
+      "label": "Common"
+    },
+    "sourceUrl": "https://batodex.com/items/fake_coin",
+    "sources": null,
+    "tier": 1
+  },
+  {
+    "cost": 0,
+    "description": "If you win the next battle, gain $5",
+    "id": "gray_chip",
+    "name": "Gray Chip",
+    "rarity": {
+      "color": "#70707a",
+      "label": "Common"
+    },
+    "sourceUrl": "https://batodex.com/items/gray_chip",
+    "sources": null,
+    "tier": 1
+  },
+  {
+    "cost": 0,
+    "description": "Transform a random Common monster into a Uncommon monster",
+    "id": "green_stone",
+    "name": "Green Stone",
+    "rarity": {
+      "color": "#70707a",
+      "label": "Common"
+    },
+    "sourceUrl": "https://batodex.com/items/green_stone",
+    "sources": null,
+    "tier": 1
+  },
+  {
+    "cost": 5,
+    "description": "Get a random monster from the current shop",
+    "id": "voucher",
+    "name": "Voucher",
+    "rarity": {
+      "color": "#70707a",
+      "label": "Common"
+    },
+    "sourceUrl": "https://batodex.com/items/voucher",
+    "sources": null,
+    "tier": 1
+  },
+  {
+    "cost": 20,
+    "description": "Rank up the shop",
+    "id": "apex_bait",
+    "name": "Apex Bait",
+    "rarity": {
+      "color": "#4ab500",
+      "label": "Uncommon"
+    },
+    "sourceUrl": "https://batodex.com/items/apex_bait",
+    "sources": null,
+    "tier": 2
+  },
+  {
+    "cost": 0,
+    "description": "Transform a random Uncommon monster into a Rare monster",
+    "id": "blue_stone",
+    "name": "Blue Stone",
+    "rarity": {
+      "color": "#4ab500",
+      "label": "Uncommon"
+    },
+    "sourceUrl": "https://batodex.com/items/blue_stone",
+    "sources": null,
+    "tier": 2
+  },
+  {
+    "cost": 0,
+    "description": "Reroll a shop with all Common monsters",
+    "id": "gray_ticket",
+    "name": "Gray Ticket",
+    "rarity": {
+      "color": "#4ab500",
+      "label": "Uncommon"
+    },
+    "sourceUrl": "https://batodex.com/items/gray_ticket",
+    "sources": null,
+    "tier": 2
+  },
+  {
+    "cost": 2,
+    "description": "If you win the next battle, gain $10",
+    "id": "green_chip",
+    "name": "Green Chip",
+    "rarity": {
+      "color": "#4ab500",
+      "label": "Uncommon"
+    },
+    "sourceUrl": "https://batodex.com/items/green_chip",
+    "sources": null,
+    "tier": 2
+  },
+  {
+    "cost": 0,
+    "description": "Reroll a shop with all Uncommon monsters",
+    "id": "green_ticket",
+    "name": "Green Ticket",
+    "rarity": {
+      "color": "#4ab500",
+      "label": "Uncommon"
+    },
+    "sourceUrl": "https://batodex.com/items/green_ticket",
+    "sources": null,
+    "tier": 2
+  },
+  {
+    "cost": 1,
+    "description": "Give the bottom right monster +5% Cooldown Speed. You can use 1 more item(s) today",
+    "id": "nana_berry",
+    "name": "Nana Berry",
+    "rarity": {
+      "color": "#4ab500",
+      "label": "Uncommon"
+    },
+    "sourceUrl": "https://batodex.com/items/nana_berry",
+    "sources": null,
+    "tier": 2
+  },
+  {
+    "cost": 1,
+    "description": "Give the bottom right monster +8 Damage. You can use 1 more item(s) today",
+    "id": "pom berry",
+    "name": "Pom Berry",
+    "rarity": {
+      "color": "#4ab500",
+      "label": "Uncommon"
+    },
+    "sourceUrl": "https://batodex.com/items/pom berry",
+    "sources": null,
+    "tier": 2
+  },
+  {
+    "cost": 0,
+    "description": "+$20 and lose 1 life",
+    "id": "red_coin",
+    "name": "Red Coin",
+    "rarity": {
+      "color": "#4ab500",
+      "label": "Uncommon"
+    },
+    "sourceUrl": "https://batodex.com/items/red_coin",
+    "sources": null,
+    "tier": 2
+  },
+  {
+    "cost": 0,
+    "description": "Give your Electric monsters +1 Shock",
+    "id": "battery_pack",
+    "name": "Battery Pack",
+    "rarity": {
+      "color": "#0084bd",
+      "label": "Rare"
+    },
+    "sourceUrl": "https://batodex.com/items/battery_pack",
+    "sources": null,
+    "tier": 3
+  },
+  {
+    "cost": 0,
+    "description": "Give your Toxic monsters +1 Poison",
+    "id": "black_sludge",
+    "name": "Black Sludge",
+    "rarity": {
+      "color": "#0084bd",
+      "label": "Rare"
+    },
+    "sourceUrl": "https://batodex.com/items/black_sludge",
+    "sources": null,
+    "tier": 3
+  },
+  {
+    "cost": 5,
+    "description": "If you win the next battle, gain $20",
+    "id": "blue_chip",
+    "name": "Blue Chip",
+    "rarity": {
+      "color": "#0084bd",
+      "label": "Rare"
+    },
+    "sourceUrl": "https://batodex.com/items/blue_chip",
+    "sources": null,
+    "tier": 3
+  },
+  {
+    "cost": 0,
+    "description": "Reroll a shop with all Rare monsters",
+    "id": "blue_ticket",
+    "name": "Blue Ticket",
+    "rarity": {
+      "color": "#0084bd",
+      "label": "Rare"
+    },
+    "sourceUrl": "https://batodex.com/items/blue_ticket",
+    "sources": null,
+    "tier": 3
+  },
+  {
+    "cost": 0,
+    "description": "Give your Fire monsters +1 Burn",
+    "id": "hot_pepper",
+    "name": "Hot Pepper",
+    "rarity": {
+      "color": "#0084bd",
+      "label": "Rare"
+    },
+    "sourceUrl": "https://batodex.com/items/hot_pepper",
+    "sources": null,
+    "tier": 3
+  },
+  {
+    "cost": 0,
+    "description": "Give your Water monsters +10 Heal",
+    "id": "mystic_pearl",
+    "name": "Mystic Pearl",
+    "rarity": {
+      "color": "#0084bd",
+      "label": "Rare"
+    },
+    "sourceUrl": "https://batodex.com/items/mystic_pearl",
+    "sources": null,
+    "tier": 3
+  },
+  {
+    "cost": 0,
+    "description": "Transform a random Rare monster into a Super Rare monster",
+    "id": "purple_stone",
+    "name": "Purple Stone",
+    "rarity": {
+      "color": "#0084bd",
+      "label": "Rare"
+    },
+    "sourceUrl": "https://batodex.com/items/purple_stone",
+    "sources": null,
+    "tier": 3
+  },
+  {
+    "cost": 0,
+    "description": "Give your Rock monsters +20 Shield",
+    "id": "shiny_pebble",
+    "name": "Shiny Pebble",
+    "rarity": {
+      "color": "#0084bd",
+      "label": "Rare"
+    },
+    "sourceUrl": "https://batodex.com/items/shiny_pebble",
+    "sources": null,
+    "tier": 3
+  },
+  {
+    "cost": 0,
+    "description": "Your monsters with no abilities gain +25% Cooldown Speed",
+    "id": "focus_pill",
+    "name": "Focus Pill",
+    "rarity": {
+      "color": "#a040a0",
+      "label": "Super Rare"
+    },
+    "sourceUrl": "https://batodex.com/items/focus_pill",
+    "sources": null,
+    "tier": 4
+  },
+  {
+    "cost": 30,
+    "description": "Get a random Legendary monster",
+    "id": "lootbox",
+    "name": "Lootbox",
+    "rarity": {
+      "color": "#a040a0",
+      "label": "Super Rare"
+    },
+    "sourceUrl": "https://batodex.com/items/lootbox",
+    "sources": null,
+    "tier": 4
+  },
+  {
+    "cost": 10,
+    "description": "If you win the next battle, gain $40",
+    "id": "purple_chip",
+    "name": "Purple Chip",
+    "rarity": {
+      "color": "#a040a0",
+      "label": "Super Rare"
+    },
+    "sourceUrl": "https://batodex.com/items/purple_chip",
+    "sources": null,
+    "tier": 4
+  },
+  {
+    "cost": 40,
+    "description": "Gain a random Super Rare trinket",
+    "id": "purple_gift",
+    "name": "Purple Gift",
+    "rarity": {
+      "color": "#a040a0",
+      "label": "Super Rare"
+    },
+    "sourceUrl": "https://batodex.com/items/purple_gift",
+    "sources": null,
+    "tier": 4
+  },
+  {
+    "cost": 0,
+    "description": "Reroll a shop with all Super Rare monsters",
+    "id": "purple_ticket",
+    "name": "Purple Ticket",
+    "rarity": {
+      "color": "#a040a0",
+      "label": "Super Rare"
+    },
+    "sourceUrl": "https://batodex.com/items/purple_ticket",
+    "sources": null,
+    "tier": 4
+  },
+  {
+    "cost": 5,
+    "description": "You can use 2 more item(s) today",
+    "id": "tote_bag",
+    "name": "Tote Bag",
+    "rarity": {
+      "color": "#a040a0",
+      "label": "Super Rare"
+    },
+    "sourceUrl": "https://batodex.com/items/tote_bag",
+    "sources": null,
+    "tier": 4
+  },
+  {
+    "cost": 50,
+    "description": "Gain a random Legendary trinket",
+    "id": "golden_gift",
+    "name": "Golden Gift",
+    "rarity": {
+      "color": "#d47c00",
+      "label": "Legendary"
+    },
+    "sourceUrl": "https://batodex.com/items/golden_gift",
+    "sources": null,
+    "tier": 5
+  },
+  {
+    "cost": 0,
+    "description": "Reroll a shop with all Legendary monsters",
+    "id": "golden_ticket",
+    "name": "Golden Ticket",
+    "rarity": {
+      "color": "#d47c00",
+      "label": "Legendary"
+    },
+    "sourceUrl": "https://batodex.com/items/golden_ticket",
+    "sources": null,
+    "tier": 5
+  },
+  {
+    "cost": 40,
+    "description": "Level up a random level 1 monster",
+    "id": "rare_candy",
+    "name": "Rare Candy",
+    "rarity": {
+      "color": "#d47c00",
+      "label": "Legendary"
+    },
+    "sourceUrl": "https://batodex.com/items/rare_candy",
+    "sources": null,
+    "tier": 5
+  }
+]

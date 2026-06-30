@@ -1,90 +1,83 @@
 -- feel-lab/rooms/components.lua
--- « VRAIS COMPOSANTS » — la page Interaction REBÂTIE avec le CODE RÉEL de The Pit (duplication assumée,
--- demandée par l'user : « voir à quoi ça ressemble avant de l'intégrer pour de vrai »). Ici, AUCUN widget
--- du lab : on dessine avec les vrais modules importés tels quels depuis src/ —
---   • src.ui.button  → les 5 variantes propres + l'ŒIL cauchemardesque du CTA (Forge.uiCtaEyes au survol)
---   • src.ui.slot    → les CASES du plateau-graphe 3×3 (6 états) + l'arête de synergie (sang lumineux)
---   • src.ui.panel   → la SURFACE propre (dégradé + liseré iron)
--- pilotés par le VRAI Feel (lib.feel = même instance que main met à jour + hooks SFX déjà câblés) et le
--- son/juice procédural du lab (shake trauma² + hitstop + number-roll). Le drag-drop reprend le ressort
--- Balatro (lib.behavior) ET le SWAP (lâcher sur une case occupée échange les deux pièces).
---
--- ⚠ Le SEUL cosmétique réel non câblé ici : l'anneau de DISTORSION onirique PAR-BOX (src.render.postfx,
--- `markBox`). Sans instance PostFX active, `markBox` est un no-op pur (zéro fuite) ; l'imbriquer dans le
--- canvas global du lab est fragile. La surcouche cauchemardesque GLOBALE du lab ([F9]) couvre le grain
--- onirique d'ambiance. Tout le reste (œil, panneaux, cases, typographie 4 voix) est le rendu RÉEL.
+-- Planche propre des vrais atomes UI du style The Pit: boutons, slots, panels
+-- et drag/drop. Elle sert de reference visuelle, pas de catalogue exhaustif.
 
-local Draw   = require("src.ui.draw")     -- VRAI helper de rendu espace-design (net HiDPI)
-local Theme  = require("src.ui.theme")    -- VRAIE palette + polices (Jacquard/Cinzel/Spectral/Space Mono)
-local Button = require("src.ui.button")   -- VRAIS boutons : primary(œil)/secondary/eco/icon/ghost
-local Panel  = require("src.ui.panel")    -- VRAIE surface
-local Slot   = require("src.ui.slot")     -- VRAIE case du plateau (6 états + arête)
-local Feel   = require("lib.feel")        -- VRAI juice (même instance que main pilote ; SFX y est branché)
-local Juice  = require("lib.juice")       -- shake / hitstop / number-roll
-local SFX    = require("lib.sfx")         -- son procédural (profil Oneiric grave par défaut)
-local B      = require("lib.behavior")    -- ressort de drag « bouncy » (feel Balatro)
+local Draw = require("src.ui.draw")
+local Theme = require("src.ui.theme")
+local Button = require("src.ui.button")
+local Panel = require("src.ui.panel")
+local Slot = require("src.ui.slot")
+local Feel = require("lib.feel")
+local Juice = require("lib.juice")
+local SFX = require("lib.sfx")
+local B = require("lib.behavior")
 
 local Room = {}
 Room.__index = Room
-local c = Theme.c
-local W, H = 1280, 720
-local CELL = 60   -- côté d'une case du plateau ET d'un jeton (ils s'emboîtent au drop)
-local LOCKED = 9  -- case verrouillée (démontre l'état "locked" ; refuse le drop)
 
--- Rects (espace DESIGN 1280×720) des boutons — partagés par draw ET input (layout statique = source unique).
+local C = Theme.c
+local W, H = 1280, 720
+local CELL = 60
+local LOCKED = 9
+
 local RECTS = {
-  cta     = { x = 40,  y = 142, w = 330, h = 54 },
-  reroll  = { x = 40,  y = 210, w = 160, h = 46 },
-  level   = { x = 210, y = 210, w = 160, h = 46 },
-  inspect = { x = 40,  y = 268, w = 160, h = 42 },
-  soldout = { x = 210, y = 268, w = 160, h = 46 },
-  ic1     = { x = 40,  y = 324, w = 40,  h = 40 },
-  ic2     = { x = 88,  y = 324, w = 40,  h = 40 },
-  ic3     = { x = 136, y = 324, w = 40,  h = 40 },
-  ic4     = { x = 184, y = 324, w = 40,  h = 40 },
-  strike  = { x = 40,  y = 380, w = 330, h = 46 },
-  score   = { x = 40,  y = 442, w = 210, h = 48 },
-  reset   = { x = 260, y = 444, w = 110, h = 44 },
+  cta = { x = 96, y = 224, w = 256, h = 48 },
+  reroll = { x = 96, y = 292, w = 122, h = 40 },
+  level = { x = 230, y = 292, w = 122, h = 40 },
+  strike = { x = 96, y = 350, w = 256, h = 42 },
+  score = { x = 96, y = 410, w = 154, h = 42 },
+  reset = { x = 266, y = 410, w = 86, h = 42 },
+  ic1 = { x = 96, y = 470, w = 38, h = 38 },
+  ic2 = { x = 146, y = 470, w = 38, h = 38 },
+  ic3 = { x = 196, y = 470, w = 38, h = 38 },
+  ic4 = { x = 246, y = 470, w = 38, h = 38 },
 }
 
--- jetons : 5 RARETÉS croissantes (le BORD de case prend la couleur de rareté = tierBorder, comme en build),
--- avec niveau (LVn) et marques d'affliction — pour montrer TOUS les leviers visuels d'une vraie case occupée.
 local TOKENS = {
-  { tierCol = c.ink3,   tierBorder = nil,    level = 1, aff = {} },                      -- commun
-  { tierCol = c.poison, tierBorder = nil,    level = 2, aff = { "shock" } },             -- peu commun
-  { tierCol = c.shield, tierBorder = c.shield, level = 1, aff = { "bleed" } },           -- rare (bord teinté)
-  { tierCol = c.rot,    tierBorder = c.rot,  level = 3, aff = { "rot" } },               -- épique
-  { tierCol = c.gold,   tierBorder = c.gold, tierGlow = true, level = 2, aff = { "poison", "burn" } }, -- légendaire (halo)
+  { tierCol = C.ink3, level = 1, aff = {} },
+  { tierCol = C.poison, level = 2, aff = { "shock" } },
+  { tierCol = C.shield, tierBorder = C.shield, level = 1, aff = { "bleed" } },
+  { tierCol = C.rot, tierBorder = C.rot, level = 3, aff = { "rot" } },
+  { tierCol = C.gold, tierBorder = C.gold, tierGlow = true, level = 2, aff = { "poison", "burn" } },
 }
 
 local function hit(r, mx, my)
-  return mx >= r.x and mx <= r.x + r.w and my >= r.y and my <= r.y + r.h
+  return r and mx >= r.x and mx <= r.x + r.w and my >= r.y and my <= r.y + r.h
+end
+
+local function adjacent(a, b)
+  local ca, ra = (a - 1) % 3, math.floor((a - 1) / 3)
+  local cb, rb = (b - 1) % 3, math.floor((b - 1) / 3)
+  return math.abs(ca - cb) + math.abs(ra - rb) == 1
 end
 
 function Room.new(app)
-  local self = setmetatable({ app = app, mx = -1, my = -1, t = 0, score = 0, shown = 0, combo = 0 }, Room)
-  Theme.load()  -- pré-chauffe les polices du VRAI Theme (instance distincte de lib.theme) — idempotent
-  -- géométrie du bac à sable
-  self.benchX0, self.benchY, self.benchStep = 700, 158, 68
-  self.boardX0, self.boardY0, self.boardStep = 824, 288, 76
-  -- plateau 3×3 (cases) + jetons
+  local self = setmetatable({
+    app = app, mx = -1, my = -1, t = 0,
+    score = 0, shown = 0, combo = 0,
+  }, Room)
+  Theme.load()
+  self.benchX0, self.benchY, self.benchStep = 852, 258, 66
+  self.boardX0, self.boardY0, self.boardStep = 902, 372, 74
   self.cells = {}
   for i = 1, 9 do self.cells[i] = { token = nil } end
   self.tokens = {}
-  for i, t in ipairs(TOKENS) do
+  for i, spec in ipairs(TOKENS) do
     local hx, hy = self:homePos(i)
-    self.tokens[i] = { home = i, tierCol = t.tierCol, tierBorder = t.tierBorder, tierGlow = t.tierGlow,
-                       level = t.level, aff = t.aff, cell = nil, d = { px = hx, py = hy, gx = hx, gy = hy } }
+    self.tokens[i] = {
+      home = i, tierCol = spec.tierCol, tierBorder = spec.tierBorder,
+      tierGlow = spec.tierGlow, level = spec.level, aff = spec.aff,
+      cell = nil, d = { px = hx, py = hy, gx = hx, gy = hy },
+    }
   end
-  -- pré-placement (montre 2 arêtes de synergie au repos / au screenshot) : centre + haut + gauche
   self:place(1, 5); self:place(2, 2); self:place(3, 4)
-  self.dragging, self.dragFrom = nil, nil
   return self
 end
 
-function Room:enter() self.title = "Real Components" end
+function Room:enter()
+  self.title = "Real Components"
+end
 
--- harnais de capture : "eyes" simule le survol du CTA pour montrer l'ŒIL ouvert (sinon clos au repos).
 function Room:scenario(name)
   if name == "eyes" then
     local r = RECTS.cta
@@ -92,51 +85,71 @@ function Room:scenario(name)
   end
 end
 
--- ── géométrie ───────────────────────────────────────────────────────────────────────────────────────────
-function Room:homePos(i) return self.benchX0 + (i - 1) * self.benchStep, self.benchY end
+function Room:homePos(i)
+  return self.benchX0 + (i - 1) * self.benchStep, self.benchY
+end
+
 function Room:cellPos(idx)
   local col, row = (idx - 1) % 3, math.floor((idx - 1) / 3)
   return self.boardX0 + col * self.boardStep, self.boardY0 + row * self.boardStep
 end
-function Room:cellCenter(idx) local x, y = self:cellPos(idx); return x + CELL / 2, y + CELL / 2 end
-function Room:restTarget(tk) if tk.cell then return self:cellPos(tk.cell) else return self:homePos(tk.home) end end
-function Room:place(i, idx) self.tokens[i].cell = idx; self.cells[idx].token = i
-  local x, y = self:cellPos(idx); local d = self.tokens[i].d; d.px, d.py, d.gx, d.gy = x, y, x, y end
 
--- adjacence orthogonale du plateau-graphe (mêmes arêtes que le vrai board carré).
-local function adjacent(a, b)
-  local ca, ra = (a - 1) % 3, math.floor((a - 1) / 3)
-  local cb, rb = (b - 1) % 3, math.floor((b - 1) / 3)
-  return math.abs(ca - cb) + math.abs(ra - rb) == 1
+function Room:cellCenter(idx)
+  local x, y = self:cellPos(idx)
+  return x + CELL / 2, y + CELL / 2
 end
 
--- ── juice partagé (identiques aux démos du lab, ici déclenchés par de VRAIS boutons) ──────────────────────
-function Room:strike() Juice.addTrauma(0.6); Juice.freeze(0.08); SFX.play("thud"); self.flash = 0.5 end
+function Room:restTarget(tk)
+  if tk.cell then return self:cellPos(tk.cell) end
+  return self:homePos(tk.home)
+end
+
+function Room:place(i, idx)
+  local tk = self.tokens[i]
+  tk.cell = idx
+  self.cells[idx].token = i
+  local x, y = self:cellPos(idx)
+  tk.d.px, tk.d.py, tk.d.gx, tk.d.gy = x, y, x, y
+end
+
+function Room:strike()
+  Juice.addTrauma(0.42)
+  Juice.freeze(0.05)
+  Juice.juice_up("cmp.strike", 0.22)
+  SFX.play("thud")
+  self.flash = 0.55
+end
+
 function Room:scorePlus()
-  local add = 50 + math.floor((love and love.math.random() or math.random()) * 250)
-  self.score = self.score + add; self.combo = self.combo + 1
-  SFX.ladder(self.combo == 1); Juice.addTrauma(0.12); Juice.juice_up("cmp.score", 0.18)
+  local add = 60 + math.floor((love and love.math.random() or math.random()) * 180)
+  self.score = self.score + add
+  self.combo = self.combo + 1
+  SFX.ladder(self.combo == 1)
+  Juice.juice_up("cmp.score", 0.20)
+  Juice.addTrauma(0.10)
 end
-function Room:resetScore() self.score, self.combo = 0, 0 end
+
+function Room:resetScore()
+  self.score, self.combo = 0, 0
+end
 
 function Room:update(dt)
-  self.t = self.t + (dt or 0)
-  -- ressort des jetons : la cible (gx,gy) suit la case/le banc, SAUF pour celui qu'on traîne (gx,gy = souris)
+  dt = dt or 0
+  self.t = self.t + dt
   for i, tk in ipairs(self.tokens) do
-    if i ~= self.dragging then local tx, ty = self:restTarget(tk); tk.d.gx, tk.d.gy = tx, ty end
+    if i ~= self.dragging then
+      local tx, ty = self:restTarget(tk)
+      tk.d.gx, tk.d.gy = tx, ty
+    end
     B.dragApply(tk.d, dt)
   end
-  -- survol des boutons (pose la cible Feel + tick de son au franchissement) — pilote lift/glow/yeux
-  for _, id in ipairs({ "cta", "reroll", "level", "inspect", "ic1", "ic2", "ic3", "ic4", "strike", "score", "reset" }) do
+  for _, id in ipairs({ "cta", "reroll", "level", "strike", "score", "reset", "ic1", "ic2", "ic3", "ic4" }) do
     Feel.hover("cmp." .. id, hit(RECTS[id], self.mx, self.my))
   end
-  -- number-roll vers la cible (ease)
-  if math.abs(self.score - self.shown) > 0.5 then
-    self.shown = self.shown + (self.score - self.shown) * math.min(1, (dt or 0) * 9)
-  else self.shown = self.score end
+  self.shown = self.shown + (self.score - self.shown) * math.min(1, dt * 9)
+  if self.flash and self.flash > 0.01 then self.flash = self.flash * math.pow(0.02, dt) end
 end
 
--- ── quelle case le jeton traîné survole-t-il (centre dans la portée) ? ─────────────────────────────────────
 function Room:hoverCell()
   if not self.dragging then return nil end
   local tk = self.tokens[self.dragging]
@@ -147,129 +160,144 @@ function Room:hoverCell()
       local ccx, ccy = self:cellCenter(idx)
       local dx, dy = ccx - cx, ccy - cy
       local dist = dx * dx + dy * dy
-      if dist < (CELL * CELL) and (not bestD or dist < bestD) then best, bestD = idx, dist end
+      if dist < CELL * CELL and (not bestD or dist < bestD) then best, bestD = idx, dist end
     end
   end
   return best
 end
 
-function Room:draw(view)
-  Draw.begin(view)
+function Room:drawButtonsPanel()
+  local x, y, w, h = 72, 156, 320, 430
+  Panel.draw(x, y, w, h)
+  Draw.textTrackedL("BUTTONS", x + 24, y + 22, C.gold, Theme.subhead(13), 1.8)
+  Draw.text("primary, economy, secondary, ghost, icon", x + 24, y + 50, C.ink5, Theme.label(11))
 
-  -- ── en-tête ─────────────────────────────────────────────────────────────────────────────────────────
-  Draw.textTrackedL("REAL COMPONENTS", 40, 82, c.ink, Theme.title(20), 2)
-  Draw.text("le vrai code de The Pit — boutons-œil · cases du plateau · surfaces", 320, 88, c.ink4, Theme.body(14))
+  Button.draw(RECTS.cta.x, RECTS.cta.y, RECTS.cta.w, RECTS.cta.h, "primary", "ENTER THE PIT", {
+    hover = hit(RECTS.cta, self.mx, self.my), feel = Feel.state("cmp.cta"), id = "cmp.cta",
+    mouse = { mx = self.mx, my = self.my }, t = self.t,
+  })
+  Button.draw(RECTS.reroll.x, RECTS.reroll.y, RECTS.reroll.w, RECTS.reroll.h, "secondary", "REROLL", {
+    hover = hit(RECTS.reroll, self.mx, self.my), feel = Feel.state("cmp.reroll"), id = "cmp.reroll",
+  })
+  Button.draw(RECTS.level.x, RECTS.level.y, RECTS.level.w, RECTS.level.h, "eco", "LEVEL", {
+    cost = 5, hover = hit(RECTS.level, self.mx, self.my), feel = Feel.state("cmp.level"), id = "cmp.level",
+  })
+  Button.draw(RECTS.strike.x, RECTS.strike.y, RECTS.strike.w, RECTS.strike.h, "secondary", "STRIKE", {
+    hover = hit(RECTS.strike, self.mx, self.my), feel = Feel.state("cmp.strike"), id = "cmp.strike",
+  })
+  Button.draw(RECTS.score.x, RECTS.score.y, RECTS.score.w, RECTS.score.h, "eco", "+ SCORE", {
+    hover = hit(RECTS.score, self.mx, self.my), feel = Feel.state("cmp.score"), id = "cmp.score",
+  })
+  Button.ghost(RECTS.reset.x, RECTS.reset.y, RECTS.reset.w, RECTS.reset.h, "RESET", {
+    hover = hit(RECTS.reset, self.mx, self.my),
+  })
 
-  -- ════════════ COLONNE A — BOUTONS (vrais) ════════════
-  Draw.textTrackedL("BUTTONS", 40, 116, c.gold, Theme.subhead(14), 2)
-  -- primary CTA (œil) : les yeux s'ouvrent au survol et fixent la souris ; au clic ils se referment puis l'action part
-  do
-    local r = RECTS.cta
-    Button.draw(r.x, r.y, r.w, r.h, "primary", "ENTER THE PIT", {
-      hover = hit(r, self.mx, self.my), feel = Feel.state("cmp.cta"), id = "cmp.cta",
-      mouse = { mx = self.mx, my = self.my }, t = self.t })
-  end
-  -- secondary + eco (coût or)
-  do local r = RECTS.reroll
-    Button.draw(r.x, r.y, r.w, r.h, "secondary", "REROLL", { hover = hit(r, self.mx, self.my), feel = Feel.state("cmp.reroll"), id = "cmp.reroll" }) end
-  do local r = RECTS.level
-    Button.draw(r.x, r.y, r.w, r.h, "eco", "LEVEL UP", { cost = 5, hover = hit(r, self.mx, self.my), feel = Feel.state("cmp.level"), id = "cmp.level" }) end
-  -- ghost + secondary désactivé (comparer l'absence de juice)
-  do local r = RECTS.inspect; Feel.hover("cmp.inspect", hit(r, self.mx, self.my))
-    Button.ghost(r.x, r.y, r.w, r.h, "INSPECT", { hover = hit(r, self.mx, self.my) }) end
-  do local r = RECTS.soldout
-    Button.draw(r.x, r.y, r.w, r.h, "secondary", "SOLD OUT", { disabled = true }) end
-  -- icônes (sigil/prev/next/gear)
   local kinds = { ic1 = "sigil", ic2 = "prev", ic3 = "next", ic4 = "gear" }
   for _, id in ipairs({ "ic1", "ic2", "ic3", "ic4" }) do
     local r = RECTS[id]
     Button.icon(r.x, r.y, r.w, kinds[id], { hover = hit(r, self.mx, self.my), pressed = Feel.pending("cmp." .. id) })
   end
-  -- STRIKE (shake + hitstop) en secondary
-  do local r = RECTS.strike
-    Button.draw(r.x, r.y, r.w, r.h, "secondary", "STRIKE", { hover = hit(r, self.mx, self.my), feel = Feel.state("cmp.strike"), id = "cmp.strike" }) end
-  -- + Score (eco) + Reset (ghost) + number-roll punché
-  do local r = RECTS.score
-    Button.draw(r.x, r.y, r.w, r.h, "eco", "+ SCORE", { hover = hit(r, self.mx, self.my), feel = Feel.state("cmp.score"), id = "cmp.score" }) end
-  do local r = RECTS.reset; Feel.hover("cmp.reset", hit(r, self.mx, self.my))
-    Button.ghost(r.x, r.y, r.w, r.h, "RESET", { hover = hit(r, self.mx, self.my) }) end
+
   local sc = Juice.scale("cmp.score")
-  love.graphics.push(); love.graphics.translate(205, 528); love.graphics.scale(sc, sc)
-  Draw.textC(string.format("%d", math.floor(self.shown + 0.5)), 0, -26, c.gold, Theme.display(46))
+  love.graphics.push()
+  love.graphics.translate(x + w / 2, y + h - 54)
+  love.graphics.scale(sc, sc)
+  Draw.textC(string.format("%d", math.floor(self.shown + 0.5)), 0, -14, C.gold, Theme.display(34))
   love.graphics.pop()
-  Draw.textC(self.combo > 0 and ("combo ×" .. self.combo) or "click to score", 205, 560, c.ink4, Theme.label(12))
+  Draw.reset()
+  Draw.textC(self.combo > 0 and ("combo x" .. self.combo) or "score feedback", x + w / 2, y + h - 28, C.ink5, Theme.label(11))
+end
 
-  -- ════════════ COLONNE B — ÉTATS DE CASE + SURFACE ════════════
-  Draw.textTrackedL("SLOT STATES", 410, 116, c.gold, Theme.subhead(14), 2)
+function Room:drawSlotsPanel()
+  local x, y, w, h = 440, 156, 320, 430
+  Panel.draw(x, y, w, h)
+  Draw.textTrackedL("SLOTS", x + 24, y + 22, C.gold, Theme.subhead(13), 1.8)
+  Draw.text("all current board states in one grid", x + 24, y + 50, C.ink5, Theme.label(11))
+
   local states = {
-    { "empty", "empty" }, { "selected", "occupied" }, { "neighbor", "synergy" },
-    { "drop", "drop ok" }, { "locked", "locked" }, { "hover", "hover" },
+    { "empty", "empty" }, { "selected", "unit" }, { "neighbor", "synergy" },
+    { "drop", "drop" }, { "locked", "locked" }, { "hover", "hover" },
   }
-  for k, sd in ipairs(states) do
-    local col, row = (k - 1) % 3, math.floor((k - 1) / 3)
-    local x, y = 410 + col * 90, 150 + row * 104
+  for i, sd in ipairs(states) do
+    local col, row = (i - 1) % 3, math.floor((i - 1) / 3)
+    local sx, sy = x + 38 + col * 88, y + 92 + row * 92
     local opts = {}
-    if sd[1] == "selected" then opts = { tierCol = c.poison, level = 2, affkeys = { "burn" } } end
-    Slot.draw(x, y, 56, sd[1], opts)
-    Draw.textC(sd[2], x + 28, y + 60, c.ink4, Theme.label(10))
+    if sd[1] == "selected" then opts = { tierCol = C.poison, level = 2, affkeys = { "burn" } } end
+    Slot.draw(sx, sy, 56, sd[1], opts)
+    Draw.textC(sd[2], sx + 28, sy + 62, C.ink4, Theme.label(10))
   end
-  -- SURFACE (vrai Panel) — montre la base « nette » + une niche à sprite
-  Draw.textTrackedL("SURFACE", 410, 346, c.gold, Theme.subhead(14), 2)
-  local ix, iy, iw = Panel.draw(410, 372, 280, 152)
-  Draw.textTrackedL("MAW OF ASH", ix + 14, iy + 12, c.ember, Theme.title(15), 1)
-  Draw.textWrap("On a kill, your team's afflictions refuse to decay. The Pit remembers every wound.",
-    ix + 14, iy + 38, iw - 28, c.ink2, Theme.body(13))
-  Panel.niche(ix + 14, iy + 100, 40, 40)
-  Draw.text("a clean surface — grit comes from the global shader", ix + 62, iy + 112, c.ink5, Theme.flavor(13))
 
-  -- ════════════ COLONNE C — DRAG & DROP (vraies cases, plateau 3×3) ════════════
-  Draw.textTrackedL("DRAG & DROP", 700, 116, c.gold, Theme.subhead(14), 2)
-  Draw.text("bench", 700, 138, c.ink5, Theme.label(11))
-  Draw.text("board 3×3  ·  drag a piece in  ·  drop on an occupied cell to SWAP", 700, 266, c.ink5, Theme.label(11))
-  -- banc : 5 cases vides (positions maison)
-  for i = 1, #self.tokens do local x, y = self:homePos(i); Slot.draw(x, y, CELL, "empty", {}) end
-  -- plateau : état de chaque case (drop/hover pendant le drag ; locked ; sinon empty — l'occupant est le jeton dessiné par-dessus)
+  Draw.textTrackedL("PANEL", x + 24, y + 294, C.gold, Theme.subhead(12), 1.5)
+  local ix, iy, iw = Panel.draw(x + 24, y + 322, w - 48, 78)
+  Draw.textTrackedL("MAW OF ASH", ix + 14, iy + 12, C.ember, Theme.title(14), 1)
+  Draw.text("clean surface; mood comes from shader and motion", ix + 14, iy + 42, C.ink4, Theme.flavor(12))
+end
+
+function Room:drawDragPanel()
+  local x, y, w, h = 808, 156, 400, 430
+  Panel.draw(x, y, w, h)
+  Draw.textTrackedL("DRAG / BOARD", x + 24, y + 22, C.gold, Theme.subhead(13), 1.8)
+  Draw.text("swap pieces, preserve grid, show adjacency", x + 24, y + 50, C.ink5, Theme.label(11))
+
+  Draw.textTrackedL("BENCH", x + 24, y + 94, C.ink5, Theme.label(9), 1.2)
+  for i = 1, #self.tokens do
+    local bx, by = self:homePos(i)
+    Slot.draw(bx, by, CELL, "empty", {})
+  end
+
+  Draw.textTrackedL("BOARD", x + 24, y + 222, C.ink5, Theme.label(9), 1.2)
   local hc = self:hoverCell()
   for idx = 1, 9 do
-    local x, y = self:cellPos(idx)
+    local sx, sy = self:cellPos(idx)
     local state = "empty"
     if idx == LOCKED then state = "locked"
     elseif idx == hc then state = self.cells[idx].token and "hover" or "drop" end
-    Slot.draw(x, y, CELL, state, {})
+    Slot.draw(sx, sy, CELL, state, {})
   end
-  -- arêtes de synergie : sang lumineux entre cases occupées adjacentes
   for a = 1, 9 do
     if self.cells[a].token then
       for b = a + 1, 9 do
         if self.cells[b].token and adjacent(a, b) then
-          local ax, ay = self:cellCenter(a); local bx, by = self:cellCenter(b)
+          local ax, ay = self:cellCenter(a)
+          local bx, by = self:cellCenter(b)
           Slot.edge(ax, ay, bx, by, true, 2)
         end
       end
     end
   end
-  -- jetons (le traîné en DERNIER = au-dessus)
   for i = 1, #self.tokens do if i ~= self.dragging then self:drawToken(self.tokens[i], false) end end
   if self.dragging then self:drawToken(self.tokens[self.dragging], true) end
+end
 
-  -- flash plein écran (STRIKE)
+function Room:draw(view)
+  Draw.begin(view)
+  Draw.textTrackedL("REAL COMPONENTS", 72, 84, C.ink, Theme.title(24), 2)
+  Draw.text("Reference courte des composants actuels: meme style, memes proportions, memes reactions.",
+    72, 126, C.ink4, Theme.body(14))
+  Draw.textR("current atoms only", W - 72, 126, C.ink5, Theme.body(13))
+
+  self:drawButtonsPanel()
+  self:drawSlotsPanel()
+  self:drawDragPanel()
+
   if self.flash and self.flash > 0.01 then
-    love.graphics.setColor(c.ember[1], c.ember[2], c.ember[3], 0.16 * self.flash)
+    Draw.setColor(C.ember, 0.12 * self.flash)
     love.graphics.rectangle("fill", 0, 0, W, H)
-    self.flash = self.flash * 0.86
+    Draw.reset()
   end
-
+  Draw.text("Cette page reste volontairement compacte: les effets complexes vont dans Contract, Impact ou Fusion.",
+    72, H - 70, C.ink5, Theme.flavor(13))
   Draw.finish()
 end
 
--- une PIÈCE = une vraie case "selected" (occupée) avec sa rareté/niveau/afflictions, sous le transform de drag.
 function Room:drawToken(tk, isDrag)
   local fx = B.dragFx(tk.d)
   local px, py = tk.d.px, tk.d.py
   local cx, cy = px + CELL / 2, py + CELL / 2
   if fx.shadow then
-    love.graphics.setColor(0, 0, 0, 0.34)
+    Draw.setColor(C.void, 0.34)
     love.graphics.rectangle("fill", px + 5, py + (-fx.dy) + 9, CELL, CELL)
+    Draw.reset()
   end
   love.graphics.push()
   love.graphics.translate(cx, cy + fx.dy)
@@ -278,12 +306,12 @@ function Room:drawToken(tk, isDrag)
   love.graphics.translate(-cx, -cy)
   Slot.draw(px, py, CELL, "selected", {
     tierCol = tk.tierCol, tierBorder = tk.tierBorder, tierGlow = tk.tierGlow,
-    level = tk.level, affkeys = tk.aff })
+    level = tk.level, affkeys = tk.aff,
+  })
   love.graphics.pop()
   Draw.reset()
 end
 
--- ── input ───────────────────────────────────────────────────────────────────────────────────────────────
 function Room:tokenAt(mx, my)
   for i = #self.tokens, 1, -1 do
     local d = self.tokens[i].d
@@ -294,22 +322,19 @@ end
 function Room:mousepressed(mx, my, button)
   self.mx, self.my = mx, my
   if button ~= 1 then return end
-  -- 1) boutons (actions différées via le VRAI Feel : le clic se SENT avant que l'écran réagisse)
   if hit(RECTS.cta, mx, my) then Feel.press("cmp.cta", function() self:strike() end, { delay = Feel.CTA_DELAY }); return end
-  if hit(RECTS.reroll, mx, my) then Feel.press("cmp.reroll", function() self.app:toast("Rerolled.") end); return end
+  if hit(RECTS.reroll, mx, my) then Feel.press("cmp.reroll", function() SFX.play("whoosh"); Juice.addTrauma(0.08) end); return end
   if hit(RECTS.level, mx, my) then Feel.press("cmp.level", function() self:scorePlus() end); return end
-  if hit(RECTS.inspect, mx, my) then Feel.press("cmp.inspect"); return end
   if hit(RECTS.strike, mx, my) then Feel.press("cmp.strike", function() self:strike() end); return end
   if hit(RECTS.score, mx, my) then Feel.press("cmp.score", function() self:scorePlus() end); return end
   if hit(RECTS.reset, mx, my) then Feel.press("cmp.reset", function() self:resetScore() end); return end
   for _, id in ipairs({ "ic1", "ic2", "ic3", "ic4" }) do
     if hit(RECTS[id], mx, my) then Feel.press("cmp." .. id); return end
   end
-  -- 2) prise d'un jeton
   local i = self:tokenAt(mx, my)
   if i then
     local tk = self.tokens[i]
-    self.dragFrom = { cell = tk.cell }       -- d'où il vient (case ou banc)
+    self.dragFrom = { cell = tk.cell }
     if tk.cell then self.cells[tk.cell].token = nil end
     tk.cell = nil
     self.dragging = i
@@ -333,17 +358,16 @@ function Room:mousereleased(mx, my)
   if best then
     local occ = self.cells[best].token
     if occ and occ ~= i then
-      -- ⇄ SWAP : l'occupant prend la PROVENANCE du jeton déplacé (sa case d'origine, ou son banc s'il venait du banc)
-      local b = self.tokens[occ]
-      b.cell = from.cell
+      local other = self.tokens[occ]
+      other.cell = from.cell
       if from.cell then self.cells[from.cell].token = occ end
       SFX.play("drop"); Juice.addTrauma(0.12)
     else
       SFX.play("drop"); Juice.addTrauma(0.08)
     end
-    tk.cell = best; self.cells[best].token = i
+    tk.cell = best
+    self.cells[best].token = i
   else
-    -- hors plateau / sur la case verrouillée : retour à l'origine (le ressort de update s'en charge)
     tk.cell = from.cell
     if from.cell then self.cells[from.cell].token = i end
     SFX.play("drop", { pitch = 0.9 })

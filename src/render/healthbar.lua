@@ -242,7 +242,8 @@ function HealthBar.draw(u, scale)
   if frac < 0 then frac = 0 elseif frac > 1 then frac = 1 end
 
   local ox = math.floor(u.x * 4 - AW * scale / 2)
-  local oy = math.floor((u.y + BAR_DY) * 4)
+  local barDy = (u.spec and u.spec.healthbarDy) or BAR_DY
+  local oy = math.floor((u.y + barDy) * 4)
 
   -- Pose un rectangle en ART px (ax,ay,aw,ah) -> design via scale. alpha optionnel.
   local function ar(ax, ay, aw, ah, col, alpha)

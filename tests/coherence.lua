@@ -34,6 +34,14 @@ local ok, err = pcall(function()
   assert(hasEdge(shieldEdges, "shield_engine", "shield", "barrier_savant", "ward_weaver"),
     "barrier_savant + ward_weaver forms a shield engine edge")
 
+  local faintEdges = Coherence.edgesForPair("brood_mother", "carrion_choir")
+  assert(hasEdge(faintEdges, "faint_engine", "faint", "brood_mother", "carrion_choir"),
+    "summon units feed faint/scavenge payoff units")
+
+  local mimicEdges = Coherence.edgesForPair("mimic_spawn", "witch")
+  assert(hasEdge(mimicEdges, "mimicry_payoff", "mimicry", "mimic_spawn", "witch"),
+    "mimicry units connect to on-hit carriers")
+
   local poison = Coherence.scoreTeam({
     { id = "spore_tick", level = 3, slot = 2 },
     { id = "miasma_acolyte", level = 3, slot = 5 },
@@ -44,6 +52,18 @@ local ok, err = pcall(function()
   assert(poison.subscores.command > 0, "corruptor commander contributes a command score")
   assert(poison.subscores.level_plan > 0, "authored/clutch levels contribute to level_plan")
   assert(poison.economy.accessibility == "reroll_low_rank", "L3 spore makes the shell visible as low-rank reroll")
+
+  local kingsBowl = Coherence.profileForRelic("kings_bowl")
+  assert(kingsBowl and kingsBowl.amplifies.poison, "kings_bowl reads as a poison relic amplifier")
+  local poisonRelic = Coherence.scoreTeam({
+    { id = "spore_tick", level = 3, slot = 2 },
+    { id = "miasma_acolyte", level = 3, slot = 5 },
+    { id = "witch", level = 1, slot = 4 },
+    { id = "corruptor", level = 3, slot = 6 },
+  }, { commander = { id = "corruptor", level = 3 }, relics = { "kings_bowl" } })
+  assert(poisonRelic.subscores.relic > 0, "matching relics contribute a relic coherence subscore")
+  assert(hasEdge(poisonRelic.relicEdges, "producer_amplifier", "poison", "relic:kings_bowl"),
+    "matching relics produce explicit relic->unit edges")
 
   local poisonBadPlacement = Coherence.scoreTeam({
     { id = "spore_tick", level = 3, slot = 1 },
@@ -63,6 +83,19 @@ local ok, err = pcall(function()
   assert(poison.coherence > randomPile.coherence + 0.25,
     "intentional poison shell scores clearly above a low-synergy pile")
 
+  local tank = Coherence.scoreTeam({
+    { id = "gravewarden", slot = 6 },
+    { id = "templar", slot = 5 },
+    { id = "plague_doctor", slot = 4 },
+    { id = "leech_thorn", slot = 3 },
+    { id = "skeleton", slot = 2, level = 2 },
+    { id = "footman", slot = 1 },
+  })
+  assert(hasEdge(tank.edges, "guard_frontline", "guard"),
+    "tank shells expose guard/frontline coherence, not only DoT tags")
+  assert(tank.coherence > randomPile.coherence + 0.12,
+    "readable tank shells score above a low-synergy pile")
+
   local burn = Coherence.scoreTeam({
     { id = "emberling", slot = 2 },
     { id = "soot_acolyte", slot = 5 },
@@ -71,13 +104,18 @@ local ok, err = pcall(function()
   }, { commander = "emberling" })
   assert(burn.coherence > randomPile.coherence + 0.20, "burn shell scores above the random baseline")
 
-  local cur = Coherence.shopPressure("current")
-  local sap = Coherence.shopPressure("sap_like")
-  local curved = Coherence.shopPressure("curved_income")
-  assert(cur[1].fullShopCostRatio == 0.5, "current tier-1 shop costs half of 10g")
+  local cur = Coherence.shopPressure("baseline")
+  local sap = Coherence.shopPressure("sap_cost")
+  local curved = Coherence.shopPressure("early_curve")
+  local tiered = Coherence.shopPressure("tiered_reroll")
+  assert(cur[1].fullShopCostRatio == 0.5, "baseline tier-1 shop costs half of 10g")
+  assert(Coherence.shopPressure("current")[1].profile == "sap_cost_pair_completion_tiered_reroll",
+    "current alias resolves to the live economy profile")
   assert(sap[1].fullShopCostRatio == 1.0, "SAP-like tier-1 shop consumes the full 10g")
   assert(curved[1].fullShopCostRatio > cur[1].fullShopCostRatio,
     "curved income increases early pressure while preserving cost=rank")
+  assert(tiered[3].rerollCost == 2 and cur[3].rerollCost == 1,
+    "coherence pressure reads real tiered reroll costs from run economy profiles")
 
   local coverage = Coherence.coverage()
   assert(coverage.units >= 100, "coherence coverage sees the full roster")

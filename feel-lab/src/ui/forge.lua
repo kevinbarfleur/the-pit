@@ -1208,6 +1208,107 @@ function Forge.blit(image, x, y, px)
   g.setColor(1, 1, 1, 1)
 end
 
+local EYE_NIGHTMARE_SRC = [[
+  extern number time;
+  extern number open;
+  extern number strength;
+  extern number react;
+  extern vec2 texelSize;
+
+  float hash(vec2 p) {
+    return fract(sin(dot(p, vec2(127.13, 311.71))) * 43758.5453);
+  }
+
+  float noise(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    float a = hash(i);
+    float b = hash(i + vec2(1.0, 0.0));
+    float c = hash(i + vec2(0.0, 1.0));
+    float d = hash(i + vec2(1.0, 1.0));
+    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+  }
+
+  vec4 effect(vec4 color, Image tex, vec2 uv, vec2 sc) {
+    float awake = smoothstep(0.025, 0.62, open);
+    float s = clamp(strength * awake, 0.0, 1.0);
+    vec2 c = uv - vec2(0.5);
+    float d = length(c);
+    vec2 dir = c / max(d, 0.025);
+    float veil = noise(uv * 9.0 + vec2(time * 0.21, -time * 0.16));
+    float pulse = sin(d * 37.0 - time * (3.9 + react * 2.2) + veil * 4.0);
+    vec2 wob = vec2(
+      noise(uv * 11.0 + vec2(time * 0.37, 3.1)),
+      noise(uv * 10.0 + vec2(-2.4, time * 0.29))
+    ) - vec2(0.5);
+    vec2 warp = (wob * 0.026 + dir * pulse * 0.009) * s;
+    vec2 baseUv = clamp(uv + warp, vec2(0.001), vec2(0.999));
+    vec2 violetUv = clamp(uv + warp + vec2(0.040, -0.014) * s, vec2(0.001), vec2(0.999));
+    vec2 redUv = clamp(uv + warp + vec2(-0.034, 0.018) * s, vec2(0.001), vec2(0.999));
+    vec2 blurUv = clamp(uv + warp + wob * 0.036 * s, vec2(0.001), vec2(0.999));
+
+    vec4 base = Texel(tex, baseUv);
+    vec4 violet = Texel(tex, violetUv);
+    vec4 red = Texel(tex, redUv);
+    vec4 blur = Texel(tex, blurUv);
+    vec2 b = texelSize * (1.0 + s * 1.75);
+    vec4 soft = (
+      base +
+      Texel(tex, clamp(baseUv + vec2(b.x, 0.0), vec2(0.001), vec2(0.999))) +
+      Texel(tex, clamp(baseUv - vec2(b.x, 0.0), vec2(0.001), vec2(0.999))) +
+      Texel(tex, clamp(baseUv + vec2(0.0, b.y), vec2(0.001), vec2(0.999))) +
+      Texel(tex, clamp(baseUv - vec2(0.0, b.y), vec2(0.001), vec2(0.999)))
+    ) * 0.2;
+
+    vec3 rgb = mix(base.rgb, soft.rgb, 0.18 * s);
+    rgb = mix(rgb, blur.rgb, 0.10 * s);
+    rgb = mix(rgb, violet.rgb * vec3(0.56, 0.24, 0.98), 0.22 * s);
+    rgb = mix(rgb, red.rgb * vec3(0.98, 0.13, 0.18), 0.09 * s);
+    float halo = max(max(violet.a, red.a), blur.a) - base.a;
+    halo = clamp(halo, 0.0, 1.0) * (0.36 + 0.22 * react) * s;
+    rgb += vec3(0.13, 0.025, 0.18) * halo;
+    rgb = mix(rgb, vec3(0.035, 0.012, 0.070), 0.05 * s);
+    float a = max(max(base.a, soft.a), max(max(violet.a, red.a), blur.a) * (0.46 * s));
+    return vec4(rgb, a) * color;
+  }
+]]
+
+local function eyeNightmareShader()
+  if Forge._eyeNightmareShader ~= nil then return Forge._eyeNightmareShader or nil end
+  Forge._eyeNightmareShader = false
+  if not (love and love.graphics and love.graphics.newShader and love.graphics.setShader) then return nil end
+  local ok, sh = pcall(love.graphics.newShader, EYE_NIGHTMARE_SRC)
+  if ok and sh then Forge._eyeNightmareShader = sh end
+  return Forge._eyeNightmareShader or nil
+end
+
+-- Forge.blitEye(image, x, y, px, opts) : blit spécialisé pour les yeux déjà bakés dans un tampon transparent.
+-- Il garde l'anatomie pixel-art d'origine et ajoute seulement une passe locale de distorsion/double-vue.
+function Forge.blitEye(image, x, y, px, opts)
+  opts = opts or {}
+  local strength = clamp(opts.nightmare or opts.strength or 0)
+  if strength <= 0.001 then return Forge.blit(image, x, y, px) end
+  local sh = eyeNightmareShader()
+  if not sh then return Forge.blit(image, x, y, px) end
+  local g = love.graphics
+  local ok = pcall(function()
+    sh:send("time", opts.t or Forge._uiClock or 0)
+    sh:send("open", clamp(opts.open or 1))
+    sh:send("strength", strength)
+    sh:send("react", clamp(opts.react or 0))
+    local iw, ih = image:getWidth(), image:getHeight()
+    sh:send("texelSize", { 1 / max(1, iw), 1 / max(1, ih) })
+    g.setShader(sh)
+    Forge.blit(image, x, y, px)
+    g.setShader()
+  end)
+  if not ok then
+    pcall(g.setShader)
+    Forge.blit(image, x, y, px)
+  end
+end
+
 -- hexRgb255 : "#rrggbb" -> {r,g,b} en FLOATS 0..1 (pour love.graphics.setColor des OVERLAYS vivants ;
 -- distinct de hexRgb qui rend des OCTETS 0..255 pour le tampon). Mémoïsé.
 local _hexF = {}
@@ -1544,7 +1645,12 @@ function Forge.uiCtaEyes(id, x, y, w, h, label, opts)
         { squash = sq, pupil = ey.pupil, blood = ey.blood, gaze = gz })
     end
   end, t)
-  Forge.blit(e.image, x, y, px)
+  Forge.blitEye(e.image, x, y, px, {
+    t = t,
+    open = openEff,
+    react = react,
+    nightmare = opts.eyeNightmare == false and 0 or (0.30 + 0.22 * react),
+  })
   return true
 end
 

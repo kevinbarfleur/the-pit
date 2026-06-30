@@ -18,6 +18,9 @@
 
 local Units = require("src.data.units")
 local Relics = require("src.data.relics")
+local RunEvents = require("src.data.run_events")
+local Economy = require("src.run.economy")
+local Mutations = require("src.run.mutations")
 
 local RunState = {}
 RunState.__index = RunState
@@ -51,12 +54,13 @@ local SLOT_GRANT_ROUNDS = { [2] = true, [3] = true, [4] = true, [5] = true, [6] 
 local MAX_GRANTS        = MAX_SLOTS - START_SLOTS -- 6 offres au total (3 -> 9)
 local SLOT_DECLINE_GOLD = 3      -- or reçu en refusant un slot (≈ le prix d'1 unité ; PLACEHOLDER tunable)
 
--- ── PIÉDESTAL DU COMMANDANT (C3, cf. docs/research/commanders-plan.md §3.3) — calque exact du grant de slot.
--- Offert UNE SEULE fois à un jalon de run (placeholder COMMANDER_GRANT_ROUND). Accepter = le piédestal apparaît
--- (vide ; à couronner par drag-drop). Refuser = +COMMANDER_DECLINE_GOLD or, piédestal jamais débloqué cette run
--- (jeu sans commandant viable, SAP le prouve). Découplé de la capacité de slots : c'est un emplacement HORS graphe.
-local COMMANDER_GRANT_ROUND  = 3 -- jalon d'offre (placeholder ; aligné sur la cadence des slots)
-local COMMANDER_DECLINE_GOLD = 4 -- or reçu en refusant le piédestal (placeholder tunable)
+-- ── PIÉDESTAL DU COMMANDANT (décision 2026-06-29) ─────────────────────────────
+-- Le commandement est une affordance de base : le slot est visible et droppable
+-- dès le début d'une run. L'ancien grant round 3 rendait la présence du slot
+-- intermittente et illisible pour le joueur. Les champs pending/accept/decline
+-- restent comme compatibilité de save/API, mais ne créent plus d'offre active.
+local COMMANDER_GRANT_ROUND  = 0 -- legacy exposé aux anciens tests/outils ; inactif
+local COMMANDER_DECLINE_GOLD = 0 -- plus de refus payant : le piédestal est acquis
 
 -- ── NIVEAU DE BOUTIQUE (PRD progression-economy §3, modèle TFT : XP passive + achetée) ──
 -- La boutique a un tier 1->5 et une BARRE D'XP vers le suivant. On gagne de l'XP de DEUX façons :
@@ -72,10 +76,10 @@ local COMMANDER_DECLINE_GOLD = 4 -- or reçu en refusant le piédestal (placehol
 --   et tier 4 (cumul 15) ~round 16 -> passif ≈ tier 3 en fin de partie typique.
 local MAX_TIER      = 5
 local START_TIER    = 1
-local PASSIVE_XP_PER_ROUND = 1  -- XP gagnée à chaque round (à partir du round 2) — placeholder
-local BUY_XP_AMOUNT        = 4  -- XP obtenue par achat — placeholder
-local BUY_XP_COST          = 4  -- or pour BUY_XP_AMOUNT d'XP (ratio 1:1) — placeholder
-local XP_TO_LEVEL = { [1] = 2, [2] = 5, [3] = 8, [4] = 12 } -- XP pour passer DE tier i à i+1 (placeholder ; cumul T2=2/T3=7/T4=15/T5=27)
+local PASSIVE_XP_PER_ROUND = 1  -- défaut live ; les simulations peuvent le surcharger via Economy.
+local BUY_XP_AMOUNT        = 4  -- défaut live ; les simulations peuvent le surcharger via Economy.
+local BUY_XP_COST          = 4  -- défaut live ; les simulations peuvent le surcharger via Economy.
+local XP_TO_LEVEL = { [1] = 2, [2] = 5, [3] = 8, [4] = 12 } -- défaut live ; les simulations peuvent le surcharger via Economy.
 -- Cotes par tier : % de chance par slot de tirer une unité de chaque RANG (chaque ligne somme à 100).
 local ODDS = {
   [1] = { 100,  0,  0,  0,  0 },
@@ -101,9 +105,16 @@ for _, id in ipairs(POOL) do
   end
 end
 
-local function unitCost(id)
+local function unitCost(self, id)
   local u = Units[id]
-  return (u and u.cost) or DEFAULT_COST
+  return Economy.unitCost(self and self.economy, u, DEFAULT_COST)
+end
+
+local function pairSupportConfig(economy)
+  local cfg = economy and economy.pairCompletionSupport
+  if cfg == true then return {} end
+  if type(cfg) == "table" then return cfg end
+  return nil
 end
 
 -- Bonus d'or de série : streak 0-1 -> 0, 2 -> 1, 3 -> 2, 4+ -> STREAK_CAP. Victoires OU défaites.
@@ -113,10 +124,12 @@ local function streakBonus(self)
 end
 
 -- ── Construction : démarre directement au round 1 (or distribué, boutique tirée) ──
-function RunState.new(seed)
+function RunState.new(seed, opts)
   seed = seed or 0
+  opts = opts or {}
   local self = setmetatable({
     seed = seed,
+    economy = Economy.resolve(opts.economy),
     rng = love.math.newRandomGenerator(seed),
     gold = 0,
     lives = START_LIVES,
@@ -126,9 +139,9 @@ function RunState.new(seed)
     slots = START_SLOTS,           -- capacité du plateau (cases qu'on PEUT ouvrir) ; croît par grants timés
     pendingSlotGrant = false,      -- une offre de slot attend une décision (accepter/refuser) ce round
     slotGrantsResolved = 0,        -- nb d'offres déjà tranchées (accept OU refus) ; plafonné à MAX_GRANTS
-    pendingCommanderGrant = false, -- C3 : l'offre de piédestal attend une décision ce round (calque du slot)
-    commanderUnlocked = false,     -- C3 : le piédestal est-il débloqué (accepté) cette run
-    commanderGrantOffered = false, -- C3 : l'offre a-t-elle déjà été présentée (offre UNIQUE par run)
+    pendingCommanderGrant = false, -- legacy : plus d'offre de piédestal en live
+    commanderUnlocked = true,      -- le piédestal est disponible dès le round 1
+    commanderGrantOffered = true,  -- legacy : empêche toute réapparition d'offre
     winStreak = 0,
     lossStreak = 0,
     shopTier = START_TIER,         -- niveau de boutique (1->5) : gate QUELS rangs apparaissent (cotes ODDS)
@@ -136,11 +149,16 @@ function RunState.new(seed)
     shopOddsShift = 0,             -- Lot 6 : décalage PERSISTANT du tier utilisé POUR LES COTES (relique beggars_lantern = -1). 0 = identique au tier réel.
     freezeSlots = 0,               -- W8 : nombre d'offres de boutique pouvant être gelées (relique frost_seal)
     frozenOffers = {},             -- [slot] = {id,cost} conservé sur reroll/round tant qu'il n'est pas acheté
+    pairSupportMisses = {},        -- [unitId] = fenetres ratees pour le support de 3e copie.
+    pairSupportRound = 0,          -- round courant du compteur de support.
+    pairSupportCount = 0,          -- nb d'injections de support deja faites ce round.
     shop = {},
     relics = {}, -- possédées : { { id } } (modèle LISIBLE : effet affiché ; collection Grimoire inscrite au grant)
+    runEventsSeen = {}, -- events post-combat deja servis cette run (anti repetition tant que possible)
     _pendingGold = 0, -- A3 : or DIFFÉRÉ au prochain round (reliques d'éco : or-sur-victoire). Hors RNG.
     relicFromLevelThisRound = false, -- Lot 5 (§5.2) : une seule récompense de relique par level-up et PAR round
     chronicles = {}, -- HISTORIQUE des journaux de combat (1 par combat) pour le sélecteur de round (UI, hors éco)
+    bossrushResults = {}, -- Scores PvE post-victoire : seed, boss, degats, survie, causes (debug/replay V1).
   }, RunState)
   self:startRound()
   return self
@@ -189,12 +207,12 @@ function RunState:roll()
   for i = 1, SHOP_SIZE do
     local frozen = self.frozenOffers and self.frozenOffers[i]
     if frozen then
-      shop[i] = { id = frozen.id, cost = frozen.cost or unitCost(frozen.id), sold = false, frozen = true }
+      shop[i] = { id = frozen.id, cost = frozen.cost or unitCost(self, frozen.id), sold = false, frozen = true }
     else
       local rank = rollRank(self, odds)
       local bucket = bucketForRank(rank)
       local id = bucket[self.rng:random(1, #bucket)]
-      shop[i] = { id = id, cost = unitCost(id), sold = false }
+      shop[i] = { id = id, cost = unitCost(self, id), sold = false }
     end
   end
   self.shop = shop
@@ -216,7 +234,7 @@ function RunState:startRound()
   local held = self.gold -- or de FIN de round (avant reset) : base du report ET de l'intérêt
   local kept = eco.carryover and held or 0
   local interest = eco.carryover and math.min(eco.interestCap, math.floor(held * eco.interest)) or 0
-  self.gold = GOLD_PER_ROUND + streakBonus(self) + kept + interest + eco.perRound + (self._pendingGold or 0)
+  self.gold = self:goldPerRoundFor(self.round) + streakBonus(self) + kept + interest + eco.perRound + (self._pendingGold or 0)
   self._pendingGold = 0
   self:roll()
   -- Grant d'emplacement timé (façon tier SAP) : à un round prévu, tant qu'il reste des offres, on présente
@@ -224,14 +242,12 @@ function RunState:startRound()
   if SLOT_GRANT_ROUNDS[self.round] and self.slotGrantsResolved < MAX_GRANTS then
     self.pendingSlotGrant = true
   end
-  -- C3 : offre UNIQUE du piédestal à COMMANDER_GRANT_ROUND (calque du slot). N'utilise PAS self.rng -> suite RNG inchangée.
-  if self.round == COMMANDER_GRANT_ROUND and not self.commanderGrantOffered and not self.commanderUnlocked then
-    self.pendingCommanderGrant = true
-  end
+  -- Le piédestal du commandant est toujours disponible ; aucune offre timée.
+  self.pendingCommanderGrant = false
   -- XP PASSIVE de boutique (TFT-style) : +PASSIVE_XP_PER_ROUND, mais SEULEMENT à partir du round 2 — le
   -- round 1 est le DÉPART (aucun temps écoulé) -> un run frais est proprement tier 1 / xp 0. La cascade de
   -- tier est gérée par addShopXp. N'utilise PAS self.rng -> la suite RNG (offres/seeds) est inchangée.
-  if self.round > 1 then self:addShopXp(PASSIVE_XP_PER_ROUND) end
+  if self.round > 1 then self:addShopXp(Economy.passiveShopXpForRound(self.economy, self.round)) end
 end
 
 -- ── EMPLACEMENTS DE PLATEAU (grants timés). Le RUN ne tient que la CAPACITÉ (combien de cases ouvrables)
@@ -251,31 +267,30 @@ end
 -- REFUSE l'offre : +SLOT_DECLINE_GOLD or, capacité INCHANGÉE (slot renoncé définitivement = jeu « tall »).
 function RunState:declineSlotGrant()
   if not self.pendingSlotGrant then return false end
-  self.gold = self.gold + SLOT_DECLINE_GOLD
+  self.gold = self.gold + Economy.declineGold(self.economy, "slot")
   self.pendingSlotGrant = false
   self.slotGrantsResolved = self.slotGrantsResolved + 1
   return true
 end
 
--- ── PIÉDESTAL DU COMMANDANT (C3) : calque exact du grant de slot. Offre UNIQUE par run. ──
-function RunState:canGrantCommander() return self.pendingCommanderGrant end
+-- ── PIÉDESTAL DU COMMANDANT : toujours disponible. Ces méthodes restent pour les
+-- vieux appels UI/lab mais n'ouvrent plus de décision économique.
+function RunState:canGrantCommander() return false end
 
--- ACCEPTE le piédestal : il apparaît (vide), à couronner par drag-drop. Offre consommée.
 function RunState:acceptCommanderGrant()
-  if not self.pendingCommanderGrant then return false end
+  local hadPending = self.pendingCommanderGrant == true
   self.commanderUnlocked = true
   self.pendingCommanderGrant = false
   self.commanderGrantOffered = true
-  return true
+  return hadPending
 end
 
--- REFUSE le piédestal : +COMMANDER_DECLINE_GOLD or, jamais débloqué cette run (renoncé définitivement).
 function RunState:declineCommanderGrant()
-  if not self.pendingCommanderGrant then return false end
-  self.gold = self.gold + COMMANDER_DECLINE_GOLD
+  local hadPending = self.pendingCommanderGrant == true
+  self.commanderUnlocked = true
   self.pendingCommanderGrant = false
   self.commanderGrantOffered = true
-  return true
+  return hadPending
 end
 
 -- ── NIVEAU DE BOUTIQUE (cotes par tier). On monte par l'XP (passive + achetée), pas en payant le tier. ──
@@ -285,9 +300,10 @@ end
 -- plus (barre pleine/masquée) -> shopXp figé à 0. Ne touche JAMAIS self.rng (déterminisme des offres préservé).
 function RunState:addShopXp(n)
   if self.shopTier >= MAX_TIER then return end
+  n = n or 0
   self.shopXp = self.shopXp + n
-  while self.shopTier < MAX_TIER and self.shopXp >= XP_TO_LEVEL[self.shopTier] do
-    self.shopXp = self.shopXp - XP_TO_LEVEL[self.shopTier]
+  while self.shopTier < MAX_TIER and self.shopXp >= Economy.shopXpToLevel(self.economy, self.shopTier) do
+    self.shopXp = self.shopXp - Economy.shopXpToLevel(self.economy, self.shopTier)
     self.shopTier = self.shopTier + 1
   end
   if self.shopTier >= MAX_TIER then self.shopXp = 0 end
@@ -295,7 +311,11 @@ end
 
 -- XP requise pour passer DU tier courant au suivant (nil au max -> barre « MAX » côté UI).
 function RunState:xpToNext()
-  return (self.shopTier >= MAX_TIER) and nil or XP_TO_LEVEL[self.shopTier]
+  return (self.shopTier >= MAX_TIER) and nil or Economy.shopXpToLevel(self.economy, self.shopTier)
+end
+
+function RunState:shopXpToLevel(tier)
+  return (tier >= MAX_TIER) and nil or Economy.shopXpToLevel(self.economy, tier)
 end
 
 -- Lot 6 : monte le tier de boutique DIRECTEMENT de n (défaut 1), borné à MAX_TIER (relique « rush » shop_tier_up).
@@ -306,16 +326,19 @@ function RunState:raiseShopTier(n)
 end
 
 -- Peut-on acheter de l'XP ? Pas au tier max, et on a de quoi payer.
+function RunState:currentBuyXpCost() return Economy.buyXpCost(self.economy) end
+function RunState:currentBuyXpAmount() return Economy.buyXpAmount(self.economy) end
+
 function RunState:canBuyXp()
-  return self.shopTier < MAX_TIER and self.gold >= BUY_XP_COST
+  return self.shopTier < MAX_TIER and self.gold >= self:currentBuyXpCost()
 end
 
 -- Achète BUY_XP_AMOUNT d'XP pour BUY_XP_COST or (peut faire monter un ou plusieurs tiers via la cascade).
 -- Renvoie true si effectué, false sinon. NE tire PAS de self.rng.
 function RunState:buyXp()
   if not self:canBuyXp() then return false end
-  self.gold = self.gold - BUY_XP_COST
-  self:addShopXp(BUY_XP_AMOUNT)
+  self.gold = self.gold - self:currentBuyXpCost()
+  self:addShopXp(self:currentBuyXpAmount())
   return true
 end
 
@@ -363,11 +386,76 @@ function RunState:freezeOffer(i)
   return true
 end
 
-function RunState:canReroll() return self.gold >= REROLL_COST end
+function RunState:currentRerollCost() return Economy.rerollCost(self.economy, self.shopTier) end
+
+function RunState:goldPerRoundFor(round) return Economy.goldForRound(self.economy, round or self.round) end
+
+function RunState:unitCost(id) return unitCost(self, id) end
+
+function RunState:_pairSupportCountForRound()
+  local round = self.round or 0
+  if self.pairSupportRound ~= round then
+    self.pairSupportRound = round
+    self.pairSupportCount = 0
+  end
+  return self.pairSupportCount or 0
+end
+
+function RunState:applyPairCompletionSupport(candidates, source)
+  local cfg = pairSupportConfig(self.economy)
+  if not cfg then return false end
+  if (self.round or 0) < (cfg.minRound or 1) then return false end
+  if self:_pairSupportCountForRound() >= (cfg.maxPerRound or 1) then return false end
+  if not candidates or #candidates == 0 then return false end
+
+  local candidateSet, offered = {}, {}
+  for _, id in ipairs(candidates) do candidateSet[id] = true end
+  for _, offer in ipairs(self.shop or {}) do
+    if offer and not offer.sold and candidateSet[offer.id] then offered[offer.id] = true end
+  end
+
+  self.pairSupportMisses = self.pairSupportMisses or {}
+  for id in pairs(self.pairSupportMisses) do
+    if not candidateSet[id] then self.pairSupportMisses[id] = nil end
+  end
+
+  local id
+  local minMissed = cfg.minMissedWindows or 0
+  for _, candidate in ipairs(candidates) do
+    if offered[candidate] then
+      self.pairSupportMisses[candidate] = 0
+    else
+      self.pairSupportMisses[candidate] = (self.pairSupportMisses[candidate] or 0) + 1
+      if not id and self.pairSupportMisses[candidate] >= minMissed then id = candidate end
+    end
+  end
+  if not id then return false end
+
+  local slot
+  for i = #(self.shop or {}), 1, -1 do
+    local offer = self.shop[i]
+    if offer and not offer.sold and not offer.frozen then slot = i; break end
+  end
+  if not slot then return false end
+
+  local old = self.shop[slot]
+  self.shop[slot] = {
+    id = id,
+    cost = self:unitCost(id),
+    sold = false,
+    support = "pair_completion",
+    supportSource = source,
+    replacedId = old and old.id or nil,
+  }
+  self.pairSupportCount = (self.pairSupportCount or 0) + 1
+  return true, id, slot, old and old.id or nil
+end
+
+function RunState:canReroll() return self.gold >= self:currentRerollCost() end
 
 function RunState:reroll()
   if not self:canReroll() then return false end
-  self.gold = self.gold - REROLL_COST
+  self.gold = self.gold - self:currentRerollCost()
   self:roll()
   return true
 end
@@ -375,7 +463,7 @@ end
 -- Remboursement à la revente d'une unité posée (la scène retire l'unité du plateau).
 function RunState:sellRefund(id)
   local frac = math.max(SELL_REFUND_FRAC, self:ecoMods().sellFrac) -- A3 : une relique d'éco peut rembourser plus (jusqu'à plein)
-  return math.max(1, math.floor(unitCost(id) * frac))
+  return math.max(1, math.floor(unitCost(self, id) * frac))
 end
 
 function RunState:sell(id) self.gold = self.gold + self:sellRefund(id) end
@@ -502,11 +590,204 @@ function RunState:rollRelicChoices(n, opts)
   return out
 end
 
+-- ── EVENTS DE RUN (experiment 2026-06) ─────────────────────────────────────
+-- Remplace le simple "marchand de reliques" par une rencontre thematique dont
+-- chaque choix materialise une recompense LISIBLE. Le texte peut etre glauque,
+-- mais reward.kind/id/amount/level sont connus avant le choix.
+
+local function copyReward(reward)
+  local out = {}
+  for k, v in pairs(reward or {}) do out[k] = v end
+  return out
+end
+
+local function eventEligible(self, event, opts)
+  opts = opts or {}
+  local combats = self.wins + self.losses
+  if event.minCombats and combats < event.minCombats then return false end
+  if event.maxCombats and combats > event.maxCombats then return false end
+  if event.minWins and self.wins < event.minWins then return false end
+  if event.maxWins and self.wins > event.maxWins then return false end
+  if event.minShopTier and self.shopTier < event.minShopTier then return false end
+  if opts.exclude and opts.exclude[event.id] then return false end
+  return true
+end
+
+local function rollEventRelicReward(self, spec, usedRelics)
+  usedRelics = usedRelics or {}
+  local opts = { minTier = spec.minTier }
+  -- Plusieurs petites offres plutot qu'un tirage "tout le pool" : on garde le
+  -- plafond de RunState:rollRelicChoices au lieu de le contourner par fallback.
+  for _ = 1, 5 do
+    local choices = self:rollRelicChoices(3, opts)
+    for _, id in ipairs(choices) do
+      if not usedRelics[id] then
+        usedRelics[id] = true
+        return { kind = "relic", id = id }
+      end
+    end
+  end
+  return nil
+end
+
+local function prioritizedEventUnit(candidates, spec, opts)
+  local fn = opts and opts.unitPriority
+  if not fn then return nil end
+  local bestId, bestScore
+  for _, id in ipairs(candidates or {}) do
+    local score = fn(id, spec) or 0
+    if score > 0 and (not bestScore or score > bestScore) then
+      bestId, bestScore = id, score
+    end
+  end
+  return bestId
+end
+
+local function filteredEventUnits(candidates, spec, opts)
+  local fn = opts and opts.unitFilter
+  if not fn then return candidates end
+  local out = {}
+  for _, id in ipairs(candidates or {}) do
+    if fn(id, spec) then out[#out + 1] = id end
+  end
+  return out
+end
+
+local function rollEventUnitReward(self, spec, opts)
+  local minRank = spec.rank or spec.rankMin or 1
+  local maxRank = spec.rank or spec.rankMax or minRank
+  minRank = math.max(1, math.min(MAX_TIER, minRank))
+  maxRank = math.max(minRank, math.min(MAX_TIER, maxRank))
+  local candidates = {}
+  for _, id in ipairs(POOL) do
+    local u = Units[id]
+    local rank = u and (u.rank or 1) or 1
+    if rank >= minRank and rank <= maxRank then candidates[#candidates + 1] = id end
+  end
+  candidates = filteredEventUnits(candidates, spec, opts)
+  if #candidates == 0 then return nil end
+  local id = prioritizedEventUnit(candidates, spec, opts)
+  return {
+    kind = "unit",
+    id = id or candidates[self.rng:random(1, #candidates)],
+    level = math.max(1, math.min(2, spec.level or 1)), -- jamais de niveau 3 via event.
+    targeted = id and true or nil,
+  }
+end
+
+local function rollEventMutationReward(self, spec, opts)
+  local targetFn = opts and opts.mutationTarget
+  if not targetFn then return nil end
+  local target = targetFn(spec)
+  if not target then return nil end
+  local choices = Mutations.normalize(spec.mutations or spec.mutation or spec.id)
+  if not choices then choices = Mutations.order end
+  if #choices == 0 then return nil end
+  local mutationId = choices[self.rng:random(1, #choices)]
+  if not Mutations.byId[mutationId] then return nil end
+  return {
+    kind = "mutation",
+    id = mutationId,
+    target = {
+      copyId = target.copyId,
+      where = target.where,
+      slot = target.slot,
+      unitId = target.id,
+      level = target.level,
+    },
+  }
+end
+
+local function materializeEventReward(self, spec, usedRelics, opts)
+  spec = spec or {}
+  if spec.kind == "relic" then return rollEventRelicReward(self, spec, usedRelics) end
+  if spec.kind == "unit" then return rollEventUnitReward(self, spec, opts) end
+  if spec.kind == "mutation" then return rollEventMutationReward(self, spec, opts) end
+  if spec.kind == "gold" then
+    return { kind = "gold", amount = math.max(0, spec.amount or 0) }
+  end
+  if spec.kind == "shop_xp" then
+    return { kind = "shop_xp", amount = math.max(0, spec.amount or 0) }
+  end
+  if spec.kind == "shop_tier_up" then
+    return { kind = "shop_tier_up", amount = math.max(1, spec.amount or 1) }
+  end
+  return nil
+end
+
+function RunState:rollRunEvent(opts)
+  opts = opts or {}
+  local function collect(includeSeen)
+    local out = {}
+    for _, id in ipairs(RunEvents.order) do
+      local event = RunEvents.events[id]
+      local seen = self.runEventsSeen and self.runEventsSeen[id]
+      if event and eventEligible(self, event, opts) and (includeSeen or not seen) then
+        out[#out + 1] = event
+      end
+    end
+    return out
+  end
+
+  local candidates = collect(false)
+  if #candidates == 0 then candidates = collect(true) end
+  if #candidates == 0 then return nil end
+
+  local start = self.rng:random(1, #candidates)
+  for n = 1, #candidates do
+    local event = candidates[((start + n - 2) % #candidates) + 1]
+    local usedRelics, choices = {}, {}
+    for _, choice in ipairs(event.choices or {}) do
+      local reward = materializeEventReward(self, choice.reward, usedRelics, opts)
+      if reward then
+        choices[#choices + 1] = {
+          id = choice.id,
+          labelKey = "runevent." .. event.id .. ".choice." .. choice.id .. ".label",
+          reward = reward,
+        }
+      end
+    end
+    if #choices > 0 then
+      self.runEventsSeen = self.runEventsSeen or {}
+      self.runEventsSeen[event.id] = true
+      return {
+        id = event.id,
+        titleKey = "runevent." .. event.id .. ".title",
+        bodyKey = "runevent." .. event.id .. ".body",
+        choices = choices,
+      }
+    end
+  end
+  return nil
+end
+
+-- Applique uniquement les recompenses qui vivent au niveau RunState. Les unites
+-- et mutations d'instance sont externalisees : elles doivent passer par Build afin
+-- de respecter banc, plateau, fusions, snapshots et UI.
+function RunState:applyRunEventReward(reward)
+  reward = copyReward(reward)
+  if reward.kind == "relic" then return self:grantRelic(reward.id) end
+  if reward.kind == "gold" then
+    self.gold = self.gold + math.max(0, reward.amount or 0)
+    return true
+  end
+  if reward.kind == "shop_xp" then
+    self:addShopXp(math.max(0, reward.amount or 0))
+    return true
+  end
+  if reward.kind == "shop_tier_up" then
+    self:raiseShopTier(math.max(1, reward.amount or 1))
+    return true
+  end
+  return false, "external_reward"
+end
+
 -- REFUSE l'offre de relique : +DECLINE_RELIC_GOLD or (calque exact de declineSlotGrant : on échange le
 -- choix contre de l'or). N'inscrit RIEN au Grimoire (rien d'appris). Renvoie l'or accordé.
 function RunState:declineRelic()
-  self.gold = self.gold + DECLINE_RELIC_GOLD
-  return DECLINE_RELIC_GOLD
+  local gold = Economy.declineGold(self.economy, "relic")
+  self.gold = self.gold + gold
+  return gold
 end
 
 -- Octroie une relique (modèle LISIBLE : on ne stocke que l'id ; l'effet est affiché). Le host inscrit
@@ -576,5 +857,6 @@ RunState.BUY_XP_COST = BUY_XP_COST
 RunState.XP_TO_LEVEL = XP_TO_LEVEL
 RunState.ODDS = ODDS
 RunState.SHOP_FREEZE_DEFAULT = 1
+RunState.RUN_EVENT_MAX_ACTIVE = RunEvents.MAX_ACTIVE
 
 return RunState

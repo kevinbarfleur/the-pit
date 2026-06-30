@@ -6,6 +6,8 @@
 local Units = require("src.data.units")
 local Resolver = require("src.core.unit_resolver")
 local RunState = require("src.run.state")
+local Economy = require("src.run.economy")
+local Relics = require("src.data.relics")
 
 local Coherence = {}
 
@@ -15,30 +17,19 @@ for _, id in ipairs(FAMILIES) do FAMILY_SET[id] = true end
 
 local LEVEL_COPIES = { 1, 3, 9 }
 local DEFAULT_COST = 3
-local DEFAULT_VARIANT = "current"
-
-local ECON_VARIANTS = {
-  current = {
-    id = "current",
-    label = "current cost=rank / 10 gold",
-    gold = 10,
-    costByRank = { 1, 2, 3, 4, 5 },
-  },
-  sap_like = {
-    id = "sap_like",
-    label = "SAP-like floor cost / 10 gold",
-    gold = 10,
-    costByRank = { 2, 3, 4, 5, 6 },
-  },
-  curved_income = {
-    id = "curved_income",
-    label = "cost=rank / curved early income",
-    gold = 10,
-    incomeByShopTier = { 6, 8, 10, 10, 10 },
-    costByRank = { 1, 2, 3, 4, 5 },
-  },
+local DEFAULT_VARIANT = Economy.liveProfileId or "baseline"
+local ECON_ALIASES = {
+  current = Economy.liveProfileId or "baseline",
+  sap_like = "sap_cost",
+  curved_income = "early_curve",
 }
-Coherence.ECON_VARIANTS = ECON_VARIANTS
+Coherence.ECON_VARIANTS = Economy.profiles
+Coherence.ECON_ORDER = Economy.order
+
+local function resolveEconomyProfile(id)
+  local key = ECON_ALIASES[id or DEFAULT_VARIANT] or id or DEFAULT_VARIANT
+  return Economy.resolve(key), key
+end
 
 local function clamp01(x)
   if x < 0 then return 0 end
@@ -79,9 +70,7 @@ end
 local function unitCost(id, variant)
   local u = Units[id]
   if not u then return DEFAULT_COST end
-  local rank = u.rank or u.cost or DEFAULT_COST
-  if variant and variant.costByRank then return variant.costByRank[rank] or rank end
-  return u.cost or rank or DEFAULT_COST
+  return Economy.unitCost(variant, u, DEFAULT_COST)
 end
 
 local function factTargetIsNeighbor(fact)
@@ -145,6 +134,28 @@ local function deriveFact(into, fact)
   elseif op == "grant_vuln" then
     add(into.debuffs, "vulnerable", p.value or 0.15)
     add(into.amplifies, "damage", p.value or 0.15)
+  elseif op == "grant_affliction_if_absent" then
+    add(into.produces, p.family)
+  elseif op == "execute" or op == "teamExecute" then
+    add(into.supports, "execute")
+    add(into.amplifies, "damage", p.bonus or 0.25)
+  elseif op == "percent_hp_strike" then
+    add(into.supports, "removal")
+    add(into.counters, "tank")
+  elseif op == "cleave" then
+    add(into.supports, "cleave")
+    add(into.amplifies, "damage", p.frac or 0.1)
+  elseif op == "thorns" then
+    add(into.supports, "guard")
+    add(into.amplifies, "damage", 0.2)
+  elseif op == "frenzy_gain" then
+    add(into.supports, "growth")
+  elseif op == "summon" then
+    add(into.supports, "summon")
+    add(into.supports, "faint")
+  elseif op == "scavenge_on_ally_death" then
+    add(into.supports, "growth")
+    add(into.supports, "faint_payoff")
   elseif op == "spread_burn_on_death" then
     add(into.propagates, "burn", p.frac or 0.7)
     if p.alsoPoison then add(into.propagates, "poison", 0.5) end
@@ -177,6 +188,7 @@ local function deriveFact(into, fact)
     if p.invulnT then add(into.supports, "guard") end
   elseif op == "repeat_ability" then
     add(into.supports, "mimicry")
+    if p.who then add(into.targets, p.who) end
   elseif op == "amplify_auras" then
     add(into.supports, "aura")
   end
@@ -248,6 +260,7 @@ function Coherence.profileFor(id, level)
   end
 
   profile.frontline = u.taunt == true or (u.aggro or 0) >= 40
+  if profile.frontline then add(profile.supports, "guard", u.taunt and 0.35 or 0.25) end
   profile.hasOnHit = false
   for _, fact in ipairs(profile.facts) do
     if fact.trigger == "on_hit" then profile.hasOnHit = true end
@@ -271,6 +284,58 @@ function Coherence.profileFor(id, level)
     transforms = listFromSet(profile.transforms, FAMILIES),
     commandAmplifies = listFromSet(profile.command.amplifies, FAMILIES),
     commandTransforms = listFromSet(profile.command.transforms, FAMILIES),
+  }
+  return profile
+end
+
+function Coherence.profileForRelic(id)
+  local relic = type(id) == "table" and id or Relics[id]
+  if not relic then return nil end
+  local profile = newBucket()
+  profile.id = "relic:" .. relic.id
+  profile.relicId = relic.id
+  profile.role = "relic"
+  profile.relicTarget = relic.params and relic.params.target or nil
+  local op, p = relic.op, relic.params or {}
+
+  if op == "relic_affliction_inc" then
+    add(profile.amplifies, p.family, p.inc or 0.2)
+  elseif op == "relic_aura_stat" then
+    addStat(profile, p.stat, p.value or 1)
+  elseif op == "relic_more_dmg" then
+    add(profile.amplifies, "damage", p.mult or 0.1)
+  elseif op == "relic_flat_hp" or op == "relic_dmg_reduce" then
+    add(profile.supports, "guard", p.value or p.frac or 1)
+  elseif op == "relic_haste" then
+    add(profile.supports, "haste", p.value or 0.1)
+  elseif op == "relic_few_units" then
+    add(profile.supports, "growth", (p.dmgInc or 0) + (p.hpInc or 0))
+    add(profile.amplifies, "damage", p.dmgInc or 0)
+    add(profile.supports, "guard", p.hpInc or 0)
+  elseif op == "relic_rainbow" then
+    add(profile.supports, "growth", 1)
+    add(profile.supports, "type_mix", 1)
+  elseif op == "relic_amplify_auras" then
+    add(profile.supports, "aura", p.frac or 0.15)
+    if p.dotOnly then
+      for _, f in ipairs(FAMILIES) do add(profile.amplifies, f, p.frac or 0.15) end
+    end
+  elseif op == "relic_second_breath" then
+    add(profile.supports, "guard", 1)
+  elseif op == "relic_add_effect" and p.effect then
+    deriveFact(profile, { op = p.effect.op, trigger = p.effect.trigger, values = p.effect.params or {} })
+  elseif relic.runOp then
+    add(profile.supports, "economy", 1)
+  elseif relic.eco then
+    add(profile.supports, "economy", 1)
+  end
+
+  profile.summary = {
+    amplifies = listFromSet(profile.amplifies, FAMILIES),
+    produces = listFromSet(profile.produces, FAMILIES),
+    propagates = listFromSet(profile.propagates, FAMILIES),
+    transforms = listFromSet(profile.transforms, FAMILIES),
+    supports = listFromSet(profile.supports),
   }
   return profile
 end
@@ -350,6 +415,30 @@ function Coherence.edgesForPair(a, b)
   if has(b.grants, "shield") and a.frontline then
     edge(out, b, a, "frontline_cover", "shield", 0.75, b.id .. " shields frontline " .. a.id, has(b.targets, "neighbors"))
   end
+  local function tankish(p)
+    return p.frontline or p.role == "tank" or has(p.supports, "guard")
+      or has(p.supports, "sustain") or has(p.supports, "shield")
+  end
+  if has(a.supports, "guard") and tankish(b) then
+    edge(out, a, b, "guard_frontline", "guard", 0.75,
+      a.id .. " reinforces the frontline role of " .. b.id, has(a.targets, "neighbors"))
+  end
+  if has(b.supports, "guard") and tankish(a) then
+    edge(out, b, a, "guard_frontline", "guard", 0.75,
+      b.id .. " reinforces the frontline role of " .. a.id, has(b.targets, "neighbors"))
+  end
+  if has(a.supports, "sustain") and tankish(b) then
+    edge(out, a, b, "sustain_wall", "sustain", 0.65,
+      a.id .. " helps a defensive front stay alive", has(a.targets, "neighbors"))
+  end
+  if has(b.supports, "sustain") and tankish(a) then
+    edge(out, b, a, "sustain_wall", "sustain", 0.65,
+      b.id .. " helps a defensive front stay alive", has(b.targets, "neighbors"))
+  end
+  if a.frontline and b.frontline then
+    edge(out, a, b, "frontline_wall", "guard", 0.45,
+      a.id .. " and " .. b.id .. " form a readable defensive front", false)
+  end
   if has(a.supports, "haste") and b.hasOnHit then
     edge(out, a, b, "tempo_support", "haste", 0.65, a.id .. " accelerates on-hit pressure from " .. b.id, has(a.targets, "neighbors"))
   end
@@ -361,6 +450,38 @@ function Coherence.edgesForPair(a, b)
   end
   if has(b.amplifies, "damage") and (a.hasOnHit or hasAnyFamily(a)) then
     edge(out, b, a, "damage_marker", "damage", 0.8, b.id .. " makes " .. a.id .. " damage more valuable", false)
+  end
+
+  if has(a.supports, "summon") and has(b.supports, "faint_payoff") then
+    edge(out, a, b, "faint_engine", "faint", 1.35,
+      a.id .. " creates deaths that feed " .. b.id, false)
+  end
+  if has(b.supports, "summon") and has(a.supports, "faint_payoff") then
+    edge(out, b, a, "faint_engine", "faint", 1.35,
+      b.id .. " creates deaths that feed " .. a.id, false)
+  end
+  if has(a.supports, "summon") and has(b.supports, "summon") then
+    edge(out, a, b, "summon_line", "summon", 0.6,
+      a.id .. " and " .. b.id .. " both commit to a summon board", false)
+  end
+  if has(a.supports, "mimicry") and b.hasOnHit then
+    edge(out, a, b, "mimicry_payoff", "mimicry", 1.15,
+      a.id .. " can echo on-hit pressure from " .. b.id, has(a.targets, "ahead") or has(a.targets, "neighbors"))
+  end
+  if has(b.supports, "mimicry") and a.hasOnHit then
+    edge(out, b, a, "mimicry_payoff", "mimicry", 1.15,
+      b.id .. " can echo on-hit pressure from " .. a.id, has(b.targets, "ahead") or has(b.targets, "neighbors"))
+  end
+  local function auraLike(p)
+    return has(p.supports, "aura") or next(p.amplifies) ~= nil or next(p.grants) ~= nil
+  end
+  if has(a.supports, "aura") and auraLike(b) then
+    edge(out, a, b, "aura_amplifier", "aura", 0.9,
+      a.id .. " amplifies aura-style value from " .. b.id, false)
+  end
+  if has(b.supports, "aura") and auraLike(a) then
+    edge(out, b, a, "aura_amplifier", "aura", 0.9,
+      b.id .. " amplifies aura-style value from " .. a.id, false)
   end
 
   table.sort(out, function(x, y)
@@ -413,6 +534,21 @@ local function squareNeighbors(a, b)
   return math.abs(ax - bx) + math.abs(ay - by) == 1
 end
 
+local function targetMatches(target, profile, entry)
+  if not target or target == "team" then return true end
+  if target:sub(1, 5) == "type:" then
+    local u = Units[profile.id]
+    return u and u.type == target:sub(6)
+  end
+  if target == "role:front" or target == "role:back" then
+    local slot = entry and entry.slot
+    if not slot then return false end
+    local col = (slot - 1) % 3
+    return (target == "role:front" and col == 2) or (target == "role:back" and col == 0)
+  end
+  return false
+end
+
 local function teamEntries(team)
   local out = {}
   for _, entry in ipairs(team or {}) do
@@ -424,7 +560,8 @@ end
 
 function Coherence.economyForTeam(team, opts)
   opts = opts or {}
-  local variant = ECON_VARIANTS[opts.variant or DEFAULT_VARIANT] or ECON_VARIANTS.current
+  local variant, variantId = resolveEconomyProfile(opts.variant)
+  local baseline = Economy.resolve("baseline")
   local entries = teamEntries(team)
   local gold, baseGold, maxRank, maxLevel, lowRankCopies = 0, 0, 0, 1, 0
   local rankCounts = {}
@@ -436,7 +573,7 @@ function Coherence.economyForTeam(team, opts)
       local copies = LEVEL_COPIES[lvl] or 1
       local c = unitCost(entry.id, variant)
       gold = gold + c * copies
-      baseGold = baseGold + unitCost(entry.id, ECON_VARIANTS.current) * copies
+      baseGold = baseGold + unitCost(entry.id, baseline) * copies
       rankCounts[rank] = (rankCounts[rank] or 0) + 1
       if rank > maxRank then maxRank = rank end
       if lvl > maxLevel then maxLevel = lvl end
@@ -451,6 +588,8 @@ function Coherence.economyForTeam(team, opts)
   elseif maxRank >= 4 then accessibility = "advanced" end
   return {
     variant = variant.id,
+    requestedVariant = opts.variant,
+    resolvedVariant = variantId,
     assemblyGold = gold,
     currentRulesGold = baseGold,
     maxRank = maxRank,
@@ -463,21 +602,24 @@ function Coherence.economyForTeam(team, opts)
 end
 
 function Coherence.shopPressure(variantId)
-  local variant = ECON_VARIANTS[variantId or DEFAULT_VARIANT] or ECON_VARIANTS.current
+  local variant = resolveEconomyProfile(variantId)
   local out = {}
   for tier = 1, RunState.MAX_TIER do
     local odds = RunState.ODDS[tier]
     local avg = 0
     for rank = 1, RunState.MAX_TIER do
-      local cost = variant.costByRank and variant.costByRank[rank] or rank
+      local cost = Economy.unitCost(variant, { rank = rank, cost = rank }, rank)
       avg = avg + ((odds[rank] or 0) / 100) * cost
     end
-    local gold = (variant.incomeByShopTier and variant.incomeByShopTier[tier]) or variant.gold or RunState.GOLD_PER_ROUND
+    local gold = Economy.goldForRound(variant, tier)
     out[#out + 1] = {
+      profile = variant.id,
       tier = tier,
       avgOfferCost = r3(avg),
       fullShopCost = r3(avg * RunState.SHOP_SIZE),
       gold = gold,
+      rerollCost = Economy.rerollCost(variant, tier),
+      buyXpCost = Economy.buyXpCost(variant),
       fullShopCostRatio = r3((avg * RunState.SHOP_SIZE) / gold),
     }
   end
@@ -569,12 +711,28 @@ function Coherence.scoreTeam(team, opts)
     end
   end
 
+  local relicEdges = {}
+  for _, rid in ipairs(opts.relics or {}) do
+    local rp = Coherence.profileForRelic(rid)
+    if rp then
+      for _, p in ipairs(profiles) do
+        local entry = byId[p.id] and byId[p.id].entry
+        if targetMatches(rp.relicTarget, p, entry) then
+          local row = Coherence.edgesForPair(rp, p)
+          for _, e in ipairs(row) do relicEdges[#relicEdges + 1] = e end
+        end
+      end
+    end
+  end
+
   local n = #profiles
   local counts, familyCounts = archetypeCounts(profiles)
   local rawEdge = edgeWeight(edges)
   local rawCommand = edgeWeight(cmdEdges)
+  local rawRelic = edgeWeight(relicEdges)
   local tagScore = clamp01(rawEdge / math.max(1, n * 2.1))
   local commandScore = commander and clamp01(rawCommand / math.max(1, n * 1.0)) or 0
+  local relicScore = (#relicEdges > 0) and clamp01(rawRelic / math.max(1, n * 1.0)) or 0
   local positionScore = 1
   if positionRequired > 0 then
     positionScore = (positionSatisfied + positionUnknown * 0.5) / positionRequired
@@ -586,12 +744,17 @@ function Coherence.scoreTeam(team, opts)
     + commandScore * 0.14
     + levelScore * 0.14
     + readabilityScore * 0.16
+  if relicScore > 0 then coherence = coherence + relicScore * 0.08 end
 
   table.sort(edges, function(a, b)
     if a.weight ~= b.weight then return a.weight > b.weight end
     return (a.from .. a.to .. a.kind) < (b.from .. b.to .. b.kind)
   end)
   table.sort(cmdEdges, function(a, b)
+    if a.weight ~= b.weight then return a.weight > b.weight end
+    return (a.from .. a.to .. a.kind) < (b.from .. b.to .. b.kind)
+  end)
+  table.sort(relicEdges, function(a, b)
     if a.weight ~= b.weight then return a.weight > b.weight end
     return (a.from .. a.to .. a.kind) < (b.from .. b.to .. b.kind)
   end)
@@ -603,6 +766,7 @@ function Coherence.scoreTeam(team, opts)
       tags = r3(tagScore),
       position = r3(positionScore),
       command = r3(commandScore),
+      relic = r3(relicScore),
       level_plan = r3(levelScore),
       readability = r3(readabilityScore),
     },
@@ -610,6 +774,7 @@ function Coherence.scoreTeam(team, opts)
     familyCounts = familyCounts,
     edges = edges,
     commandEdges = cmdEdges,
+    relicEdges = relicEdges,
     economy = Coherence.economyForTeam(entries, { variant = opts.economyVariant or DEFAULT_VARIANT }),
   }
 end

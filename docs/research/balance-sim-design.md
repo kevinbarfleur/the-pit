@@ -34,18 +34,26 @@ regen/taunt/aggro→tank, sinon bruiser). Sert aux politiques *committed* ET à 
 
 ## 3. Modèle d'investissement (`compcost.lua`)
 
-`Compcost.of(comp) → { gold, maxLevel, slots, relicDep, sigilDep, placementSens, score }`.
+`Compcost.of(comp) → { gold, maxLevel, slots, relicDep, sigilDep, placementSens, rankPressure, duplicatePressure, score }`.
 
-- **gold** = `Σ coût_unité · facteur_niveau` (facteur `{1,3,9}` : 3 copies→niv2, 9→niv3) **+** or de
-  leveling implicite `Σ_{L=3..boardLevel-1}(4+L)` (miroir EXACT de `RunState.levelCostAt`).
+- **gold** = `Σ coût_unité · facteur_niveau` (facteur `{1,3,9}` : 3 copies→niv2, 9→niv3).
+  Les slots de board sont désormais débloqués par le rythme de run, pas achetés en or, donc ils ne sont plus
+  additionnés au coût brut.
 - **placementSens** = part d'unités ayant ≥1 voisin de la compo via `shape.edges` (0 = un tas ; 1 = tout
   agencé → la compo *exige* un placement). Pure adjacence.
 - **sigilDep** = 1 si sigil ≠ carré (topologie spécifique exigée). **relicDep** = 1 si reliques déclarées.
+- **rankPressure** = plancher d'accessibilité dérivé du rang de boutique. Il empêche une composition avec une
+  pièce rang 4/5 d'être lue comme "cheap" seulement parce que son prix brut en gemmes est faible.
+- **duplicatePressure** = plancher d'accessibilite derive du nombre de copies necessaires aux niveaux 2/3.
+  Il evite qu'un board avec plusieurs L2/L3 soit lu comme cheap seulement parce que le prix brut `3 copies`
+  ne compte pas les rerolls, la place de banc et la variance d'acquisition.
 - **score** ∈ (0,1] = mélange pondéré (poids nommés dans `compcost.lua`) :
   `0.40·norm(gold) + 0.25·(maxLevel-1)/2 + 0.10·(slots/9) + 0.05·relicDep + 0.05·sigilDep + 0.15·placementSens`.
+  Le score final est le maximum entre ce mélange, `rankPressure` et `duplicatePressure`.
 
-Les **deux seuls boutons** à tuner : `LEVEL_GOLD = {1,3,9}` et les 6 poids du `score`. Tout le reste est
-data-driven (coûts réels des unités + coûts de leveling réels).
+Les boutons à tuner : `LEVEL_GOLD = {1,3,9}`, `RANK_ACCESS_PRESSURE`, `RANK_GATE_MULT`,
+`LEVEL_ACCESS_PRESSURE` et les 6 poids du score pondéré. Tout le reste est data-driven
+(coûts/rangs/niveaux réels des unités + largeur/placement/reliques).
 
 ## 4. Counters INTENTIONNELS (ne jamais flaguer)
 
@@ -83,11 +91,21 @@ Même taxonomie, deux incarnations. Code déterministe (`src/lab/policies.lua`) 
 | `econ_streak` | remplit au moins cher puis scale (board plein → niveau) | la valeur de l'éco/streak |
 | `force_level_fast` | rushe le niveau (tous les slots vite) | le scaling de board bat-il la qualité ? |
 | `committed_archetype(a,sigil)` | reshape + n'achète que l'archétype `a` (reroll pour trouver) | une COMPO précise sous contrainte de shop |
+| `committed_*_plan` | cible un noyau exact + supports compatibles, vend les fillers faibles pour acheter le coeur, choisit reliques/commandants par coherence | accessibilite reelle d'un endpoint sous contrainte de shop |
+| `committed_*_coverage_plan` | comme `*_plan`, mais bloque l'XP au-dessus d'un rang plancher tant que la couverture cible est trop basse | timing XP/reroll : stabiliser copies avant de monter de tier |
+| `committed_rot_bleed_rat_core_plan` | reroll low-rank vers `rot_bleed_rat_core` au lieu de forcer `marrow_drinker` | baseline actuelle du pivot rot/bleed sans rang 5 obligatoire |
 | `random_baseline(rng)` | hasard (RNG injecté) | le plancher |
 
 Au Pilier C (MCP), ces mêmes profils deviennent des **personas LLM** (prompts) : un agent joue une vraie
 partie via les outils et rend un retour QUALITATIF (fun, frustrations, builds émergents) que le batch
 quantitatif ne capte pas.
+
+Les rapports economie exposent aussi les decisions de timing du plan :
+
+- `xp_gate_blocks_per_run` et `xp_gate_block_round_rate` : combien de fois une
+  politique a retenu l'XP parce que son coeur n'etait pas assez couvert.
+- `avg_xp_gate_unit_coverage` et `avg_xp_gate_level_coverage` : niveau moyen de
+  couverture au moment ou la barriere XP a ete evaluee.
 
 ## 7. Limites connues / à itérer
 

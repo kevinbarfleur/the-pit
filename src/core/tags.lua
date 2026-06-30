@@ -118,7 +118,9 @@ local function addTargetTags(seen, target)
   elseif target == "role:back" then
     add(seen, "behind")
   elseif target:sub(1, 5) == "type:" then
+    local ty = target:match("^type:(%w+)$")
     add(seen, "type")
+    if TYPE[ty] then add(seen, "type_" .. ty) end
   end
 end
 

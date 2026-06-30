@@ -11,7 +11,8 @@
 --                   (toujours >= #units). L'axe board-level (early/mid) s'enrichira en P5.
 --     · level     : niveau de l'unité (1..3, duplicatas). Défaut 1.
 --     · variant   : perfect | missing_minor (1 pièce redondante -> filler, « pas grave ») |
---                   missing_clutch (LA pièce-clé retirée -> sous-performe) | wall|baseline|amp (mono).
+--                   missing_clutch (LA pièce-clé retirée -> sous-performe) | wall|baseline|amp (mono) |
+--                   murmur (vitrine de murmure caché inspectable en combat).
 --
 -- VARIANTS (axe de fragilité) : `perfect` vs `missing_clutch` ne diffèrent QUE de la pièce CLUTCH (même
 -- disposition -> A/B propre : l'écart de win% = la valeur de cette pièce). `missing_minor` ne retire qu'une
@@ -213,6 +214,30 @@ Compositions.list = {
   },
 
   -- ══ COMBO CROISÉ (T3 pivot) : bleed -> rot via marrow_drinker (convertit le bleed en pourriture) ══
+  {
+    id = "rot_bleed_mid", archetype = "rot", variant = "perfect", sigil = "carre", boardLevel = 6,
+    units = {
+      { id = "clot_mender", slot = 5 },   -- AURA : grant bleed aux voisins (2,4,6)
+      { id = "razorkin", slot = 2, level = 2 },
+      { id = "gash_fiend", slot = 4, level = 2 },
+      { id = "hookjaw", slot = 6 },
+      { id = "rot_hound", slot = 1, level = 2 },
+      { id = "carrion_pecker", slot = 3 },
+    },
+    noteKey = "comp.rot_bleed_mid.note",
+  },
+  {
+    id = "rot_bleed_rat_core", archetype = "rot", variant = "perfect", sigil = "carre", boardLevel = 6,
+    units = {
+      { id = "clot_mender", slot = 5, level = 2 }, -- AURA : grant bleed aux voisins (2,4,6)
+      { id = "razorkin", slot = 2, level = 2 },
+      { id = "gash_fiend", slot = 4, level = 2 },
+      { id = "rot_hound", slot = 6, level = 3 },
+      { id = "carrion_pecker", slot = 3, level = 3 },
+      { id = "gnaw_rat", slot = 1, level = 3 },
+    },
+    noteKey = "comp.rot_bleed_rat_core.note",
+  },
   {
     id = "cross_bleed_rot", archetype = "rot", variant = "perfect", sigil = "carre", boardLevel = 8,
     units = {
@@ -453,6 +478,56 @@ Compositions.list = {
     },
     noteKey = "comp.shock_arc_carre.note",
   },
+
+  -- ════════ MURMURES (3e couche cachée) : compos de vitrine pour l'inspection Proving Ground ════════
+  -- Les murmures restent ABSENTS des cartes/grimoire/tags publics. Ces équipes existent pour WATCH + pause
+  -- combat : survoler le porteur montre la ligne cryptique dans le panneau d'influences, tout en conservant
+  -- les auras publiques visibles autour.
+  {
+    id = "whisper_abyss_carre", archetype = "poison", variant = "murmur", sigil = "carre", boardLevel = 8,
+    units = {
+      { id = "ink_horror", slot = 5, level = 2 },  -- murmure présence : deep_kraken -> atkInc caché
+      { id = "deep_kraken", slot = 2 },            -- partenaire + aura poison publique sur le centre
+      { id = "corruptor", slot = 4, level = 2 },   -- murmure présence : kraken -> stat cachée
+      { id = "miasma_acolyte", slot = 6 },         -- aura poison publique, pour superposer visible/caché
+      { id = "spore_tick", slot = 1 },
+    },
+    noteKey = "comp.whisper_abyss_carre.note",
+  },
+  {
+    id = "whisper_forge_ligne", archetype = "burn", variant = "murmur", sigil = "ligne", boardLevel = 7,
+    units = {
+      { id = "cinder_cur", slot = 4, level = 2 },  -- murmure adjacency : pyre_tender -> burnInc caché
+      { id = "pyre_tender", slot = 5 },
+      { id = "soot_acolyte", slot = 3 },           -- murmure famille burn + aura feu publique
+      { id = "emberling", slot = 2 },
+      { id = "ash_moth", slot = 6 },
+      { id = "wildfire_hound", slot = 7 },
+    },
+    noteKey = "comp.whisper_forge_ligne.note",
+  },
+  {
+    id = "whisper_echo_carre", archetype = "shock", variant = "murmur", sigil = "carre", boardLevel = 8,
+    units = {
+      { id = "storm_conductor", slot = 5, level = 2 }, -- murmure adjacency : echo_warden -> atkInc caché
+      { id = "echo_warden", slot = 4 },
+      { id = "mimic_spawn", slot = 2 },                -- murmure présence : echo_flesh -> atkInc caché
+      { id = "echo_flesh", slot = 6 },
+      { id = "live_wire", slot = 8 },
+    },
+    noteKey = "comp.whisper_echo_carre.note",
+  },
+  {
+    id = "whisper_patient_carre", archetype = "rot", variant = "murmur", sigil = "carre", boardLevel = 8,
+    units = {
+      { id = "patient_worm", slot = 5, level = 2 }, -- murmure différé après durée : à voir en pause combat
+      { id = "hollow_gut", slot = 4 },              -- murmure seuil PV : discret si l'ennemi le met bas
+      { id = "husk", slot = 2, level = 2 },         -- murmure mort alliée : gagne une ligne quand un allié tombe
+      { id = "rot_hound", slot = 6 },
+      { id = "gnaw_rat", slot = 8 },
+    },
+    noteKey = "comp.whisper_patient_carre.note",
+  },
 }
 
 -- ── Matchups FEATURED (la liste de scénarios « j'ai qu'à choisir »). seed FIXE -> match rejouable.
@@ -497,6 +572,23 @@ Compositions.scenarios = {
   { id = "ward_wall",        a = "ward_fortress_carre", b = "bruiser_carre",        seed = 1031, tags = { "vfx" },                  noteKey = "scenario.ward_wall.note" },
   { id = "breach",           a = "siege_carre",         b = "ward_fortress_carre",  seed = 1032, tags = { "vfx" },                  noteKey = "scenario.breach.note" },
   { id = "arc_storm",        a = "shock_arc_carre",     b = "bruiser_carre",        seed = 1033, tags = { "vfx" },                  noteKey = "scenario.arc_storm.note" },
+  -- ── Murmures visibles seulement dans le panneau d'influences combat (pas dans cartes/tags/grimoire) ──
+  { id = "whisper_abyss",     a = "whisper_abyss_carre",   b = "tank_carre",         seed = 1041, tags = { "murmur", "vfx" },        noteKey = "scenario.whisper_abyss.note" },
+  { id = "whisper_forge",     a = "whisper_forge_ligne",   b = "bruiser_carre",      seed = 1042, tags = { "murmur", "vfx" },        noteKey = "scenario.whisper_forge.note" },
+  { id = "whisper_echo",      a = "whisper_echo_carre",    b = "shock_storm_carre",  seed = 1043, tags = { "murmur", "tempo" },      noteKey = "scenario.whisper_echo.note" },
+  { id = "whisper_patient",   a = "whisper_patient_carre", b = "bruiser_carre",      seed = 1044, tags = { "murmur", "tempo" },      noteKey = "scenario.whisper_patient.note" },
+  -- ── BOSSRUSH PvE : toutes les abominations, chacune contre une équipe joueur différente. WATCH lance
+  -- le vrai combat bossrush live ; SIM xN mesure score/clear/survie en headless. ──
+  { id = "boss_leviathan", kind = "bossrush", a = "poison_diamant_perfect", boss = "leviathan", seed = 1101, tags = { "boss", "spread", "vfx" }, noteKey = "scenario.boss_leviathan.note" },
+  { id = "boss_regard",    kind = "bossrush", a = "shock_nuke_croix",       boss = "regard",    seed = 1102, tags = { "boss", "tempo", "vfx" },  noteKey = "scenario.boss_regard.note" },
+  { id = "boss_ossuaire",  kind = "bossrush", a = "siege_carre",           boss = "ossuaire",  seed = 1103, tags = { "boss", "tempo" },         noteKey = "scenario.boss_ossuaire.note" },
+  { id = "boss_kraken",    kind = "bossrush", a = "bleed_lock_anneau",      boss = "kraken",    seed = 1104, tags = { "boss", "tempo", "vfx" },  noteKey = "scenario.boss_kraken.note" },
+  { id = "boss_idole",     kind = "bossrush", a = "ward_fortress_carre",    boss = "idole",     seed = 1105, tags = { "boss", "vfx" },           noteKey = "scenario.boss_idole.note" },
+  { id = "boss_ruche",     kind = "bossrush", a = "spread_showcase",        boss = "ruche",     seed = 1106, tags = { "boss", "spread", "vfx" }, noteKey = "scenario.boss_ruche.note" },
+  { id = "boss_brasier",   kind = "bossrush", a = "burn_conduit_ligne",     boss = "brasier",   seed = 1107, tags = { "boss", "vfx" },           noteKey = "scenario.boss_brasier.note" },
+  { id = "boss_floraison", kind = "bossrush", a = "cross_venom_pyre",       boss = "floraison", seed = 1108, tags = { "boss", "cross", "spread" }, noteKey = "scenario.boss_floraison.note" },
+  { id = "boss_devoreur",  kind = "bossrush", a = "fortress_thorns_carre",  boss = "devoreur",  seed = 1109, tags = { "boss", "tempo" },         noteKey = "scenario.boss_devoreur.note" },
+  { id = "boss_vermine",   kind = "bossrush", a = "rot_patient_carre",      boss = "vermine",   seed = 1110, tags = { "boss", "tempo", "vfx" },  noteKey = "scenario.boss_vermine.note" },
 }
 
 -- ── Index (construits au load ; DATA pure, aucun love/require) ──
@@ -516,7 +608,7 @@ Compositions.archetypes = { "poison", "burn", "bleed", "rot", "tank", "bruiser",
 
 -- Tags THÉMATIQUES (facette de filtre transversale du Proving Ground, en plus des archétypes). Ordre =
 -- ordre d'affichage des chips. L'intégrité du catalogue vérifie que tout tag de scénario est connu.
-Compositions.tags = { "spread", "cross", "tempo", "vfx", "mirror" }
+Compositions.tags = { "spread", "cross", "tempo", "vfx", "mirror", "murmur", "boss" }
 Compositions.tagSet = {}
 for _, tg in ipairs(Compositions.tags) do Compositions.tagSet[tg] = true end
 

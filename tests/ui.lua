@@ -16,6 +16,7 @@ local MechanicsText = require("src.ui.mechanics_text")
 local Units = require("src.data.units")
 local Forge = require("src.ui.forge")
 local Layout = require("src.ui.layout")
+local InfluencePanel = require("src.ui.influence_panel")
 
 local ok, err = pcall(function()
   -- ── Theme.state : vocabulaire d'état complet + repli sur idle ──
@@ -95,6 +96,10 @@ local ok, err = pcall(function()
   assert(not sporeBoard:lower():find("venom", 1, true), "MechanicsText board : pas de synonyme venom")
   assert(sporeCmd:find("%[haste|Haste%]"), "MechanicsText command : Spore Tick dit Haste")
   assert(not sporeCmd:lower():find("faster", 1, true), "MechanicsText command : pas de synonyme faster")
+  local plagueCmd = table.concat(MechanicsText.commandLines("plague_bearer"), " ")
+  assert(plagueCmd:find("%[poison|Poison%]"), "MechanicsText command : Plague Bearer dit Poison")
+  assert(not plagueCmd:find("+0s", 1, true), "MechanicsText command : pas de bonus de duree +0s")
+  assert(plagueCmd:find("stack cap", 1, true), "MechanicsText command : poisonNoCap reste explicite")
   local witherBlocks = MechanicsText.unitBlocks("wither_bloom")
   assert(#witherBlocks == 1 and witherBlocks[1].trigger == "ON HIT", "MechanicsText blocks : Withering fusionne les on-hit")
   assert(#witherBlocks[1].lines >= 5, "MechanicsText blocks : toutes les lignes on-hit restent presentes")
@@ -108,7 +113,9 @@ local ok, err = pcall(function()
   assert(hasTrigger(MechanicsText.unitBlocks("blight_spreader"), "ROTTED DEATH"), "MechanicsText death clarity : rot spread = ROTTED DEATH")
   assert(hasTrigger(MechanicsText.unitBlocks("brood_mother"), "FAINT"), "MechanicsText death clarity : summon self-death = FAINT")
   assert(hasTrigger(MechanicsText.unitBlocks("carrion_pecker"), "ON KILL"), "MechanicsText death clarity : heal_on_kill = ON KILL")
-  assert(hasTrigger(MechanicsText.unitBlocks("bone_harvest"), "ALLY DEATH"), "MechanicsText death clarity : scavenge = ALLY DEATH")
+  local okAllyDeath, allyDeath = hasTrigger(MechanicsText.unitBlocks("bone_harvest"), "ALLY DEATH")
+  assert(okAllyDeath, "MechanicsText death clarity : scavenge = ALLY DEATH")
+  assert(table.concat(allyDeath.lines, " "):find("%[growth|Growth%]"), "MechanicsText scavenge : stat gain uses Growth tag")
   local frenzyTrigger = MechanicsText.extractTrigger(table.concat(MechanicsText.relicLines("feeding_frenzy"), "\n"))
   assert(frenzyTrigger == "ENEMY DEATH", "MechanicsText relic clarity : feeding_frenzy = ENEMY DEATH")
   local cmdBlock = MechanicsText.commandBlock("venom_censer")
@@ -139,6 +146,19 @@ local ok, err = pcall(function()
   local cbox = TagGlossary.draw(nil, { x = 900, y = 40, w = 248, h = 300 }, "spore_tick", 0,
     { tagOpts = { context = "commander" } })
   assert(cbox and cbox.w > 0 and cbox.h > 0, "TagGlossary.draw : command context smoke")
+  do
+    local rows = {}
+    for i = 1, 24 do
+      rows[i] = { kind = (i % 2 == 0) and "guard" or "growth", value = "+" .. i .. "%", source = "source " .. i, detail = "detail" }
+    end
+    local box = InfluencePanel.draw({ sx = 1, sy = 1, ox = 0, oy = 0 }, { x = 900, y = 40, w = 248, h = 300 }, {
+      title = "Influences",
+      subtitle = "Test",
+      sections = { { title = "Many", rows = rows } },
+    }, { scroll = 9999 })
+    assert(box and box.maxScroll and box.maxScroll > 0, "InfluencePanel.draw : contenu scrollable detecte")
+    assert(box.scroll == box.maxScroll, "InfluencePanel.draw : scroll clamp au max")
+  end
 
   -- ── Icône bakée (mock : image stub mais dimensions reelles de la grille) ──
   local ic = Keywords.icon("burn")
@@ -717,6 +737,7 @@ local ok, err = pcall(function()
   -- Relicpick : 3 cartes forge (Layout.row, gouttières égales) + BIND bouton-œil. host stub recoit le pick.
   do
     local Relicpick = require("src.scenes.relicpick")
+    local Draw = require("src.ui.draw")
     local picked = nil
     local host = { finishRelicPick = function(id) picked = id end }
     local rp = Relicpick.new(Palette, 320, 180, host, { choices = { "bloodstone", "ember_heart", "aegis" } })
@@ -743,6 +764,34 @@ local ok, err = pcall(function()
     assert(picked == "bloodstone", "relicpick : BIND confirme le pick de la carte 1 (apres differe)")
     rp:keypressed("2"); assert(rp.sel == 2, "relicpick : touche 2 sélectionne")
     rp:keypressed("return") -- confirme via clavier (no crash)
+
+    local eventPicked = nil
+    local eventHost = { finishRunEventPick = function(idx) eventPicked = idx end }
+    local ev = {
+      id = "sealed_brood",
+      titleKey = "runevent.sealed_brood.title",
+      bodyKey = "runevent.sealed_brood.body",
+      choices = {
+        { id = "crack_the_warm_egg", reward = { kind = "unit", id = "husk", level = 1 } },
+        { id = "take_the_twin", reward = { kind = "unit", id = "husk", level = 2 } },
+        { id = "boil_the_shell", reward = { kind = "relic", id = "weeping_nail" } },
+        { id = "let_it_echo", reward = { kind = "mutation", id = "echo_touched" } },
+      },
+    }
+    local erp = Relicpick.new(Palette, 320, 180, eventHost, { event = ev })
+    assert(#erp.cards == 4 and not erp.decline, "runevent : 4 choix explicites et pas de REFUSE")
+    assert(erp.cards[1].x >= 0 and erp.cards[4].x + erp.cards[4].w <= Draw.W,
+      "runevent : cartes dans le viewport")
+    erp:update(1.0)
+    erp:drawBack(view); erp:drawWorld(); erp:drawOverlay(view)
+    local ec2 = erp.cards[2]
+    erp:mousemoved((ec2.x + ec2.w / 2) / 4, (ec2.y + ec2.h / 2) / 4)
+    assert(erp.hover == 2, "runevent : survol choix unite")
+    erp:mousepressed((ec2.x + ec2.w / 2) / 4, (ec2.y + ec2.h / 2) / 4, 1)
+    assert(erp.sel == 2, "runevent : clic selectionne le choix event")
+    erp:mousepressed((erp.bind.x + erp.bind.w / 2) / 4, (erp.bind.y + erp.bind.h / 2) / 4, 1)
+    erp:update(60)
+    assert(eventPicked == 2, "runevent : BIND appelle finishRunEventPick(index)")
   end
 
   -- Menu : entrées = boutons forge (ENTER = cta), Layout.column centrée. host stub recoit les actions.
@@ -929,15 +978,20 @@ local ok, err = pcall(function()
     assert(action == "abandon", "confirmation : abandon appelle host.abandonRun")
   end
 
-  -- Runover : panneau forge + bannière (win/defeat) + bouton-œil de relance. host stub recoit newRun.
+  -- Runover : victoire -> choix bossrush/claim ; défaite -> bouton-œil de relance. host stub recoit les routes.
   do
     local Runover = require("src.scenes.runover")
     for _, res in ipairs({ "win", "lose" }) do
-      local restarted = false
-      local host = { newRun = function() restarted = true end }
+      local restarted, bossrush = false, false
+      local host = {
+        newRun = function() restarted = true end,
+        startBossrush = function() bossrush = true end,
+      }
       local ro = Runover.new(Palette, 320, 180, host,
         { result = res, run = { wins = 7, losses = 2, round = 12, level = 5 } })
       assert(ro.panel and ro.cta, "runover : panneau + bouton construits")
+      if res == "win" then assert(ro.alt, "runover win : bouton claim victory construit")
+      else assert(not ro.alt, "runover lose : pas de bouton bossrush secondaire") end
       ro:update(1.0)
       ro:drawBack(view); ro:drawWorld(); ro:drawOverlay(view)
       local cta = ro.cta
@@ -947,11 +1001,67 @@ local ok, err = pcall(function()
       ro:mousepressed((cta.x + cta.w / 2) / 4, (cta.y + cta.h / 2) / 4, 1)
       ro:mousereleased()
       ro:update(60) -- ⭐ mûrit l'action différée (Feel) : le press du CTA est visible avant la relance
-      assert(restarted, "runover : clic relance la run (" .. res .. ", apres differe)")
+      if res == "win" then
+        assert(bossrush and not restarted, "runover win : CTA principal entre en bossrush")
+        ro = Runover.new(Palette, 320, 180, host, { result = res, run = { wins = 7, losses = 2, round = 12, level = 5 } })
+        local alt = ro.alt
+        ro:mousepressed((alt.x + alt.w / 2) / 4, (alt.y + alt.h / 2) / 4, 1)
+        ro:update(60)
+        assert(restarted, "runover win : claim victory relance proprement")
+      else
+        assert(restarted, "runover lose : clic relance la run apres differe")
+      end
     end
     -- relance clavier [r] (no crash).
     local ro2 = Runover.new(Palette, 320, 180, { newRun = function() end }, { result = "lose" })
     ro2:keypressed("r")
+  end
+
+  -- Bossrush live : entree post-win = vrai combat PvE, pas un score precalcule.
+  do
+    local BossrushScene = require("src.scenes.bossrush")
+    local Units = require("src.data.units")
+    local function spec(id, x, y, row)
+      local u = Units[id]
+      return {
+        id = id, level = 1, hp = u.hp, dmg = u.dmg, cd = u.cd, effects = u.effects,
+        shield = 0, depth = 0, row = row or 0, x = x, y = y, facing = 1,
+      }
+    end
+    local run = { seed = 77, wins = 10, losses = 1, round = 12, bossrushResults = {} }
+    local restarted, menu = false, false
+    local host = {
+      run = run,
+      newRun = function() restarted = true end,
+      abandonRun = function() menu = true end,
+    }
+    local s = BossrushScene.new(Palette, 320, 180, host, {
+      run = run,
+      left = { spec("marauder", 92, 78, 0), spec("witch", 82, 106, 1), spec("skeleton", 102, 134, 2) },
+      bossKey = "brasier",
+      seed = 177,
+      scoreTicks = 12,
+      tickCap = 420,
+    })
+    assert(s.arena and s.renderer and not s.result, "bossrush : demarre par une arene live")
+    assert(#run.bossrushResults == 0, "bossrush : aucun record score avant resolution live")
+    s:update(1.0); s:drawBack(view); s:drawWorld(); s:drawOverlay(view)
+    s.skipping = true
+    for _ = 1, 8 do
+      s:update(1.0)
+      if s.result then break end
+    end
+    assert(s.result and s.result.boss_key == "brasier", "bossrush : resultat calcule pour le boss demande")
+    assert(#run.bossrushResults == 1, "bossrush : record score archive apres resolution")
+    s:drawBack(view); s:drawWorld(); s:drawOverlay(view)
+    local b = s.btnNew
+    s:mousepressed((b.x + b.w / 2) / 4, (b.y + b.h / 2) / 4, 1)
+    s:update(60)
+    assert(restarted, "bossrush : CTA nouvelle run route au host")
+    local m = s.btnMenu
+    s:mousepressed((m.x + m.w / 2) / 4, (m.y + m.h / 2) / 4, 1)
+    s:update(60)
+    assert(menu, "bossrush : bouton menu route au host")
   end
 
   -- ── src/ui/overlay.lua : CHORÉGRAPHIE d'entrée UNIFIÉE des overlays flottants (transplant modalstack). On

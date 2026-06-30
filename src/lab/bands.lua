@@ -76,6 +76,15 @@ local MID = {
       { id = "static_swarm", slot = 3 }, { id = "witch", slot = 1 },
     },
   },
+  {
+    id = "mid_rot", archetype = "rot", variant = "mid", sigil = "carre", boardLevel = 6, band = "mid",
+    units = { -- anti-mur mid : amputation + growth autour de decay_tender, a coût comparable au mur
+      { id = "decay_tender", slot = 5 }, -- AURA rot growth aux voisins
+      { id = "rot_hound", slot = 2, level = 2 }, { id = "necro_leech", slot = 4 },
+      { id = "maggot_king", slot = 6 }, { id = "carrion_pecker", slot = 3 },
+      { id = "skeleton", slot = 1 },
+    },
+  },
 }
 
 -- ── END — carries rank-5 amplifiés, 9 unités, doublons niveau 2-3, multicast, tous paliers ──
@@ -150,7 +159,9 @@ Bands.field = {
   early = { "early_bruisers", "early_affliction", "tank_carre_mid", "poison_diamant_mid" },
   -- MID : le cœur du jeu — DoT mid vs murs vs choc, + les counters d'archétype + un punisseur DoT SYNERGISÉ
   -- (cross_venom_pyre) pour que les fast comps affrontent une vraie résistance (caliber END), pas que des cibles molles.
-  mid = { "mid_poison", "mid_tank", "mid_shock", "bruiser_carre", "tank_carre", "sustain_carre", "cross_venom_pyre" },
+  -- `mid_rot` ajoute enfin un anti-mur de calibre mid : il ne remplace pas les vrais counters endgame,
+  -- mais évite de mesurer les tanks uniquement contre des cibles qui ne percent pas la régénération.
+  mid = { "mid_poison", "mid_tank", "mid_shock", "mid_rot", "bruiser_carre", "tank_carre", "sustain_carre", "cross_venom_pyre" },
   -- END : tout le monde est armé — carries amplifiés, transforms, murs complets.
   end_ = { "end_poison", "end_rot", "end_shock_multicast", "tank_carre", "fortress_thorns_carre",
     "poison_diamant_perfect", "bulwark_carre" },

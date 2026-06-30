@@ -33,6 +33,7 @@ local MechanicsInline = require("src.ui.mechanics_inline")
 local Chip = require("src.ui.chip")
 local Button = require("src.ui.button")
 local Feel = require("src.ui.feel")
+local Pacing = require("src.run.pacing")
 local Rarity = require("src.gen.rarity")
 local Units = require("src.data.units")
 local UnitResolver = require("src.core.unit_resolver")
@@ -157,7 +158,7 @@ local function drawCardStats(id, U, region)
   local specs = {
     { lab = T("ui.stat_hp"),  val = tostring(U.hp),                            vcol = C.ink },
     { lab = T("ui.stat_dmg"), val = tostring(U.dmg),                           vcol = C.dmg },
-    { lab = T("ui.stat_cd"),  val = string.format("%.1fs", (U.cd or 60) / 60), vcol = C.gold },
+    { lab = T("ui.stat_cd"),  val = Pacing.formatCooldown(U.cd or 60) .. "s", vcol = C.gold },
   }
   if sf and love.graphics and love.graphics.print then
     love.graphics.setFont(sf)
@@ -228,11 +229,10 @@ end
 local function prepareAbilityBlocks(rawBlocks, bodyFont, _titleFont, maxW, activeTags)
   local out = {}
   local lineH = (bodyFont and bodyFont:getHeight() or 13) + 3
+  local headerH = math.max(12, bodyFont and bodyFont:getHeight() or 13)
+  local bodyW = math.max(32, maxW - ABILITY_PAD * 2)
   for _, block in ipairs(rawBlocks or {}) do
     local trigger = block.trigger or "PASSIVE"
-    local chipW = MechanicsInline.triggerChipWidth(trigger, bodyFont)
-    local textX = ABILITY_PAD + chipW + 5
-    local bodyW = math.max(32, maxW - ABILITY_PAD - textX)
     local lines = {}
     for _, raw in ipairs(block.lines or {}) do
       for _, line in ipairs(Keywords.wrapInline(raw, bodyFont, bodyW, activeTags)) do
@@ -240,14 +240,15 @@ local function prepareAbilityBlocks(rawBlocks, bodyFont, _titleFont, maxW, activ
       end
     end
     if #lines == 0 then lines[1] = "" end
-    local h = ABILITY_PAD + #lines * lineH + ABILITY_PAD - 3
+    local h = ABILITY_PAD + headerH + 5 + #lines * lineH + ABILITY_PAD - 3
     out[#out + 1] = {
       trigger = trigger,
       title = block.title or T("ui.ability"),
       lines = lines,
       h = h,
       lineH = lineH,
-      textX = textX,
+      headerH = headerH,
+      bodyW = bodyW,
     }
   end
   return out
@@ -272,9 +273,10 @@ local function drawAbilityBlock(block, x, y, w, fonts, activeTags, t, opts)
 
   local by = y + ABILITY_PAD
   MechanicsInline.drawTriggerChip(block.trigger, x + ABILITY_PAD, by, fonts.body)
+  by = by + (block.headerH or ((fonts.body and fonts.body:getHeight()) or 13)) + 5
   for _, line in ipairs(block.lines) do
-    local tx = x + (block.textX or ABILITY_PAD)
-    drawDescLine(line, tx, by, fonts.body, C.ink2, nil, w - (tx - x) - ABILITY_PAD, activeTags, t)
+    local tx = x + ABILITY_PAD
+    drawDescLine(line, tx, by, fonts.body, C.ink2, nil, block.bodyW or (w - ABILITY_PAD * 2), activeTags, t)
     by = by + block.lineH
   end
 end
@@ -333,7 +335,7 @@ function MonsterCard.draw(view, palette, id, anchorX, anchorY, t, opts)
   -- (grisé, honnête — sous-set curé). Mesuré comme un BANDEAU encastré (titre « AT COMMAND » + corps enroulé). ──
   local canCmd = U.commandBonus ~= nil
   local cmdHeadFont = Theme.label(8)            -- « AT COMMAND » (Space Mono, kicker doré)
-  local cmdBodyFont = Theme.body(11) or descFont -- corps lisible (Spectral)
+  local cmdBodyFont = descFont or Theme.body(12) -- même taille que les capacités : le commandement n'est pas secondaire.
   local commandTags = Keywords.tagsForUnit(U, { context = "commander" })
   local commandTagSet = {}
   for _, tid in ipairs(commandTags) do commandTagSet[tid] = true end
@@ -342,6 +344,7 @@ function MonsterCard.draw(view, palette, id, anchorX, anchorY, t, opts)
     cmdPrepared = prepareAbilityBlocks({ MechanicsText.commandBlock(U) }, cmdBodyFont, cmdHeadFont, innerW, commandTagSet)[1]
   end
   local showKeywordHint = opts.keywordHint == true and #visibleTags > 0
+  local showNetworkHint = opts.networkHint == true
   local keywordHintFont = Theme.label(8)
 
   -- mesure des hauteurs de bloc
@@ -376,7 +379,7 @@ function MonsterCard.draw(view, palette, id, anchorX, anchorY, t, opts)
     local _, fLines = flavFont:getWrap(T(flavorKey), innerW)
     h = h + SECTION_GAP + #fLines * (hFlav + 1)
   end
-  if showKeywordHint and keywordHintFont then
+  if (showKeywordHint or showNetworkHint) and keywordHintFont then
     h = h + SECTION_GAP + keywordHintFont:getHeight()
   end
   h = h + PAD
@@ -428,8 +431,8 @@ function MonsterCard.draw(view, palette, id, anchorX, anchorY, t, opts)
   drawCardPortrait(view, palette, id, opts.rig, portRegion, rank, rarCol, rich, t)
   cy = cy + PORTRAIT_H + GAP
 
-  -- (c) IDENTITÉ : [ pastille de TIER · NOM DE CASTE (couleur de rang) ........ ◆◆ rareté ]. La famille
-  -- (pip + mot) est RETIRÉE : aucune incidence mécanique (retour user 2026-06) -> la carte se lit par le TIER.
+  -- (c) IDENTITÉ : [ pastille de TIER · TYPE mécanique ........ ◆◆ rareté ]. Le TYPE redevient visible car les
+  -- auras/reliques peuvent cibler `type:abyss`, `type:flesh`, etc. Sans ce mot, la cible mécanique est opaque.
   local midI = math.floor(cy + hIdent / 2)
   local tierC = Rarity.tierColor(rank)
   if love.graphics and love.graphics.circle then
@@ -437,7 +440,15 @@ function MonsterCard.draw(view, palette, id, anchorX, anchorY, t, opts)
     love.graphics.setColor(0, 0, 0, 0.5); love.graphics.circle("line", bodyX + 5, midI, 4.5)
     love.graphics.setColor(1, 1, 1, 1)
   end
-  Draw.text(T(Rarity.tierNameKey(rank)), bodyX + 14, midI - hIdent / 2, Rarity.tierBright(rank), idFont)
+  local identX = bodyX + 14
+  local tierText = T(Rarity.tierNameKey(rank))
+  Draw.text(tierText, identX, midI - hIdent / 2, Rarity.tierBright(rank), idFont)
+  identX = identX + (idFont and idFont:getWidth(tierText) or (#tierText * 6)) + 8
+  local ty = U.type
+  if ty then
+    local typeCol = (Theme.type(ty) and Theme.type(ty).color) or C.ink3
+    Draw.text("· " .. T("type." .. ty):upper(), identX, midI - hIdent / 2, typeCol, idFont)
+  end
   -- rangée de losanges de rareté (Badge.diamond), alignée à droite.
   local DSP = 8
   local rx0 = rightX - (rank * DSP) + 4
@@ -527,9 +538,12 @@ function MonsterCard.draw(view, palette, id, anchorX, anchorY, t, opts)
     cy = cy + Draw.textWrap(T(flavorKey), bodyX, cy, innerW, C.ink3, flavFont)
   end
 
-  if showKeywordHint and keywordHintFont then
+  if (showKeywordHint or showNetworkHint) and keywordHintFont then
     cy = cy + SECTION_GAP
-    Draw.textR(T("ui.keyword_hint"), rightX, cy, C.ink4, keywordHintFont)
+    local hints = {}
+    if showKeywordHint then hints[#hints + 1] = T("ui.keyword_hint") end
+    if showNetworkHint then hints[#hints + 1] = T("ui.network_hint") end
+    Draw.textR(table.concat(hints, "   ·   "), rightX, cy, C.ink4, keywordHintFont)
   end
   Draw.reset()
 

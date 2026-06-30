@@ -7,7 +7,6 @@ local Draw = require("src.ui.draw")
 local Theme = require("src.ui.theme")
 local Panel = require("src.ui.panel")
 local Dividers = require("src.ui.dividers")
-local Chip = require("src.ui.chip")
 local Keywords = require("src.ui.keywords")
 local MechanicsText = require("src.ui.mechanics_text")
 local MechanicsInline = require("src.ui.mechanics_inline")
@@ -176,8 +175,7 @@ local function measureContent(data, fonts, innerW)
   h = h + sectionH + tagGridHeight(data.afflictions, innerW, fonts)
   if #data.mechanics > 0 then h = h + SECTION_GAP + sectionH + tagGridHeight(data.mechanics, innerW, fonts) end
   h = h + SECTION_GAP + sectionH + triggerHeight(data.triggers, fonts, innerW)
-  h = h + SECTION_GAP + sectionH + 34 + fonts.small:getHeight() + 4
-  h = h + SECTION_GAP + fonts.small:getHeight() * 2
+  h = h + SECTION_GAP + wrapCount(fonts.small, T("ui.keyword_rule"), innerW) * (fonts.small:getHeight() + 1)
   return h
 end
 
@@ -265,20 +263,6 @@ local function drawTriggers(rows, x, y, w, fonts)
   return triggerHeight(rows, fonts, w)
 end
 
-local function drawAnatomy(sample, x, y, w, fonts, t, afflictionSample)
-  Draw.rect(x, y, w, 34, C.stone900, C.iron, 1)
-  if sample then
-    local col = Keywords.tagColor(sample)
-    Draw.setColor(col, 0.7)
-    love.graphics.rectangle("fill", x + 1, y + 1, 3, 32)
-    Chip.draw(x + 10, y + 8, { key = sample, font = fonts.chip, h = 18, t = t })
-  end
-  Draw.textR(afflictionSample and "3/s" or "+12%", x + w - 78, y + 10, C.ink2, fonts.chip)
-  Draw.textR("4s", x + w - 42, y + 10, C.ink2, fonts.chip)
-  Draw.textR("x12", x + w - 8, y + 10, C.ink2, fonts.chip)
-  return 34
-end
-
 function TagGlossary.draw(view, cardBox, unitId, t, opts)
   opts = opts or {}
   local unit = opts.unit or Units[unitId]
@@ -355,17 +339,6 @@ function TagGlossary.drawData(view, cardBox, data, t, opts, fonts)
   cy = cy + SECTION_GAP
   cy = drawSection(x + W / 2, cy, innerW, T("ui.keyword_section_triggers"), fonts)
   cy = cy + drawTriggers(data.triggers, x + PAD, cy, innerW, fonts)
-
-  cy = cy + SECTION_GAP
-  cy = drawSection(x + W / 2, cy, innerW, T("ui.keyword_section_readline"), fonts)
-  local sample = data.afflictions[1] or data.mechanics[1]
-  local sampleAffliction = data.afflictions[1] ~= nil
-  cy = cy + drawAnatomy(sample, x + PAD, cy, innerW, fonts, t, sampleAffliction)
-  cy = cy + 4
-  Draw.text(T(sampleAffliction and "ui.keyword_metric_dps" or "ui.keyword_metric_value"), x + PAD + 2, cy, C.ink3, fonts.small)
-  Draw.textR(T("ui.keyword_metric_duration"), x + PAD + innerW - 2, cy, C.ink3, fonts.small)
-  cy = cy + fonts.small:getHeight() + 4
-  Draw.text(T("ui.keyword_metric_cap"), x + PAD + 2, cy, C.ink3, fonts.small)
 
   cy = cy + SECTION_GAP
   Draw.textWrap(T("ui.keyword_rule"), x + PAD, cy, innerW, C.ink4, fonts.small)
